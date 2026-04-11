@@ -1,4 +1,5 @@
 import { YouTubeSection } from './YouTubeSection'
+import { PodcastSection } from './PodcastSection'
 import { YOUTUBE_RAFA, YOUTUBE_AURELIA } from '../data/youtube'
 import './PlaceholderView.css'
 
@@ -12,18 +13,7 @@ export function MediaView({ activePerson }) {
   }
 
   if (activePerson === 'helen') {
-    return (
-      <section className="placeholder-view">
-        <div className="placeholder-eyebrow">Listen · step 6</div>
-        <h2>Route-matched podcast episodes</h2>
-        <p>
-          Helen&rsquo;s podcast list lands in step 6. 26 episodes tied to
-          specific stops on the drive: Hudson Valley art, PA coal country,
-          Virginia history, East Tennessee, Birmingham, Mississippi,
-          Fort Worth, Houston. No generic recommendation lists.
-        </p>
-      </section>
-    )
+    return <PodcastSection />
   }
 
   // Jonathan
