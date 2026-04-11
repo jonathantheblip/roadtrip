@@ -1,0 +1,92 @@
+.person-bar {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 16px 0 8px;
+  flex-wrap: wrap;
+}
+
+.person-btn {
+  border: 2px solid var(--border);
+  background: var(--bg2);
+  color: var(--muted);
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.15s ease;
+}
+
+.person-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.person-btn:active {
+  transform: scale(0.97);
+}
+
+.person-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--card);
+}
+
+/* Helen — editorial magazine: italic Playfair with a hairline underline, no pills. */
+[data-theme='helen'] .person-bar {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+  gap: 0;
+}
+[data-theme='helen'] .person-btn {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.005em;
+  border: none;
+  border-bottom: 1.5px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 16px;
+}
+[data-theme='helen'] .person-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent2);
+  background: transparent;
+}
+
+/* Aurelia — soft pills, slightly rounder shadow on active. */
+[data-theme='aurelia'] .person-btn {
+  border-radius: 22px;
+  font-weight: 600;
+}
+[data-theme='aurelia'] .person-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(194, 24, 91, 0.25);
+}
+
+/* Rafa — angular comic-panel pills, bold uppercase. */
+[data-theme='rafa'] .person-btn {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-width: 2.5px;
+  border-radius: 0;
+  clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%);
+  padding: 10px 24px;
+  font-size: 13px;
+}
+[data-theme='rafa'] .person-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}

@@ -1,0 +1,123 @@
+/* ==========================================================================
+   THEME SYSTEM — CSS custom properties per theme
+   Applied via [data-theme="<person>"] on <body>. Values drive every
+   themed surface in the app (backgrounds, cards, text, accents, fonts).
+   ========================================================================== */
+
+:root,
+[data-theme='jonathan'] {
+  --bg: #1a1714;
+  --bg2: #242019;
+  --card: #2c2620;
+  --text: #e8e0d4;
+  --muted: #9a8e7e;
+  --accent: #c0734a;
+  --accent2: #d4956b;
+  --accent3: #c0734a;
+  --border: #3a332a;
+  --tag: #c0734a;
+  --tag-text: #fff;
+  --radius: 14px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --heading-weight: 400;
+  --body-weight: 400;
+}
+
+[data-theme='helen'] {
+  --bg: #f5f1ec;
+  --bg2: #eae5dd;
+  --card: #ffffff;
+  --text: #3a3530;
+  --muted: #7a746a;
+  --accent: #6b8f8f;
+  --accent2: #b8956a;
+  --accent3: #6b8f8f;
+  --border: #d4cfc7;
+  --tag: #6b8f8f;
+  --tag-text: #fff;
+  --radius: 6px;
+  --shadow-card: 0 1px 2px rgba(60, 50, 40, 0.06), 0 2px 12px rgba(60, 50, 40, 0.03);
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Playfair Display', Georgia, serif;
+  --heading-weight: 400;
+  --body-weight: 400;
+}
+
+[data-theme='aurelia'] {
+  --bg: #fdf0f4;
+  --bg2: #f9e4ec;
+  --card: #ffffff;
+  --text: #3a2030;
+  --muted: #9a7080;
+  --accent: #c2185b;
+  --accent2: #e91e80;
+  --accent3: #c2185b;
+  --border: #f0d0e0;
+  --tag: #c2185b;
+  --tag-text: #fff;
+  --radius: 16px;
+  --shadow-card: 0 1px 3px rgba(194, 24, 91, 0.08), 0 4px 18px rgba(194, 24, 91, 0.05);
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --heading-weight: 700;
+  --body-weight: 500;
+}
+
+[data-theme='rafa'] {
+  --bg: #0a0e1a;
+  --bg2: #0f1528;
+  --card: #141e30;
+  --text: #e0e8ff;
+  --muted: #8090c0;
+  --accent: #d32f2f;
+  --accent2: #1565c0;
+  --accent3: #fdd835;
+  --border: #1f2a42;
+  --tag: #d32f2f;
+  --tag-text: #fff;
+  --radius: 4px;
+  --shadow-card: 0 0 0 1px rgba(21, 101, 192, 0.35), 0 2px 14px rgba(0, 0, 0, 0.55);
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --heading-weight: 900;
+  --body-weight: 500;
+}
+
+/* Person-tag colors stay constant across themes. */
+:root {
+  --person-helen: #2d8a4e;
+  --person-aurelia: #c2185b;
+  --person-rafa: #e65100;
+  --person-jonathan: #1565c0;
+  --person-everyone: #5e35b1;
+}
+
+/* Body-level theme application + transition.
+   Transitions are short and intentional so theme switching feels smooth
+   but never laggy. */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: var(--body-weight);
+  transition:
+    background-color 0.4s ease,
+    color 0.4s ease;
+}
+
+/* Rafa's deep-space backdrop gets fixed radial gradients so the theme
+   feels lit from two directions, not painted flat. */
+[data-theme='rafa'] body {
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(21, 101, 192, 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 100%, rgba(211, 47, 47, 0.12) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Helen's warm linen backdrop gets a subtle warm wash near the top. */
+[data-theme='helen'] body {
+  background-image: radial-gradient(ellipse at top, #fbf8f3 0%, var(--bg) 60%);
+  background-attachment: fixed;
+}
