@@ -170,6 +170,66 @@
   font-weight: 700;
 }
 
+/* ============================================
+   Bring notes — per-stop packing prompts (§5)
+   ============================================ */
+.card-bring {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg2);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.bring-label {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.bring-text {
+  color: var(--text);
+}
+
+[data-theme='helen'] .card-bring {
+  background: #faf6ef;
+  border-left: 2px solid var(--accent2);
+  border-radius: 1px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 13px;
+  color: #4a4540;
+}
+[data-theme='helen'] .bring-label {
+  font-family: var(--font-body);
+  font-style: normal;
+  color: var(--accent);
+}
+
+[data-theme='rafa'] .card-bring {
+  background: rgba(21, 101, 192, 0.12);
+  border-left: 3px solid var(--accent3);
+  border-radius: 0;
+}
+[data-theme='rafa'] .bring-label {
+  color: var(--accent3);
+  letter-spacing: 0.14em;
+}
+
+[data-theme='aurelia'] .card-bring {
+  background: #faf0f4;
+  border-left-color: var(--accent2);
+}
+
 .card-actions {
   display: flex;
   gap: 6px;

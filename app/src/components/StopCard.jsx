@@ -66,6 +66,13 @@ export function StopCard({ stop, activePerson }) {
           </div>
         )}
 
+      {stop.bring && (
+        <div className="card-bring">
+          <span className="bring-label">Bring</span>
+          <span className="bring-text">{stop.bring}</span>
+        </div>
+      )}
+
       <NavActions stop={stop} activePerson={activePerson} />
 
       {(stop.menuUrl || stop.photosUrl) && (

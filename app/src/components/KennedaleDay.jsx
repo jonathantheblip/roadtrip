@@ -49,10 +49,15 @@ function ScheduleTable({ rows, compact = false }) {
         {rows.map((row, i) => (
           <tr key={i}>
             <td className="schedule-time">{row.time}</td>
-            <td
-              className="schedule-text"
-              dangerouslySetInnerHTML={{ __html: row.text }}
-            />
+            <td className="schedule-text">
+              <span dangerouslySetInnerHTML={{ __html: row.text }} />
+              {row.bring && (
+                <div className="schedule-bring">
+                  <span className="bring-label">Bring</span>
+                  <span className="bring-text">{row.bring}</span>
+                </div>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>

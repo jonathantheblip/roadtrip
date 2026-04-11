@@ -45,15 +45,17 @@ export const KENNEDALE_DAYS = {
           {
             time: '9:30',
             text: 'Drive to <strong>Dinosaur Valley State Park</strong>.',
+            bring: 'Water shoes (Paluxy River), sunscreen, towel, water bottles, bug spray',
           },
           {
             time: '10:30',
-            text: 'Paluxy River &mdash; 113M-year-old footprints. Bring water shoes.',
+            text: 'Paluxy River &mdash; 113M-year-old footprints.',
           },
           { time: '12:30', text: 'Lunch in Glen Rose.' },
           {
             time: '1:30',
             text: '<strong>Fossil Rim Wildlife Center</strong>. Drive-through safari. Giraffes.',
+            bring: 'Stay in the car \u2014 no special gear, but binoculars if you have them',
           },
           { time: '3:30', text: 'Head back to Kennedale.' },
         ],
@@ -80,6 +82,8 @@ export const KENNEDALE_DAYS = {
       {
         time: '9:30',
         text: '<strong>Six Flags Over Texas</strong>, Arlington. Gates open.',
+        bring:
+          'Comfortable shoes, change of clothes for Rafa, sunscreen, ponchos if rain',
       },
       {
         time: 'AM',
@@ -123,6 +127,7 @@ export const HOUSTON_FRIDAY = {
         {
           time: '10am',
           text: '<strong>Rothko Chapel</strong> &mdash; everyone. 14 Rothko murals. Dark, contemplative, profound. <em>Helen has wanted this her entire adult life.</em>',
+          bring: 'Quiet voices. No photography inside.',
         },
         {
           time: '10:30',
@@ -178,6 +183,7 @@ export const HOUSTON_FRIDAY = {
         {
           time: '1:30',
           text: '<strong>Rothko Chapel</strong>. <em>Helen has wanted this her entire adult life.</em>',
+          bring: 'Quiet voices. No photography inside.',
         },
         {
           time: '2pm',
