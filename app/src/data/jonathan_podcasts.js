@@ -84,22 +84,10 @@ export const JONATHAN_QUEUE = {
       subtitle: 'for The Program fans',
       items: [
         {
-          show: 'The Truth',
-          url: 'https://overcast.fm/itunes502304410',
-          pitch:
-            'Gold standard standalone fiction anthology. Movies for your ears. Pick any well-rated episode. Give it 1\u20133 eps.',
-        },
-        {
           show: 'Zero Hours',
           url: 'https://overcast.fm/itunes1483241955',
           pitch:
             'Seven standalone end-of-the-world stories set 99 years apart. From the Wolf 359 team. Only 7 episodes. Give it 1\u20132 eps.',
-        },
-        {
-          show: 'Knifepoint Horror',
-          url: 'https://overcast.fm/itunes406250030',
-          pitch:
-            "Radical minimalist horror. One narrator, no music, no effects. Start with \u201cstaircase\u201d or \u201cpenpal.\u201d Give it 1 ep.",
         },
       ],
     },
@@ -136,18 +124,6 @@ export const JONATHAN_QUEUE = {
           url: 'https://overcast.fm/itunes1288069795',
           pitch:
             'Audio journal literary horror. Each season is a self-contained arc in a different setting. Elegant prose, psychological terror. Give it 2\u20133 eps.',
-        },
-      ],
-    },
-    {
-      key: 'long_shot',
-      title: 'New queue — long shot',
-      items: [
-        {
-          show: 'WOE.BEGONE',
-          url: 'https://overcast.fm/itunes1542792309',
-          pitch:
-            'Podcast-within-a-podcast about a violent online ARG involving time travel. Unique original score every episode. Answers questions instead of vamping, but 235+ episodes deep. Give it 3\u20135 eps.',
         },
       ],
     },
