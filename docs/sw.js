@@ -1,7 +1,15 @@
-// Service worker for the React rebuild. Network-first for HTML so builds
-// propagate, cache-first for hashed assets and the manifest. Cache name is
-// versioned so activating a new worker clears the previous generation.
-const CACHE_NAME = 'jackson-trip-react-v3';
+// Service worker for the React rebuild.
+// - HTML documents:  network-first, cache fallback (so every launch sees
+//                    the latest build when online, but the app still loads
+//                    offline with the last known HTML)
+// - Google Fonts:    cache-first with background hydration
+// - Hashed assets:   cache-first, with write-through on first successful
+//                    network fetch so a single online visit is enough to
+//                    make the PWA fully offline-capable (rural cell gaps
+//                    in Mississippi, Virginia mountains, etc.)
+//
+// Cache name is versioned so the activate handler wipes stale generations.
+const CACHE_NAME = 'jackson-trip-react-v4';
 const CORE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -37,42 +45,72 @@ function isHtml(req) {
   return false;
 }
 
+// Cache a successful response in the background. Never await — fire and
+// forget so fetch responses reach the client immediately.
+function cacheAsideWrite(req, res) {
+  try {
+    const copy = res.clone();
+    caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+  } catch (_) {}
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
 
-  // Fonts: cache-first with background update
+  // Only handle http(s) requests — skip chrome-extension://, data:, etc.
+  if (!req.url.startsWith('http')) return;
+
+  // Fonts: cache-first, write-through on first fetch.
   if (req.url.includes('fonts.googleapis') || req.url.includes('fonts.gstatic')) {
     e.respondWith(
       caches.open(CACHE_NAME).then((c) =>
-        c.match(req).then((r) =>
-          r ||
-          fetch(req).then((res) => {
-            c.put(req, res.clone());
-            return res;
-          })
+        c.match(req).then(
+          (cached) =>
+            cached ||
+            fetch(req).then((res) => {
+              if (res && res.ok) c.put(req, res.clone());
+              return res;
+            })
         )
       )
     );
     return;
   }
 
-  // HTML documents: network-first so the latest build reaches phones
+  // HTML documents: network-first so the latest build reaches phones.
   if (isHtml(req)) {
     e.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+          if (res && res.ok) cacheAsideWrite(req, res);
           return res;
         })
-        .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+        .catch(() =>
+          caches.match(req).then((r) => r || caches.match('./index.html'))
+        )
     );
     return;
   }
 
-  // Everything else (hashed JS/CSS, images, manifest): cache-first
+  // Everything else (hashed JS/CSS, images, manifest): cache-first with
+  // write-through. This is the key change that makes the PWA genuinely
+  // offline-capable after a single online visit — the first successful
+  // network fetch of every asset gets written to the cache, so the next
+  // open (even with no connectivity) can serve everything locally.
   e.respondWith(
-    caches.match(req).then((r) => r || fetch(req).catch(() => caches.match('./index.html')))
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+      return fetch(req)
+        .then((res) => {
+          if (res && res.ok && res.type !== 'opaque') cacheAsideWrite(req, res);
+          return res;
+        })
+        .catch(() => {
+          // Last-resort fallback for navigations that bypassed isHtml.
+          if (req.mode === 'navigate') return caches.match('./index.html');
+          return Response.error();
+        });
+    })
   );
 });
