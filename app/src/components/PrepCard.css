@@ -1,0 +1,232 @@
+.prep-card {
+  background: var(--bg2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  margin: 18px 0 6px;
+  overflow: hidden;
+  transition:
+    background-color 0.4s ease,
+    border-color 0.4s ease,
+    border-radius 0.4s ease;
+}
+
+.prep-card[data-open='true'] {
+  border-style: solid;
+}
+
+.prep-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.prep-header-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.prep-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.prep-forday {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: var(--heading-weight);
+  color: var(--accent);
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+}
+
+.prep-chev {
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--muted);
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.prep-body {
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--border);
+  animation: prep-fade 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes prep-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.prep-section {
+  margin-top: 14px;
+}
+
+.prep-audience {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.prep-audience-warning .prep-audience {
+  color: #c62828;
+}
+
+.prep-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.prep-items li {
+  margin: 0;
+}
+
+.prep-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.prep-item input[type='checkbox'] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.prep-item-text {
+  min-width: 0;
+}
+
+.prep-item.checked .prep-item-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.prep-audience-warning .prep-item {
+  font-weight: 700;
+  color: #c62828;
+}
+
+/* ============================================
+   Helen — editorial "Before you leave" note
+   ============================================ */
+[data-theme='helen'] .prep-card {
+  background: #faf6ef;
+  border: 1px dashed rgba(60, 50, 40, 0.2);
+  border-radius: 3px;
+}
+[data-theme='helen'] .prep-card[data-open='true'] {
+  border-style: solid;
+  border-color: var(--accent2);
+}
+[data-theme='helen'] .prep-eyebrow {
+  font-family: var(--font-body);
+  color: var(--accent);
+}
+[data-theme='helen'] .prep-forday {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--accent);
+}
+[data-theme='helen'] .prep-audience {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--accent);
+}
+[data-theme='helen'] .prep-item {
+  font-size: 13.5px;
+  color: #4a4540;
+}
+[data-theme='helen'] .prep-body {
+  border-top-color: var(--accent2);
+}
+
+/* ============================================
+   Rafa — LOADOUT manifest panel
+   ============================================ */
+[data-theme='rafa'] .prep-card {
+  background: rgba(21, 101, 192, 0.08);
+  border: 1px dashed var(--accent2);
+  border-radius: 0;
+  position: relative;
+}
+[data-theme='rafa'] .prep-card[data-open='true'] {
+  border-style: solid;
+  border-left: 4px solid var(--accent3);
+}
+[data-theme='rafa'] .prep-eyebrow {
+  color: var(--accent3);
+  letter-spacing: 0.18em;
+}
+[data-theme='rafa'] .prep-forday {
+  color: var(--accent3);
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  font-size: 14px;
+}
+[data-theme='rafa'] .prep-audience {
+  color: var(--accent3);
+  font-weight: 900;
+}
+[data-theme='rafa'] .prep-audience-warning .prep-audience,
+[data-theme='rafa'] .prep-audience-warning .prep-item {
+  color: var(--accent3);
+}
+[data-theme='rafa'] .prep-chev {
+  color: var(--accent3);
+}
+[data-theme='rafa'] .prep-body {
+  border-top-color: var(--accent2);
+}
+
+/* ============================================
+   Aurelia — softer rose dashed card
+   ============================================ */
+[data-theme='aurelia'] .prep-card {
+  background: #faf0f4;
+  border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
+}
+[data-theme='aurelia'] .prep-card[data-open='true'] {
+  border-color: var(--accent);
+}

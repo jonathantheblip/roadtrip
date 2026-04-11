@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { STOPS } from '../data/stops'
 import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
 import { OVERNIGHTS } from '../data/overnight'
+import { PREP } from '../data/prep'
 import { filterStops } from '../utils/filterStops'
 import { StopCard } from './StopCard'
 import { FilterBar } from './FilterBar'
@@ -9,6 +10,7 @@ import { KennedaleDay } from './KennedaleDay'
 import { HoustonFriday } from './HoustonFriday'
 import { TonightCard } from './TonightCard'
 import { FlightHomeCard } from './FlightHomeCard'
+import { PrepCard } from './PrepCard'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import './ItineraryView.css'
 
@@ -32,7 +34,14 @@ export function ItineraryView({ activePerson }) {
   // those days are atomic plans, not stop collections.
   let body
   if (filterDay === 'tue21' || filterDay === 'wed22') {
-    body = <KennedaleDay day={filterDay} />
+    body = (
+      <>
+        <KennedaleDay day={filterDay} />
+        {PREP[filterDay] && (
+          <PrepCard prep={PREP[filterDay]} activePerson={activePerson} />
+        )}
+      </>
+    )
   } else if (filterDay === 'fri24') {
     body = (
       <>
@@ -68,6 +77,8 @@ export function ItineraryView({ activePerson }) {
 function FilteredList({ stops, activePerson, filterDay }) {
   const overnight =
     filterDay && filterDay !== 'all' ? OVERNIGHTS[filterDay] : null
+  const prep =
+    filterDay && filterDay !== 'all' ? PREP[filterDay] : null
 
   if (stops.length === 0) {
     return (
@@ -76,6 +87,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
           <TonightCard overnight={overnight} activePerson={activePerson} />
         )}
         <div className="empty">No itinerary stops match.</div>
+        {prep && <PrepCard prep={prep} activePerson={activePerson} />}
       </>
     )
   }
@@ -89,6 +101,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
           <StopCard key={s.id} stop={s} activePerson={activePerson} />
         ))}
       </div>
+      {prep && <PrepCard prep={prep} activePerson={activePerson} />}
     </>
   )
 }
@@ -105,9 +118,23 @@ function DayByDay({ stops, activePerson }) {
 
   return (
     <>
+      {PREP.pretrip && (
+        <PrepCard
+          prep={PREP.pretrip}
+          activePerson={activePerson}
+          defaultOpen
+        />
+      )}
       {DAYS_ORDER.map((day) => {
         if (day === 'tue21' || day === 'wed22') {
-          return <KennedaleDay key={day} day={day} />
+          return (
+            <div key={day} className="day-section">
+              <KennedaleDay day={day} />
+              {PREP[day] && (
+                <PrepCard prep={PREP[day]} activePerson={activePerson} />
+              )}
+            </div>
+          )
         }
         if (day === 'fri24') {
           return (
@@ -137,6 +164,7 @@ function DaySection({ day, stops, activePerson }) {
   // out of Kennedale into Houston.
   const isThursday = day === 'thu23'
   const overnight = OVERNIGHTS[day]
+  const prep = PREP[day]
   let curCluster = ''
   return (
     <div className="day-section">
@@ -181,6 +209,7 @@ function DaySection({ day, stops, activePerson }) {
           )
         })}
       </div>
+      {prep && <PrepCard prep={prep} activePerson={activePerson} />}
     </div>
   )
 }
