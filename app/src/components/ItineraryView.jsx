@@ -1,13 +1,11 @@
 import { useMemo } from 'react'
 import { STOPS } from '../data/stops'
-import {
-  DAYS_ORDER,
-  DAY_FULL_LABELS,
-  STRUCTURED_DAYS,
-} from '../data/meta'
+import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
 import { filterStops } from '../utils/filterStops'
 import { StopCard } from './StopCard'
 import { FilterBar } from './FilterBar'
+import { KennedaleDay } from './KennedaleDay'
+import { HoustonFriday } from './HoustonFriday'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import './ItineraryView.css'
 
@@ -70,8 +68,11 @@ function DayByDay({ stops, activePerson }) {
   return (
     <>
       {DAYS_ORDER.map((day) => {
-        if (STRUCTURED_DAYS.has(day)) {
-          return <StructuredDayPlaceholder key={day} day={day} />
+        if (day === 'tue21' || day === 'wed22') {
+          return <KennedaleDay key={day} day={day} />
+        }
+        if (day === 'fri24') {
+          return <HoustonFriday key={day} />
         }
         const dayStops = grouped[day]
         if (!dayStops || dayStops.length === 0) return null
@@ -146,20 +147,3 @@ function FragmentOrRow({ cluster, stop, activePerson }) {
   )
 }
 
-function StructuredDayPlaceholder({ day }) {
-  const title = {
-    tue21: 'Tue Apr 21 — DFW Day 1: Divide & Conquer',
-    wed22: 'Wed Apr 22 — DFW Day 2: Six Flags + Viral Treats',
-    fri24: 'Fri Apr 24 — Houston Morning + Fly Home',
-  }[day]
-  return (
-    <div className="structured-placeholder">
-      <div className="placeholder-eyebrow">Structured day · step 4</div>
-      <h3>{title}</h3>
-      <p>
-        This day has a team-split schedule that lands in step 4. The stop
-        cards for it are intentionally skipped here.
-      </p>
-    </div>
-  )
-}

@@ -1,0 +1,243 @@
+.kennedale-day {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 22px 20px 20px;
+  margin: 22px 0;
+  transition:
+    background-color 0.4s ease,
+    border-color 0.4s ease,
+    border-radius 0.4s ease;
+}
+
+.kennedale-header {
+  margin-bottom: 16px;
+}
+
+.kennedale-title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: var(--heading-weight);
+  color: var(--accent);
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.kennedale-subtitle {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* ============================================
+   Team split grid (Tue 21)
+   ============================================ */
+.team-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.team-box {
+  padding: 14px 14px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+}
+
+.team-girls {
+  background: color-mix(in srgb, var(--card) 85%, var(--person-helen));
+  border-color: color-mix(in srgb, var(--border) 60%, var(--person-helen));
+}
+
+.team-guys {
+  background: color-mix(in srgb, var(--card) 85%, var(--person-jonathan));
+  border-color: color-mix(in srgb, var(--border) 60%, var(--person-jonathan));
+}
+
+.team-title {
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: var(--heading-weight);
+  color: var(--text);
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+
+@media (max-width: 480px) {
+  .team-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================
+   Schedule table
+   ============================================ */
+.schedule {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+
+.schedule td {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.5;
+}
+
+.schedule tr:last-child td {
+  border-bottom: none;
+}
+
+.schedule-time {
+  width: 64px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  padding-right: 10px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-text {
+  color: var(--text);
+}
+
+.schedule-text strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.schedule.compact {
+  font-size: 12.5px;
+}
+
+.schedule.compact td {
+  padding: 6px 0;
+}
+
+/* ============================================
+   Evening (everyone) strip
+   ============================================ */
+.evening {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.evening-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+/* ============================================
+   Per-theme overrides
+   ============================================ */
+
+/* Helen — Playfair italic heading, serif-italic body text */
+[data-theme='helen'] .kennedale-title {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 22px;
+  color: var(--accent);
+}
+[data-theme='helen'] .kennedale-subtitle {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 14px;
+}
+[data-theme='helen'] .team-title {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 15px;
+}
+[data-theme='helen'] .schedule {
+  font-size: 13.5px;
+}
+[data-theme='helen'] .schedule-text {
+  font-family: var(--font-body);
+}
+[data-theme='helen'] .team-box {
+  background: #faf6ef;
+  border: 1px solid var(--border);
+}
+[data-theme='helen'] .team-girls {
+  border-left: 3px solid var(--person-helen);
+}
+[data-theme='helen'] .team-guys {
+  border-left: 3px solid var(--person-jonathan);
+}
+[data-theme='helen'] .evening-label {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+/* Rafa — command-center headings + clip-path team boxes */
+[data-theme='rafa'] .kennedale-day {
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--accent2);
+  border-radius: 0;
+}
+[data-theme='rafa'] .kennedale-title {
+  color: var(--accent3);
+  text-transform: uppercase;
+  font-weight: 900;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+[data-theme='rafa'] .kennedale-subtitle {
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+[data-theme='rafa'] .team-box {
+  border-radius: 0;
+  background: rgba(21, 101, 192, 0.08);
+  border: 1px solid var(--accent2);
+}
+[data-theme='rafa'] .team-girls {
+  border-left: 4px solid var(--person-helen);
+}
+[data-theme='rafa'] .team-guys {
+  border-left: 4px solid var(--person-jonathan);
+}
+[data-theme='rafa'] .team-title {
+  color: var(--accent3);
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  font-size: 12px;
+}
+[data-theme='rafa'] .schedule-time {
+  color: var(--accent3);
+  font-weight: 900;
+}
+[data-theme='rafa'] .evening-label {
+  color: var(--accent3);
+  font-weight: 900;
+}
+
+/* Aurelia — softer team boxes, rose-accent headings */
+[data-theme='aurelia'] .kennedale-title {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 18px;
+}
+[data-theme='aurelia'] .team-girls {
+  background: color-mix(in srgb, #fff 80%, var(--accent));
+  border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
+}
+[data-theme='aurelia'] .team-guys {
+  background: color-mix(in srgb, #fff 88%, var(--person-jonathan));
+  border-color: color-mix(in srgb, var(--border) 60%, var(--person-jonathan));
+}
