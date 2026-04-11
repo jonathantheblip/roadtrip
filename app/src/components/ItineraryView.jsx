@@ -3,6 +3,7 @@ import { STOPS } from '../data/stops'
 import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
 import { OVERNIGHTS } from '../data/overnight'
 import { PREP } from '../data/prep'
+import { GAS_WARNINGS } from '../data/gas_warnings'
 import { filterStops } from '../utils/filterStops'
 import { StopCard } from './StopCard'
 import { FilterBar } from './FilterBar'
@@ -11,6 +12,7 @@ import { HoustonFriday } from './HoustonFriday'
 import { TonightCard } from './TonightCard'
 import { FlightHomeCard } from './FlightHomeCard'
 import { PrepCard } from './PrepCard'
+import { GasWarning } from './GasWarning'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import './ItineraryView.css'
 
@@ -79,10 +81,13 @@ function FilteredList({ stops, activePerson, filterDay }) {
     filterDay && filterDay !== 'all' ? OVERNIGHTS[filterDay] : null
   const prep =
     filterDay && filterDay !== 'all' ? PREP[filterDay] : null
+  const gas =
+    filterDay && filterDay !== 'all' ? GAS_WARNINGS[filterDay] : null
 
   if (stops.length === 0) {
     return (
       <>
+        {gas && <GasWarning warning={gas} />}
         {overnight && (
           <TonightCard overnight={overnight} activePerson={activePerson} />
         )}
@@ -93,6 +98,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
   }
   return (
     <>
+      {gas && <GasWarning warning={gas} />}
       {overnight && (
         <TonightCard overnight={overnight} activePerson={activePerson} />
       )}
@@ -165,6 +171,7 @@ function DaySection({ day, stops, activePerson }) {
   const isThursday = day === 'thu23'
   const overnight = OVERNIGHTS[day]
   const prep = PREP[day]
+  const gas = GAS_WARNINGS[day]
   let curCluster = ''
   return (
     <div className="day-section">
@@ -173,6 +180,7 @@ function DaySection({ day, stops, activePerson }) {
           ? 'Thu Apr 23 — Goodbye + Drive to Houston'
           : DAY_FULL_LABELS[day]}
       </h2>
+      {gas && <GasWarning warning={gas} />}
       {overnight && (
         <TonightCard overnight={overnight} activePerson={activePerson} />
       )}
