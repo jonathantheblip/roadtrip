@@ -1,7 +1,7 @@
 // Service worker for the React rebuild. Network-first for HTML so builds
 // propagate, cache-first for hashed assets and the manifest. Cache name is
 // versioned so activating a new worker clears the previous generation.
-const CACHE_NAME = 'jackson-trip-react-v2';
+const CACHE_NAME = 'jackson-trip-react-v3';
 const CORE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -9,6 +9,12 @@ self.addEventListener('install', (e) => {
     caches.open(CACHE_NAME).then((c) => c.addAll(CORE)).catch(() => {})
   );
   self.skipWaiting();
+});
+
+// Honor a SKIP_WAITING message from the client so an updatefound handler
+// can force immediate activation without closing the tab.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {

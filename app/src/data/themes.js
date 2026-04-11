@@ -21,8 +21,8 @@ export const THEMES = {
     emoji: '',
     allowsEmoji: false,
     navApp: 'apple',
-    title: 'Our Road Trip',
-    subtitle: 'April 17–24, 2026',
+    title: 'Jackson Family Road Trip',
+    subtitle: 'April 17–24, 2026 · Belmont → Texas → Home',
     themeColorMeta: '#f5f1ec',
   },
   aurelia: {
@@ -31,8 +31,8 @@ export const THEMES = {
     emoji: '🏐',
     allowsEmoji: true,
     navApp: 'tiktok',
-    title: 'Road Trip 🏐✨',
-    subtitle: 'apr 17–24 · belmont to texas · lets gooo',
+    title: 'road trip ✨',
+    subtitle: 'April 17–24, 2026 · Belmont → Texas → Home',
     themeColorMeta: '#fdf0f4',
   },
   rafa: {
@@ -41,8 +41,8 @@ export const THEMES = {
     emoji: '🦖',
     allowsEmoji: true,
     navApp: 'apple',
-    title: 'ROAD TRIP!! 🦖🕷',
-    subtitle: 'WE ARE GOING TO TEXAS!!!',
+    title: 'ROAD TRIP COMMAND CENTER 🔥',
+    subtitle: 'April 17–24, 2026 · Belmont → Texas → Home',
     themeColorMeta: '#0a0e1a',
   },
 }
