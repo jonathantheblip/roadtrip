@@ -67,6 +67,31 @@ export function StopCard({ stop, activePerson }) {
         )}
 
       <NavActions stop={stop} activePerson={activePerson} />
+
+      {(stop.menuUrl || stop.photosUrl) && (
+        <div className="card-extras">
+          {stop.menuUrl && (
+            <a
+              className="extra-btn extra-menu"
+              href={stop.menuUrl}
+              target="_blank"
+              rel="noopener"
+            >
+              Menu
+            </a>
+          )}
+          {stop.photosUrl && (
+            <a
+              className="extra-btn extra-photos"
+              href={stop.photosUrl}
+              target="_blank"
+              rel="noopener"
+            >
+              Photos
+            </a>
+          )}
+        </div>
+      )}
     </article>
   )
 }

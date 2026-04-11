@@ -217,6 +217,42 @@
 }
 
 /* ============================================
+   Secondary extras — Menu / Photos buttons.
+   Outlined by default; themes override weight and chrome.
+   ============================================ */
+.card-extras {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.extra-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+  font-family: inherit;
+}
+
+.extra-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ============================================
    Per-theme card treatments
    ============================================ */
 
@@ -276,6 +312,21 @@
 }
 [data-theme='helen'] .action-btn.apple {
   background: #2a2520;
+}
+[data-theme='helen'] .extra-btn {
+  border-radius: 1px;
+  border: 1px solid var(--accent2);
+  color: var(--accent);
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 8px 14px;
+  font-size: 10.5px;
+}
+[data-theme='helen'] .extra-btn:hover {
+  background: var(--accent2);
+  border-color: var(--accent2);
+  color: #fff;
 }
 
 /* Aurelia — softer pink cards with rose accents */
@@ -345,4 +396,19 @@
 [data-theme='rafa'] .action-btn.apple {
   background: var(--accent);
   color: #fff;
+}
+[data-theme='rafa'] .extra-btn {
+  background: var(--accent2);
+  color: #fff;
+  border: 1px solid var(--accent2);
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  padding: 8px 18px;
+  font-size: 10.5px;
+}
+[data-theme='rafa'] .extra-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
 }
