@@ -1,0 +1,205 @@
+.discover {
+  animation: discover-fade 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes discover-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+   Intro — matches the PodcastSection magazine vibe
+   ============================================ */
+.discover-intro {
+  text-align: center;
+  padding: 22px 6px 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.discover-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.discover-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: var(--heading-weight);
+  color: var(--accent);
+  line-height: 1.08;
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.discover-lede {
+  max-width: 480px;
+  margin: 0 auto;
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ============================================
+   Per-state block
+   ============================================ */
+.discover-state {
+  margin: 28px 0 18px;
+}
+
+.discover-state-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: var(--heading-weight);
+  color: var(--accent);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: -0.005em;
+  line-height: 1.15;
+}
+
+.discover-state-name {
+  min-width: 0;
+}
+
+.discover-state-count {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  white-space: nowrap;
+  padding: 2px 10px;
+  background: var(--bg2);
+  border-radius: 10px;
+}
+
+/* ============================================
+   Helen — editorial magazine overrides
+   ============================================ */
+[data-theme='helen'] .discover-title {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 32px;
+  color: #2a2520;
+}
+
+[data-theme='helen'] .discover-intro {
+  border-bottom: none;
+  padding-bottom: 6px;
+}
+
+[data-theme='helen'] .discover-intro::after {
+  content: '';
+  display: block;
+  width: 80px;
+  height: 1px;
+  background: var(--accent2);
+  margin: 14px auto 0;
+}
+
+[data-theme='helen'] .discover-lede {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 14.5px;
+}
+
+[data-theme='helen'] .discover-state-title {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 24px;
+  border-bottom-color: var(--accent2);
+  padding-bottom: 10px;
+}
+
+[data-theme='helen'] .discover-state-count {
+  font-family: var(--font-body);
+  font-style: normal;
+  background: transparent;
+  border: 1px solid var(--accent2);
+  border-radius: 1px;
+  color: var(--accent);
+}
+
+/* ============================================
+   Rafa — command center overrides
+   ============================================ */
+[data-theme='rafa'] .discover-intro {
+  border-bottom: 2px solid var(--accent2);
+  padding-bottom: 18px;
+}
+
+[data-theme='rafa'] .discover-eyebrow {
+  color: var(--accent3);
+  letter-spacing: 0.2em;
+}
+
+[data-theme='rafa'] .discover-title {
+  color: var(--accent3);
+  text-transform: uppercase;
+  font-weight: 900;
+  font-size: 26px;
+  letter-spacing: 0.01em;
+}
+
+[data-theme='rafa'] .discover-lede {
+  color: var(--muted);
+}
+
+[data-theme='rafa'] .discover-state-title {
+  color: var(--accent3);
+  text-transform: uppercase;
+  font-weight: 900;
+  font-size: 17px;
+  letter-spacing: 0.03em;
+  padding-left: 12px;
+  border-left: 4px solid var(--accent);
+  border-bottom: none;
+  padding-bottom: 0;
+  padding-top: 2px;
+  margin-bottom: 14px;
+}
+
+[data-theme='rafa'] .discover-state-count {
+  background: rgba(21, 101, 192, 0.15);
+  color: var(--accent3);
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  padding: 3px 14px;
+  border: 1px solid var(--accent2);
+}
+
+/* ============================================
+   Aurelia — rose glow on state counts
+   ============================================ */
+[data-theme='aurelia'] .discover-state-count {
+  background: #faf0f4;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, var(--accent));
+}
+
+/* ============================================
+   Empty state
+   ============================================ */
+.discover .empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
