@@ -1,0 +1,84 @@
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin: 14px 0 18px;
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 14px 6px 12px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  position: relative;
+  transition: color 0.25s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--accent);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* Helen — italic Playfair tabs with a brass hairline */
+[data-theme='helen'] .tab-bar {
+  margin: 22px 0 24px;
+}
+[data-theme='helen'] .tab-btn {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: none;
+  font-size: 16px;
+  letter-spacing: 0.005em;
+}
+[data-theme='helen'] .tab-btn.active::after {
+  background: var(--accent2);
+  height: 1.5px;
+  left: 26%;
+  right: 26%;
+  bottom: -1px;
+  border-radius: 0;
+}
+
+/* Rafa — heavy uppercase with a red double rule */
+[data-theme='rafa'] .tab-bar {
+  border-bottom: 2px solid var(--accent2);
+}
+[data-theme='rafa'] .tab-btn {
+  font-size: 12.5px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+[data-theme='rafa'] .tab-btn.active {
+  color: var(--accent3);
+}
+[data-theme='rafa'] .tab-btn.active::after {
+  height: 4px;
+  background: var(--accent);
+  left: 10%;
+  right: 10%;
+  bottom: -3px;
+  border-radius: 0;
+}

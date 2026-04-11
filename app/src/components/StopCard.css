@@ -1,0 +1,348 @@
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 16px 18px;
+  margin-bottom: 10px;
+  transition:
+    transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.28s ease,
+    border-color 0.28s ease,
+    background-color 0.4s ease,
+    border-radius 0.4s ease;
+}
+
+.card:hover {
+  transform: translateY(-1px);
+}
+
+.card.star {
+  border-left: 4px solid var(--accent);
+}
+
+.card.bucees {
+  border-left: 4px solid #fdd835;
+  background: color-mix(in srgb, var(--card) 92%, #fdd835);
+}
+
+.card-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.25;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text);
+}
+
+.star-badge {
+  background: #fdd835;
+  color: #333;
+  font-size: 9.5px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ============================================
+   Tags
+   ============================================ */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.t-helen {
+  background: var(--person-helen);
+  color: #fff;
+}
+.t-aurelia {
+  background: var(--person-aurelia);
+  color: #fff;
+}
+.t-rafa {
+  background: var(--person-rafa);
+  color: #fff;
+}
+.t-jonathan {
+  background: var(--person-jonathan);
+  color: #fff;
+}
+.t-everyone {
+  background: var(--person-everyone);
+  color: #fff;
+}
+.t-food {
+  background: #6d4c41;
+  color: #fff;
+}
+.t-gas {
+  background: #37474f;
+  color: #fff;
+}
+.t-energy {
+  background: #f57f17;
+  color: #fff;
+}
+.t-photo {
+  background: #00695c;
+  color: #fff;
+}
+.t-viral {
+  background: #ad1457;
+  color: #fff;
+}
+.t-poi {
+  background: var(--accent);
+  color: var(--tag-text);
+}
+
+/* ============================================
+   Pitches
+   ============================================ */
+.pitch {
+  font-size: 13.5px;
+  margin: 6px 0;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.pitch-secondary {
+  opacity: 0.65;
+}
+
+.pitch-label {
+  font-weight: 800;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  margin-right: 4px;
+  display: inline-block;
+  letter-spacing: 0.04em;
+}
+.pl-helen {
+  background: var(--person-helen);
+  color: #fff;
+}
+.pl-aurelia {
+  background: var(--person-aurelia);
+  color: #fff;
+}
+.pl-rafa {
+  background: var(--person-rafa);
+  color: #fff;
+}
+.pl-jonathan {
+  background: var(--person-jonathan);
+  color: #fff;
+}
+
+/* ============================================
+   Meta, actions
+   ============================================ */
+.card-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.veg-notes {
+  color: #2d8a4e;
+}
+.veg-notes strong {
+  font-weight: 700;
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  color: #fff;
+  background: var(--accent);
+  transition: opacity 0.2s;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.action-btn:hover {
+  opacity: 0.85;
+}
+.action-btn.waze {
+  background: #33ccff;
+  color: #000;
+}
+.action-btn.apple {
+  background: #333;
+  color: #fff;
+}
+[data-theme='jonathan'] .action-btn.apple {
+  background: #666;
+}
+.action-btn.tiktok {
+  background: #000;
+  color: #fff;
+}
+.action-btn.google {
+  background: #4285f4;
+  color: #fff;
+}
+
+/* ============================================
+   Per-theme card treatments
+   ============================================ */
+
+/* Helen — paper-weight square cards */
+[data-theme='helen'] .card {
+  padding: 22px 24px;
+  box-shadow: 0 1px 2px rgba(60, 50, 40, 0.05);
+  border-color: rgba(60, 50, 40, 0.1);
+  background: #fff;
+}
+[data-theme='helen'] .card:hover {
+  box-shadow: 0 8px 24px rgba(60, 50, 40, 0.08);
+}
+[data-theme='helen'] .card.star {
+  border-left: 2px solid var(--accent2);
+}
+[data-theme='helen'] .card-name {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.22;
+  color: #2a2520;
+}
+[data-theme='helen'] .pitch {
+  font-size: 14px;
+  line-height: 1.65;
+  color: #4a4540;
+  padding: 0 0 0 16px;
+  border-left: 2px solid var(--accent2);
+  margin: 6px 0;
+}
+[data-theme='helen'] .card-meta {
+  font-size: 13px;
+  color: #6a6458;
+  font-style: italic;
+}
+[data-theme='helen'] .star-badge {
+  background: var(--accent2);
+  color: #fff;
+  border-radius: 1px;
+  letter-spacing: 0.1em;
+  font-size: 9.5px;
+}
+[data-theme='helen'] .tag {
+  border-radius: 1px;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+[data-theme='helen'] .action-btn {
+  border-radius: 1px;
+  padding: 9px 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+[data-theme='helen'] .action-btn.apple {
+  background: #2a2520;
+}
+
+/* Aurelia — softer pink cards with rose accents */
+[data-theme='aurelia'] .card {
+  padding: 18px 20px;
+}
+[data-theme='aurelia'] .card.star {
+  border-left: 4px solid var(--accent2);
+  box-shadow: 0 1px 3px rgba(194, 24, 91, 0.1), 0 4px 18px rgba(194, 24, 91, 0.07);
+}
+[data-theme='aurelia'] .card-name {
+  font-weight: 700;
+  font-size: 17px;
+}
+[data-theme='aurelia'] .action-btn.apple {
+  background: #333;
+}
+
+/* Rafa — deep-space cards with weighty shadows + red halo on stars */
+[data-theme='rafa'] .card {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, transparent 100%);
+  padding: 18px 20px;
+}
+[data-theme='rafa'] .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px var(--accent2), 0 8px 28px rgba(0, 0, 0, 0.65);
+}
+[data-theme='rafa'] .card.star {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 36px rgba(211, 47, 47, 0.22),
+    0 4px 16px rgba(0, 0, 0, 0.55);
+  border-left: 5px solid var(--accent);
+}
+[data-theme='rafa'] .card-name {
+  color: var(--accent3);
+  border-bottom: 1px solid rgba(224, 232, 255, 0.1);
+  padding-bottom: 9px;
+  margin-bottom: 10px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  font-size: 17px;
+  text-transform: uppercase;
+}
+[data-theme='rafa'] .tag {
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  padding: 3px 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+[data-theme='rafa'] .star-badge {
+  background: var(--accent3);
+  color: #111;
+  font-weight: 900;
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  padding: 3px 16px;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+}
+[data-theme='rafa'] .action-btn {
+  border-radius: 0;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  padding: 9px 18px;
+}
+[data-theme='rafa'] .action-btn.apple {
+  background: var(--accent);
+  color: #fff;
+}

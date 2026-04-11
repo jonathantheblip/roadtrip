@@ -1,0 +1,165 @@
+import { useMemo } from 'react'
+import { STOPS } from '../data/stops'
+import {
+  DAYS_ORDER,
+  DAY_FULL_LABELS,
+  STRUCTURED_DAYS,
+} from '../data/meta'
+import { filterStops } from '../utils/filterStops'
+import { StopCard } from './StopCard'
+import { FilterBar } from './FilterBar'
+import { useItineraryFilters } from '../hooks/useItineraryFilters'
+import './ItineraryView.css'
+
+export function ItineraryView({ activePerson }) {
+  const { filterDay, filterType, setFilterDay, setFilterType, isFiltered } =
+    useItineraryFilters()
+
+  const stops = useMemo(
+    () =>
+      filterStops(STOPS, {
+        category: 'planned',
+        activePerson,
+        day: filterDay,
+        type: filterType,
+      }),
+    [activePerson, filterDay, filterType]
+  )
+
+  return (
+    <section className="itinerary">
+      <FilterBar
+        filterDay={filterDay}
+        filterType={filterType}
+        onDayChange={setFilterDay}
+        onTypeChange={setFilterType}
+      />
+
+      {isFiltered ? (
+        <FilteredList stops={stops} activePerson={activePerson} />
+      ) : (
+        <DayByDay stops={stops} activePerson={activePerson} />
+      )}
+    </section>
+  )
+}
+
+function FilteredList({ stops, activePerson }) {
+  if (stops.length === 0) {
+    return <div className="empty">No itinerary stops match.</div>
+  }
+  return (
+    <div className="stops-grid">
+      {stops.map((s) => (
+        <StopCard key={s.id} stop={s} activePerson={activePerson} />
+      ))}
+    </div>
+  )
+}
+
+function DayByDay({ stops, activePerson }) {
+  const grouped = useMemo(() => {
+    const acc = {}
+    stops.forEach((s) => {
+      if (!acc[s.day]) acc[s.day] = []
+      acc[s.day].push(s)
+    })
+    return acc
+  }, [stops])
+
+  return (
+    <>
+      {DAYS_ORDER.map((day) => {
+        if (STRUCTURED_DAYS.has(day)) {
+          return <StructuredDayPlaceholder key={day} day={day} />
+        }
+        const dayStops = grouped[day]
+        if (!dayStops || dayStops.length === 0) return null
+        return (
+          <DaySection
+            key={day}
+            day={day}
+            stops={dayStops}
+            activePerson={activePerson}
+          />
+        )
+      })}
+    </>
+  )
+}
+
+function DaySection({ day, stops, activePerson }) {
+  // Thursday gets an overview drive-box above the cards — it's the drive
+  // out of Kennedale into Houston.
+  const isThursday = day === 'thu23'
+  let curCluster = ''
+  return (
+    <div className="day-section">
+      <h2 className="section-label">
+        {isThursday
+          ? 'Thu Apr 23 — Goodbye + Drive to Houston'
+          : DAY_FULL_LABELS[day]}
+      </h2>
+      {isThursday && (
+        <div className="drive-box">
+          <strong>Morning:</strong> Relax with Aunt Donna. Both aunts if Aunt
+          Debra can flex. Late breakfast.
+          <br />
+          <strong>Optional 10am:</strong> Fort Worth Stockyards cattle drive
+          (11:30am).
+          <br />
+          <strong>12pm:</strong> Lunch with the aunts.
+          <br />
+          <strong>1:30pm:</strong> Depart for Houston — Jonathan drives so
+          Helen can gawk at the scenery.
+          <br />
+          <strong>~6pm:</strong> Arrive at 1301 Marshall St, Houston.
+          <br />
+          <strong>7pm:</strong> Dinner with Chris &amp; Yvonne — Hugo&rsquo;s
+          recommended.
+        </div>
+      )}
+      <div className="stops-grid">
+        {stops.map((s) => {
+          const showCluster = s.cluster && s.cluster !== curCluster
+          if (showCluster) curCluster = s.cluster
+          return (
+            <FragmentOrRow
+              key={s.id}
+              cluster={showCluster ? s.cluster : null}
+              stop={s}
+              activePerson={activePerson}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function FragmentOrRow({ cluster, stop, activePerson }) {
+  return (
+    <>
+      {cluster && <div className="cluster-header">{cluster}</div>}
+      <StopCard stop={stop} activePerson={activePerson} />
+    </>
+  )
+}
+
+function StructuredDayPlaceholder({ day }) {
+  const title = {
+    tue21: 'Tue Apr 21 — DFW Day 1: Divide & Conquer',
+    wed22: 'Wed Apr 22 — DFW Day 2: Six Flags + Viral Treats',
+    fri24: 'Fri Apr 24 — Houston Morning + Fly Home',
+  }[day]
+  return (
+    <div className="structured-placeholder">
+      <div className="placeholder-eyebrow">Structured day · step 4</div>
+      <h3>{title}</h3>
+      <p>
+        This day has a team-split schedule that lands in step 4. The stop
+        cards for it are intentionally skipped here.
+      </p>
+    </div>
+  )
+}
