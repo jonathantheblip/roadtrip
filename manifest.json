@@ -2,7 +2,7 @@
   "name": "Jackson Family Road Trip",
   "short_name": "Road Trip",
   "description": "April 17–24, 2026 · Belmont to Texas and back",
-  "start_url": "/trip/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#1a1714",
   "theme_color": "#1a1714",
