@@ -116,3 +116,117 @@
   letter-spacing: 0.1em;
   font-size: 10.5px;
 }
+
+/* ============================================
+   iPad Pro (1024px+): widen container, bump font sizes for Rafa,
+   optional 2-column stop grid for Rafa's command-center layout.
+   Other themes get a wider reading width but stay single-column.
+   ============================================ */
+@media (min-width: 1024px) {
+  .app {
+    max-width: 720px;
+    padding: 28px 24px 100px;
+  }
+
+  .app-header h1 {
+    font-size: 36px;
+  }
+  .app-header .sub {
+    font-size: 15px;
+  }
+
+  /* Helen reads as a magazine at any width — just roomier. */
+  [data-theme='helen'] .app-header h1 {
+    font-size: 42px;
+  }
+
+  /* Rafa gets the command-center iPad treatment: wider canvas,
+     bigger type, and a 2-column card grid where applicable. */
+  [data-theme='rafa'] .app {
+    max-width: 1000px;
+    padding: 32px 28px 120px;
+  }
+  [data-theme='rafa'] .app-header h1 {
+    font-size: 44px;
+  }
+  [data-theme='rafa'] .app-header .sub {
+    font-size: 12px;
+  }
+  [data-theme='rafa'] .section-label {
+    font-size: 20px;
+  }
+  [data-theme='rafa'] .card-name {
+    font-size: 19px;
+  }
+  [data-theme='rafa'] .pitch {
+    font-size: 14.5px;
+    line-height: 1.55;
+  }
+  [data-theme='rafa'] .stops-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-items: stretch;
+  }
+  [data-theme='rafa'] .stops-grid > .card {
+    margin-bottom: 0;
+  }
+  [data-theme='rafa'] .stops-grid > .cluster-header {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    margin: 12px 0 2px;
+  }
+  [data-theme='rafa'] .filter-section {
+    padding: 22px 18px 12px;
+  }
+  [data-theme='rafa'] .tab-btn {
+    font-size: 13.5px;
+    padding: 16px 8px 14px;
+  }
+}
+
+/* ============================================
+   Print styles — readable offline paper fallback.
+   Hides sticky nav, filters, and card action buttons; keeps
+   every card and schedule visible for printed itineraries.
+   ============================================ */
+@media print {
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .sticky-nav,
+  .person-bar,
+  .tab-bar,
+  .filter-section,
+  .card-actions,
+  .podcast-cta,
+  .podcast-footer,
+  .option-toggle {
+    display: none !important;
+  }
+  .tab-content,
+  .itinerary,
+  .discover,
+  .podcast-section {
+    animation: none !important;
+  }
+  .card,
+  .kennedale-day,
+  .houston-friday,
+  .podcast-card,
+  .media-section {
+    break-inside: avoid;
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .app {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  .app-header h1 {
+    color: #111 !important;
+  }
+}

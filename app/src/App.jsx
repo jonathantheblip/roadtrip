@@ -12,6 +12,18 @@ export default function App() {
   const { activePerson, theme, setPerson } = useTheme()
   const [activeTab, setActiveTab] = useState('itinerary')
 
+  // Scroll the content back to the top when the user switches tabs or
+  // persons so they land on the fresh view instead of stranded mid-page.
+  const handleTabChange = (tab) => {
+    setActiveTab(tab)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handlePersonChange = (p) => {
+    setPerson(p)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
     <main className="app">
       <header className="app-header">
@@ -20,8 +32,8 @@ export default function App() {
       </header>
 
       <div className="sticky-nav">
-        <PersonSelector active={activePerson} onChange={setPerson} />
-        <Navigation active={activeTab} onChange={setActiveTab} />
+        <PersonSelector active={activePerson} onChange={handlePersonChange} />
+        <Navigation active={activeTab} onChange={handleTabChange} />
       </div>
 
       <div className="tab-content" key={`${activeTab}-${activePerson}`}>
@@ -29,7 +41,7 @@ export default function App() {
           <ItineraryView activePerson={activePerson} />
         )}
         {activeTab === 'media' && <MediaView activePerson={activePerson} />}
-        {activeTab === 'discover' && <DiscoverView />}
+        {activeTab === 'discover' && <DiscoverView activePerson={activePerson} />}
       </div>
     </main>
   )
