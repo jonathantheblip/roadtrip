@@ -1,7 +1,7 @@
 // Service worker for the React rebuild. Network-first for HTML so builds
 // propagate, cache-first for hashed assets and the manifest. Cache name is
 // versioned so activating a new worker clears the previous generation.
-const CACHE_NAME = 'jackson-trip-react-v1';
+const CACHE_NAME = 'jackson-trip-react-v2';
 const CORE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
