@@ -103,8 +103,37 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 .podcast-name a{color:var(--text);text-decoration:none}
 .podcast-name a:hover{color:var(--accent)}
 .podcast-desc{font-size:.8em;color:var(--muted);margin-top:4px;line-height:1.5}
+.stops-grid{display:block}
+.cluster-header{font-size:.78em;color:var(--muted);font-weight:600;margin:10px 0 4px}
 @media(max-width:420px){.team-grid{grid-template-columns:1fr}.person-btn{padding:6px 12px;font-size:.78em}}
 @media print{.person-bar,.filters,.card-actions{display:none}.day-body{display:block!important}}
+
+/* === iPad Pro (1024px+): give Rafa\u2019s theme room to breathe === */
+@media(min-width:1024px){
+  [data-theme=rafa] .app{max-width:1000px;padding:24px}
+  [data-theme=rafa] header h1{font-size:2.6em}
+  [data-theme=rafa] header .sub{font-size:.95em}
+  [data-theme=rafa] .person-btn{padding:12px 24px;font-size:1em}
+  [data-theme=rafa] .filter-btn{padding:8px 16px;font-size:.88em}
+  [data-theme=rafa] .section-label{font-size:1.55em;margin:28px 0 14px}
+  [data-theme=rafa] .card{padding:20px 24px}
+  [data-theme=rafa] .card-name{font-size:1.2em}
+  [data-theme=rafa] .pitch{font-size:1em;line-height:1.5}
+  [data-theme=rafa] .card-meta{font-size:.9em}
+  [data-theme=rafa] .tag{font-size:.78em;padding:3px 12px}
+  [data-theme=rafa] .action-btn{padding:10px 20px;font-size:.88em}
+  [data-theme=rafa] .media-section{padding:26px 24px}
+  [data-theme=rafa] .media-title{font-size:1.8em}
+  [data-theme=rafa] .media-category h4{font-size:1.1em}
+  [data-theme=rafa] .media-link{padding:10px 18px;font-size:.92em}
+  [data-theme=rafa] .stops-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
+  [data-theme=rafa] .stops-grid>.card{margin-bottom:0}
+  [data-theme=rafa] .stops-grid>.cluster-header{grid-column:1/-1;font-size:.95em;margin:12px 0 2px}
+  [data-theme=rafa] .schedule td{font-size:1em;padding:8px 0}
+  [data-theme=rafa] .drive-box{font-size:.95em;padding:16px 20px}
+  [data-theme=rafa] .day-header h3{font-size:1.25em}
+  [data-theme=rafa] .day-body{padding:0 24px 20px}
+}
 
 /* === HELEN: Playfair Display for headings, brass underlines === */
 [data-theme=helen] header h1,
@@ -621,22 +650,27 @@ function render(){
 
       const first=dayStops[0];
       h+=`<div class="section-label">${first.dayLabel}</div>`;
+      h+=`<div class="stops-grid">`;
       let curCluster='';
       dayStops.forEach(s=>{
-        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div style="font-size:.78em;color:var(--muted);font-weight:600;margin:10px 0 4px">${curCluster}</div>`}
+        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div class="cluster-header">${curCluster}</div>`}
         h+=renderStop(s);
       });
+      h+=`</div>`;
     });
 
     // Thursday Houston drive
     const thuStops=grouped['thu23'];
     if(thuStops&&thuStops.length>0){
-      h+=`<div class="section-label">Thu Apr 23 — Drive to Houston</div>`;
+      h+=`<div class="section-label">Thu Apr 23 \u2014 Goodbye + Drive to Houston</div>`;
+      h+=`<div class="drive-box"><strong>Morning:</strong> Relax with Aunt Donna. Both aunts if Aunt Debra can flex. Late breakfast.<br><strong>Optional 10am:</strong> Fort Worth Stockyards cattle drive (11:30am).<br><strong>12pm:</strong> Lunch with the aunts.<br><strong>1:30pm:</strong> Depart for Houston \u2014 Jonathan drives so Helen can gawk at the scenery.<br><strong>~6pm:</strong> Arrive at 1301 Marshall St, Houston.<br><strong>7pm:</strong> Dinner with Chris &amp; Yvonne \u2014 Hugo\u2019s recommended.</div>`;
+      h+=`<div class="stops-grid">`;
       let curCluster='';
       thuStops.forEach(s=>{
-        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div style="font-size:.78em;color:var(--muted);font-weight:600;margin:10px 0 4px">${curCluster}</div>`}
+        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div class="cluster-header">${curCluster}</div>`}
         h+=renderStop(s);
       });
+      h+=`</div>`;
     }
 
     // Media section — per-person content feeds
@@ -665,15 +699,21 @@ function render(){
       const stateName={MA:'Massachusetts',CT:'Connecticut',NY:'New York',PA:'Pennsylvania',VA:'Virginia',TN:'Tennessee',AL:'Alabama',MS:'Mississippi',LA:'Louisiana',TX:'Texas'}[filterState]||filterState;
       if(planned.length){
         h+=`<div class="section-label">On the Itinerary \u2014 ${stateName}</div>`;
+        h+=`<div class="stops-grid">`;
         planned.forEach(s=>h+=renderStop(s));
+        h+=`</div>`;
       }
       if(discover.length){
         h+=`<div class="section-label">Discover \u2014 ${stateName}</div>`;
         h+=`<div style="font-size:.78em;color:var(--muted);margin:-4px 0 10px;font-style:italic">Off-itinerary picks tuned to whoever's browsing. Tap to navigate if you find time to detour.</div>`;
+        h+=`<div class="stops-grid">`;
         discover.forEach(s=>h+=renderStop(s));
+        h+=`</div>`;
       }
     } else {
+      h+=`<div class="stops-grid">`;
       stops.forEach(s=>h+=renderStop(s));
+      h+=`</div>`;
     }
   }
 
