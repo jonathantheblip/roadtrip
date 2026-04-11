@@ -105,7 +105,9 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 .podcast-desc{font-size:.8em;color:var(--muted);margin-top:4px;line-height:1.5}
 .stops-grid{display:block}
 .cluster-header{font-size:.78em;color:var(--muted);font-weight:600;margin:10px 0 4px}
-.tab-bar{display:flex;gap:0;margin:18px 0 20px;border-bottom:1px solid var(--border);padding:0}
+.sticky-nav{position:sticky;top:0;z-index:50;background:var(--bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);margin:0 -12px;padding:0 12px;border-bottom:1px solid transparent;transition:border-color .2s,background .2s}
+.sticky-nav.scrolled{background:color-mix(in srgb,var(--bg) 92%,transparent);border-bottom-color:var(--border)}
+.tab-bar{display:flex;gap:0;margin:14px 0 18px;border-bottom:1px solid var(--border);padding:0}
 .tab-btn{flex:1;background:transparent;border:none;padding:14px 6px 12px;color:var(--muted);font-family:inherit;font-size:.78em;font-weight:700;cursor:pointer;letter-spacing:.08em;text-transform:uppercase;position:relative;transition:color .25s}
 .tab-btn:hover{color:var(--text)}
 .tab-btn.active{color:var(--accent)}
@@ -145,6 +147,87 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 [data-theme=helen] .listen-card{border-left-color:var(--accent2)}
 @media(max-width:420px){.team-grid{grid-template-columns:1fr}.person-btn{padding:6px 12px;font-size:.78em}}
 @media print{.person-bar,.filters,.card-actions{display:none}.day-body{display:block!important}}
+
+/* === CARD WEIGHT (all themes) === */
+.card{transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s ease,border-color .28s ease}
+.card:hover{transform:translateY(-1px)}
+html{scroll-behavior:smooth}
+body{font-feature-settings:"kern","liga","ss01"}
+
+/* === HELEN: editorial magazine === */
+[data-theme=helen] body{background:var(--bg);background-image:radial-gradient(ellipse at top,#fbf8f3 0%,var(--bg) 60%);background-attachment:fixed;font-weight:400;color:#3a3530}
+[data-theme=helen] header{padding:36px 0 24px;text-align:center}
+[data-theme=helen] header h1{font-size:2.3em;font-weight:400;letter-spacing:-.015em;line-height:1.05;color:#2a2520}
+[data-theme=helen] header .sub{font-family:'Playfair Display',Georgia,serif;font-style:italic;color:var(--muted);font-size:.98em;margin-top:8px;letter-spacing:.01em}
+[data-theme=helen] header::after{content:'';display:block;height:1px;width:90px;background:var(--accent2);margin:18px auto 0}
+[data-theme=helen] .person-bar{margin:18px 0 6px;gap:0;border-bottom:1px solid var(--border);padding-bottom:2px}
+[data-theme=helen] .person-btn{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:400;background:transparent;border:none;border-bottom:1.5px solid transparent;border-radius:0;padding:8px 14px;font-size:.95em;color:var(--muted);letter-spacing:.01em}
+[data-theme=helen] .person-btn.active{color:var(--accent);border-bottom-color:var(--accent2);background:transparent}
+[data-theme=helen] .tab-bar{margin:22px 0 24px;border-bottom:1px solid var(--border)}
+[data-theme=helen] .tab-btn{font-family:'Playfair Display',Georgia,serif;text-transform:none;font-style:italic;font-weight:400;font-size:1.08em;letter-spacing:.01em;color:var(--muted)}
+[data-theme=helen] .tab-btn.active{color:var(--accent)}
+[data-theme=helen] .tab-btn.active::after{background:var(--accent2);height:1.5px;left:26%;right:26%;bottom:-1px;border-radius:0}
+[data-theme=helen] .section-label{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:400;font-size:1.45em;display:flex;align-items:center;gap:18px;border:none;padding:0;margin:34px 0 14px;color:var(--accent);letter-spacing:-.005em}
+[data-theme=helen] .section-label::after{content:'';flex:1;height:1px;background:var(--accent2);opacity:.7}
+[data-theme=helen] .cluster-header{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:400;font-size:1em;color:var(--accent);text-transform:none;letter-spacing:0;padding-top:8px}
+[data-theme=helen] .card{padding:22px 24px;box-shadow:0 1px 2px rgba(60,50,40,.05);border-color:rgba(60,50,40,.1);border-radius:4px;background:#fff}
+[data-theme=helen] .card:hover{box-shadow:0 8px 24px rgba(60,50,40,.08);border-color:rgba(60,50,40,.18)}
+[data-theme=helen] .card.star{border-left:2px solid var(--accent2)}
+[data-theme=helen] .card-name{font-family:'Playfair Display',Georgia,serif;font-size:1.28em;font-weight:700;line-height:1.22;margin-bottom:10px;color:#2a2520}
+[data-theme=helen] .pitch{font-size:.97em;line-height:1.65;color:#4a4540;padding:0 0 0 18px;border-left:2px solid var(--accent2);margin:6px 0}
+[data-theme=helen] .pitch .pitch-label{background:transparent;color:var(--accent);font-family:'DM Sans',sans-serif;font-size:.62em;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:0;display:block;margin-bottom:4px}
+[data-theme=helen] .card-meta{font-size:.84em;color:#6a6458;line-height:1.6;margin-top:10px;font-style:italic}
+[data-theme=helen] .tag{border-radius:1px;padding:3px 10px;font-size:.64em;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+[data-theme=helen] .star-badge{background:var(--accent2);color:#fff;border-radius:1px;letter-spacing:.1em;font-size:.6em}
+[data-theme=helen] .action-btn{border-radius:1px;padding:9px 16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:.72em}
+[data-theme=helen] .action-btn.apple{background:#2a2520;color:#fff}
+[data-theme=helen] .filter-section{background:transparent;border:none;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:14px 0 10px;border-radius:0;margin:10px 0 26px}
+[data-theme=helen] .filter-label{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:400;text-transform:none;letter-spacing:.01em;font-size:.95em;color:var(--accent);min-width:56px}
+[data-theme=helen] .filter-btn{border-radius:1px;border:none;border-bottom:1.5px solid transparent;padding:5px 10px;font-size:.76em;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:transparent}
+[data-theme=helen] .filter-btn.active{background:transparent;color:var(--accent);border-bottom-color:var(--accent2)}
+[data-theme=helen] .drive-box{background:#faf6ef;border-left:3px solid var(--accent2);border-radius:0;padding:18px 22px;font-family:'Playfair Display',Georgia,serif;font-style:italic;font-size:.97em;line-height:1.75;color:#3a3530}
+[data-theme=helen] .drive-box strong{font-style:normal;font-weight:700;color:var(--accent);font-family:'DM Sans',sans-serif;font-size:.92em;letter-spacing:.02em;text-transform:uppercase}
+[data-theme=helen] .emotional-arc{background:transparent;border:none;border-top:1px solid var(--accent2);border-bottom:1px solid var(--accent2);border-radius:0;padding:32px 10px;margin:44px 0 20px;text-align:center}
+[data-theme=helen] .emotional-arc h3{font-size:1.7em;margin-bottom:22px;font-style:italic;font-weight:400}
+[data-theme=helen] .emotional-arc p{font-family:'Playfair Display',Georgia,serif;font-size:.98em;line-height:1.75;margin-bottom:12px;color:#4a4540}
+[data-theme=helen] .emotional-arc p strong{color:var(--accent);font-weight:700;font-style:italic}
+[data-theme=helen] .day-card{border-radius:4px;box-shadow:0 1px 2px rgba(60,50,40,.05)}
+[data-theme=helen] .day-header{padding:20px 22px}
+[data-theme=helen] .team-box{border-radius:3px}
+[data-theme=helen] .episodes{border-top:1px solid var(--accent2);padding-top:14px;margin-top:14px}
+[data-theme=helen] .episodes-label{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:400;text-transform:none;letter-spacing:.01em;font-size:.95em;color:var(--accent)}
+[data-theme=helen] .episode-link{border-radius:1px;background:#faf6ef;border-left-color:var(--accent2)}
+
+/* === RAFA: monster-fight command center === */
+[data-theme=rafa] body{background:var(--bg);background-image:radial-gradient(ellipse at 20% 0%,rgba(21,101,192,.18) 0%,transparent 55%),radial-gradient(ellipse at 80% 100%,rgba(211,47,47,.12) 0%,transparent 50%);background-attachment:fixed}
+[data-theme=rafa] header{padding:28px 0 18px;position:relative}
+[data-theme=rafa] header::before{content:'MONSTER-FIGHT COMMAND CENTER';display:block;font-size:.6em;color:var(--accent3);font-weight:900;letter-spacing:.28em;margin-bottom:10px;opacity:.88}
+[data-theme=rafa] .card{background:var(--card);background-image:linear-gradient(180deg,rgba(255,255,255,.025) 0%,transparent 100%);box-shadow:0 0 0 1px var(--border),0 2px 14px rgba(0,0,0,.5);padding:18px 20px}
+[data-theme=rafa] .card:hover{box-shadow:0 0 0 1px var(--accent2),0 8px 28px rgba(0,0,0,.65);transform:translateY(-2px)}
+[data-theme=rafa] .card.star{box-shadow:0 0 0 1px var(--accent),0 0 36px rgba(211,47,47,.22),0 4px 16px rgba(0,0,0,.55)}
+[data-theme=rafa] .card-name{color:var(--accent3);border-bottom:1px solid rgba(224,232,255,.1);padding-bottom:9px;margin-bottom:10px}
+[data-theme=rafa] .section-label{background:transparent;color:var(--accent3);padding:10px 14px;border:none;border-left:5px solid var(--accent);position:relative;margin:32px 0 14px;letter-spacing:.03em}
+[data-theme=rafa] .section-label::after{content:'';position:absolute;left:0;right:0;bottom:-6px;height:3px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent2) 60%,transparent 100%);clip-path:polygon(0 0,100% 0,calc(100% - 12px) 100%,0 100%)}
+[data-theme=rafa] .cluster-header{color:var(--accent3);font-family:'DM Sans',sans-serif;font-weight:900;text-transform:uppercase;letter-spacing:.08em;padding:10px 0 4px;border-top:1px dashed rgba(21,101,192,.4)}
+[data-theme=rafa] .drive-box{background:rgba(21,101,192,.1);border:1px solid var(--accent2);border-left:4px solid var(--accent);padding:20px 22px 18px;position:relative;border-radius:0;margin-top:24px}
+[data-theme=rafa] .drive-box::before{content:'MISSION BRIEF';position:absolute;top:-10px;left:18px;background:var(--bg);color:var(--accent3);padding:3px 12px;font-size:.62em;font-weight:900;letter-spacing:.2em}
+[data-theme=rafa] .drive-box strong{font-family:'DM Sans',sans-serif;font-weight:900;color:var(--accent3);text-transform:uppercase;font-size:.9em;letter-spacing:.03em}
+[data-theme=rafa] .tag{border-radius:0;font-family:'DM Sans',sans-serif;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);padding:3px 14px}
+[data-theme=rafa] .star-badge{background:var(--accent3);color:#111;font-weight:900;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);padding:3px 16px;font-size:.62em;letter-spacing:.1em}
+[data-theme=rafa] .filter-section{background:rgba(21,101,192,.08);border:1px solid var(--accent2);border-radius:0;padding:20px 14px 10px;margin-top:24px;position:relative}
+[data-theme=rafa] .filter-section::before{content:'CONTROLS';position:absolute;top:-9px;left:18px;background:var(--bg);color:var(--accent3);padding:2px 12px;font-size:.62em;font-weight:900;letter-spacing:.18em}
+[data-theme=rafa] .filter-label{color:var(--accent3);font-weight:900;letter-spacing:.1em}
+[data-theme=rafa] .action-btn{border-radius:0;font-weight:900;letter-spacing:.05em;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);padding:9px 20px}
+[data-theme=rafa] .person-btn{border-radius:0;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);padding:10px 22px}
+[data-theme=rafa] .filter-btn{border-radius:0;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)}
+[data-theme=rafa] .emotional-arc{background:rgba(21,101,192,.1);border:1px solid var(--accent2);border-radius:0;padding:30px 24px 24px;margin:44px 0 20px;position:relative}
+[data-theme=rafa] .emotional-arc::before{content:'DEBRIEF';position:absolute;top:-10px;left:22px;background:var(--bg);color:var(--accent3);padding:3px 12px;font-size:.68em;font-weight:900;letter-spacing:.22em}
+[data-theme=rafa] .day-card{border:1px solid var(--border);border-left:4px solid var(--accent2);border-radius:0}
+[data-theme=rafa] .day-header{padding:18px 20px}
+[data-theme=rafa] .team-box{border-radius:0}
+[data-theme=rafa] .episodes{border-top:1px solid var(--accent2)}
+[data-theme=rafa] .episode-link{background:rgba(21,101,192,.1);border-left-color:var(--accent3);border-radius:0}
+[data-theme=rafa] .episode-show{color:var(--accent3)}
 
 /* === iPad Pro (1024px+): give Rafa\u2019s theme room to breathe === */
 @media(min-width:1024px){
@@ -800,6 +883,7 @@ function render(){
 
   let h=`<header><h1>${getTitle()}</h1><div class="sub">${getSub()}</div></header>`;
 
+  h+=`<div class="sticky-nav" id="stickyNav">`;
   // Person selector
   h+=`<div class="person-bar">`;
   PERSONS.forEach(p=>{
@@ -814,6 +898,7 @@ function render(){
     h+=`<button class="tab-btn ${activeTab===t.k?'active':''}" onclick="setTab('${t.k}')">${t.l}</button>`;
   });
   h+=`</nav>`;
+  h+=`</div>`;
 
   // Tab content — keyed so CSS animation retriggers on switch
   h+=`<div class="tab-content" data-tab="${activeTab}" key="${activeTab}-${activePerson}">`;
@@ -847,6 +932,14 @@ function setFilter(type,val){
 }
 
 render();
+
+// Sticky-nav scroll state — adds a subtle border + background when scrolled
+window.addEventListener('scroll',()=>{
+  const nav=document.getElementById('stickyNav');
+  if(!nav)return;
+  if(window.scrollY>8)nav.classList.add('scrolled');
+  else nav.classList.remove('scrolled');
+},{passive:true});
 
 // Register service worker
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{})}
