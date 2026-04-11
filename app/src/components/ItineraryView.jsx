@@ -24,6 +24,20 @@ export function ItineraryView({ activePerson }) {
     [activePerson, filterDay, filterType]
   )
 
+  // Route the body based on filter state so structured days stay intact.
+  // Type filter is intentionally ignored when a structured day is selected —
+  // those days are atomic plans, not stop collections.
+  let body
+  if (filterDay === 'tue21' || filterDay === 'wed22') {
+    body = <KennedaleDay day={filterDay} />
+  } else if (filterDay === 'fri24') {
+    body = <HoustonFriday />
+  } else if (!isFiltered) {
+    body = <DayByDay stops={stops} activePerson={activePerson} />
+  } else {
+    body = <FilteredList stops={stops} activePerson={activePerson} />
+  }
+
   return (
     <section className="itinerary">
       <FilterBar
@@ -32,12 +46,7 @@ export function ItineraryView({ activePerson }) {
         onDayChange={setFilterDay}
         onTypeChange={setFilterType}
       />
-
-      {isFiltered ? (
-        <FilteredList stops={stops} activePerson={activePerson} />
-      ) : (
-        <DayByDay stops={stops} activePerson={activePerson} />
-      )}
+      {body}
     </section>
   )
 }
