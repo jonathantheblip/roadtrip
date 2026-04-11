@@ -123,6 +123,26 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 .empty-media-inner h3{font-family:'DM Serif Display',serif;font-size:1.35em;color:var(--accent);margin-bottom:10px;line-height:1.2}
 .empty-media-inner p{font-size:.9em;color:var(--text);line-height:1.6}
 .empty-media-inner p em{color:var(--accent);font-style:normal;font-weight:700}
+.episodes{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
+.episodes-label{font-size:.66em;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px}
+.episode-link{display:block;padding:10px 12px;margin-top:4px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--accent);text-decoration:none;color:var(--text);transition:all .2s}
+.episode-link:hover{background:var(--bg);border-left-width:5px}
+.episode-show{font-size:.68em;color:var(--accent);font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.episode-title{font-size:.9em;font-weight:700;margin-top:3px}
+.episode-why{font-size:.78em;color:var(--muted);margin-top:5px;font-style:italic;line-height:1.45}
+.listen-section{padding:6px 4px 20px}
+.listen-eyebrow{font-size:.7em;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px}
+.listen-title{font-family:'DM Serif Display',serif;font-size:1.7em;color:var(--accent);line-height:1.1;margin-bottom:10px}
+.listen-intro{font-size:.88em;color:var(--muted);line-height:1.55;margin-bottom:24px;max-width:560px}
+.listen-card{display:block;padding:20px 22px;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:12px;text-decoration:none;color:var(--text);transition:all .25s}
+.listen-card:hover{transform:translateY(-2px);border-left-width:6px}
+.listen-show{font-size:.7em;color:var(--accent);font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+.listen-ep-title{font-family:'DM Serif Display',serif;font-size:1.2em;color:var(--text);line-height:1.25;margin-bottom:8px}
+.listen-why{font-size:.88em;color:var(--text);line-height:1.55;margin-bottom:10px}
+.listen-for{font-size:.72em;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;padding-top:8px;border-top:1px solid var(--border)}
+[data-theme=helen] .listen-ep-title{font-family:'Playfair Display',Georgia,serif}
+[data-theme=helen] .listen-title{font-family:'Playfair Display',Georgia,serif;font-style:italic}
+[data-theme=helen] .listen-card{border-left-color:var(--accent2)}
 @media(max-width:420px){.team-grid{grid-template-columns:1fr}.person-btn{padding:6px 12px;font-size:.78em}}
 @media print{.person-bar,.filters,.card-actions{display:none}.day-body{display:block!important}}
 
@@ -221,7 +241,7 @@ const STOPS=[
 {id:'u4',name:'Slice Pizza & Brewhouse',day:'sun19',dayLabel:'Sun Apr 19',state:'AL',types:['food'],persons:['helen','everyone'],address:'725 29th St S, Birmingham, AL 35233',lat:33.508,lng:-86.784,hours:'Sun ~11am-10pm',star:false,cluster:'4.5hr: Birmingham AL',pitch:{helen:'Vegan cheese options, creative veggie combos — one of Birmingham\'s best-rated for plant-based pizza.'},details:'Lakeview neighborhood. Craft beer. Kid-friendly pizza format.',vegNotes:'Vegan cheese, veggie pizzas'},
 {id:'u5',name:'Highland Park Carousel',day:'sun19',dayLabel:'Sun Apr 19',state:'MS',types:['energy','poi'],persons:['rafa'],address:'39th Ave, Highland Park, Meridian, MS 39302',lat:32.374,lng:-88.691,hours:'Sun 1-5pm, 50¢/ride',star:false,cluster:'7hr: Meridian MS',pitch:{rafa:'A carousel from 1896 with hand-carved animals — one of only 11 like it in the whole country!'},details:'National Historic Landmark. Call ahead 601-485-1802 — may be closed for renovations. Park has playgrounds regardless.',vegNotes:'N/A'},
 // === MONDAY APR 20 ===
-{id:'m1',name:'MS Museum of Natural Science — Dinosaur Trail',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['poi','energy'],persons:['rafa','everyone'],address:'2148 Riverside Dr, Jackson, MS 39202',lat:32.320,lng:-90.172,hours:'Mon 8am-5pm',star:true,cluster:'1.5hr: Jackson MS',pitch:{rafa:'SIX life-size 3D dinosaur models — T-Rex, Triceratops, AND Chasmosaurus — plus 12 GIANT robotic Ice Age animals that actually MOVE!',helen:'2.5 miles of peaceful nature trails through Mississippi wetlands, plus a preschool Discovery Room with a treehouse and slide.'},details:'Adults $7, Under 5 FREE (Rafa free!). Ice Age exhibit through Aug 2026. 100,000-gal aquarium. Playground on-site. 1 hr focused visit.',vegNotes:'N/A'},
+{id:'m1',name:'MS Museum of Natural Science — Dinosaur Trail',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['poi','energy'],persons:['rafa','everyone'],address:'2148 Riverside Dr, Jackson, MS 39202',lat:32.320,lng:-90.172,hours:'Mon 8am-5pm',star:true,cluster:'1.5hr: Jackson MS',pitch:{rafa:'SIX life-size 3D dinosaur models — T-Rex, Triceratops, AND Chasmosaurus — plus 12 GIANT robotic Ice Age animals that actually MOVE!',helen:'2.5 miles of peaceful nature trails through Mississippi wetlands, plus a preschool Discovery Room with a treehouse and slide.'},details:'Adults $7, Under 5 FREE (Rafa free!). Ice Age exhibit through Aug 2026. 100,000-gal aquarium. Playground on-site. 1 hr focused visit.',vegNotes:'N/A',episodes:[{show:'In the Dark',title:'Season 2, Ep 1: July 16, 1996',url:'https://podcasts.apple.com/us/podcast/season-2-episode-1-july-16-1996/id1148175292?i=1000410352369',why:'APM Reports\u2019 Peabody-winning investigation of the Curtis Flowers case in Winona, Mississippi \u2014 a man tried six times for the same crime. Start it as you drive into MS.'}]},
 {id:'m2',name:'Vicksburg National Military Park',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['poi'],persons:['jonathan','rafa'],address:'3201 Clay St, Vicksburg, MS 39183',lat:32.348,lng:-90.850,hours:'Sunrise-sunset, $20/vehicle',star:false,cluster:'3hr: Vicksburg MS',pitch:{jonathan:'One of America\'s most significant Civil War sites — the 47-day siege that split the Confederacy. 1,300+ monuments along a 16-mile self-driving tour.',rafa:'REAL cannons everywhere and a massive Civil War SHIP pulled from the river bottom — you can see actual cannonball holes!'},details:'Abbreviated tour 1-1.5 hrs. America the Beautiful Pass accepted. Download NPS app for audio. Visitor Center may be closed Mon — call 601-636-0583.',vegNotes:'N/A'},
 {id:'m3',name:'Vicksburg Riverfront Murals',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['photo'],persons:['aurelia','helen'],address:'Levee St, Vicksburg, MS',lat:32.352,lng:-90.879,hours:'Always open, free',star:false,cluster:'3hr: Vicksburg MS',pitch:{aurelia:'Vibrant colorful mural panels along the Mississippi River floodwall — great for aesthetic photos with the river as backdrop.',helen:'Artist Robert Dafford painted Vicksburg\'s entire history on the floodwall. Tune FM 90.5 for narrated audio.'},details:'15-30 min. Free. Always accessible.',vegNotes:'N/A'},
 {id:'m4',name:'Biedenharn Coca-Cola Museum',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['poi','food'],persons:['everyone'],address:'1107 Washington St, Vicksburg, MS 39183',lat:32.349,lng:-90.878,hours:'Mon 9am-5pm',star:false,cluster:'3hr: Vicksburg MS',pitch:{jonathan:'In 1894, Joseph Biedenharn first bottled Coca-Cola right here — the FIRST place in the world. Ice-cold Coke floats in a restored 1890s candy store.',rafa:'ICE CREAM and soda floats in a store that looks like it\'s from a hundred years ago!'},details:'$3.50/adult, Under 6 FREE. 20-30 min.',vegNotes:'Ice cream/floats'},
@@ -236,7 +256,7 @@ const STOPS=[
 {id:'hou_axiom',name:"Axiom Space (Chris's private tour)",day:'thu23',dayLabel:'Fri Apr 24 (or Thu evening)',state:'TX',types:['poi'],persons:['rafa','aurelia','jonathan','everyone'],address:'1290 Hercules Ave, Houston, TX 77058',lat:29.5597,lng:-95.0896,hours:'Private tour — by arrangement with Chris',star:true,cluster:'Fri 24 morning: Rice + Axiom',pitch:{rafa:"Uncle Chris works where they BUILD SPACESHIPS. You're going to see a REAL Mission Control Center with REAL screens showing the International Space Station — and the ACTUAL moon suits astronauts will wear on the Moon!",aurelia:"Your uncle works at the company building the replacement for the International Space Station. You'll see a real Mission Control Center — not a museum replica — and the spacesuits designed with Prada for moon missions.",jonathan:"Chris is giving you a private tour of the facility building the world's first commercial space station. Axiom has sent four crewed missions to the ISS and is designing the AxEMU suits for Artemis. This is the real thing.",helen:"A private, behind-the-scenes tour of the company building humanity's next space station. Not a museum — the actual working facility, guided by family."},details:"PRIVATE TOUR — not open to public. Chris will pre-register visitors. Adults need government photo ID. Photography may be restricted. Plan 60-90 min. Located near Johnson Space Center / Space Center Houston — pair with Space Center Houston public exhibits if time allows.",vegNotes:'N/A'},
 // === TEX-MEX RESTAURANTS (DFW + HOUSTON) — flexible timing, discoverable via Food filter ===
 {id:'tm_don_artemio',name:'Don Artemio',day:null,dayLabel:'DFW · flexible',state:'TX',types:['food'],persons:['helen','jonathan','everyone'],address:'3268 W 7th St, Fort Worth, TX 76107',lat:32.7512,lng:-97.3653,hours:'Mon-Thu 11am-9pm, Fri-Sat 11am-10pm, Sun 10am-8pm',star:true,cluster:'DFW Tex-Mex (flexible Tue-Thu)',pitch:{helen:"James Beard-nominated interior Mexican — the Chile Hojaldrado is cream cheese and pecan-stuffed poblano in puff pastry that's unlike anything you've had at a Mexican restaurant.",jonathan:"The best restaurant in Fort Worth according to basically everyone. Tomahawk steaks and cabrito alongside some of the most inventive Mexican cooking in Texas."},details:"Date-night tier. James Beard-nominated. Reservations recommended.",vegNotes:"Chile Hojaldrado, Chilaquiles Rojos con Burrata, Ensalada de Nopales, squash enchiladas (ask for vegan — pumpkin/squash/carrot sauce)",menuUrl:"https://www.donartemio.us/menus/"},
-{id:'tm_meso_maya',name:'Meso Maya Comida y Copas',day:null,dayLabel:'Dallas · flexible',state:'TX',types:['food'],persons:['helen','everyone'],address:'1611 McKinney Ave, Dallas, TX 75202',lat:32.7898,lng:-96.8016,hours:'Mon-Thu 11am-10pm, Fri-Sat 11am-midnight, Sun 11am-10pm',star:false,cluster:'DFW Tex-Mex (flexible Tue-Thu)',pitch:{helen:"Interior Mexican — Oaxaca, Yucatán, Michoacán — with veggie blue corn tacos, budín azteca, and plantain dishes that treat plants as the star, not the understudy.",jonathan:"Generous portions, famous margaritas, and mole dishes made with the seriousness they deserve."},details:"The current Tue dinner pick — already on the Kennedale Tue 21 schedule.",vegNotes:"Veggie blue corn tacos, budín azteca, queso poblano, plantain dishes, Brussels sprouts, substantial salads"},
+{id:'tm_meso_maya',name:'Meso Maya Comida y Copas',day:null,dayLabel:'Dallas · flexible',state:'TX',types:['food'],persons:['helen','everyone'],address:'1611 McKinney Ave, Dallas, TX 75202',lat:32.7898,lng:-96.8016,hours:'Mon-Thu 11am-10pm, Fri-Sat 11am-midnight, Sun 11am-10pm',star:false,cluster:'DFW Tex-Mex (flexible Tue-Thu)',pitch:{helen:"Interior Mexican — Oaxaca, Yucatán, Michoacán — with veggie blue corn tacos, budín azteca, and plantain dishes that treat plants as the star, not the understudy.",jonathan:"Generous portions, famous margaritas, and mole dishes made with the seriousness they deserve."},details:"The current Tue dinner pick — already on the Kennedale Tue 21 schedule.",vegNotes:"Veggie blue corn tacos, budín azteca, queso poblano, plantain dishes, Brussels sprouts, substantial salads",episodes:[{show:'99% Invisible',title:'Ep 133: Port of Dallas',url:'https://99percentinvisible.org/episode/port-of-dallas/',why:'Dallas\u2019s doomed 1890s ambition to turn the Trinity River into a seaport to the Gulf of Mexico, and the infrastructure ghosts still buried under the city. 20 minutes.'}]},
 {id:'tm_cafecito',name:'Cafecito FW',day:null,dayLabel:'Fort Worth · morning',state:'TX',types:['food','photo'],persons:['aurelia','helen'],address:'401 W Magnolia Ave, Fort Worth, TX 76104',lat:32.7311,lng:-97.3359,hours:'Mon-Wed 6:30am-2pm, THU CLOSED, Fri-Sun 7am-8pm',star:true,cluster:'DFW Tex-Mex (flexible Tue-Thu)',pitch:{aurelia:"Pink corn tortillas, pink ceiling, paper flowers, and lanterns on the patio — this place was designed for your camera. The café de olla and marzapan latte are unlike any coffee you've had.",helen:"A family-owned café where the tortillas are handmade and pink, the horchata latte is art, and the papas a la Mexicana feel like someone's abuela made them for you."},details:"Morning/brunch option. CLOSED THURSDAYS — plan for Tue, Wed, Fri, Sat, or Sun.",vegNotes:"Papas a la Mexicana, molletes, nopales salad (limited but genuine)"},
 {id:'tm_el_palote',name:'El Palote Panaderia',day:null,dayLabel:'Dallas · flexible',state:'TX',types:['food'],persons:['helen','everyone'],address:'2537 S Buckner Blvd, Dallas, TX 75227',lat:32.7566,lng:-96.6977,hours:'Wed-Sun 11am-8pm, CLOSED Mon-Tue',star:false,cluster:'DFW Tex-Mex (flexible Tue-Thu)',pitch:{helen:"A 100% vegan Mexican bakery and restaurant that's so good Guy Fieri featured it on Diners, Drive-Ins & Dives. Every Tex-Mex staple — birria, barbacoa, al pastor — done plant-based and done right.",jonathan:"I know what you're thinking. But the reviews are unanimous: meat-eaters are won over. The pan dulce alone is worth the drive to Pleasant Grove."},details:"CLOSED Mon-Tue — plan for Wed or Thu. 100% vegan entire menu.",vegNotes:"Entire menu is vegan — birria tacos, barbacoa, al pastor, enchiladas, flautas, tamales, loaded fries, pan dulce bakery"},
 {id:'tm_hugos',name:"Hugo's",day:'thu23',dayLabel:'Thu Apr 23',state:'TX',types:['food'],persons:['helen','jonathan','everyone'],address:'1600 Westheimer Rd, Houston, TX 77006',lat:29.7430,lng:-95.3910,hours:'CLOSED MON · Tue-Wed 3-9pm · Thu 11:30am-9pm · Fri 11:30am-11pm · Sat 11am-11pm · Sun 10am-9pm',star:true,cluster:'Houston dinner with Chris & Yvonne',pitch:{helen:"A dedicated 14-item Vegan & Vegetarian menu from a James Beard Award-winning chef — empanadas de plátano, quesadillas de huitlacoche, enchiladas placeras. This is not an afterthought.",jonathan:"Hugo Ortega is the real deal — regional Mexican from a chef who trained in Puebla, Ciudad de México, and Oaxaca. In a 1925 building that feels festive without trying."},details:"Recommended spot for the Thu 7pm dinner with Chris & Yvonne. Reserve ahead.",vegNotes:"14-item dedicated menu: Empanadas de Plátano ($16), Quesadillas de Huitlacoche ($18), Chile Relleno ($20), Huarache with wild mushrooms ($18), Enchiladas Placeras ($20)",menuUrl:"https://www.hugosrestaurant.net/menu/vegan-vegetarian-menu/"},
@@ -510,6 +530,17 @@ function renderStop(stop){
   h+=renderPitches(stop);
   if(stop.details)h+=`<div class="card-meta">${stop.details}</div>`;
   if(stop.vegNotes&&stop.vegNotes!=='N/A'&&(activePerson==='helen'||activePerson==='everyone'))h+=`<div class="card-meta" style="color:#2d8a4e">Vegetarian: ${stop.vegNotes}</div>`;
+  if(stop.episodes&&stop.episodes.length&&activePerson!=='rafa'&&activePerson!=='aurelia'){
+    h+=`<div class="episodes"><div class="episodes-label">Listen while you\u2019re here</div>`;
+    stop.episodes.forEach(ep=>{
+      h+=`<a class="episode-link" href="${ep.url}" target="_blank" rel="noopener">`;
+      h+=`<div class="episode-show">${ep.show}</div>`;
+      h+=`<div class="episode-title">${ep.title}</div>`;
+      if(ep.why)h+=`<div class="episode-why">${ep.why}</div>`;
+      h+=`</a>`;
+    });
+    h+=`</div>`;
+  }
   const nav=navLinks(stop);
   if(nav)h+=`<div class="card-actions">${nav}</div>`;
   h+=`</div>`;
@@ -679,17 +710,43 @@ function renderItinerary(){
   return h;
 }
 
+function collectEpisodes(){
+  // Walk all stops and gather any attached podcast episodes, paired with their stop.
+  const out=[];
+  STOPS.forEach(s=>{
+    if(!s.episodes||!s.episodes.length)return;
+    s.episodes.forEach(ep=>out.push({ep,stop:s}));
+  });
+  return out;
+}
+
 function renderMedia(){
   if(activePerson==='rafa') return renderYouTube(YOUTUBE_RAFA,'WATCH ON THE ROAD \uD83E\uDD96\uD83D\uDD77\uD83D\uDD25');
   if(activePerson==='aurelia') return renderYouTube(YOUTUBE_AURELIA,'watch list \u2728');
-  // Helen or Jonathan
-  return `<div class="empty-media">
-    <div class="empty-media-inner">
-      <div class="empty-media-eyebrow">No media feed here</div>
-      <h3>This tab is for the kids.</h3>
-      <p>Rafa\u2019s YouTube picks and Aurelia\u2019s watch list live here. Podcast suggestions for adults are tied to specific stops on the Itinerary tab \u2014 look for a <em>Listen</em> link on a card when an episode actually matches the place we\u2019re passing.</p>
-    </div>
-  </div>`;
+
+  // Helen or Jonathan: curated "listen along the route"
+  const eps=collectEpisodes();
+  if(eps.length===0){
+    return `<div class="empty-media"><div class="empty-media-inner">
+      <div class="empty-media-eyebrow">Nothing tied to a stop yet</div>
+      <h3>Listen along the route</h3>
+      <p>This tab will fill up when there\u2019s a real episode that matches a stop we\u2019re passing. No generic recommendation lists \u2014 use Overcast for that.</p>
+    </div></div>`;
+  }
+  let h=`<div class="listen-section">`;
+  h+=`<div class="listen-eyebrow">Listen along the route</div>`;
+  h+=`<h3 class="listen-title">Episodes tied to stops on the drive</h3>`;
+  h+=`<p class="listen-intro">Hand-picked, one-off matches. Each is a real episode with a real geographic or architectural tie to a specific place on the itinerary. Nothing faked to fill space.</p>`;
+  eps.forEach(({ep,stop})=>{
+    h+=`<a class="listen-card" href="${ep.url}" target="_blank" rel="noopener">`;
+    h+=`<div class="listen-show">${ep.show}</div>`;
+    h+=`<div class="listen-ep-title">${ep.title}</div>`;
+    if(ep.why)h+=`<div class="listen-why">${ep.why}</div>`;
+    h+=`<div class="listen-for">For: ${stop.name}${stop.state?` \u00b7 ${stop.state}`:''}</div>`;
+    h+=`</a>`;
+  });
+  h+=`</div>`;
+  return h;
 }
 
 function renderDiscover(){
