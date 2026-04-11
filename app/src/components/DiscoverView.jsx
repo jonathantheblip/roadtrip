@@ -3,6 +3,7 @@ import { STOPS } from '../data/stops'
 import { STATES_ORDER, STATE_NAMES, TYPES_ORDER } from '../data/meta'
 import { filterStops } from '../utils/filterStops'
 import { StopCard } from './StopCard'
+import { EssentialsCard } from './EssentialsCard'
 import './DiscoverView.css'
 
 export function DiscoverView({ activePerson }) {
@@ -130,6 +131,7 @@ function GroupedByState({ stops, activePerson }) {
                 {list.length} {list.length === 1 ? 'pick' : 'picks'}
               </span>
             </h3>
+            <EssentialsCard state={state} />
             <div className="stops-grid">
               {list.map((s) => (
                 <StopCard key={s.id} stop={s} activePerson={activePerson} />
@@ -151,6 +153,7 @@ function FlatState({ state, stops, activePerson }) {
           {stops.length} {stops.length === 1 ? 'pick' : 'picks'}
         </span>
       </h3>
+      <EssentialsCard state={state} />
       <div className="stops-grid">
         {stops.map((s) => (
           <StopCard key={s.id} stop={s} activePerson={activePerson} />

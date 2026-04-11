@@ -1,0 +1,208 @@
+.essentials-card {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin: 4px 0 12px;
+  overflow: hidden;
+  transition:
+    background-color 0.4s ease,
+    border-color 0.4s ease,
+    border-radius 0.4s ease;
+}
+
+.essentials-card[data-open='true'] {
+  border-style: solid;
+  background: var(--bg2);
+}
+
+.essentials-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.essentials-header-text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.essentials-eyebrow {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.essentials-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.essentials-chev {
+  font-size: 20px;
+  color: var(--muted);
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.essentials-body {
+  padding: 2px 14px 12px;
+  border-top: 1px solid var(--border);
+  animation: essentials-fade 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes essentials-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.essentials-section {
+  margin-top: 12px;
+}
+
+.essentials-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.essentials-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.essentials-list li {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+.essentials-er-name {
+  font-weight: 600;
+}
+
+.essentials-er-address {
+  color: var(--muted);
+}
+
+.essentials-note {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.essentials-note strong {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.essentials-911 .essentials-label {
+  color: #c62828;
+}
+
+/* ============================================
+   Helen — editorial hairline card
+   ============================================ */
+[data-theme='helen'] .essentials-card {
+  border: 1px dashed rgba(60, 50, 40, 0.2);
+  border-radius: 2px;
+}
+[data-theme='helen'] .essentials-card[data-open='true'] {
+  background: #faf6ef;
+  border-color: var(--accent2);
+}
+[data-theme='helen'] .essentials-eyebrow {
+  font-family: var(--font-body);
+  color: var(--accent);
+}
+[data-theme='helen'] .essentials-title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--accent);
+}
+[data-theme='helen'] .essentials-label {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+[data-theme='helen'] .essentials-note {
+  color: #4a4540;
+}
+
+/* ============================================
+   Rafa — STATE ADVISORIES panel
+   ============================================ */
+[data-theme='rafa'] .essentials-card {
+  border: 1px dashed var(--accent2);
+  border-radius: 0;
+}
+[data-theme='rafa'] .essentials-card[data-open='true'] {
+  background: rgba(21, 101, 192, 0.08);
+  border-style: solid;
+  border-left: 3px solid var(--accent3);
+}
+[data-theme='rafa'] .essentials-eyebrow {
+  color: var(--accent3);
+  letter-spacing: 0.16em;
+}
+[data-theme='rafa'] .essentials-title {
+  color: var(--accent3);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+[data-theme='rafa'] .essentials-label {
+  color: var(--accent3);
+  font-weight: 900;
+}
+[data-theme='rafa'] .essentials-chev {
+  color: var(--accent3);
+}
+[data-theme='rafa'] .essentials-911 .essentials-label {
+  color: var(--accent);
+}
+
+/* ============================================
+   Aurelia — soft rose
+   ============================================ */
+[data-theme='aurelia'] .essentials-card[data-open='true'] {
+  background: #faf0f4;
+}
