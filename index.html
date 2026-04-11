@@ -105,6 +105,24 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 .podcast-desc{font-size:.8em;color:var(--muted);margin-top:4px;line-height:1.5}
 .stops-grid{display:block}
 .cluster-header{font-size:.78em;color:var(--muted);font-weight:600;margin:10px 0 4px}
+.tab-bar{display:flex;gap:0;margin:18px 0 20px;border-bottom:1px solid var(--border);padding:0}
+.tab-btn{flex:1;background:transparent;border:none;padding:14px 6px 12px;color:var(--muted);font-family:inherit;font-size:.78em;font-weight:700;cursor:pointer;letter-spacing:.08em;text-transform:uppercase;position:relative;transition:color .25s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent)}
+.tab-btn.active::after{content:'';position:absolute;left:18%;right:18%;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
+.tab-content{animation:tab-fade .36s cubic-bezier(.2,.8,.2,1)}
+@keyframes tab-fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.filter-section{margin:2px 0 18px;padding:14px 14px 8px;background:var(--bg2);border-radius:12px;border:1px solid var(--border)}
+.filter-row{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.filter-row:last-child{margin-bottom:0}
+.filter-label{font-size:.68em;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;min-width:42px;flex-shrink:0;padding-top:4px}
+.filter-row .filters{margin:0;flex:1}
+.empty-media{padding:40px 14px;display:flex;justify-content:center}
+.empty-media-inner{max-width:480px;text-align:center;background:var(--bg2);padding:36px 28px;border-radius:14px;border:1px solid var(--border)}
+.empty-media-eyebrow{font-size:.68em;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.14em;margin-bottom:10px}
+.empty-media-inner h3{font-family:'DM Serif Display',serif;font-size:1.35em;color:var(--accent);margin-bottom:10px;line-height:1.2}
+.empty-media-inner p{font-size:.9em;color:var(--text);line-height:1.6}
+.empty-media-inner p em{color:var(--accent);font-style:normal;font-weight:700}
 @media(max-width:420px){.team-grid{grid-template-columns:1fr}.person-btn{padding:6px 12px;font-size:.78em}}
 @media print{.person-bar,.filters,.card-actions{display:none}.day-body{display:block!important}}
 
@@ -142,10 +160,13 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 [data-theme=helen] .emotional-arc h3,
 [data-theme=helen] .media-title,
 [data-theme=helen] .media-category h4,
+[data-theme=helen] .empty-media-inner h3,
 [data-theme=helen] .team-box h4{font-family:'Playfair Display',Georgia,serif;letter-spacing:.005em}
 [data-theme=helen] .section-label{border-bottom-color:var(--accent2)}
 [data-theme=helen] .card.star{border-left-color:var(--accent2)}
 [data-theme=helen] .star-badge{background:var(--accent2);color:#fff}
+[data-theme=helen] .tab-btn{font-family:'Playfair Display',Georgia,serif;text-transform:none;font-style:italic;font-weight:400;font-size:1em;letter-spacing:.01em}
+[data-theme=helen] .tab-btn.active::after{background:var(--accent2);height:1px;left:28%;right:28%;bottom:-1px}
 
 /* === RAFA: bold, chunky, dramatic dark-space look === */
 [data-theme=rafa] body{font-weight:500}
@@ -163,6 +184,10 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 [data-theme=rafa] .person-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 [data-theme=rafa] .filter-btn{font-weight:700;text-transform:uppercase;letter-spacing:.02em}
 [data-theme=rafa] .filter-btn.active{background:var(--accent2);border-color:var(--accent2)}
+[data-theme=rafa] .tab-bar{border-bottom:2px solid var(--accent2);margin:22px 0 22px}
+[data-theme=rafa] .tab-btn{font-size:.85em;font-weight:900;letter-spacing:.12em;color:var(--muted)}
+[data-theme=rafa] .tab-btn.active{color:var(--accent3)}
+[data-theme=rafa] .tab-btn.active::after{height:4px;background:var(--accent);left:10%;right:10%;bottom:-3px;border-radius:0}
 [data-theme=rafa] .emotional-arc h3{font-family:'DM Sans',sans-serif;font-weight:900;text-transform:uppercase;color:var(--accent3)}
 [data-theme=rafa] .media-title{font-family:'DM Sans',sans-serif;font-weight:900;text-transform:uppercase;letter-spacing:.02em;color:var(--accent3);font-size:1.3em}
 [data-theme=rafa] .media-category h4{font-family:'DM Sans',sans-serif;font-weight:900;text-transform:uppercase;color:var(--text)}
@@ -360,16 +385,6 @@ const YOUTUBE_AURELIA=[
   {title:'the hills \uD83D\uDCFA',items:[{label:'The Hills on YouTube',url:'https://www.youtube.com/results?search_query=The+Hills+full+episodes'}]}
 ];
 
-// === PODCASTS (Helen + Jonathan) ===
-const PODCASTS=[
-  {name:'Casefile True Crime',url:'https://podcasts.apple.com/us/podcast/casefile-true-crime/id998568017',desc:'Helen\u2019s gold standard. Anonymous Australian host, meticulous research, treats victims with dignity. Perfect for long drives with headphones in.'},
-  {name:'Bear Brook',url:'https://podcasts.apple.com/us/podcast/bear-brook/id1441837695',desc:'A deeply researched 7-episode limited series about four bodies found in barrels in New Hampshire. Peabody winner. The forensic genealogy is groundbreaking.'},
-  {name:'In the Dark',url:'https://podcasts.apple.com/us/podcast/in-the-dark/id1148175292',desc:'Pulitzer-winning investigative journalism. Season 1 (Jacob Wetterling) and Season 2 (Curtis Flowers) are both masterful and never sensational.'},
-  {name:'Criminal',url:'https://podcasts.apple.com/us/podcast/criminal/id809264944',desc:'Phoebe Judge\u2019s calm, elegant storytelling. 20\u201330 min episodes, wide range from historic to bizarre. Curious tone, not lurid.'},
-  {name:'99% Invisible',url:'https://podcasts.apple.com/us/podcast/99-invisible/id394775318',desc:'Architecture and design stories told with meticulousness. Given the house project, episodes about buildings and places will resonate.'},
-  {name:'Atlas Obscura',url:'https://podcasts.apple.com/us/podcast/atlas-obscura/id1496774579',desc:'The world\u2019s most unusual places, told with wonder and research. Perfect road-trip listening.'}
-];
-
 function renderYouTube(data,title){
   let h=`<div class="media-section"><h3 class="media-title">${title}</h3>`;
   data.forEach(cat=>{
@@ -386,26 +401,32 @@ function renderYouTube(data,title){
   return h;
 }
 
-function renderPodcasts(){
-  let h=`<div class="media-section"><h3 class="media-title">Listen</h3>`;
-  PODCASTS.forEach(p=>{
-    h+=`<div class="podcast-item">`;
-    h+=`<div class="podcast-name"><a href="${p.url}" target="_blank" rel="noopener">${p.name}</a></div>`;
-    h+=`<div class="podcast-desc">${p.desc}</div>`;
-    h+=`</div>`;
-  });
-  h+=`<div class="media-note" style="margin-top:12px">Apple Podcasts links. Jonathan\u2019s Overcast should pick these up too if it\u2019s set as the default handler.</div>`;
-  h+=`</div>`;
-  return h;
-}
-
 const DAYS_ORDER=['fri17','sat18','sun19','mon20','tue21','wed22','thu23','fri24'];
 const DAY_LABELS={fri17:'Fri 17',sat18:'Sat 18',sun19:'Sun 19',mon20:'Mon 20',tue21:'Tue 21',wed22:'Wed 22',thu23:'Thu 23',fri24:'Fri 24'};
 const STATES_ORDER=['MA','CT','NY','PA','VA','TN','AL','MS','LA','TX'];
 const TYPES_ORDER=[{k:'food',l:'Food'},{k:'energy',l:'Energy'},{k:'photo',l:'Photo'},{k:'poi',l:'POI'},{k:'gas',l:'Gas'},{k:'viral',l:'Viral'}];
 const PERSONS=[{k:'jonathan',l:'Jonathan',emoji:''},{k:'helen',l:'Helen',emoji:''},{k:'aurelia',l:'Aurelia',emoji:'\uD83C\uDFD0'},{k:'rafa',l:'Rafa',emoji:'\uD83E\uDD96'}];
+const TABS=[{k:'itinerary',l:'Itinerary'},{k:'media',l:'Media'},{k:'discover',l:'Discover'}];
+const STATE_NAMES={MA:'Massachusetts',CT:'Connecticut',NY:'New York',PA:'Pennsylvania',VA:'Virginia',TN:'Tennessee',AL:'Alabama',MS:'Mississippi',LA:'Louisiana',TX:'Texas'};
 
-let activePerson='jonathan',filterDay='all',filterState='all',filterType='all';
+let activePerson=localStorage.getItem('rt_person')||'jonathan';
+let activeTab=localStorage.getItem('rt_tab')||'itinerary';
+let filterDay='all',filterState='all',filterType='all';
+
+function personAllows(s){
+  if(activePerson==='everyone'||activePerson==='jonathan')return true;
+  return s.persons.includes(activePerson)||s.persons.includes('everyone');
+}
+function getStops(category){
+  return STOPS.filter(s=>{
+    if(category==='planned'&&s.category==='discover')return false;
+    if(category==='discover'&&s.category!=='discover')return false;
+    if(filterDay!=='all'&&s.day!==filterDay)return false;
+    if(filterState!=='all'&&s.state!==filterState)return false;
+    if(filterType!=='all'&&!s.types.includes(filterType))return false;
+    return personAllows(s);
+  });
+}
 
 function wazeUrl(stop){
   if(stop.lat!=null&&stop.lng!=null) return `https://waze.com/ul?ll=${stop.lat},${stop.lng}&navigate=yes`;
@@ -569,16 +590,6 @@ function renderKennedaleDay(kd){
   return h;
 }
 
-function filterStops(){
-  return STOPS.filter(s=>{
-    if(filterDay!=='all'&&s.day!==filterDay)return false;
-    if(filterState!=='all'&&s.state!==filterState)return false;
-    if(filterType!=='all'&&!s.types.includes(filterType))return false;
-    if(activePerson!=='everyone'&&activePerson!=='jonathan'&&!s.persons.includes(activePerson)&&!s.persons.includes('everyone'))return false;
-    return true;
-  });
-}
-
 function getTitle(){
   const p=activePerson;
   if(p==='helen')return 'Our Road Trip';
@@ -595,6 +606,133 @@ function getSub(){
   return 'April 17\u201324, 2026 \u00b7 Belmont \u2192 Texas \u2192 Home';
 }
 
+function renderItinerary(){
+  const stops=getStops('planned');
+  const isFiltered=filterDay!=='all'||filterType!=='all';
+
+  let h=`<div class="filter-section">`;
+  h+=`<div class="filter-row"><span class="filter-label">Day</span><div class="filters">`;
+  h+=`<button class="filter-btn ${filterDay==='all'?'active':''}" onclick="setFilter('day','all')">All</button>`;
+  DAYS_ORDER.forEach(d=>{h+=`<button class="filter-btn ${filterDay===d?'active':''}" onclick="setFilter('day','${d}')">${DAY_LABELS[d]}</button>`});
+  h+=`</div></div>`;
+  h+=`<div class="filter-row"><span class="filter-label">Type</span><div class="filters">`;
+  h+=`<button class="filter-btn ${filterType==='all'?'active':''}" onclick="setFilter('type','all')">All</button>`;
+  TYPES_ORDER.forEach(t=>{h+=`<button class="filter-btn ${filterType===t.k?'active':''}" onclick="setFilter('type','${t.k}')">${t.l}</button>`});
+  h+=`</div></div>`;
+  h+=`</div>`;
+
+  if(isFiltered){
+    if(stops.length===0){h+=`<div class="empty">No itinerary stops match.</div>`;return h}
+    h+=`<div class="stops-grid">`;
+    stops.forEach(s=>h+=renderStop(s));
+    h+=`</div>`;
+    return h;
+  }
+
+  // Default: full day-by-day itinerary
+  const grouped={};
+  stops.forEach(s=>{if(!grouped[s.day])grouped[s.day]=[];grouped[s.day].push(s)});
+
+  DAYS_ORDER.forEach(day=>{
+    if(day==='thu23')return; // rendered below under its own "Drive to Houston" header
+    const kd=KENNEDALE_DAYS.find(k=>k.day===day);
+    if(kd){h+=renderKennedaleDay(kd);return;}
+
+    const dayStops=grouped[day];
+    if(!dayStops||dayStops.length===0)return;
+
+    const first=dayStops[0];
+    h+=`<div class="section-label">${first.dayLabel}</div>`;
+    h+=`<div class="stops-grid">`;
+    let curCluster='';
+    dayStops.forEach(s=>{
+      if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div class="cluster-header">${curCluster}</div>`}
+      h+=renderStop(s);
+    });
+    h+=`</div>`;
+  });
+
+  const thuStops=grouped['thu23'];
+  if(thuStops&&thuStops.length>0){
+    h+=`<div class="section-label">Thu Apr 23 \u2014 Goodbye + Drive to Houston</div>`;
+    h+=`<div class="drive-box"><strong>Morning:</strong> Relax with Aunt Donna. Both aunts if Aunt Debra can flex. Late breakfast.<br><strong>Optional 10am:</strong> Fort Worth Stockyards cattle drive (11:30am).<br><strong>12pm:</strong> Lunch with the aunts.<br><strong>1:30pm:</strong> Depart for Houston \u2014 Jonathan drives so Helen can gawk at the scenery.<br><strong>~6pm:</strong> Arrive at 1301 Marshall St, Houston.<br><strong>7pm:</strong> Dinner with Chris &amp; Yvonne \u2014 Hugo\u2019s recommended.</div>`;
+    h+=`<div class="stops-grid">`;
+    let curCluster='';
+    thuStops.forEach(s=>{
+      if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div class="cluster-header">${curCluster}</div>`}
+      h+=renderStop(s);
+    });
+    h+=`</div>`;
+  }
+
+  // Emotional arc footer
+  h+=`<div class="emotional-arc"><h3>The Emotional Arc</h3>`;
+  h+=`<p><strong>Friday:</strong> Departure. Excitement. The cabin.</p>`;
+  h+=`<p><strong>Saturday:</strong> The ceremony. Grief and beauty. The cabin is shelter.</p>`;
+  h+=`<p><strong>Sunday:</strong> Long push south. Barber Museum resets everything.</p>`;
+  h+=`<p><strong>Monday:</strong> Dinosaurs, Vicksburg, Buc-ee's. Arriving at Aunt Donna's.</p>`;
+  h+=`<p><strong>Tue\u2013Wed:</strong> Play. Everyone gets to be themselves.</p>`;
+  h+=`<p><strong>Thursday:</strong> Goodbye Donna. Hello Houston and Chris.</p>`;
+  h+=`<p><strong>Friday:</strong> The Rothko Chapel. Then home.</p>`;
+  h+=`<p style="margin-top:10px;font-style:italic;color:var(--accent)">The trip begins with an ending and closes with a beginning.</p>`;
+  h+=`</div>`;
+  return h;
+}
+
+function renderMedia(){
+  if(activePerson==='rafa') return renderYouTube(YOUTUBE_RAFA,'WATCH ON THE ROAD \uD83E\uDD96\uD83D\uDD77\uD83D\uDD25');
+  if(activePerson==='aurelia') return renderYouTube(YOUTUBE_AURELIA,'watch list \u2728');
+  // Helen or Jonathan
+  return `<div class="empty-media">
+    <div class="empty-media-inner">
+      <div class="empty-media-eyebrow">No media feed here</div>
+      <h3>This tab is for the kids.</h3>
+      <p>Rafa\u2019s YouTube picks and Aurelia\u2019s watch list live here. Podcast suggestions for adults are tied to specific stops on the Itinerary tab \u2014 look for a <em>Listen</em> link on a card when an episode actually matches the place we\u2019re passing.</p>
+    </div>
+  </div>`;
+}
+
+function renderDiscover(){
+  const stops=getStops('discover');
+
+  let h=`<div class="filter-section">`;
+  h+=`<div class="filter-row"><span class="filter-label">State</span><div class="filters">`;
+  h+=`<button class="filter-btn ${filterState==='all'?'active':''}" onclick="setFilter('state','all')">All</button>`;
+  STATES_ORDER.forEach(s=>{h+=`<button class="filter-btn ${filterState===s?'active':''}" onclick="setFilter('state','${s}')">${s}</button>`});
+  h+=`</div></div>`;
+  h+=`<div class="filter-row"><span class="filter-label">Type</span><div class="filters">`;
+  h+=`<button class="filter-btn ${filterType==='all'?'active':''}" onclick="setFilter('type','all')">All</button>`;
+  TYPES_ORDER.forEach(t=>{h+=`<button class="filter-btn ${filterType===t.k?'active':''}" onclick="setFilter('type','${t.k}')">${t.l}</button>`});
+  h+=`</div></div>`;
+  h+=`</div>`;
+
+  if(stops.length===0){
+    h+=`<div class="empty">No discover stops match \u2014 try \u201cAll\u201d.</div>`;
+    return h;
+  }
+
+  if(filterState!=='all'){
+    const name=STATE_NAMES[filterState]||filterState;
+    h+=`<div class="section-label">Discover \u2014 ${name}</div>`;
+    h+=`<div class="stops-grid">`;
+    stops.forEach(s=>h+=renderStop(s));
+    h+=`</div>`;
+    return h;
+  }
+
+  // Group by state
+  const grouped={};
+  stops.forEach(s=>{if(!grouped[s.state])grouped[s.state]=[];grouped[s.state].push(s)});
+  STATES_ORDER.forEach(s=>{
+    if(!grouped[s])return;
+    h+=`<div class="section-label">${STATE_NAMES[s]||s}</div>`;
+    h+=`<div class="stops-grid">`;
+    grouped[s].forEach(stop=>h+=renderStop(stop));
+    h+=`</div>`;
+  });
+  return h;
+}
+
 function render(){
   document.body.setAttribute('data-theme',activePerson==='everyone'?'jonathan':activePerson);
   const meta=document.querySelector('meta[name=theme-color]');
@@ -602,9 +740,6 @@ function render(){
     const themes={jonathan:'#1a1714',helen:'#f5f1ec',aurelia:'#fdf0f4',rafa:'#0a0e1a'};
     meta.content=themes[activePerson]||themes.jonathan;
   }
-
-  const stops=filterStops();
-  const isFiltered=filterDay!=='all'||filterState!=='all'||filterType!=='all';
 
   let h=`<header><h1>${getTitle()}</h1><div class="sub">${getSub()}</div></header>`;
 
@@ -616,111 +751,37 @@ function render(){
   });
   h+=`</div>`;
 
-  // Filters — Day
-  h+=`<div class="filters">`;
-  h+=`<button class="filter-btn ${filterDay==='all'?'active':''}" onclick="setFilter('day','all')">All Days</button>`;
-  DAYS_ORDER.forEach(d=>{h+=`<button class="filter-btn ${filterDay===d?'active':''}" onclick="setFilter('day','${d}')">${DAY_LABELS[d]}</button>`});
+  // Tab bar
+  h+=`<nav class="tab-bar" aria-label="Primary">`;
+  TABS.forEach(t=>{
+    h+=`<button class="tab-btn ${activeTab===t.k?'active':''}" onclick="setTab('${t.k}')">${t.l}</button>`;
+  });
+  h+=`</nav>`;
+
+  // Tab content — keyed so CSS animation retriggers on switch
+  h+=`<div class="tab-content" data-tab="${activeTab}" key="${activeTab}-${activePerson}">`;
+  if(activeTab==='itinerary') h+=renderItinerary();
+  else if(activeTab==='media') h+=renderMedia();
+  else if(activeTab==='discover') h+=renderDiscover();
   h+=`</div>`;
-  // Filters — State
-  h+=`<div class="filters">`;
-  h+=`<button class="filter-btn ${filterState==='all'?'active':''}" onclick="setFilter('state','all')">All States</button>`;
-  STATES_ORDER.forEach(s=>{h+=`<button class="filter-btn ${filterState===s?'active':''}" onclick="setFilter('state','${s}')">${s}</button>`});
-  h+=`</div>`;
-  // Filters — Type
-  h+=`<div class="filters">`;
-  h+=`<button class="filter-btn ${filterType==='all'?'active':''}" onclick="setFilter('type','all')">All Types</button>`;
-  TYPES_ORDER.forEach(t=>{h+=`<button class="filter-btn ${filterType===t.k?'active':''}" onclick="setFilter('type','${t.k}')">${t.l}</button>`});
-  h+=`</div>`;
-
-  // Render stops grouped by day
-  if(!isFiltered){
-    // Show full itinerary with day groupings
-    let currentCluster='';
-    const grouped={};
-    stops.forEach(s=>{if(!grouped[s.day])grouped[s.day]=[];grouped[s.day].push(s)});
-
-    DAYS_ORDER.forEach(day=>{
-      if(day==='thu23')return; // rendered below under its own "Drive to Houston" header
-      // Check for Kennedale structured days
-      const kd=KENNEDALE_DAYS.find(k=>k.day===day);
-      if(kd){h+=renderKennedaleDay(kd);return;}
-
-      const dayStops=grouped[day];
-      if(!dayStops||dayStops.length===0)return;
-
-      const first=dayStops[0];
-      h+=`<div class="section-label">${first.dayLabel}</div>`;
-      h+=`<div class="stops-grid">`;
-      let curCluster='';
-      dayStops.forEach(s=>{
-        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div class="cluster-header">${curCluster}</div>`}
-        h+=renderStop(s);
-      });
-      h+=`</div>`;
-    });
-
-    // Thursday Houston drive
-    const thuStops=grouped['thu23'];
-    if(thuStops&&thuStops.length>0){
-      h+=`<div class="section-label">Thu Apr 23 \u2014 Goodbye + Drive to Houston</div>`;
-      h+=`<div class="drive-box"><strong>Morning:</strong> Relax with Aunt Donna. Both aunts if Aunt Debra can flex. Late breakfast.<br><strong>Optional 10am:</strong> Fort Worth Stockyards cattle drive (11:30am).<br><strong>12pm:</strong> Lunch with the aunts.<br><strong>1:30pm:</strong> Depart for Houston \u2014 Jonathan drives so Helen can gawk at the scenery.<br><strong>~6pm:</strong> Arrive at 1301 Marshall St, Houston.<br><strong>7pm:</strong> Dinner with Chris &amp; Yvonne \u2014 Hugo\u2019s recommended.</div>`;
-      h+=`<div class="stops-grid">`;
-      let curCluster='';
-      thuStops.forEach(s=>{
-        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div class="cluster-header">${curCluster}</div>`}
-        h+=renderStop(s);
-      });
-      h+=`</div>`;
-    }
-
-    // Media section — per-person content feeds
-    if(activePerson==='rafa') h+=renderYouTube(YOUTUBE_RAFA,'WATCH ON THE ROAD \uD83E\uDD96\uD83D\uDD77\uD83D\uDD25');
-    else if(activePerson==='aurelia') h+=renderYouTube(YOUTUBE_AURELIA,'watch list \u2728');
-    else if(activePerson==='helen'||activePerson==='jonathan') h+=renderPodcasts();
-
-    // Emotional arc
-    h+=`<div class="emotional-arc"><h3>The Emotional Arc</h3>`;
-    h+=`<p><strong>Friday:</strong> Departure. Excitement. The cabin.</p>`;
-    h+=`<p><strong>Saturday:</strong> The ceremony. Grief and beauty. The cabin is shelter.</p>`;
-    h+=`<p><strong>Sunday:</strong> Long push south. Barber Museum resets everything.</p>`;
-    h+=`<p><strong>Monday:</strong> Dinosaurs, Vicksburg, Buc-ee's. Arriving at Aunt Donna's.</p>`;
-    h+=`<p><strong>Tue\u2013Wed:</strong> Play. Everyone gets to be themselves.</p>`;
-    h+=`<p><strong>Thursday:</strong> Goodbye Donna. Hello Houston and Chris.</p>`;
-    h+=`<p><strong>Friday:</strong> The Rothko Chapel. Then home.</p>`;
-    h+=`<p style="margin-top:10px;font-style:italic;color:var(--accent)">The trip begins with an ending and closes with a beginning.</p>`;
-    h+=`</div>`;
-  } else {
-    // Filtered view — flat list, with planned vs discover split when state is active
-    if(stops.length===0){
-      h+=`<div class="empty">No stops match these filters.</div>`;
-    } else if(filterState!=='all'){
-      const planned=stops.filter(s=>s.category!=='discover');
-      const discover=stops.filter(s=>s.category==='discover');
-      const stateName={MA:'Massachusetts',CT:'Connecticut',NY:'New York',PA:'Pennsylvania',VA:'Virginia',TN:'Tennessee',AL:'Alabama',MS:'Mississippi',LA:'Louisiana',TX:'Texas'}[filterState]||filterState;
-      if(planned.length){
-        h+=`<div class="section-label">On the Itinerary \u2014 ${stateName}</div>`;
-        h+=`<div class="stops-grid">`;
-        planned.forEach(s=>h+=renderStop(s));
-        h+=`</div>`;
-      }
-      if(discover.length){
-        h+=`<div class="section-label">Discover \u2014 ${stateName}</div>`;
-        h+=`<div style="font-size:.78em;color:var(--muted);margin:-4px 0 10px;font-style:italic">Off-itinerary picks tuned to whoever's browsing. Tap to navigate if you find time to detour.</div>`;
-        h+=`<div class="stops-grid">`;
-        discover.forEach(s=>h+=renderStop(s));
-        h+=`</div>`;
-      }
-    } else {
-      h+=`<div class="stops-grid">`;
-      stops.forEach(s=>h+=renderStop(s));
-      h+=`</div>`;
-    }
-  }
 
   document.getElementById('app').innerHTML=h;
 }
 
-function setPerson(p){activePerson=p;render();window.scrollTo(0,0)}
+function setPerson(p){
+  activePerson=p;
+  localStorage.setItem('rt_person',p);
+  render();
+  window.scrollTo(0,0);
+}
+function setTab(t){
+  activeTab=t;
+  localStorage.setItem('rt_tab',t);
+  // Reset filters when switching tabs — each tab has its own filter semantics
+  filterDay='all';filterState='all';filterType='all';
+  render();
+  window.scrollTo(0,0);
+}
 function setFilter(type,val){
   if(type==='day')filterDay=val;
   if(type==='state')filterState=val;
