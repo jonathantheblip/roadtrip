@@ -157,11 +157,29 @@ let activePerson='jonathan',filterDay='all',filterState='all',filterType='all';
 function wazeUrl(lat,lng){return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`}
 function appleUrl(addr){return `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}`}
 function googleUrl(addr){return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`}
-// TikTok search: use window.open to force Safari, which triggers Universal Links
-// to hand off to the TikTok app. Anchor tags open a blank WebKit view inside the PWA.
+// TikTok: try the app's custom URL scheme first, fall back to the web
+// if the app isn't installed. The TikTok mobile site renders search as a
+// blank page, so Universal Links via the web URL aren't enough.
 function openTikTokSearch(encodedName){
   const name=decodeURIComponent(encodedName);
-  window.open('https://www.tiktok.com/search?q='+encodeURIComponent(name),'_blank');
+  const q=encodeURIComponent(name);
+  const deepLink='tiktok://search?q='+q;
+  const webUrl='https://www.tiktok.com/search?q='+q;
+
+  // If the app intercepts the custom scheme, the PWA/tab becomes hidden.
+  // If it doesn't, we're still here after ~1.2s and we navigate to the web.
+  const fallback=setTimeout(()=>{
+    if(!document.hidden) window.location.href=webUrl;
+  },1200);
+  const onHide=()=>{
+    if(document.hidden){
+      clearTimeout(fallback);
+      document.removeEventListener('visibilitychange',onHide);
+    }
+  };
+  document.addEventListener('visibilitychange',onHide);
+
+  window.location.href=deepLink;
 }
 
 function navLinks(stop){
