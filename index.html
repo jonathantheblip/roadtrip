@@ -88,6 +88,21 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 .emotional-arc h3{font-family:'DM Serif Display',serif;color:var(--accent);margin-bottom:10px}
 .emotional-arc p{font-size:.84em;margin-bottom:6px;color:var(--muted)}
 .emotional-arc p strong{color:var(--text)}
+.media-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 16px;margin:24px 0}
+.media-title{font-family:'DM Serif Display',serif;font-size:1.15em;color:var(--accent);margin-bottom:14px;letter-spacing:.01em}
+.media-category{margin-bottom:18px}
+.media-category:last-child{margin-bottom:0}
+.media-category h4{font-family:'DM Serif Display',serif;font-size:.92em;color:var(--text);margin-bottom:6px;letter-spacing:.02em}
+.media-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.media-link{display:inline-block;padding:6px 12px;border-radius:10px;font-size:.78em;font-weight:600;text-decoration:none;background:var(--card);color:var(--text);border:1px solid var(--border);transition:all .2s}
+.media-link:hover{border-color:var(--accent);color:var(--accent)}
+.media-note{font-size:.76em;color:var(--muted);margin-top:8px;font-style:italic;line-height:1.45}
+.podcast-item{padding:10px 0;border-bottom:1px solid var(--border)}
+.podcast-item:last-child{border-bottom:none;padding-bottom:0}
+.podcast-name{font-weight:700;font-size:.92em}
+.podcast-name a{color:var(--text);text-decoration:none}
+.podcast-name a:hover{color:var(--accent)}
+.podcast-desc{font-size:.8em;color:var(--muted);margin-top:4px;line-height:1.5}
 @media(max-width:420px){.team-grid{grid-template-columns:1fr}.person-btn{padding:6px 12px;font-size:.78em}}
 @media print{.person-bar,.filters,.card-actions{display:none}.day-body{display:block!important}}
 </style>
@@ -145,6 +160,103 @@ const KENNEDALE_DAYS = [
 {day:'wed22',dayLabel:'Wed Apr 22',title:'DFW Day 2: Six Flags + Viral Treats',subtitle:'All-together energy day \u00b7 Donna welcome'},
 {day:'fri24',dayLabel:'Fri Apr 24',title:'Houston Morning + Fly Home',subtitle:'Rothko \u00b7 Menil \u00b7 Cy Twombly \u00b7 Rice \u00b7 Axiom \u00b7 B6 932 IAH \u2192 BOS'},
 ];
+
+// === YOUTUBE (Rafa's iPad) ===
+// Channel URLs hand off to the YouTube app via Universal Links. Search URLs
+// open in Safari, but the YouTube app intercepts them on iPad with the app installed.
+const YT_SEARCH=q=>'https://www.youtube.com/results?search_query='+encodeURIComponent(q);
+const YOUTUBE_RAFA=[
+  {title:'MONSTER FIGHTS \uD83D\uDD25',items:[
+    {label:'Godzilla vs King Ghidorah',url:YT_SEARCH('Godzilla vs King Ghidorah fight scenes')},
+    {label:'MonsterVerse Fights',url:YT_SEARCH('MonsterVerse fight compilation')},
+    {label:'Godzilla vs Kong',url:YT_SEARCH('Godzilla vs Kong best scenes')}
+  ],note:'Rafa likes the parts where Godzilla is fighting. Fast-forward available.'},
+  {title:'SIZE COMPARISONS \uD83D\uDCCF',items:[
+    {label:'Dinosaur Sizes',url:YT_SEARCH('dinosaur size comparison 3D')},
+    {label:'Planet Gravity',url:YT_SEARCH('planet gravity comparison')},
+    {label:'Animal Speed',url:YT_SEARCH('animal speed comparison')},
+    {label:'Biggest Things',url:YT_SEARCH('biggest things in the universe comparison')}
+  ]},
+  {title:'SPIDER-VERSE \uD83D\uDD77',items:[
+    {label:'Into the Spider-Verse Clips',url:YT_SEARCH('Into the Spider-Verse clips')},
+    {label:'Tom Holland Spider-Man',url:YT_SEARCH('Tom Holland Spider-Man scenes')},
+    {label:'Spidey & His Amazing Friends',url:YT_SEARCH('Spidey and His Amazing Friends')}
+  ]},
+  {title:'FAVORITE CHANNELS \u26A1',items:[
+    {label:'@GrayStillPlays',url:'https://www.youtube.com/@GrayStillPlays'},
+    {label:'@BeckBroJack',url:'https://www.youtube.com/@BeckBroJack'},
+    {label:'Fast Friends (Sonic \u00b7 Knuckles)',url:YT_SEARCH('Fast Friends Sonic Knuckles reaction')},
+    {label:'@CrazyFrogOfficial',url:'https://www.youtube.com/@CrazyFrogOfficial'},
+    {label:'@LeonPicaron',url:'https://www.youtube.com/@LeonPicaron'},
+    {label:'Survival Stickman',url:YT_SEARCH('Survival Stickman')},
+    {label:'KLT Space',url:YT_SEARCH('KLT space channel')}
+  ]},
+  {title:'SPACE STUFF FOR AXIOM \uD83D\uDE80',items:[
+    {label:'@AxiomSpace',url:'https://www.youtube.com/@AxiomSpace'},
+    {label:'Axiom Mission 4',url:YT_SEARCH('Axiom Mission 4 launch highlights')},
+    {label:'ISS Live Feed',url:YT_SEARCH('ISS live stream')},
+    {label:'Spacewalk Compilation',url:YT_SEARCH('ISS spacewalk compilation')},
+    {label:'How Astronauts Eat & Sleep',url:YT_SEARCH('how do astronauts eat sleep in space')}
+  ],note:'Watch a couple of these before the Axiom tour with Uncle Chris so you know what you\u2019re looking at.'}
+];
+
+// === YOUTUBE (Aurelia's watch list) ===
+const YOUTUBE_AURELIA=[
+  {title:'faves \uD83C\uDF80',items:[
+    {label:'@MiaMaples',url:'https://www.youtube.com/@MiaMaples'},
+    {label:'@MoriahElizabeth',url:'https://www.youtube.com/@MoriahElizabeth'},
+    {label:'@HangwithHope',url:'https://www.youtube.com/@HangwithHope'},
+    {label:'@hopescope',url:'https://www.youtube.com/@hopescope'},
+    {label:'@SerenaNeel',url:'https://www.youtube.com/@SerenaNeel'}
+  ]},
+  {title:'for the drive \uD83C\uDFA7',items:[
+    {label:'Mia Maples \u2014 latest',url:'https://www.youtube.com/@MiaMaples/videos'},
+    {label:'Moriah Elizabeth \u2014 latest',url:'https://www.youtube.com/@MoriahElizabeth/videos'},
+    {label:'Hang with Hope \u2014 latest',url:'https://www.youtube.com/@HangwithHope/videos'},
+    {label:'HopeScope \u2014 latest',url:'https://www.youtube.com/@hopescope/videos'},
+    {label:'Serena Neel \u2014 latest',url:'https://www.youtube.com/@SerenaNeel/videos'}
+  ],note:'Channel pages sorted by latest \u2014 pick whatever\u2019s new when boredom hits.'},
+  {title:'the hills \uD83D\uDCFA',items:[],note:'Currently streaming. Helen introduced you to it. (She doesn\u2019t know it\u2019s fake yet.)'}
+];
+
+// === PODCASTS (Helen + Jonathan) ===
+const PODCASTS=[
+  {name:'Casefile True Crime',url:'https://podcasts.apple.com/us/podcast/casefile-true-crime/id998568017',desc:'Helen\u2019s gold standard. Anonymous Australian host, meticulous research, treats victims with dignity. Perfect for long drives with headphones in.'},
+  {name:'Bear Brook',url:'https://podcasts.apple.com/us/podcast/bear-brook/id1441837695',desc:'A deeply researched 7-episode limited series about four bodies found in barrels in New Hampshire. Peabody winner. The forensic genealogy is groundbreaking.'},
+  {name:'In the Dark',url:'https://podcasts.apple.com/us/podcast/in-the-dark/id1148175292',desc:'Pulitzer-winning investigative journalism. Season 1 (Jacob Wetterling) and Season 2 (Curtis Flowers) are both masterful and never sensational.'},
+  {name:'Criminal',url:'https://podcasts.apple.com/us/podcast/criminal/id809264944',desc:'Phoebe Judge\u2019s calm, elegant storytelling. 20\u201330 min episodes, wide range from historic to bizarre. Curious tone, not lurid.'},
+  {name:'99% Invisible',url:'https://podcasts.apple.com/us/podcast/99-invisible/id394775318',desc:'Architecture and design stories told with meticulousness. Given the house project, episodes about buildings and places will resonate.'},
+  {name:'Atlas Obscura',url:'https://podcasts.apple.com/us/podcast/atlas-obscura/id1496774579',desc:'The world\u2019s most unusual places, told with wonder and research. Perfect road-trip listening.'}
+];
+
+function renderYouTube(data,title){
+  let h=`<div class="media-section"><h3 class="media-title">${title}</h3>`;
+  data.forEach(cat=>{
+    h+=`<div class="media-category"><h4>${cat.title}</h4>`;
+    if(cat.items&&cat.items.length){
+      h+=`<div class="media-links">`;
+      cat.items.forEach(i=>h+=`<a class="media-link" href="${i.url}" target="_blank" rel="noopener">${i.label}</a>`);
+      h+=`</div>`;
+    }
+    if(cat.note)h+=`<div class="media-note">${cat.note}</div>`;
+    h+=`</div>`;
+  });
+  h+=`</div>`;
+  return h;
+}
+
+function renderPodcasts(){
+  let h=`<div class="media-section"><h3 class="media-title">Listen</h3>`;
+  PODCASTS.forEach(p=>{
+    h+=`<div class="podcast-item">`;
+    h+=`<div class="podcast-name"><a href="${p.url}" target="_blank" rel="noopener">${p.name}</a></div>`;
+    h+=`<div class="podcast-desc">${p.desc}</div>`;
+    h+=`</div>`;
+  });
+  h+=`<div class="media-note" style="margin-top:12px">Apple Podcasts links. Jonathan\u2019s Overcast should pick these up too if it\u2019s set as the default handler.</div>`;
+  h+=`</div>`;
+  return h;
+}
 
 const DAYS_ORDER=['fri17','sat18','sun19','mon20','tue21','wed22','thu23','fri24'];
 const DAY_LABELS={fri17:'Fri 17',sat18:'Sat 18',sun19:'Sun 19',mon20:'Mon 20',tue21:'Tue 21',wed22:'Wed 22',thu23:'Thu 23',fri24:'Fri 24'};
@@ -405,6 +517,11 @@ function render(){
         h+=renderStop(s);
       });
     }
+
+    // Media section — per-person content feeds
+    if(activePerson==='rafa') h+=renderYouTube(YOUTUBE_RAFA,'WATCH ON THE ROAD \uD83E\uDD96\uD83D\uDD77\uD83D\uDD25');
+    else if(activePerson==='aurelia') h+=renderYouTube(YOUTUBE_AURELIA,'watch list \u2728');
+    else if(activePerson==='helen'||activePerson==='jonathan') h+=renderPodcasts();
 
     // Emotional arc
     h+=`<div class="emotional-arc"><h3>The Emotional Arc</h3>`;
