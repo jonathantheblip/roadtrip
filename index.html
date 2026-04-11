@@ -25,8 +25,7 @@ header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
 .person-btn{border:2px solid var(--border);background:var(--bg2);color:var(--muted);padding:8px 16px;border-radius:20px;font-size:.82em;font-weight:600;cursor:pointer;transition:all .3s;font-family:inherit}
 .person-btn.active{border-color:var(--accent);color:var(--accent);background:var(--card)}
 .person-btn:hover{border-color:var(--accent)}
-.filters{display:flex;gap:6px;margin:8px 0 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:2px 0}
-.filters::-webkit-scrollbar{display:none}
+.filters{display:flex;gap:6px;margin:8px 0 12px;flex-wrap:wrap;padding:2px 0}
 .filter-btn{white-space:nowrap;border:1.5px solid var(--border);background:transparent;color:var(--muted);padding:5px 12px;border-radius:16px;font-size:.75em;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit;flex-shrink:0}
 .filter-btn.active{border-color:var(--accent);color:var(--tagText);background:var(--accent)}
 .section-label{font-family:'DM Serif Display',serif;font-size:1.05em;color:var(--accent);margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
@@ -144,7 +143,7 @@ const STOPS=[
 const KENNEDALE_DAYS = [
 {day:'tue21',dayLabel:'Tue Apr 21',title:'DFW Day 1: Divide & Conquer',subtitle:'Aunt Donna joins the girls \u00b7 Dinosaur Valley + Fossil Rim for the boys \u00b7 Aunt Debra at dinner',hasTeamSplit:true},
 {day:'wed22',dayLabel:'Wed Apr 22',title:'DFW Day 2: Six Flags + Viral Treats',subtitle:'All-together energy day \u00b7 Donna welcome'},
-{day:'fri24',dayLabel:'Fri Apr 24',title:'The Menil Campus + Fly Home',subtitle:'Rothko Chapel \u00b7 Menil Collection \u00b7 Cy Twombly \u00b7 B6 932 IAH \u2192 BOS'},
+{day:'fri24',dayLabel:'Fri Apr 24',title:'Houston Morning + Fly Home',subtitle:'Rothko \u00b7 Menil \u00b7 Cy Twombly \u00b7 Rice \u00b7 Axiom \u00b7 B6 932 IAH \u2192 BOS'},
 ];
 
 const DAYS_ORDER=['fri17','sat18','sun19','mon20','tue21','wed22','thu23','fri24'];
@@ -254,17 +253,39 @@ function renderKennedaleDay(kd){
     h+=`<tr><td>6pm</td><td>Dinner: <strong>Rodeo Goat</strong>. Casual, patio. Great veggie options.</td></tr>`;
     h+=`</table>`;
   } else if(kd.day==='fri24'){
+    h+=`<div style="font-size:.82em;color:var(--muted);margin-bottom:12px;line-height:1.45">Two schedules \u2014 pick based on Chris's Axiom availability. Both include Rothko Chapel, Menil Collection, Cy Twombly Gallery, Rice University, and Axiom Space, and end at IAH for B6 932 to BOS.</div>`;
+
+    h+=`<h4 style="font-family:'DM Serif Display',serif;color:var(--accent);font-size:1em;margin:6px 0 2px">Option A \u2014 Art morning, Axiom afternoon</h4>`;
+    h+=`<div style="font-size:.75em;color:var(--muted);margin-bottom:6px;font-style:italic">If Chris is available early PM</div>`;
     h+=`<table class="schedule">`;
     h+=`<tr><td>9:30</td><td>Pack up Airbnb. Walk to the Rothko Chapel.</td></tr>`;
-    h+=`<tr><td>10am</td><td><strong>Rothko Chapel</strong>. 14 Rothko murals. Dark, contemplative, profound. <em>Helen has wanted this her entire adult life.</em></td></tr>`;
+    h+=`<tr><td>10am</td><td><strong>Rothko Chapel</strong> \u2014 everyone. 14 Rothko murals. Dark, contemplative, profound. <em>Helen has wanted this her entire adult life.</em></td></tr>`;
     h+=`<tr><td>10:30</td><td>Walk to <strong>Menil Collection</strong> (opens 11am). Coffee nearby.</td></tr>`;
-    h+=`<tr><td>11am</td><td>Helen + Aurelia enter the Menil. Jonathan takes Rafa to the grounds.</td></tr>`;
+    h+=`<tr><td>11am</td><td>Helen + Aurelia enter the Menil. Jonathan + Rafa on the grounds.</td></tr>`;
     h+=`<tr><td>11:30</td><td>Helen \u2192 <strong>Cy Twombly Gallery</strong>. Her #3 artist. 20 min.</td></tr>`;
-    h+=`<tr><td>12pm</td><td>Regroup. Walk back to Airbnb/car.</td></tr>`;
-    h+=`<tr><td>12:15</td><td>Drive to IAH (~35 min). Return rental car.</td></tr>`;
+    h+=`<tr><td>12pm</td><td>Regroup. Drive to Rice for campus walk.</td></tr>`;
+    h+=`<tr><td>1pm</td><td><strong>Rice University</strong> campus tour. Sallyport, Lovett Hall, the redesigned Academic Quad. Jonathan's campus.</td></tr>`;
+    h+=`<tr><td>2pm</td><td>Drive to <strong>Axiom Space</strong> (Clear Lake, ~35 min).</td></tr>`;
+    h+=`<tr><td>2:30</td><td><strong>Axiom tour with Chris</strong>. Mission Control, AxEMU suits, the real thing. 60\u201390 min.</td></tr>`;
+    h+=`<tr><td>4:30</td><td>Drop rental car at IAH.</td></tr>`;
     h+=`<tr><td colspan="2" style="text-align:center;font-weight:700;color:var(--accent);padding:12px">\u2708\uFE0F B6 932 \u00b7 IAH \u2192 BOS \u00b7 Nonstop</td></tr>`;
-    h+=`<tr><td>PM</td><td><strong>Home in Belmont.</strong></td></tr>`;
     h+=`</table>`;
+
+    h+=`<h4 style="font-family:'DM Serif Display',serif;color:var(--accent);font-size:1em;margin:18px 0 2px;border-top:1px solid var(--border);padding-top:14px">Option B \u2014 Axiom morning, art afternoon</h4>`;
+    h+=`<div style="font-size:.75em;color:var(--muted);margin-bottom:6px;font-style:italic">If Chris is available morning</div>`;
+    h+=`<table class="schedule">`;
+    h+=`<tr><td>8:30</td><td>Pack up Airbnb. Drive to <strong>Axiom Space</strong>.</td></tr>`;
+    h+=`<tr><td>9am</td><td><strong>Axiom tour with Chris</strong>. Mission Control, AxEMU suits. 60\u201390 min.</td></tr>`;
+    h+=`<tr><td>11am</td><td>Drive to <strong>Rice University</strong>.</td></tr>`;
+    h+=`<tr><td>11:30</td><td><strong>Rice</strong> campus walk + lunch at Rice Village.</td></tr>`;
+    h+=`<tr><td>1pm</td><td>Drive to Menil area.</td></tr>`;
+    h+=`<tr><td>1:30</td><td><strong>Rothko Chapel</strong>. <em>Helen has wanted this her entire adult life.</em></td></tr>`;
+    h+=`<tr><td>2pm</td><td><strong>Menil Collection</strong> + <strong>Cy Twombly Gallery</strong>. Helen \u2192 Twombly. Jonathan + Rafa on the grounds.</td></tr>`;
+    h+=`<tr><td>3pm</td><td>Head to IAH. Return rental car.</td></tr>`;
+    h+=`<tr><td colspan="2" style="text-align:center;font-weight:700;color:var(--accent);padding:12px">\u2708\uFE0F B6 932 \u00b7 IAH \u2192 BOS \u00b7 Nonstop</td></tr>`;
+    h+=`</table>`;
+
+    h+=`<div class="vibe">Schedule depends on Chris's availability and the B6 932 departure time. Both options get the family to IAH with time to spare.</div>`;
   }
   h+=`</div></div>`;
   return h;
