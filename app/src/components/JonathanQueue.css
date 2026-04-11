@@ -1,0 +1,197 @@
+.jq {
+  animation: jq-fade 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes jq-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+   Intro — Jonathan's understated control panel
+   ============================================ */
+.jq-intro {
+  padding: 18px 2px 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.jq-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.jq-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: var(--heading-weight);
+  color: var(--accent);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+}
+
+.jq-lede {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 540px;
+  margin-bottom: 8px;
+}
+
+.jq-count {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   Section
+   ============================================ */
+.jq-section {
+  margin: 26px 0 8px;
+}
+
+.jq-section-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: var(--heading-weight);
+  color: var(--accent);
+  line-height: 1.2;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: -0.005em;
+}
+
+.jq-section-subtitle {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-left: 6px;
+}
+
+/* ============================================
+   Row (each show)
+   ============================================ */
+.jq-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jq-row {
+  display: block;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.25s ease,
+    background-color 0.4s ease,
+    border-radius 0.4s ease;
+}
+
+.jq-row:hover {
+  transform: translateY(-1px);
+  border-left-color: var(--accent2);
+}
+
+.jq-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.jq-show {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  min-width: 0;
+}
+
+.jq-cta {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.jq-pitch {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ============================================
+   Jonathan — base theme (already active on his view)
+   ============================================ */
+[data-theme='jonathan'] .jq-row {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================
+   Helen / Aurelia / Rafa — defensive styles in case
+   the queue ever shows under a different theme (it won't
+   today, but keep the component theme-agnostic).
+   ============================================ */
+[data-theme='helen'] .jq-title {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 32px;
+  color: #2a2520;
+}
+[data-theme='helen'] .jq-section-title {
+  font-style: italic;
+  font-weight: 400;
+  border-bottom-color: var(--accent2);
+}
+
+[data-theme='rafa'] .jq-title {
+  text-transform: uppercase;
+  font-weight: 900;
+  color: var(--accent3);
+  font-size: 26px;
+}
+[data-theme='rafa'] .jq-section-title {
+  text-transform: uppercase;
+  font-weight: 900;
+  color: var(--accent3);
+  border-bottom: 2px solid var(--accent);
+}
+[data-theme='rafa'] .jq-row {
+  border-radius: 0;
+  border-left: 4px solid var(--accent);
+}

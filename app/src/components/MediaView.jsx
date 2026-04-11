@@ -1,7 +1,7 @@
 import { YouTubeSection } from './YouTubeSection'
 import { PodcastSection } from './PodcastSection'
+import { JonathanQueue } from './JonathanQueue'
 import { YOUTUBE_RAFA, YOUTUBE_AURELIA } from '../data/youtube'
-import './PlaceholderView.css'
 
 export function MediaView({ activePerson }) {
   if (activePerson === 'rafa') {
@@ -16,15 +16,6 @@ export function MediaView({ activePerson }) {
     return <PodcastSection />
   }
 
-  // Jonathan
-  return (
-    <section className="placeholder-view placeholder-quiet">
-      <div className="placeholder-eyebrow">Media</div>
-      <h2>Nothing here for you.</h2>
-      <p>
-        Media is for the kids and Helen. You run Overcast already &mdash;
-        find your own stuff.
-      </p>
-    </section>
-  )
+  // Jonathan — his own audio-drama / fiction queue, not route-matched.
+  return <JonathanQueue />
 }
