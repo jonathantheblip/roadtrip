@@ -1,0 +1,5 @@
+app/node_modules
+app/dist
+app/.vite
+*.log
+.DS_Store
