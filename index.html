@@ -167,9 +167,13 @@ function openTikTokSearch(encodedName){
   const webUrl='https://www.tiktok.com/search?q='+q;
 
   // If the app intercepts the custom scheme, the PWA/tab becomes hidden.
-  // If it doesn't, we're still here after ~1.2s and we navigate to the web.
+  // If it doesn't, we're still here after ~1.2s — warn the user the
+  // TikTok mobile web page may render blank, then navigate.
   const fallback=setTimeout(()=>{
-    if(!document.hidden) window.location.href=webUrl;
+    if(!document.hidden){
+      alert('Opening TikTok search in Safari \u2014 if it looks blank, search for "'+name+'" directly in the TikTok app.');
+      window.location.href=webUrl;
+    }
   },1200);
   const onHide=()=>{
     if(document.hidden){
