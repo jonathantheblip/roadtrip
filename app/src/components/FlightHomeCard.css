@@ -1,0 +1,188 @@
+.flight-card {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-top: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 20px 22px 18px;
+  margin: 14px 0 22px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  position: relative;
+  transition:
+    background-color 0.4s ease,
+    border-color 0.4s ease,
+    border-radius 0.4s ease;
+}
+
+.flight-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.flight-number {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: var(--heading-weight);
+  color: var(--text);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  margin-bottom: 14px;
+}
+
+.flight-route {
+  color: var(--accent);
+  font-size: 22px;
+  margin-left: 8px;
+}
+
+.flight-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  padding-top: 12px;
+  padding-bottom: 14px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.flight-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.flight-field-wide {
+  grid-column: 1 / -1;
+}
+
+.flight-key {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.flight-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.flight-reminders {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.flight-reminders li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+.flight-reminders li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+/* ============================================
+   Helen — elegant flight manifest
+   ============================================ */
+[data-theme='helen'] .flight-card {
+  background: #fff;
+  border: 1px solid rgba(60, 50, 40, 0.12);
+  border-top: 2px solid var(--accent2);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(60, 50, 40, 0.06), 0 4px 16px rgba(60, 50, 40, 0.04);
+}
+[data-theme='helen'] .flight-eyebrow {
+  color: var(--accent);
+  font-family: var(--font-body);
+}
+[data-theme='helen'] .flight-number {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 30px;
+  color: #2a2520;
+}
+[data-theme='helen'] .flight-route {
+  font-style: italic;
+  color: var(--accent);
+}
+[data-theme='helen'] .flight-grid {
+  border-top-color: var(--accent2);
+  border-bottom-color: var(--accent2);
+}
+[data-theme='helen'] .flight-reminders li::before {
+  background: var(--accent2);
+}
+
+/* ============================================
+   Rafa — MISSION CRITICAL flight dispatch
+   ============================================ */
+[data-theme='rafa'] .flight-card {
+  background: rgba(211, 47, 47, 0.1);
+  border: 1px solid var(--accent);
+  border-top: 4px solid var(--accent3);
+  border-radius: 0;
+  box-shadow: 0 0 0 1px var(--accent2), 0 6px 22px rgba(0, 0, 0, 0.6),
+    0 0 40px rgba(211, 47, 47, 0.18);
+  padding: 26px 22px 20px;
+}
+[data-theme='rafa'] .flight-card::before {
+  content: 'LAUNCH WINDOW';
+  position: absolute;
+  top: -10px;
+  left: 16px;
+  background: var(--bg);
+  color: var(--accent3);
+  padding: 3px 14px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+}
+[data-theme='rafa'] .flight-eyebrow {
+  display: none;
+}
+[data-theme='rafa'] .flight-number {
+  color: var(--accent3);
+  text-transform: uppercase;
+  font-weight: 900;
+  font-size: 28px;
+  letter-spacing: 0.02em;
+}
+[data-theme='rafa'] .flight-route {
+  color: var(--accent);
+}
+[data-theme='rafa'] .flight-key {
+  color: var(--accent3);
+  font-weight: 900;
+}
+[data-theme='rafa'] .flight-reminders li::before {
+  background: var(--accent3);
+  border-radius: 0;
+  clip-path: polygon(0 50%, 50% 0, 100% 50%, 50% 100%);
+}
+
+/* ============================================
+   Aurelia — soft warning
+   ============================================ */
+[data-theme='aurelia'] .flight-card {
+  box-shadow: 0 4px 22px rgba(194, 24, 91, 0.15);
+}

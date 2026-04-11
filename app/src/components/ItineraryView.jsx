@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
 import { STOPS } from '../data/stops'
 import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
+import { OVERNIGHTS } from '../data/overnight'
 import { filterStops } from '../utils/filterStops'
 import { StopCard } from './StopCard'
 import { FilterBar } from './FilterBar'
 import { KennedaleDay } from './KennedaleDay'
 import { HoustonFriday } from './HoustonFriday'
+import { TonightCard } from './TonightCard'
+import { FlightHomeCard } from './FlightHomeCard'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import './ItineraryView.css'
 
@@ -31,11 +34,22 @@ export function ItineraryView({ activePerson }) {
   if (filterDay === 'tue21' || filterDay === 'wed22') {
     body = <KennedaleDay day={filterDay} />
   } else if (filterDay === 'fri24') {
-    body = <HoustonFriday />
+    body = (
+      <>
+        <FlightHomeCard />
+        <HoustonFriday />
+      </>
+    )
   } else if (!isFiltered) {
     body = <DayByDay stops={stops} activePerson={activePerson} />
   } else {
-    body = <FilteredList stops={stops} activePerson={activePerson} />
+    body = (
+      <FilteredList
+        stops={stops}
+        activePerson={activePerson}
+        filterDay={filterDay}
+      />
+    )
   }
 
   return (
@@ -51,16 +65,31 @@ export function ItineraryView({ activePerson }) {
   )
 }
 
-function FilteredList({ stops, activePerson }) {
+function FilteredList({ stops, activePerson, filterDay }) {
+  const overnight =
+    filterDay && filterDay !== 'all' ? OVERNIGHTS[filterDay] : null
+
   if (stops.length === 0) {
-    return <div className="empty">No itinerary stops match.</div>
+    return (
+      <>
+        {overnight && (
+          <TonightCard overnight={overnight} activePerson={activePerson} />
+        )}
+        <div className="empty">No itinerary stops match.</div>
+      </>
+    )
   }
   return (
-    <div className="stops-grid">
-      {stops.map((s) => (
-        <StopCard key={s.id} stop={s} activePerson={activePerson} />
-      ))}
-    </div>
+    <>
+      {overnight && (
+        <TonightCard overnight={overnight} activePerson={activePerson} />
+      )}
+      <div className="stops-grid">
+        {stops.map((s) => (
+          <StopCard key={s.id} stop={s} activePerson={activePerson} />
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -81,7 +110,12 @@ function DayByDay({ stops, activePerson }) {
           return <KennedaleDay key={day} day={day} />
         }
         if (day === 'fri24') {
-          return <HoustonFriday key={day} />
+          return (
+            <div key={day} className="day-section">
+              <FlightHomeCard />
+              <HoustonFriday />
+            </div>
+          )
         }
         const dayStops = grouped[day]
         if (!dayStops || dayStops.length === 0) return null
@@ -102,6 +136,7 @@ function DaySection({ day, stops, activePerson }) {
   // Thursday gets an overview drive-box above the cards — it's the drive
   // out of Kennedale into Houston.
   const isThursday = day === 'thu23'
+  const overnight = OVERNIGHTS[day]
   let curCluster = ''
   return (
     <div className="day-section">
@@ -110,6 +145,9 @@ function DaySection({ day, stops, activePerson }) {
           ? 'Thu Apr 23 — Goodbye + Drive to Houston'
           : DAY_FULL_LABELS[day]}
       </h2>
+      {overnight && (
+        <TonightCard overnight={overnight} activePerson={activePerson} />
+      )}
       {isThursday && (
         <div className="drive-box">
           <strong>Morning:</strong> Relax with Aunt Donna. Both aunts if Aunt
