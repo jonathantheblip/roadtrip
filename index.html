@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1714">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='90' fill='%231a1714'/%3E%3Ctext x='256' y='300' text-anchor='middle' font-size='220' font-family='Georgia,serif' fill='%23c0734a'%3EJ%3C/text%3E%3C/svg%3E">
+<title>Jackson Family Road Trip</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#1a1714;--bg2:#242019;--card:#2c2620;--text:#e8e0d4;--muted:#9a8e7e;--accent:#c0734a;--accent2:#d4956b;--border:#3a332a;--tag:#c0734a;--tagText:#fff;--radius:14px;--personLabel:'Jonathan'}
+[data-theme=helen]{--bg:#f5f1ec;--bg2:#eae5dd;--card:#ffffff;--text:#3a3530;--muted:#7a746a;--accent:#6b8f8f;--accent2:#8aadad;--border:#d4cfc7;--tag:#6b8f8f;--tagText:#fff;--personLabel:'Helen'}
+[data-theme=aurelia]{--bg:#fdf0f4;--bg2:#f9e4ec;--card:#ffffff;--text:#3a2030;--muted:#9a7080;--accent:#c2185b;--accent2:#e91e80;--border:#f0d0e0;--tag:#c2185b;--tagText:#fff;--personLabel:'Aurelia'}
+[data-theme=rafa]{--bg:#e8f0ff;--bg2:#d8e8ff;--card:#ffffff;--text:#1a2040;--muted:#6070a0;--accent:#d32f2f;--accent2:#1565c0;--border:#c0d4f0;--tag:#d32f2f;--tagText:#fff;--personLabel:'Rafa'}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;padding-bottom:80px;transition:background .4s,color .4s}
+.app{max-width:500px;margin:0 auto;padding:12px}
+header{text-align:center;padding:20px 0 12px}
+header h1{font-family:'DM Serif Display',serif;font-size:1.5em;color:var(--accent);transition:color .4s}
+header .sub{font-size:.78em;color:var(--muted);margin-top:2px}
+.person-bar{display:flex;gap:6px;justify-content:center;margin:12px 0;flex-wrap:wrap}
+.person-btn{border:2px solid var(--border);background:var(--bg2);color:var(--muted);padding:8px 16px;border-radius:20px;font-size:.82em;font-weight:600;cursor:pointer;transition:all .3s;font-family:inherit}
+.person-btn.active{border-color:var(--accent);color:var(--accent);background:var(--card)}
+.person-btn:hover{border-color:var(--accent)}
+.filters{display:flex;gap:6px;margin:8px 0 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:2px 0}
+.filters::-webkit-scrollbar{display:none}
+.filter-btn{white-space:nowrap;border:1.5px solid var(--border);background:transparent;color:var(--muted);padding:5px 12px;border-radius:16px;font-size:.75em;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit;flex-shrink:0}
+.filter-btn.active{border-color:var(--accent);color:var(--tagText);background:var(--accent)}
+.section-label{font-family:'DM Serif Display',serif;font-size:1.05em;color:var(--accent);margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;transition:all .3s}
+.card.star{border-left:4px solid var(--accent)}
+.card.bucees{border-left:4px solid #fdd835;background:color-mix(in srgb,var(--card) 92%,#fdd835)}
+.card-name{font-weight:700;font-size:.92em;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.card-name a{color:inherit;text-decoration:none}
+.star-badge{background:#fdd835;color:#333;font-size:.65em;padding:1px 7px;border-radius:8px;font-weight:700}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.68em;font-weight:600}
+.t-helen{background:#2d8a4e;color:#fff}
+.t-aurelia{background:#c2185b;color:#fff}
+.t-rafa{background:#e65100;color:#fff}
+.t-jonathan{background:#1565c0;color:#fff}
+.t-everyone{background:#5e35b1;color:#fff}
+.t-food{background:#6d4c41;color:#fff}
+.t-gas{background:#37474f;color:#fff}
+.t-energy{background:#f57f17;color:#fff}
+.t-photo{background:#00695c;color:#fff}
+.t-viral{background:#ad1457;color:#fff}
+.t-poi{background:var(--accent);color:#fff}
+.t-bucees{background:#fdd835;color:#333}
+.pitch{font-size:.84em;margin:4px 0;line-height:1.4}
+.pitch-label{font-weight:700;font-size:.72em;padding:1px 6px;border-radius:6px;margin-right:4px;display:inline-block}
+.pl-helen{background:#2d8a4e;color:#fff}
+.pl-aurelia{background:#c2185b;color:#fff}
+.pl-rafa{background:#e65100;color:#fff}
+.pl-jonathan{background:#1565c0;color:#fff}
+.card-meta{font-size:.78em;color:var(--muted);margin-top:4px}
+.card-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.action-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:10px;font-size:.75em;font-weight:600;text-decoration:none;color:var(--tagText);background:var(--accent);transition:opacity .2s;border:none;cursor:pointer;font-family:inherit}
+.action-btn:hover{opacity:.85}
+.action-btn.waze{background:#33ccff;color:#000}
+.action-btn.apple{background:#333;color:#fff}
+[data-theme=jonathan] .action-btn.apple{background:#666}
+.action-btn.tiktok{background:#000;color:#fff}
+.action-btn.google{background:#4285f4;color:#fff}
+.day-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+.day-header{padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.day-header h3{font-family:'DM Serif Display',serif;font-size:1em;color:var(--accent)}
+.day-header .dh-sub{font-size:.75em;color:var(--muted);margin-top:2px}
+.chev{color:var(--muted);transition:transform .3s;font-size:.9em}
+.day-card.open .chev{transform:rotate(180deg)}
+.day-body{display:none;padding:0 16px 14px}
+.day-card.open .day-body{display:block}
+.schedule{width:100%;font-size:.84em;border-collapse:collapse}
+.schedule td{padding:6px 0;border-bottom:1px solid var(--border);vertical-align:top}
+.schedule td:first-child{width:70px;font-weight:600;color:var(--accent);white-space:nowrap;padding-right:8px}
+.team-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.team-box{padding:12px;border-radius:10px;font-size:.84em}
+.team-box h4{font-family:'DM Serif Display',serif;font-size:.95em;margin-bottom:6px}
+.team-girls{background:color-mix(in srgb,var(--card) 85%,#2d8a4e);border:1px solid color-mix(in srgb,var(--border) 70%,#2d8a4e)}
+.team-guys{background:color-mix(in srgb,var(--card) 85%,#1565c0);border:1px solid color-mix(in srgb,var(--border) 70%,#1565c0)}
+.vibe{font-style:italic;color:var(--muted);font-size:.82em;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:8px}
+.drive-box{background:var(--bg2);padding:10px 14px;border-radius:8px;font-size:.82em;margin-bottom:12px}
+.drive-box strong{color:var(--accent)}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:.9em}
+.emotional-arc{background:var(--bg2);padding:20px;border-radius:var(--radius);margin:20px 0}
+.emotional-arc h3{font-family:'DM Serif Display',serif;color:var(--accent);margin-bottom:10px}
+.emotional-arc p{font-size:.84em;margin-bottom:6px;color:var(--muted)}
+.emotional-arc p strong{color:var(--text)}
+@media(max-width:420px){.team-grid{grid-template-columns:1fr}.person-btn{padding:6px 12px;font-size:.78em}}
+@media print{.person-bar,.filters,.card-actions{display:none}.day-body{display:block!important}}
+</style>
+</head>
+<body data-theme="jonathan">
+<div class="app" id="app"></div>
+<script>
+const STOPS=[
+// === FRIDAY APR 17 ===
+{id:'f1',name:'Pond House Cafe',day:'fri17',dayLabel:'Fri Apr 17',state:'CT',types:['food','energy','photo'],persons:['helen','aurelia','rafa','everyone'],address:'1555 Asylum Ave, West Hartford, CT 06117',lat:41.768,lng:-72.722,hours:'Fri 11:30am-4pm',star:true,cluster:'2hr: West Hartford CT',pitch:{helen:'Farm-to-table inside a world-famous rose garden — herbs growing outside end up on your plate.',aurelia:'The pond views from the patio photograph like a magazine spread — golden hour or not, this place is content.',rafa:'Huge playground RIGHT next to the restaurant plus massive gardens to run through!'},details:'Vegetarian: curried rice, beet-gorgonzola salad, seasonal veggie plates. Reserve on OpenTable. Elizabeth Park playground adjacent.',vegNotes:'Strong variety'},
+{id:'f2',name:'Zohara Mediterranean Kitchen',day:'fri17',dayLabel:'Fri Apr 17',state:'CT',types:['food'],persons:['helen','jonathan'],address:'59 Raymond Rd, West Hartford, CT 06107',lat:41.763,lng:-72.737,hours:'Lunch & dinner',star:false,cluster:'2hr: West Hartford CT',pitch:{helen:'Roasted cauliflower, falafel, hummus, baba ganoush — reviewers praise the vegetarian depth, not afterthought sides.',jonathan:'The craft behind their mezze spread tells you everything about the kitchen\'s ambition.'},details:'Backup lunch if Pond House is full. Book OpenTable.',vegNotes:'Extensive mezze'},
+{id:'f3',name:'Art Omi Sculpture Park',day:'fri17',dayLabel:'Fri Apr 17',state:'NY',types:['poi','photo','energy'],persons:['helen','aurelia','rafa','everyone'],address:'1405 County Rte 22, Ghent, NY 12075',lat:42.332,lng:-73.657,hours:'Daily 9am-5pm (closed Tue)',star:true,cluster:'3hr: Hudson Valley NY',pitch:{helen:'Sixty contemporary sculptures across 120 rolling Hudson Valley acres — where art meets the landscape that inspired the Hudson River School painters.',aurelia:'Giant installations in open fields with mountains behind you — every piece is made for photos. This place IS your feed.'},details:'FREE. Register at artomi.org/visit. 45-60 min. Wide fields for Rafa to run.',vegNotes:'N/A'},
+{id:'f4',name:'Olana State Historic Site',day:'fri17',dayLabel:'Fri Apr 17',state:'NY',types:['poi','photo'],persons:['helen','jonathan'],address:'5720 NY-9G, Hudson, NY 12534',lat:42.218,lng:-73.833,hours:'Grounds free dawn-dusk',star:false,cluster:'3hr: Hudson Valley NY',pitch:{helen:'A Persian-style villa with panoramic views of the Catskills and Hudson River that literally inspired Frederic Church.',jonathan:'Church designed every view from this estate like a painting — one of the oldest tourist attractions in America.'},details:'20-30 min for overlook. Grounds only (free). House tours need advance tickets — skip the house.',vegNotes:'N/A'},
+// === SATURDAY APR 18 ===
+{id:'s1',name:'Steamtown National Historic Site',day:'sat18',dayLabel:'Sat Apr 18',state:'PA',types:['poi'],persons:['rafa','jonathan'],address:'150 S Washington Ave, Scranton, PA 18503',lat:41.408,lng:-75.672,hours:'Daily 9:30am-5pm',star:true,cluster:'2hr: Scranton PA',pitch:{rafa:'One of the BIGGEST trains ever built — it weighs more than a MILLION pounds and you can climb inside the cabs and sit in a real caboose!',jonathan:'A full 40-acre railyard with a restored 1902 roundhouse, massive steam locomotives, and park rangers who bring the Railroad Age to life.'},details:'FREE admission. 45-60 min. Open rail cars are hands-on. Kids 1-10 are mesmerized.',vegNotes:'N/A'},
+{id:'s2',name:'Nay Aug Park',day:'sat18',dayLabel:'Sat Apr 18',state:'PA',types:['energy','photo'],persons:['rafa','aurelia'],address:'500 Arthur Ave, Scranton, PA 18510',lat:41.397,lng:-75.647,hours:'Daily 7am-8pm',star:false,cluster:'2hr: Scranton PA',pitch:{rafa:'A TREEHOUSE 150 feet up overlooking a real waterfall and a gorge — plus two playgrounds and a covered bridge!',aurelia:'The covered bridge and gorge overlook are genuinely moody and atmospheric — beautiful shots.'},details:'Free. 20-30 min. 10 min from Steamtown — combine for 60-90 min Scranton stop.',vegNotes:'N/A'},
+{id:'s3',name:'The Millworks',day:'sat18',dayLabel:'Sat Apr 18',state:'PA',types:['food','photo'],persons:['helen','aurelia','rafa','jonathan','everyone'],address:'340 Verbeke St, Harrisburg, PA 17102',lat:40.267,lng:-76.886,hours:'Sat 11:30am-10pm',star:true,cluster:'4hr: Harrisburg PA — LUNCH',pitch:{helen:'Farm-to-table surrounded by three art galleries and 18 working artist studios — seasonal grain bowls, wood-fired veggie pizzas, every ingredient locally sourced.',aurelia:'Rooftop biergarten with city views, art studios right next to where you eat — people literally call it AESTHETIC in reviews.'},details:'Walk-ins welcome; reserve for 6+. Kids get clay/crayons. 2 min from Broad Street Market (America\'s oldest farmers\' market).',vegNotes:'Grain bowls, veggie pizzas, farm salads'},
+{id:'s4',name:'Meems Bottom Covered Bridge',day:'sat18',dayLabel:'Sat Apr 18',state:'VA',types:['photo','poi'],persons:['jonathan','aurelia','everyone'],address:'Wissler Rd, New Market, VA',lat:38.76,lng:-78.69,hours:'Always open',star:true,cluster:'Between clusters: Virginia',pitch:{jonathan:'Virginia\'s longest covered bridge at 204 feet — a single-span Burr arch truss from 1894, on the National Register.',aurelia:'A real covered bridge over a river with mountains behind — the most classic, beautiful shot on the whole drive.'},details:'5-10 min. Less than 0.5 mi from I-81 Exit 269. Free.',vegNotes:'N/A'},
+{id:'s5',name:'Buc-ee\'s Mt. Crawford + Playground',day:'sat18',dayLabel:'Sat Apr 18',state:'VA',types:['gas','food','energy'],persons:['rafa','everyone'],address:'6500 Buc-ee\'s Blvd, Mt. Crawford, VA 22841',lat:38.37,lng:-78.97,hours:'24/7',star:false,cluster:'Between clusters: Virginia',pitch:{rafa:'Rainbow arches playground plus SNACKS at a real Buc-ee\'s — your first Texas preview!',jonathan:'Opened June 2025. Combine with A Dream Come True Playground in Harrisonburg for a 30-min stop.'},details:'Near I-81 Exits 240-247. Playground at 1050 Neff Ave, Harrisonburg. Buc-ee\'s preview before Texas!',vegNotes:'Fruit cups, salads, hummus'},
+{id:'s6',name:'Mill Spring Makers Market',day:'sat18',dayLabel:'Sat Apr 18',state:'TN',types:['poi','photo'],persons:['helen','aurelia'],address:'144 E Main St, Jonesborough, TN 37659',lat:36.293,lng:-82.534,hours:'Sat 10am-5pm',star:true,cluster:'Ceremony: Jonesborough TN',pitch:{helen:'The largest collection of locally made goods in East Tennessee — 80+ artisans across 2,500 sq ft. Handmade pottery, jewelry, leather, fiber arts.',aurelia:'Real handmade goods from local artists in Tennessee\'s oldest town — way more authentic than mall shopping.'},details:'For Helen + Aurelia + Rafa while Jonathan is at the ceremony. Adjacent to The Corner Cup for coffee.',vegNotes:'N/A'},
+{id:'s7',name:'Red Meze Downtown',day:'sat18',dayLabel:'Sat Apr 18',state:'TN',types:['food'],persons:['helen','everyone'],address:'109 Buffalo St, Johnson City, TN 37604',lat:36.328,lng:-82.353,hours:'Sat 11am-10pm',star:false,cluster:'Dinner: Johnson City TN',pitch:{helen:'Authentic Mediterranean/Turkish with falafel, hummus, lentil soup, grain bowls — real vegetarian depth, not afterthought salads.',jonathan:'The hummus and lamb dishes both get rave reviews — everyone eats well here.'},details:'Kid-friendly. Outstanding reviews.',vegNotes:'Extensive: falafel, hummus, lentil soup, spanakopita, grain bowls'},
+// === SUNDAY APR 19 ===
+{id:'u1',name:'Coolidge Park Carousel & Bridge',day:'sun19',dayLabel:'Sun Apr 19',state:'TN',types:['energy','photo'],persons:['rafa','aurelia','everyone'],address:'150 River St, Chattanooga, TN 37405',lat:35.061,lng:-85.308,hours:'Carousel 11am-7pm, park dawn-dusk',star:false,cluster:'2.5hr: Chattanooga TN',pitch:{rafa:'A REAL antique carousel from 1894 with 52 hand-carved animals — every ride is only $1 and you pick a different animal each time!',aurelia:'The Walnut Street Bridge with the river and mountains is one of the most photographed spots in Chattanooga — prime content.'},details:'Carousel $1/ride (card only). Free park. 20-40 min.',vegNotes:'N/A'},
+{id:'u2',name:'Sluggo\'s Vegan Brunch',day:'sun19',dayLabel:'Sun Apr 19',state:'TN',types:['food'],persons:['helen'],address:'505 Cherokee Blvd, Chattanooga, TN 37405',lat:35.064,lng:-85.320,hours:'Sun brunch till 3pm',star:false,cluster:'2.5hr: Chattanooga TN',pitch:{helen:'Chattanooga\'s original all-vegan restaurant — Sunday brunch with plant-based omelets and Southern comfort food that even meat-eaters rave about.'},details:'100% vegan. Small space — arrive early. Rafa may need backup snacks.',vegNotes:'100% vegan'},
+{id:'u3',name:'Barber Vintage Motorsports Museum',day:'sun19',dayLabel:'Sun Apr 19',state:'AL',types:['poi'],persons:['rafa','jonathan','aurelia','helen','everyone'],address:'6030 Barber Motorsports Pkwy, Birmingham, AL 35094',lat:33.533,lng:-86.614,hours:'Sun Noon-6pm',star:true,cluster:'4.5hr: Birmingham AL — ANCHOR',pitch:{rafa:'Over 1,000 shiny motorcycles AND real Lotus race cars stacked FIVE STORIES HIGH — and there\'s a real racetrack right outside!',jonathan:'Guinness World Record holder — 1,800+ bikes from 220 manufacturers across 22 countries, plus the world\'s most extensive Lotus collection.',aurelia:'Five stories of glass and steel with motorcycles displayed like art — the colors and design are genuinely aesthetic and content-worthy.'},details:'$20/adult, $15/child 4-12. Allow 90 min. Look don\'t touch — keep Rafa close. Confirm April 19 is normal operating day.',vegNotes:'N/A'},
+{id:'u4',name:'Slice Pizza & Brewhouse',day:'sun19',dayLabel:'Sun Apr 19',state:'AL',types:['food'],persons:['helen','everyone'],address:'725 29th St S, Birmingham, AL 35233',lat:33.508,lng:-86.784,hours:'Sun ~11am-10pm',star:false,cluster:'4.5hr: Birmingham AL',pitch:{helen:'Vegan cheese options, creative veggie combos — one of Birmingham\'s best-rated for plant-based pizza.'},details:'Lakeview neighborhood. Craft beer. Kid-friendly pizza format.',vegNotes:'Vegan cheese, veggie pizzas'},
+{id:'u5',name:'Highland Park Carousel',day:'sun19',dayLabel:'Sun Apr 19',state:'MS',types:['energy','poi'],persons:['rafa'],address:'39th Ave, Highland Park, Meridian, MS 39302',lat:32.374,lng:-88.691,hours:'Sun 1-5pm, 50¢/ride',star:false,cluster:'7hr: Meridian MS',pitch:{rafa:'A carousel from 1896 with hand-carved animals — one of only 11 like it in the whole country!'},details:'National Historic Landmark. Call ahead 601-485-1802 — may be closed for renovations. Park has playgrounds regardless.',vegNotes:'N/A'},
+// === MONDAY APR 20 ===
+{id:'m1',name:'MS Museum of Natural Science — Dinosaur Trail',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['poi','energy'],persons:['rafa','everyone'],address:'2148 Riverside Dr, Jackson, MS 39202',lat:32.320,lng:-90.172,hours:'Mon 8am-5pm',star:true,cluster:'1.5hr: Jackson MS',pitch:{rafa:'SIX life-size 3D dinosaur models — T-Rex, Triceratops, AND Chasmosaurus — plus 12 GIANT robotic Ice Age animals that actually MOVE!',helen:'2.5 miles of peaceful nature trails through Mississippi wetlands, plus a preschool Discovery Room with a treehouse and slide.'},details:'Adults $7, Under 5 FREE (Rafa free!). Ice Age exhibit through Aug 2026. 100,000-gal aquarium. Playground on-site. 1 hr focused visit.',vegNotes:'N/A'},
+{id:'m2',name:'Vicksburg National Military Park',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['poi'],persons:['jonathan','rafa'],address:'3201 Clay St, Vicksburg, MS 39183',lat:32.348,lng:-90.850,hours:'Sunrise-sunset, $20/vehicle',star:false,cluster:'3hr: Vicksburg MS',pitch:{jonathan:'One of America\'s most significant Civil War sites — the 47-day siege that split the Confederacy. 1,300+ monuments along a 16-mile self-driving tour.',rafa:'REAL cannons everywhere and a massive Civil War SHIP pulled from the river bottom — you can see actual cannonball holes!'},details:'Abbreviated tour 1-1.5 hrs. America the Beautiful Pass accepted. Download NPS app for audio. Visitor Center may be closed Mon — call 601-636-0583.',vegNotes:'N/A'},
+{id:'m3',name:'Vicksburg Riverfront Murals',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['photo'],persons:['aurelia','helen'],address:'Levee St, Vicksburg, MS',lat:32.352,lng:-90.879,hours:'Always open, free',star:false,cluster:'3hr: Vicksburg MS',pitch:{aurelia:'Vibrant colorful mural panels along the Mississippi River floodwall — great for aesthetic photos with the river as backdrop.',helen:'Artist Robert Dafford painted Vicksburg\'s entire history on the floodwall. Tune FM 90.5 for narrated audio.'},details:'15-30 min. Free. Always accessible.',vegNotes:'N/A'},
+{id:'m4',name:'Biedenharn Coca-Cola Museum',day:'mon20',dayLabel:'Mon Apr 20',state:'MS',types:['poi','food'],persons:['everyone'],address:'1107 Washington St, Vicksburg, MS 39183',lat:32.349,lng:-90.878,hours:'Mon 9am-5pm',star:false,cluster:'3hr: Vicksburg MS',pitch:{jonathan:'In 1894, Joseph Biedenharn first bottled Coca-Cola right here — the FIRST place in the world. Ice-cold Coke floats in a restored 1890s candy store.',rafa:'ICE CREAM and soda floats in a store that looks like it\'s from a hundred years ago!'},details:'$3.50/adult, Under 6 FREE. 20-30 min.',vegNotes:'Ice cream/floats'},
+{id:'m5',name:'Buc-ee\'s Terrell',day:'mon20',dayLabel:'Mon Apr 20',state:'TX',types:['gas','food','viral'],persons:['everyone'],address:'506 W IH 20, Terrell, TX 75160',lat:32.731,lng:-96.228,hours:'24/7',star:true,cluster:'6hr: East Texas — BUC-EE\'S',pitch:{jonathan:'Chopped brisket sandwiches smoked in-house. Beaver Nuggets, fudge, kolaches, cheapest gas on I-20.',aurelia:'Buc-ee\'s is a whole aesthetic experience and viral TikTok stop — beaver merch, wall of candy, fudge counter. Major content.',helen:'Fresh fruit cups, salads, hummus, trail mixes, excellent coffee, and surprisingly well-designed kitschy Texas souvenirs.',rafa:'The store is ENORMOUS and feels like an adventure — walk around with wide eyes looking at everything!'},details:'Plan 30-45 min. ~45 mi east of Kennedale. First Buc-ee\'s in DFW (opened 2015).',vegNotes:'Fruit, salads, hummus, trail mix, coffee'},
+// === THURSDAY APR 23 ===
+{id:'t1',name:'Collin Street Bakery',day:'thu23',dayLabel:'Thu Apr 23',state:'TX',types:['food','poi'],persons:['everyone'],address:'401 W 7th Ave, Corsicana, TX 75110',lat:32.095,lng:-96.473,hours:'Mon-Sat 7am-5:30pm',star:false,cluster:'1hr: Corsicana TX',pitch:{jonathan:'130-year-old bakery shipping legendary DeLuxe Fruitcake worldwide since 1896 — free samples, 10¢ coffee, and the world\'s best chicken salad.',aurelia:'Historic building with gorgeous bakery cases — decorated cakes that look too pretty to eat.'},details:'Helen: garden salads, soups, deli veggie options. Free cookie for kids under 12. 15-20 min.',vegNotes:'Salads, soups, deli options'},
+{id:'t2',name:'Sam\'s Original Restaurant & BBQ',day:'thu23',dayLabel:'Thu Apr 23',state:'TX',types:['food'],persons:['everyone'],address:'390 I-45 E Frontage Rd, Fairfield, TX 75840',lat:31.737,lng:-96.149,hours:'7am-9pm',star:true,cluster:'2.5hr: Fairfield TX — LUNCH',pitch:{jonathan:'Third-generation Texas BBQ since 1953 — 44-foot buffet, 7,000 meals a week. Texas Highways called it essential.',helen:'The enormous salad bar has genuine variety — fresh vegetables, homemade croutons — plus veggie sides: mashed potatoes, green beans, cabbage, corn, cornbread.'},details:'Buffet = no waiting (critical with a 5yo). Homemade pies. 45 min.',vegNotes:'Massive salad bar + multiple veggie sides'},
+{id:'t3',name:'Buc-ee\'s Madisonville',day:'thu23',dayLabel:'Thu Apr 23',state:'TX',types:['gas','food','viral'],persons:['everyone'],address:'205 IH-45 S, Madisonville, TX 77864',lat:30.931,lng:-95.904,hours:'24/7',star:true,cluster:'3.5hr: Madisonville TX',pitch:{aurelia:'Your SECOND Buc-ee\'s — same iconic merch, candy walls, fudge counters. Stock up on Beaver Nuggets for the flight home.',rafa:'The store is ENORMOUS and you already know the drill — find the candy wall, report back!'},details:'The ONLY Buc-ee\'s on I-45 between DFW and Houston. #1 restaurant in Madisonville on TripAdvisor. 30-45 min.',vegNotes:'Fruit, salads, hummus, coffee'},
+{id:'t4',name:'Sam Houston Statue',day:'thu23',dayLabel:'Thu Apr 23',state:'TX',types:['photo','energy','poi'],persons:['jonathan','aurelia','everyone'],address:'7600 Hwy 75 S, Huntsville, TX 77340',lat:30.644,lng:-95.579,hours:'Mon-Fri 9am-5pm, FREE',star:false,cluster:'4hr: Huntsville TX',pitch:{jonathan:'At 67 feet, "Big Sam" is the tallest statue of an American hero — visible from SIX MILES away on I-45.',aurelia:'A gleaming white giant visible from miles away — 3D version of the face on the walking trail for a killer photo.'},details:'15-20 min. Free. Walking trail for Rafa. Picnic tables.',vegNotes:'N/A'},
+];
+
+// Kennedale days as structured data
+const KENNEDALE_DAYS = [
+{day:'tue21',dayLabel:'Tue Apr 21',title:'DFW Day 1: Divide & Conquer',subtitle:'Aunt Donna joins the girls \u00b7 Dinosaur Valley + Fossil Rim for the boys \u00b7 Aunt Debra at dinner',hasTeamSplit:true},
+{day:'wed22',dayLabel:'Wed Apr 22',title:'DFW Day 2: Six Flags + Viral Treats',subtitle:'All-together energy day \u00b7 Donna welcome'},
+{day:'fri24',dayLabel:'Fri Apr 24',title:'The Menil Campus + Fly Home',subtitle:'Rothko Chapel \u00b7 Menil Collection \u00b7 Cy Twombly \u00b7 B6 932 IAH \u2192 BOS'},
+];
+
+const DAYS_ORDER=['fri17','sat18','sun19','mon20','tue21','wed22','thu23','fri24'];
+const DAY_LABELS={fri17:'Fri 17',sat18:'Sat 18',sun19:'Sun 19',mon20:'Mon 20',tue21:'Tue 21',wed22:'Wed 22',thu23:'Thu 23',fri24:'Fri 24'};
+const STATES_ORDER=['MA','CT','NY','PA','VA','TN','AL','MS','LA','TX'];
+const TYPES_ORDER=[{k:'food',l:'Food'},{k:'energy',l:'Energy'},{k:'photo',l:'Photo'},{k:'poi',l:'POI'},{k:'gas',l:'Gas'},{k:'viral',l:'Viral'}];
+const PERSONS=[{k:'jonathan',l:'Jonathan',emoji:''},{k:'helen',l:'Helen',emoji:''},{k:'aurelia',l:'Aurelia',emoji:'\uD83C\uDFD0'},{k:'rafa',l:'Rafa',emoji:'\uD83E\uDD96'}];
+
+let activePerson='jonathan',filterDay='all',filterState='all',filterType='all';
+
+function wazeUrl(lat,lng){return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`}
+function appleUrl(addr){return `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}`}
+function tiktokUrl(name){return `https://www.tiktok.com/search?q=${encodeURIComponent(name)}`}
+function googleUrl(addr){return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`}
+
+function navLinks(stop){
+  const p=activePerson;
+  let h='';
+  if(stop.address&&stop.address!=='N/A'){
+    if(p==='jonathan') h+=`<a class="action-btn waze" href="${wazeUrl(stop.lat,stop.lng)}" target="_blank">Waze</a>`;
+    else if(p==='helen') h+=`<a class="action-btn apple" href="${appleUrl(stop.address)}" target="_blank">Apple Maps</a>`;
+    else if(p==='aurelia'){h+=`<a class="action-btn tiktok" href="${tiktokUrl(stop.name)}" target="_blank">TikTok</a>`;h+=`<a class="action-btn apple" href="${appleUrl(stop.address)}" target="_blank">Maps</a>`;}
+    else if(p==='rafa') h+=`<a class="action-btn apple" href="${appleUrl(stop.address)}" target="_blank">Maps</a>`;
+    else h+=`<a class="action-btn google" href="${googleUrl(stop.address)}" target="_blank">Maps</a>`;
+  }
+  return h;
+}
+
+function renderPitches(stop){
+  const p=activePerson;
+  let h='';
+  if(p==='everyone'||p==='all'){
+    for(const k of['helen','aurelia','rafa','jonathan']){
+      if(stop.pitch[k]) h+=`<p class="pitch"><span class="pitch-label pl-${k}">${k[0].toUpperCase()+k.slice(1)}</span> ${stop.pitch[k]}</p>`;
+    }
+  } else {
+    if(stop.pitch[p]) h+=`<p class="pitch">${stop.pitch[p]}</p>`;
+    // Show one other relevant pitch
+    for(const k of['helen','aurelia','rafa','jonathan']){
+      if(k!==p&&stop.pitch[k]){h+=`<p class="pitch" style="opacity:.6"><span class="pitch-label pl-${k}">${k[0].toUpperCase()+k.slice(1)}</span> ${stop.pitch[k]}</p>`;break;}
+    }
+  }
+  return h;
+}
+
+function renderStop(stop){
+  const isBucees=stop.name.toLowerCase().includes('buc-ee');
+  let cls='card';
+  if(stop.star)cls+=' star';
+  if(isBucees)cls+=' bucees';
+  let h=`<div class="${cls}">`;
+  h+=`<div class="card-name">${stop.name}`;
+  if(stop.star)h+=` <span class="star-badge">TOP PICK</span>`;
+  h+=`</div>`;
+  h+=`<div class="tags">`;
+  stop.persons.forEach(p=>{if(p!=='everyone')h+=`<span class="tag t-${p}">${p[0].toUpperCase()+p.slice(1)}</span>`});
+  if(stop.persons.includes('everyone'))h+=`<span class="tag t-everyone">Everyone</span>`;
+  stop.types.forEach(t=>h+=`<span class="tag t-${t}">${t[0].toUpperCase()+t.slice(1)}</span>`);
+  h+=`</div>`;
+  h+=renderPitches(stop);
+  if(stop.details)h+=`<div class="card-meta">${stop.details}</div>`;
+  if(stop.vegNotes&&stop.vegNotes!=='N/A'&&(activePerson==='helen'||activePerson==='everyone'))h+=`<div class="card-meta" style="color:#2d8a4e">Vegetarian: ${stop.vegNotes}</div>`;
+  const nav=navLinks(stop);
+  if(nav)h+=`<div class="card-actions">${nav}</div>`;
+  h+=`</div>`;
+  return h;
+}
+
+function renderKennedaleDay(kd){
+  // These are the structured days that keep their original format
+  let h=`<div class="day-card" onclick="this.classList.toggle('open')">`;
+  h+=`<div class="day-header"><div><h3>${kd.title}</h3><div class="dh-sub">${kd.dayLabel} \u00b7 ${kd.subtitle}</div></div><span class="chev">\u25BC</span></div>`;
+  h+=`<div class="day-body">`;
+  
+  if(kd.day==='tue21'){
+    h+=`<div class="team-grid">`;
+    h+=`<div class="team-box team-girls"><h4>Helen + Aurelia + Aunt Donna</h4>`;
+    h+=`<table class="schedule">`;
+    h+=`<tr><td>10am</td><td><strong>Kimbell Art Museum</strong>, Fort Worth. Free. Louis Kahn. Caravaggio, Monet.</td></tr>`;
+    h+=`<tr><td>11:30</td><td><strong>Modern Art Museum</strong>. Tadao Ando. Rothko, Richter.</td></tr>`;
+    h+=`<tr><td>12:30</td><td>Lunch: <strong>HG Sply Co</strong>. "Hunted" + "Gathered" menu.</td></tr>`;
+    h+=`<tr><td>2pm</td><td><strong>Bishop Arts</strong> or <strong>NorthPark</strong>. Aurelia's choice.</td></tr>`;
+    h+=`<tr><td>3:30</td><td><strong>Le R\u00eave Gelato</strong>. Trompe-l'\u0153il pastries.</td></tr>`;
+    h+=`</table></div>`;
+    h+=`<div class="team-box team-guys"><h4>Jonathan + Rafa</h4>`;
+    h+=`<table class="schedule">`;
+    h+=`<tr><td>9:30</td><td>Drive to <strong>Dinosaur Valley State Park</strong>.</td></tr>`;
+    h+=`<tr><td>10:30</td><td>Paluxy River — 113M-year-old footprints. Bring water shoes.</td></tr>`;
+    h+=`<tr><td>12:30</td><td>Lunch in Glen Rose.</td></tr>`;
+    h+=`<tr><td>1:30</td><td><strong>Fossil Rim Wildlife Center</strong>. Drive-through safari. Giraffes.</td></tr>`;
+    h+=`</table></div>`;
+    h+=`</div>`;
+    h+=`<table class="schedule"><tr><td>5:30</td><td>Regroup at Aunt Donna's</td></tr>`;
+    h+=`<tr><td>6:30</td><td>Dinner: <strong>Meso Maya</strong>. Invite <strong>Aunt Debra</strong>. Whole family + both aunts.</td></tr></table>`;
+  } else if(kd.day==='wed22'){
+    h+=`<table class="schedule">`;
+    h+=`<tr><td>9:30</td><td><strong>Six Flags Over Texas</strong>, Arlington. Gates open.</td></tr>`;
+    h+=`<tr><td>AM</td><td>Jonathan + Aurelia \u2192 big coasters. Helen + Rafa \u2192 Bugs Bunny Boomtown. Donna: Rafa partner if she comes.</td></tr>`;
+    h+=`<tr><td>12:30</td><td>Regroup for lunch inside the park.</td></tr>`;
+    h+=`<tr><td>3:30</td><td>Leave before meltdown.</td></tr>`;
+    h+=`<tr><td>4pm</td><td><strong>SomiSomi</strong> or <strong>Amorino Gelato</strong>. Viral dessert stop.</td></tr>`;
+    h+=`<tr><td>6pm</td><td>Dinner: <strong>Rodeo Goat</strong>. Casual, patio. Great veggie options.</td></tr>`;
+    h+=`</table>`;
+  } else if(kd.day==='fri24'){
+    h+=`<table class="schedule">`;
+    h+=`<tr><td>9:30</td><td>Pack up Airbnb. Walk to the Rothko Chapel.</td></tr>`;
+    h+=`<tr><td>10am</td><td><strong>Rothko Chapel</strong>. 14 Rothko murals. Dark, contemplative, profound. <em>Helen has wanted this her entire adult life.</em></td></tr>`;
+    h+=`<tr><td>10:30</td><td>Walk to <strong>Menil Collection</strong> (opens 11am). Coffee nearby.</td></tr>`;
+    h+=`<tr><td>11am</td><td>Helen + Aurelia enter the Menil. Jonathan takes Rafa to the grounds.</td></tr>`;
+    h+=`<tr><td>11:30</td><td>Helen \u2192 <strong>Cy Twombly Gallery</strong>. Her #3 artist. 20 min.</td></tr>`;
+    h+=`<tr><td>12pm</td><td>Regroup. Walk back to Airbnb/car.</td></tr>`;
+    h+=`<tr><td>12:15</td><td>Drive to IAH (~35 min). Return rental car.</td></tr>`;
+    h+=`<tr><td colspan="2" style="text-align:center;font-weight:700;color:var(--accent);padding:12px">\u2708\uFE0F B6 932 \u00b7 IAH \u2192 BOS \u00b7 Nonstop</td></tr>`;
+    h+=`<tr><td>PM</td><td><strong>Home in Belmont.</strong></td></tr>`;
+    h+=`</table>`;
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+function filterStops(){
+  return STOPS.filter(s=>{
+    if(filterDay!=='all'&&s.day!==filterDay)return false;
+    if(filterState!=='all'&&s.state!==filterState)return false;
+    if(filterType!=='all'&&!s.types.includes(filterType))return false;
+    if(activePerson!=='everyone'&&activePerson!=='jonathan'&&!s.persons.includes(activePerson)&&!s.persons.includes('everyone'))return false;
+    return true;
+  });
+}
+
+function getTitle(){
+  const p=activePerson;
+  if(p==='helen')return 'Our Road Trip';
+  if(p==='aurelia')return 'Road Trip \uD83C\uDFD0\u2728';
+  if(p==='rafa')return 'ROAD TRIP!! \uD83E\uDD96\uD83D\uDD77';
+  return 'Jackson Family Road Trip';
+}
+
+function getSub(){
+  const p=activePerson;
+  if(p==='helen')return 'April 17\u201324, 2026';
+  if(p==='aurelia')return 'apr 17-24 \u00b7 belmont to texas \u00b7 lets gooo';
+  if(p==='rafa')return 'WE ARE GOING TO TEXAS!!!';
+  return 'April 17\u201324, 2026 \u00b7 Belmont \u2192 Texas \u2192 Home';
+}
+
+function render(){
+  document.body.setAttribute('data-theme',activePerson==='everyone'?'jonathan':activePerson);
+  const meta=document.querySelector('meta[name=theme-color]');
+  if(meta){
+    const themes={jonathan:'#1a1714',helen:'#f5f1ec',aurelia:'#fdf0f4',rafa:'#e8f0ff'};
+    meta.content=themes[activePerson]||themes.jonathan;
+  }
+
+  const stops=filterStops();
+  const isFiltered=filterDay!=='all'||filterState!=='all'||filterType!=='all';
+
+  let h=`<header><h1>${getTitle()}</h1><div class="sub">${getSub()}</div></header>`;
+
+  // Person selector
+  h+=`<div class="person-bar">`;
+  PERSONS.forEach(p=>{
+    const lbl=(activePerson==='aurelia'||activePerson==='rafa')?`${p.emoji} ${p.l}`:p.l;
+    h+=`<button class="person-btn ${activePerson===p.k?'active':''}" onclick="setPerson('${p.k}')">${lbl}</button>`;
+  });
+  h+=`</div>`;
+
+  // Filters
+  h+=`<div class="filters">`;
+  h+=`<button class="filter-btn ${filterDay==='all'?'active':''}" onclick="setFilter('day','all')">All Days</button>`;
+  DAYS_ORDER.forEach(d=>{h+=`<button class="filter-btn ${filterDay===d?'active':''}" onclick="setFilter('day','${d}')">${DAY_LABELS[d]}</button>`});
+  h+=`</div>`;
+  h+=`<div class="filters">`;
+  h+=`<button class="filter-btn ${filterType==='all'?'active':''}" onclick="setFilter('type','all')">All Types</button>`;
+  TYPES_ORDER.forEach(t=>{h+=`<button class="filter-btn ${filterType===t.k?'active':''}" onclick="setFilter('type','${t.k}')">${t.l}</button>`});
+  h+=`</div>`;
+
+  // Render stops grouped by day
+  if(!isFiltered){
+    // Show full itinerary with day groupings
+    let currentCluster='';
+    const grouped={};
+    stops.forEach(s=>{if(!grouped[s.day])grouped[s.day]=[];grouped[s.day].push(s)});
+
+    DAYS_ORDER.forEach(day=>{
+      // Check for Kennedale structured days
+      const kd=KENNEDALE_DAYS.find(k=>k.day===day);
+      if(kd){h+=renderKennedaleDay(kd);return;}
+
+      const dayStops=grouped[day];
+      if(!dayStops||dayStops.length===0)return;
+
+      const first=dayStops[0];
+      h+=`<div class="section-label">${first.dayLabel}</div>`;
+      let curCluster='';
+      dayStops.forEach(s=>{
+        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div style="font-size:.78em;color:var(--muted);font-weight:600;margin:10px 0 4px">${curCluster}</div>`}
+        h+=renderStop(s);
+      });
+    });
+
+    // Thursday Houston drive
+    const thuStops=grouped['thu23'];
+    if(thuStops&&thuStops.length>0){
+      h+=`<div class="section-label">Thu Apr 23 — Drive to Houston</div>`;
+      let curCluster='';
+      thuStops.forEach(s=>{
+        if(s.cluster!==curCluster){curCluster=s.cluster;h+=`<div style="font-size:.78em;color:var(--muted);font-weight:600;margin:10px 0 4px">${curCluster}</div>`}
+        h+=renderStop(s);
+      });
+    }
+
+    // Emotional arc
+    h+=`<div class="emotional-arc"><h3>The Emotional Arc</h3>`;
+    h+=`<p><strong>Friday:</strong> Departure. Excitement. The cabin.</p>`;
+    h+=`<p><strong>Saturday:</strong> The ceremony. Grief and beauty. The cabin is shelter.</p>`;
+    h+=`<p><strong>Sunday:</strong> Long push south. Barber Museum resets everything.</p>`;
+    h+=`<p><strong>Monday:</strong> Dinosaurs, Vicksburg, Buc-ee's. Arriving at Aunt Donna's.</p>`;
+    h+=`<p><strong>Tue\u2013Wed:</strong> Play. Everyone gets to be themselves.</p>`;
+    h+=`<p><strong>Thursday:</strong> Goodbye Donna. Hello Houston and Chris.</p>`;
+    h+=`<p><strong>Friday:</strong> The Rothko Chapel. Then home.</p>`;
+    h+=`<p style="margin-top:10px;font-style:italic;color:var(--accent)">The trip begins with an ending and closes with a beginning.</p>`;
+    h+=`</div>`;
+  } else {
+    // Filtered view — flat list
+    if(stops.length===0){
+      h+=`<div class="empty">No stops match these filters.</div>`;
+    } else {
+      stops.forEach(s=>h+=renderStop(s));
+    }
+  }
+
+  document.getElementById('app').innerHTML=h;
+}
+
+function setPerson(p){activePerson=p;render();window.scrollTo(0,0)}
+function setFilter(type,val){
+  if(type==='day')filterDay=val;
+  if(type==='state')filterState=val;
+  if(type==='type')filterType=val;
+  render();
+}
+
+render();
+
+// Register service worker
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{})}
+</script>
+</body>
+</html>
