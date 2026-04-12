@@ -4,12 +4,14 @@ import { STATES_ORDER, STATE_NAMES, TYPES_ORDER } from '../data/meta'
 import { filterStops } from '../utils/filterStops'
 import { StopCard } from './StopCard'
 import { EssentialsCard } from './EssentialsCard'
+import { RouteMapLazy } from './RouteMapLazy'
 import './DiscoverView.css'
 
 export function DiscoverView({ activePerson }) {
   const [filterState, setFilterState] = useState('all')
   const [filterType, setFilterType] = useState('all')
   const [rainyDay, setRainyDay] = useState(false)
+  const [viewMode, setViewMode] = useState('map')
 
   const stops = useMemo(
     () =>
@@ -39,6 +41,35 @@ export function DiscoverView({ activePerson }) {
         stops={stops}
         activePerson={activePerson}
       />
+    )
+  }
+
+  if (viewMode === 'map') {
+    return (
+      <section className="discover discover-map-mode">
+        <RouteMapLazy mode="discover" stops={stops} activePerson={activePerson}>
+          <div className="map-float-filters">
+            <div className="filter-row">
+              <FilterPill label="All" active={filterState === 'all'} onClick={() => setFilterState('all')} />
+              {STATES_ORDER.map((s) => (
+                <FilterPill key={s} label={s} active={filterState === s} onClick={() => setFilterState(s)} />
+              ))}
+            </div>
+            <div className="filter-row">
+              <FilterPill label="All" active={filterType === 'all'} onClick={() => setFilterType('all')} />
+              {TYPES_ORDER.map((t) => (
+                <FilterPill key={t.k} label={t.l} active={filterType === t.k} onClick={() => setFilterType(t.k)} />
+              ))}
+              <FilterPill
+                label={rainyDay ? '\u2614 Rainy' : '\u2600\uFE0F Weather'}
+                active={rainyDay}
+                onClick={() => setRainyDay(!rainyDay)}
+              />
+              <FilterPill label="List" active={false} onClick={() => setViewMode('list')} />
+            </div>
+          </div>
+        </RouteMapLazy>
+      </section>
     )
   }
 
@@ -93,6 +124,7 @@ export function DiscoverView({ activePerson }) {
               active={rainyDay}
               onClick={() => setRainyDay(!rainyDay)}
             />
+            <FilterPill label="Map" active={false} onClick={() => setViewMode('map')} />
           </div>
         </div>
       </div>

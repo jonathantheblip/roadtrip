@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useCallback } from 'react'
 import { STOPS } from '../data/stops'
 import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
+import { RouteMapLazy } from './RouteMapLazy'
 import { OVERNIGHTS } from '../data/overnight'
 import { PREP } from '../data/prep'
 import { GAS_WARNINGS } from '../data/gas_warnings'
@@ -66,6 +67,11 @@ export function ItineraryView({ activePerson }) {
 
   return (
     <section className="itinerary">
+      <RouteMapLazy
+        mode="itinerary"
+        stops={stops}
+        activePerson={activePerson}
+      />
       <FilterBar
         filterDay={filterDay}
         filterType={filterType}
