@@ -1,7 +1,6 @@
 import {
   wazeUrl,
   appleMapsUrl,
-  googleMapsUrl,
   openTikTokSearch,
 } from '../utils/navLinks'
 import { useVisitedContext } from '../hooks/VisitedContext'
@@ -63,6 +62,8 @@ export function StopCard({ stop, activePerson, onDismiss }) {
         {stop.star && <span className="star-badge">Top Pick</span>}
       </header>
 
+      {stop.flag && <div className="card-flag">{stop.flag}</div>}
+
       <div className="tags">
         {stop.persons
           .filter((p) => p !== 'everyone')
@@ -82,6 +83,8 @@ export function StopCard({ stop, activePerson, onDismiss }) {
       </div>
 
       <Pitches stop={stop} activePerson={activePerson} />
+
+      <StopFacts stop={stop} />
 
       {stop.details && <div className="card-meta">{stop.details}</div>}
 
@@ -170,82 +173,75 @@ function Pitches({ stop, activePerson }) {
   return pitches
 }
 
+function StopFacts({ stop }) {
+  const rows = []
+  if (stop.address && stop.address !== 'N/A')
+    rows.push(['Address', <span>{stop.address}</span>])
+  if (stop.hours && stop.hours !== 'N/A')
+    rows.push(['Hours', <span>{stop.hours}</span>])
+  if (stop.cost && stop.cost !== 'N/A')
+    rows.push(['Cost', <span>{stop.cost}</span>])
+  if (stop.phone)
+    rows.push([
+      'Phone',
+      <a href={`tel:${stop.phone.replace(/[^\d+]/g, '')}`}>{stop.phone}</a>,
+    ])
+  if (rows.length === 0) return null
+  return (
+    <dl className="card-facts">
+      {rows.map(([k, v]) => (
+        <div className="card-fact-row" key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+// Nav button rules (per ROADTRIP_VERIFIED_STOP_DATA.md):
+//   Jonathan → Waze only
+//   Helen / Aurelia / Rafa → Apple Maps only
+//   Everyone (shared view) → both
+// Aurelia also gets the TikTok search button alongside Apple Maps.
 function NavActions({ stop, activePerson }) {
   if (!stop.address || stop.address === 'N/A') return null
-  const actions = []
+  const showWaze = activePerson === 'jonathan' || activePerson === 'everyone'
+  const showApple = activePerson !== 'jonathan'
+  const showTikTok = activePerson === 'aurelia'
 
-  if (activePerson === 'jonathan') {
-    actions.push(
-      <a
-        key="waze"
-        className="action-btn waze"
-        href={wazeUrl(stop)}
-        target="_blank"
-        rel="noopener"
-      >
-        Waze
-      </a>
-    )
-  } else if (activePerson === 'helen') {
-    actions.push(
-      <a
-        key="apple"
-        className="action-btn apple"
-        href={appleMapsUrl(stop.address)}
-        target="_blank"
-        rel="noopener"
-      >
-        Apple Maps
-      </a>
-    )
-  } else if (activePerson === 'aurelia') {
-    actions.push(
-      <button
-        key="tiktok"
-        type="button"
-        className="action-btn tiktok"
-        onClick={() => openTikTokSearch(stop.name)}
-      >
-        TikTok
-      </button>
-    )
-    actions.push(
-      <a
-        key="apple"
-        className="action-btn apple"
-        href={appleMapsUrl(stop.address)}
-        target="_blank"
-        rel="noopener"
-      >
-        Maps
-      </a>
-    )
-  } else if (activePerson === 'rafa') {
-    actions.push(
-      <a
-        key="apple"
-        className="action-btn apple"
-        href={appleMapsUrl(stop.address)}
-        target="_blank"
-        rel="noopener"
-      >
-        Maps
-      </a>
-    )
-  } else {
-    actions.push(
-      <a
-        key="google"
-        className="action-btn google"
-        href={googleMapsUrl(stop.address)}
-        target="_blank"
-        rel="noopener"
-      >
-        Maps
-      </a>
-    )
-  }
-
-  return <div className="card-actions">{actions}</div>
+  return (
+    <div className="card-actions">
+      {showTikTok && (
+        <button
+          type="button"
+          className="action-btn tiktok"
+          onClick={() => openTikTokSearch(stop.name)}
+        >
+          TikTok
+        </button>
+      )}
+      {showWaze && (
+        <a
+          className="action-btn waze"
+          href={wazeUrl(stop)}
+          target="_blank"
+          rel="noopener"
+        >
+          Waze
+        </a>
+      )}
+      {showApple && (
+        <a
+          className="action-btn apple"
+          href={appleMapsUrl(stop.address)}
+          target="_blank"
+          rel="noopener"
+        >
+          Apple Maps
+        </a>
+      )}
+    </div>
+  )
 }
 

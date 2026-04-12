@@ -3,7 +3,9 @@
 // (category: 'discover'). Source of truth for all data is the original
 // ROADTRIP_PWA_BUILD_SPEC.md. Edit this file, not index.html.
 
-export const STOPS = [
+import { VERIFIED_STOPS } from './verifiedStops'
+
+const RAW_STOPS = [
 // === FRIDAY APR 17 ===
 {id:'f1',indoor:true,name:'Pond House Cafe',day:'fri17',dayLabel:'Fri Apr 17',state:'CT',types:['food','energy','photo'],persons:['helen','aurelia','rafa','everyone'],address:'1555 Asylum Ave, West Hartford, CT 06117',lat:41.768,lng:-72.722,hours:'Fri 11:30am-4pm',star:true,cluster:'2hr: West Hartford CT',pitch:{helen:'Farm-to-table inside a world-famous rose garden — herbs growing outside end up on your plate.',aurelia:'The pond views from the patio photograph like a magazine spread — golden hour or not, this place is content.',rafa:'Huge playground RIGHT next to the restaurant plus massive gardens to run through!'},details:'Vegetarian: curried rice, beet-gorgonzola salad, seasonal veggie plates. Reserve on OpenTable. Elizabeth Park playground adjacent.',vegNotes:'Strong variety',menuUrl:'https://pondhousecafe.com/brunch-lunch/',photosUrl:'https://www.yelp.com/biz_photos/pond-house-cafe-west-hartford-3'},
 {id:'f2',name:'Zohara Mediterranean Kitchen',day:'fri17',dayLabel:'Fri Apr 17',state:'CT',types:['food'],persons:['helen','jonathan'],address:'59 Raymond Rd, West Hartford, CT 06107',lat:41.763,lng:-72.737,hours:'Lunch & dinner',star:false,cluster:'2hr: West Hartford CT',pitch:{helen:'Roasted cauliflower, falafel, hummus, baba ganoush — reviewers praise the vegetarian depth, not afterthought sides.',jonathan:'The craft behind their mezze spread tells you everything about the kitchen\'s ambition.'},details:'Backup lunch if Pond House is full. Book OpenTable.',vegNotes:'Extensive mezze',menuUrl:'https://www.zoharact.com/menus/view/dinner',photosUrl:'https://www.yelp.com/biz_photos/zohara-west-hartford'},
@@ -227,3 +229,9 @@ export const STOPS = [
 {id:'d_vi_tx_beercan',lat:29.7628,lng:-95.3683,name:'Beer Can House',day:null,state:'TX',types:['viral','photo','poi'],persons:['aurelia','helen','rafa','everyone'],address:'222 Malone St, Houston, TX 77007',hours:'Wed-Sun 10am-4pm',star:false,category:'discover',pitch:{aurelia:"A folk-art house covered in 50,000+ RECYCLED BEER CANS by one man starting in 1968. Wind makes the cans tinkle like a curtain. Top-50 roadside attraction per Time.",helen:"Real outsider art with a remarkable backstory, preserved and open to tour.",rafa:"Shiny! Noisy! Strange!"},details:'$5 adults, free under 12. Self-guided tour ~30 min. Rice Military neighborhood, near Montrose.'},
 {id:'d_vi_tx_sloomoo',lat:29.7561,lng:-95.3726,indoor:true,name:'SlooMoo Institute',day:null,state:'TX',types:['viral','energy','poi'],persons:['aurelia','rafa','everyone'],address:'7620 Katy Fwy, Ste 360 (Marq-E Entertainment Center), Houston, TX',hours:'Book tickets online in advance',star:false,category:'discover',pitch:{aurelia:"A SLIME MUSEUM with custom slime-making stations, sensory play, and interactive installations. This is a Moriah Elizabeth video come to life.",rafa:"Sensory play heaven. Slime."},details:'Very active on TikTok. Book tickets online in advance.'},
 ];
+
+// Merge verified data (phone, cost, flag, corrected hours/addresses) onto
+// each base stop by id. Undefined fields in the overlay fall through.
+export const STOPS = RAW_STOPS.map((s) =>
+  VERIFIED_STOPS[s.id] ? { ...s, ...VERIFIED_STOPS[s.id] } : s
+)

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   wazeUrl,
   appleMapsUrl,
-  googleMapsUrl,
   openTikTokSearch,
 } from '../utils/navLinks'
 import { ShareButton } from './ShareButton'
@@ -102,6 +101,8 @@ function StopContent({ stop, activePerson }) {
         {stop.star && <span className="star-badge">Top Pick</span>}
       </h3>
 
+      {stop.flag && <div className="card-flag">{stop.flag}</div>}
+
       <div className="tags">
         {stop.persons
           ?.filter((p) => p !== 'everyone')
@@ -129,8 +130,10 @@ function StopContent({ stop, activePerson }) {
 
       {stop.details && <div className="map-card-meta">{stop.details}</div>}
 
+      <MapCardFacts stop={stop} />
+
       <div className="map-card-actions">
-        <NavBtn stop={stop} activePerson={activePerson} />
+        <MapNavBtns stop={stop} activePerson={activePerson} />
         {stop.menuUrl && (
           <a href={stop.menuUrl} target="_blank" rel="noopener">
             Menu
@@ -180,26 +183,49 @@ function Pitches({ stop, activePerson }) {
   )
 }
 
-function NavBtn({ stop, activePerson }) {
-  if (!stop.address || stop.address === 'N/A') return null
-  if (activePerson === 'jonathan') {
-    return (
-      <a href={wazeUrl(stop)} target="_blank" rel="noopener">
-        Waze
-      </a>
-    )
-  }
-  if (activePerson === 'helen') {
-    return (
-      <a href={appleMapsUrl(stop.address)} target="_blank" rel="noopener">
-        Apple Maps
-      </a>
-    )
-  }
+function MapCardFacts({ stop }) {
+  const rows = []
+  if (stop.address && stop.address !== 'N/A') rows.push(['Address', stop.address])
+  if (stop.hours && stop.hours !== 'N/A') rows.push(['Hours', stop.hours])
+  if (stop.cost && stop.cost !== 'N/A') rows.push(['Cost', stop.cost])
+  if (rows.length === 0 && !stop.phone) return null
   return (
-    <a href={googleMapsUrl(stop.address)} target="_blank" rel="noopener">
-      Maps
-    </a>
+    <dl className="card-facts">
+      {rows.map(([k, v]) => (
+        <div className="card-fact-row" key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+      {stop.phone && (
+        <div className="card-fact-row">
+          <dt>Phone</dt>
+          <dd>
+            <a href={`tel:${stop.phone.replace(/[^\d+]/g, '')}`}>{stop.phone}</a>
+          </dd>
+        </div>
+      )}
+    </dl>
+  )
+}
+
+function MapNavBtns({ stop, activePerson }) {
+  if (!stop.address || stop.address === 'N/A') return null
+  const showWaze = activePerson === 'jonathan' || activePerson === 'everyone'
+  const showApple = activePerson !== 'jonathan'
+  return (
+    <>
+      {showWaze && (
+        <a href={wazeUrl(stop)} target="_blank" rel="noopener">
+          Waze
+        </a>
+      )}
+      {showApple && (
+        <a href={appleMapsUrl(stop.address)} target="_blank" rel="noopener">
+          Apple Maps
+        </a>
+      )}
+    </>
   )
 }
 

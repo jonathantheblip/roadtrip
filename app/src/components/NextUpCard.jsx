@@ -56,6 +56,7 @@ export function NextUpCard({ stops, day, activePerson, visited, onSkip }) {
         {nextStop.name}
         {activePerson === 'aurelia' && ' ✨'}
       </h3>
+      {nextStop.flag && <div className="card-flag">{nextStop.flag}</div>}
       {nextStop.persons && (
         <div className="next-up-tags">
           {nextStop.persons
@@ -104,16 +105,31 @@ export function NextUpCard({ stops, day, activePerson, visited, onSkip }) {
 
 function NavButton({ address, activePerson, stop }) {
   if (!address || address === 'N/A') return null
-  if (activePerson === 'jonathan' && stop) {
-    return (
-      <a className="next-up-btn nav-btn" href={wazeUrl(stop)} target="_blank" rel="noopener">
-        Waze
-      </a>
-    )
-  }
+  const showWaze =
+    stop && (activePerson === 'jonathan' || activePerson === 'everyone')
+  const showApple = activePerson !== 'jonathan'
   return (
-    <a className="next-up-btn nav-btn" href={appleMapsUrl(address)} target="_blank" rel="noopener">
-      Apple Maps
-    </a>
+    <>
+      {showWaze && (
+        <a
+          className="next-up-btn nav-btn"
+          href={wazeUrl(stop)}
+          target="_blank"
+          rel="noopener"
+        >
+          Waze
+        </a>
+      )}
+      {showApple && (
+        <a
+          className="next-up-btn nav-btn"
+          href={appleMapsUrl(address)}
+          target="_blank"
+          rel="noopener"
+        >
+          Apple Maps
+        </a>
+      )}
+    </>
   )
 }

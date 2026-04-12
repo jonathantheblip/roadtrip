@@ -187,6 +187,87 @@
 }
 
 /* ============================================
+   Warning flag banner — amber, render above tags
+   ============================================ */
+.card-flag {
+  background: #fff4c4;
+  border: 1px solid #f5c518;
+  border-left: 3px solid #f5a623;
+  color: #5a4400;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  padding: 7px 10px;
+  border-radius: 6px;
+  margin: 2px 0 10px;
+}
+[data-theme='rafa'] .card-flag {
+  background: rgba(253, 216, 53, 0.15);
+  color: #ffd54f;
+  border: 1px solid rgba(253, 216, 53, 0.55);
+  border-left: 3px solid #ffb300;
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+[data-theme='helen'] .card-flag {
+  background: #faf3dc;
+  border-radius: 1px;
+  font-family: var(--font-display);
+  font-style: italic;
+}
+
+/* ============================================
+   Verified facts (address, hours, cost, phone)
+   ============================================ */
+.card-facts {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  background: var(--bg2);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  display: grid;
+  gap: 2px;
+}
+.card-fact-row {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.card-fact-row dt {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin: 0;
+}
+.card-fact-row dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+.card-fact-row dd a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+.card-fact-row dd a:hover { text-decoration: underline; }
+
+[data-theme='helen'] .card-facts {
+  background: #faf6ef;
+  border-left: 2px solid var(--accent2);
+  border-radius: 1px;
+  font-size: 12.5px;
+}
+[data-theme='rafa'] .card-facts {
+  background: rgba(21, 101, 192, 0.08);
+  border: 1px solid rgba(21, 101, 192, 0.25);
+  border-radius: 0;
+}
+
+/* ============================================
    Tags
    ============================================ */
 .tags {
