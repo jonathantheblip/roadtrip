@@ -40,6 +40,7 @@ export function RouteMapLazy({ mode, stops, activePerson, children }) {
   return (
     <div className={`route-map-wrap mode-${mode}`}>
       <ColorKey />
+      <div className="route-map-inner">
       {isOnline ? (
         <Suspense
           fallback={<div className="route-map-loading">Loading map…</div>}
@@ -60,6 +61,7 @@ export function RouteMapLazy({ mode, stops, activePerson, children }) {
         />
       )}
       {children}
+      </div>
       <MapCard
         stop={selectedStop}
         activePerson={activePerson}
