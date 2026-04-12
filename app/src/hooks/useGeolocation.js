@@ -20,52 +20,71 @@ function saveLast(pos) {
   }
 }
 
+// Single shared watcher so multiple components don't each open their own
+// geolocation subscription — meaningful for battery on a phone held all day.
+const listeners = new Set()
+let state = { position: null, status: 'idle', lastKnown: loadLast() }
+let watchStarted = false
+let watchId = null
+
+function emit() {
+  listeners.forEach((cb) => cb(state))
+}
+
+function ensureWatch() {
+  if (watchStarted) return
+  watchStarted = true
+  if (!('geolocation' in navigator)) {
+    state = { ...state, status: 'unavailable' }
+    emit()
+    return
+  }
+  try {
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const next = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+        }
+        state = { position: next, status: 'granted', lastKnown: next }
+        saveLast(next)
+        emit()
+      },
+      (err) => {
+        const nextStatus = err.code === 1 ? 'denied' : 'unavailable'
+        state = { ...state, status: nextStatus }
+        emit()
+      },
+      {
+        enableHighAccuracy: false,
+        maximumAge: 30000,
+        timeout: 10000,
+      }
+    )
+  } catch {
+    state = { ...state, status: 'unavailable' }
+    emit()
+  }
+}
+
 export function useGeolocation() {
-  const [position, setPosition] = useState(null)
-  const [status, setStatus] = useState('idle') // idle | granted | denied | unavailable
-  const [lastKnown] = useState(() => loadLast())
+  const [snapshot, setSnapshot] = useState(state)
 
   useEffect(() => {
-    if (!('geolocation' in navigator)) {
-      setStatus('unavailable')
-      return
-    }
-    let watchId
-    try {
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const next = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-            timestamp: pos.timestamp,
-          }
-          setPosition(next)
-          setStatus('granted')
-          saveLast(next)
-        },
-        (err) => {
-          if (err.code === 1) setStatus('denied')
-          else setStatus('unavailable')
-        },
-        {
-          enableHighAccuracy: false,
-          maximumAge: 30000,
-          timeout: 10000,
-        }
-      )
-    } catch {
-      setStatus('unavailable')
-    }
+    ensureWatch()
+    listeners.add(setSnapshot)
+    setSnapshot(state)
     return () => {
-      if (watchId != null) navigator.geolocation.clearWatch(watchId)
+      listeners.delete(setSnapshot)
     }
   }, [])
 
-  return { position, status, lastKnown: position || lastKnown }
+  return snapshot
 }
 
-// Simple haversine distance in km
+// Haversine distance in km.
 export function distanceKm(a, b) {
   if (!a || !b) return Infinity
   const R = 6371

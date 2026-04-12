@@ -205,6 +205,9 @@ export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStop
           Location off — tap to enable
         </a>
       )}
+      {status === 'unavailable' && !position && (
+        <span className="location-muted">Location unavailable</span>
+      )}
     </MapContainer>
   )
 }
