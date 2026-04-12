@@ -9,7 +9,9 @@
 //                    in Mississippi, Virginia mountains, etc.)
 //
 // Cache name is versioned so the activate handler wipes stale generations.
-const CACHE_NAME = 'jackson-trip-react-v4';
+const CACHE_NAME = 'jackson-trip-react-v5';
+const TILE_CACHE = 'jackson-trip-tiles-v1';
+const MAX_TILES = 500;
 const CORE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -28,7 +30,11 @@ self.addEventListener('message', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter((k) => k !== CACHE_NAME && k !== TILE_CACHE)
+          .map((k) => caches.delete(k))
+      )
     )
   );
   self.clients.claim();
@@ -60,6 +66,32 @@ self.addEventListener('fetch', (e) => {
 
   // Only handle http(s) requests — skip chrome-extension://, data:, etc.
   if (!req.url.startsWith('http')) return;
+
+  // Map tiles: cache-first in a dedicated tile cache with LRU eviction.
+  if (req.url.includes('basemaps.cartocdn.com') || req.url.includes('tile.openstreetmap.org')) {
+    e.respondWith(
+      caches.open(TILE_CACHE).then((c) =>
+        c.match(req).then(
+          (cached) =>
+            cached ||
+            fetch(req).then((res) => {
+              if (res && res.ok) {
+                const copy = res.clone();
+                c.put(req, copy).then(() => {
+                  c.keys().then((keys) => {
+                    if (keys.length > MAX_TILES) {
+                      keys.slice(0, keys.length - MAX_TILES).forEach((k) => c.delete(k));
+                    }
+                  });
+                });
+              }
+              return res;
+            })
+        )
+      )
+    );
+    return;
+  }
 
   // Fonts: cache-first, write-through on first fetch.
   if (req.url.includes('fonts.googleapis') || req.url.includes('fonts.gstatic')) {

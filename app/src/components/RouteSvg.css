@@ -1,0 +1,55 @@
+.route-svg-wrap {
+  width: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 0;
+}
+
+.route-svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 320px;
+}
+
+.route-svg .route-line {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  opacity: 0.7;
+}
+
+.route-svg .state-label {
+  font-family: var(--font-display);
+  font-weight: var(--heading-weight);
+  font-size: 11px;
+  fill: var(--muted);
+}
+
+.route-svg .stop-dot {
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.route-svg .stop-dot.dimmed {
+  opacity: 0.15;
+}
+
+.route-svg .stop-dot:hover circle {
+  r: 7;
+}
+
+.route-svg .stop-label {
+  font-family: var(--font-body);
+  font-size: 8px;
+  fill: var(--muted);
+  pointer-events: none;
+}
+
+body[data-theme='rafa'] .route-svg .state-label {
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+}
