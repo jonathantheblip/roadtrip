@@ -1,0 +1,136 @@
+.emergency-fab {
+  position: fixed;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--tag-text);
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 90;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  animation: fab-enter 0.5s ease-out;
+}
+
+@keyframes fab-enter {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+[data-theme='rafa'] .emergency-fab {
+  width: 64px;
+  height: 64px;
+  font-size: 26px;
+}
+
+.emergency-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+}
+
+.emergency-sheet {
+  position: fixed;
+  bottom: 56px;
+  left: 0;
+  right: 0;
+  z-index: 950;
+  max-height: 55vh;
+  background: var(--card);
+  border-top-left-radius: calc(var(--radius) + 4px);
+  border-top-right-radius: calc(var(--radius) + 4px);
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.25);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  transform: translateY(100%);
+  transition: transform 0.3s ease-out;
+}
+.emergency-sheet.open {
+  transform: translateY(0);
+}
+
+.emergency-section-title {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin: 14px 0 8px;
+}
+.emergency-section-title:first-child {
+  margin-top: 0;
+}
+
+.emergency-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.emergency-item:last-child {
+  border-bottom: none;
+}
+
+.emergency-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.emergency-item-name {
+  font-family: var(--font-display);
+  font-weight: var(--heading-weight);
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.emergency-item-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.emergency-item-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg2);
+  color: var(--muted);
+}
+
+.emergency-nav-btn {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--tag-text);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.emergency-empty {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+@media (min-width: 1024px) {
+  .emergency-sheet {
+    max-width: 480px;
+    right: 16px;
+    left: auto;
+    bottom: 72px;
+    border-radius: calc(var(--radius) + 4px);
+  }
+}

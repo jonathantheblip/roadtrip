@@ -4,6 +4,7 @@ import {
   googleMapsUrl,
   openTikTokSearch,
 } from '../utils/navLinks'
+import { useVisitedContext } from '../hooks/VisitedContext'
 import './StopCard.css'
 
 const PERSON_LABEL = {
@@ -24,13 +25,27 @@ const TYPE_LABEL = {
 }
 
 export function StopCard({ stop, activePerson }) {
+  const { isVisited, toggle } = useVisitedContext()
   const isBucees = stop.name.toLowerCase().includes('buc-ee')
+  const isPlanned = stop.category !== 'discover'
+  const checked = isVisited(stop.id)
   const classes = ['card']
   if (stop.star) classes.push('star')
   if (isBucees) classes.push('bucees')
+  if (checked) classes.push('visited')
 
   return (
     <article className={classes.join(' ')}>
+      {isPlanned && (
+        <button
+          type="button"
+          className={`visited-check ${checked ? 'checked' : ''}`}
+          onClick={() => toggle(stop.id)}
+          aria-label={checked ? 'Mark unvisited' : 'Mark visited'}
+        >
+          {checked && <span className="check-icon">✓</span>}
+        </button>
+      )}
       <header className="card-name">
         {stop.name}
         {stop.star && <span className="star-badge">Top Pick</span>}

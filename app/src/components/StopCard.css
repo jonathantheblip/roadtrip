@@ -1,3 +1,41 @@
+/* Visited checkbox */
+.visited-check {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 2;
+  transition: background 0.2s, border-color 0.2s;
+}
+.visited-check.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.check-icon {
+  color: var(--tag-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+.card.visited {
+  opacity: 0.55;
+  transition: opacity 0.3s ease-out;
+}
+.card.visited .card-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+  text-decoration-thickness: 1px;
+}
+
 .card {
   position: relative;
   background: var(--card);

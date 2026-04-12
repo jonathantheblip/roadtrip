@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTheme } from './hooks/useTheme'
+import { useVisited } from './hooks/useVisited'
+import { VisitedContext } from './hooks/VisitedContext'
 import { PersonSelector } from './components/PersonSelector'
 import { BottomNav } from './components/BottomNav'
+import { EmergencyFab } from './components/EmergencyFab'
 import { ItineraryView } from './components/ItineraryView'
 import { MediaView } from './components/MediaView'
 import { DiscoverView } from './components/DiscoverView'
@@ -27,6 +30,7 @@ function initialTab() {
 export default function App() {
   const { activePerson, theme, setPerson } = useTheme()
   const [activeTab, setActiveTab] = useState(initialTab)
+  const visitedState = useVisited()
 
   // Mirror the active tab in the ?tab= query string via replaceState
   // so a home-screen save captures the current tab too.
@@ -61,6 +65,7 @@ export default function App() {
   }
 
   return (
+    <VisitedContext.Provider value={visitedState}>
     <main className="app">
       <header className="top-bar">
         <div className="top-bar-title">
@@ -80,7 +85,9 @@ export default function App() {
         )}
       </div>
 
+      <EmergencyFab activePerson={activePerson} />
       <BottomNav active={activeTab} onChange={handleTabChange} />
     </main>
+    </VisitedContext.Provider>
   )
 }

@@ -16,7 +16,7 @@ import { PrepCard } from './PrepCard'
 import { GasWarning } from './GasWarning'
 import { NextUpCard } from './NextUpCard'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
-import { useVisited } from '../hooks/useVisited'
+import { useVisitedContext } from '../hooks/VisitedContext'
 import { useSwipeDays } from '../hooks/useSwipeDays'
 import { isDuringTrip } from '../utils/tripDay'
 import './ItineraryView.css'
@@ -24,7 +24,7 @@ import './ItineraryView.css'
 export function ItineraryView({ activePerson }) {
   const { filterDay, filterType, rainyDay, setFilterDay, setFilterType, setRainyDay, isFiltered } =
     useItineraryFilters()
-  const { visited, markVisited } = useVisited()
+  const { visited, markVisited } = useVisitedContext()
   const { swipeX, swipeHandlers } = useSwipeDays(filterDay, setFilterDay)
 
   const allPlanned = useMemo(
