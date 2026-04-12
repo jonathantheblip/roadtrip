@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTheme } from './hooks/useTheme'
 import { PersonSelector } from './components/PersonSelector'
 import { BottomNav } from './components/BottomNav'
@@ -8,9 +8,39 @@ import { DiscoverView } from './components/DiscoverView'
 import './styles/themes.css'
 import './App.css'
 
+const VALID_TABS = ['itinerary', 'media', 'discover']
+
+// Read the initial tab from the ?tab= query param so a saved
+// Add-to-Home-Screen URL remembers where the user was. Fall back
+// to Itinerary.
+function initialTab() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const t = params.get('tab')
+    if (t && VALID_TABS.includes(t)) return t
+  } catch {
+    /* ignore */
+  }
+  return 'itinerary'
+}
+
 export default function App() {
   const { activePerson, theme, setPerson } = useTheme()
-  const [activeTab, setActiveTab] = useState('itinerary')
+  const [activeTab, setActiveTab] = useState(initialTab)
+
+  // Mirror the active tab in the ?tab= query string via replaceState
+  // so a home-screen save captures the current tab too.
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href)
+      if (url.searchParams.get('tab') !== activeTab) {
+        url.searchParams.set('tab', activeTab)
+        window.history.replaceState(null, '', url.toString())
+      }
+    } catch {
+      /* older browsers */
+    }
+  }, [activeTab])
 
   // Scroll the window back to the top when the user switches tabs or
   // persons so they land on the fresh view from the top. We let the
