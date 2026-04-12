@@ -1,0 +1,89 @@
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.share-btn:hover { opacity: 0.85; }
+
+.share-icon { font-size: 13px; line-height: 1; }
+
+/* Aurelia — prominent filled */
+.share-btn-aurelia {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  padding: 6px 14px;
+}
+[data-theme='aurelia'] .share-btn-aurelia {
+  box-shadow: 0 2px 8px rgba(194, 24, 91, 0.3);
+}
+
+/* Helen — sage outline, icon only */
+.share-btn-helen {
+  border-color: var(--accent2, #b8956a);
+  color: var(--accent);
+  padding: 6px 10px;
+}
+[data-theme='helen'] .share-btn-helen {
+  border-radius: 1px;
+}
+
+/* Jonathan — minimal copper icon */
+.share-btn-jonathan {
+  border: none;
+  color: var(--accent);
+  padding: 6px 8px;
+  opacity: 0.8;
+}
+
+/* Rafa — subtle */
+.share-btn-rafa {
+  border-color: var(--border);
+  color: var(--muted);
+  padding: 6px 10px;
+}
+[data-theme='rafa'] .share-btn-rafa {
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
+.share-btn-everyone {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Map card variant — slightly smaller */
+.share-btn-map {
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.share-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 10000;
+  animation: share-toast-in 0.2s ease-out;
+}
+@keyframes share-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

@@ -5,6 +5,7 @@ import {
   openTikTokSearch,
 } from '../utils/navLinks'
 import { useVisitedContext } from '../hooks/VisitedContext'
+import { ShareButton } from './ShareButton'
 import './StopCard.css'
 
 const PERSON_LABEL = {
@@ -101,30 +102,29 @@ export function StopCard({ stop, activePerson, onDismiss }) {
 
       <NavActions stop={stop} activePerson={activePerson} />
 
-      {(stop.menuUrl || stop.photosUrl) && (
-        <div className="card-extras">
-          {stop.menuUrl && (
-            <a
-              className="extra-btn extra-menu"
-              href={stop.menuUrl}
-              target="_blank"
-              rel="noopener"
-            >
-              Menu
-            </a>
-          )}
-          {stop.photosUrl && (
-            <a
-              className="extra-btn extra-photos"
-              href={stop.photosUrl}
-              target="_blank"
-              rel="noopener"
-            >
-              Photos
-            </a>
-          )}
-        </div>
-      )}
+      <div className="card-extras">
+        {stop.menuUrl && (
+          <a
+            className="extra-btn extra-menu"
+            href={stop.menuUrl}
+            target="_blank"
+            rel="noopener"
+          >
+            Menu
+          </a>
+        )}
+        {stop.photosUrl && (
+          <a
+            className="extra-btn extra-photos"
+            href={stop.photosUrl}
+            target="_blank"
+            rel="noopener"
+          >
+            Photos
+          </a>
+        )}
+        <ShareButton stop={stop} activePerson={activePerson} />
+      </div>
     </article>
   )
 }
@@ -248,3 +248,4 @@ function NavActions({ stop, activePerson }) {
 
   return <div className="card-actions">{actions}</div>
 }
+

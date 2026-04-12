@@ -5,6 +5,7 @@ import {
   googleMapsUrl,
   openTikTokSearch,
 } from '../utils/navLinks'
+import { ShareButton } from './ShareButton'
 import './MapCard.css'
 
 const PERSON_LABEL = {
@@ -145,6 +146,7 @@ function StopContent({ stop, activePerson }) {
             TikTok
           </button>
         )}
+        <ShareButton stop={stop} activePerson={activePerson} variant="map" />
       </div>
     </>
   )
