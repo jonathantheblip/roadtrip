@@ -2,6 +2,14 @@
   animation: discover-fade 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.discover-map-mode {
+  margin: -14px -16px 0;
+  width: calc(100% + 32px);
+}
+.discover-map-mode .route-map-wrap {
+  border-radius: 0;
+}
+
 @keyframes discover-fade {
   from {
     opacity: 0;

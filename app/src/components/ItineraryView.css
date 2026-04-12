@@ -2,6 +2,12 @@
   animation: tab-fade 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.itinerary > .route-map-wrap {
+  margin: -14px -16px 14px;
+  width: calc(100% + 32px);
+  border-radius: 0;
+}
+
 @keyframes tab-fade {
   from {
     opacity: 0;
