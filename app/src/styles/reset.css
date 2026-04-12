@@ -26,6 +26,10 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
+  /* Clip horizontal overflow here, not on .app. Overflow on .app
+     would create a scroll container and break sticky positioning
+     on the top bar. */
+  overflow-x: clip;
   overscroll-behavior: none;
   /* Disable pull-to-refresh on iOS. */
   overscroll-behavior-y: contain;

@@ -28,6 +28,15 @@ export function useTheme() {
     }
     const meta = document.querySelector('meta[name="theme-color"]')
     if (meta) meta.setAttribute('content', THEMES[activePerson].themeColorMeta)
+    const appleMeta = document.querySelector(
+      'meta[name="apple-mobile-web-app-status-bar-style"]'
+    )
+    // Dark themes get 'black-translucent' so the status bar disappears;
+    // light themes get 'default'. Stays in sync with the theme color.
+    if (appleMeta) {
+      const dark = activePerson === 'jonathan' || activePerson === 'rafa'
+      appleMeta.setAttribute('content', dark ? 'black-translucent' : 'default')
+    }
   }, [activePerson])
 
   const setPerson = useCallback((person) => {

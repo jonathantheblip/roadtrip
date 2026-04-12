@@ -129,11 +129,19 @@
 }
 
 /* ============================================
-   Jonathan — copper rim pressed state
+   Jonathan — yellow rim pressed state, red halo
    ============================================ */
+[data-theme='jonathan'] .person-btn {
+  background: rgba(32, 26, 58, 0.6);
+  border-color: var(--border);
+}
 [data-theme='jonathan'] .person-btn.active {
+  background: var(--card);
+  color: var(--accent);
+  border-color: var(--accent);
   box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.4),
+    inset 0 2px 4px rgba(0, 0, 0, 0.45),
     0 0 0 1px var(--accent),
-    0 0 24px rgba(192, 115, 74, 0.3);
+    0 0 24px rgba(253, 216, 53, 0.35),
+    0 0 40px rgba(229, 57, 53, 0.15);
 }

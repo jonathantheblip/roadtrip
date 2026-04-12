@@ -18,8 +18,12 @@ const TABS = [
     k: 'media',
     label: 'Media',
     icon: (
+      // Feather-style headphones. Arc peaks at y=3 inside the 0..24
+      // viewBox so the headband never clips at the top of the tile.
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 18V8a9 9 0 0 1 18 0v10M18 13a3 3 0 0 1 3 3v3h-3a3 3 0 0 1 0-6zM6 13a3 3 0 0 0-3 3v3h3a3 3 0 0 0 0-6z" />
+        <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+        <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z" />
+        <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
       </svg>
     ),
   },

@@ -5,16 +5,18 @@
 .app {
   width: 100%;
   min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  overflow-x: hidden;
-  transition: background-color 0.4s ease, color 0.4s ease;
+  /* No background on .app so the body's themed gradient washes
+     through. No overflow here either — any overflow creates a
+     scroll container and breaks position: sticky on the top-bar.
+     Horizontal clip lives on body instead. */
+  transition: color 0.4s ease;
 }
 
 /* ============================================
    Sticky top bar — title strip + person selector.
-   Content scrolls underneath via backdrop blur.
+   The BODY scrolls, not a nested container, so
+   position: sticky works against the window and
+   pins the bar to the viewport top as you scroll.
    ============================================ */
 .top-bar {
   position: sticky;
@@ -54,15 +56,14 @@
 }
 
 /* ============================================
-   Scroll area — flex-1, edge-to-edge, bottom-padded
-   to clear the fixed bottom nav.
+   View inner — content wrapper. Keyed on active tab +
+   person so the crossfade retriggers on every switch.
+   Bottom padding clears the fixed BottomNav.
    ============================================ */
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+.view-inner {
+  padding: 14px 16px calc(104px + env(safe-area-inset-bottom));
+  max-width: 720px;
+  margin: 0 auto;
   animation: view-fade 0.2s ease-out;
 }
 
@@ -75,12 +76,6 @@
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-.view-inner {
-  padding: 14px 16px calc(96px + env(safe-area-inset-bottom));
-  max-width: 720px;
-  margin: 0 auto;
 }
 
 /* ============================================
@@ -162,11 +157,15 @@
 }
 
 /* ============================================
-   Jonathan — Bloomberg Terminal top bar
-   Understated, copper glow on the title
+   Jonathan — dark purple, yellow + red accents
+   Yellow glow on the title, subtle red wash below
    ============================================ */
 [data-theme='jonathan'] .top-bar-title h1 {
-  text-shadow: 0 0 18px rgba(192, 115, 74, 0.18);
+  color: var(--accent3);
+  text-shadow: 0 0 22px rgba(253, 216, 53, 0.32);
+}
+[data-theme='jonathan'] .top-bar {
+  border-bottom: 1px solid rgba(253, 216, 53, 0.18);
 }
 
 /* ============================================
@@ -213,7 +212,6 @@
   .option-toggle {
     display: none !important;
   }
-  .scroll-area,
   .view-inner {
     padding: 0 !important;
     max-width: 100% !important;

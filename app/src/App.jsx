@@ -12,22 +12,21 @@ export default function App() {
   const { activePerson, theme, setPerson } = useTheme()
   const [activeTab, setActiveTab] = useState('itinerary')
 
-  // Scroll the scroll container back to the top when the user switches
-  // tabs or persons so they land on the fresh view from the top.
+  // Scroll the window back to the top when the user switches tabs or
+  // persons so they land on the fresh view from the top. We let the
+  // body scroll (not a nested container) so position: sticky on the
+  // top bar actually works.
   const handleTabChange = (tab) => {
     setActiveTab(tab)
-    // Small delay so state commits before scrolling
     requestAnimationFrame(() => {
-      const sc = document.getElementById('scroll-area')
-      if (sc) sc.scrollTo({ top: 0, behavior: 'smooth' })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     })
   }
 
   const handlePersonChange = (p) => {
     setPerson(p)
     requestAnimationFrame(() => {
-      const sc = document.getElementById('scroll-area')
-      if (sc) sc.scrollTo({ top: 0, behavior: 'smooth' })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     })
   }
 
@@ -41,20 +40,14 @@ export default function App() {
         <PersonSelector active={activePerson} onChange={handlePersonChange} />
       </header>
 
-      <div
-        className="scroll-area"
-        id="scroll-area"
-        key={`${activeTab}-${activePerson}`}
-      >
-        <div className="view-inner">
-          {activeTab === 'itinerary' && (
-            <ItineraryView activePerson={activePerson} />
-          )}
-          {activeTab === 'media' && <MediaView activePerson={activePerson} />}
-          {activeTab === 'discover' && (
-            <DiscoverView activePerson={activePerson} />
-          )}
-        </div>
+      <div className="view-inner" key={`${activeTab}-${activePerson}`}>
+        {activeTab === 'itinerary' && (
+          <ItineraryView activePerson={activePerson} />
+        )}
+        {activeTab === 'media' && <MediaView activePerson={activePerson} />}
+        {activeTab === 'discover' && (
+          <DiscoverView activePerson={activePerson} />
+        )}
       </div>
 
       <BottomNav active={activeTab} onChange={handleTabChange} />

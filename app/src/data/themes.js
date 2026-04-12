@@ -13,7 +13,7 @@ export const THEMES = {
     navApp: 'waze',
     title: 'Jackson Family Road Trip',
     subtitle: 'April 17–24, 2026 · Belmont → Texas → Home',
-    themeColorMeta: '#1a1714',
+    themeColorMeta: '#16102a',
   },
   helen: {
     key: 'helen',
