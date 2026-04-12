@@ -35,7 +35,7 @@ export function DiscoverView({ activePerson }) {
       </div>
     )
   } else if (filterState === 'all') {
-    body = <GroupedByState stops={stops} activePerson={activePerson} onDismiss={dismiss} />
+    body = <GroupedByState stops={stops} activePerson={activePerson} onDismiss={dismiss} dismissed={dismissed} onRestore={restore} />
   } else {
     body = (
       <FlatState
@@ -151,7 +151,7 @@ function FilterPill({ label, active, onClick }) {
   )
 }
 
-function GroupedByState({ stops, activePerson, onDismiss }) {
+function GroupedByState({ stops, activePerson, onDismiss, dismissed, onRestore }) {
   const grouped = useMemo(() => {
     const acc = {}
     stops.forEach((s) => {
@@ -161,25 +161,62 @@ function GroupedByState({ stops, activePerson, onDismiss }) {
     return acc
   }, [stops])
 
+  const hiddenByState = useMemo(() => {
+    if (!dismissed || dismissed.length === 0) return {}
+    const acc = {}
+    const allDiscover = filterStops(STOPS, { category: 'discover', activePerson })
+    allDiscover.forEach((s) => {
+      if (dismissed.includes(s.id)) {
+        if (!acc[s.state]) acc[s.state] = []
+        acc[s.state].push(s)
+      }
+    })
+    return acc
+  }, [dismissed, activePerson])
+
+  const [showHidden, setShowHidden] = useState({})
+
   return (
     <>
       {STATES_ORDER.map((state) => {
         const list = grouped[state]
-        if (!list || list.length === 0) return null
+        const hidden = hiddenByState[state]
+        if ((!list || list.length === 0) && (!hidden || hidden.length === 0)) return null
         return (
           <div key={state} className="discover-state">
             <h3 className="discover-state-title">
               <span className="discover-state-name">{STATE_NAMES[state]}</span>
               <span className="discover-state-count">
-                {list.length} {list.length === 1 ? 'pick' : 'picks'}
+                {(list?.length || 0)} {(list?.length || 0) === 1 ? 'pick' : 'picks'}
               </span>
             </h3>
             <EssentialsCard state={state} />
             <div className="stops-grid">
-              {list.map((s) => (
+              {list?.map((s) => (
                 <StopCard key={s.id} stop={s} activePerson={activePerson} onDismiss={onDismiss} />
               ))}
             </div>
+            {hidden && hidden.length > 0 && !showHidden[state] && (
+              <button
+                type="button"
+                className="show-hidden-link"
+                onClick={() => setShowHidden((p) => ({ ...p, [state]: true }))}
+              >
+                Show {hidden.length} hidden {hidden.length === 1 ? 'stop' : 'stops'}
+              </button>
+            )}
+            {showHidden[state] && hidden?.map((s) => (
+              <div key={s.id} className="hidden-stop-row">
+                <span className="hidden-stop-name">{s.name}</span>
+                <button
+                  type="button"
+                  className="restore-btn"
+                  onClick={() => onRestore(s.id)}
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
           </div>
         )
       })}

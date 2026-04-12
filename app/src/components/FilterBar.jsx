@@ -1,4 +1,7 @@
+import { useMemo } from 'react'
+import { STOPS } from '../data/stops'
 import { DAYS_ORDER, DAY_LABELS, TYPES_ORDER } from '../data/meta'
+import { useVisitedContext } from '../hooks/VisitedContext'
 import './FilterBar.css'
 
 export function FilterBar({
@@ -9,6 +12,18 @@ export function FilterBar({
   onTypeChange,
   onRainyDayChange,
 }) {
+  const { visited } = useVisitedContext()
+
+  const dayCounts = useMemo(() => {
+    const counts = {}
+    DAYS_ORDER.forEach((d) => {
+      const dayStops = STOPS.filter((s) => s.day === d && s.category !== 'discover')
+      const done = dayStops.filter((s) => visited.includes(s.id)).length
+      if (dayStops.length > 0) counts[d] = `${done}/${dayStops.length}`
+    })
+    return counts
+  }, [visited])
+
   return (
     <div className="filter-section">
       <div className="filter-row">
@@ -25,6 +40,7 @@ export function FilterBar({
               label={DAY_LABELS[d]}
               active={filterDay === d}
               onClick={() => onDayChange(d)}
+              badge={dayCounts[d]}
             />
           ))}
         </div>
@@ -56,7 +72,7 @@ export function FilterBar({
   )
 }
 
-function FilterButton({ label, active, onClick }) {
+function FilterButton({ label, active, onClick, badge }) {
   return (
     <button
       type="button"
@@ -65,6 +81,7 @@ function FilterButton({ label, active, onClick }) {
       aria-pressed={active}
     >
       {label}
+      {badge && <span className="filter-badge">{badge}</span>}
     </button>
   )
 }
