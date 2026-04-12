@@ -1,6 +1,10 @@
 import { wazeUrl, appleMapsUrl } from '../utils/navLinks'
 import './TonightCard.css'
 
+function isTbd(v) {
+  return !v || String(v).toLowerCase().includes('tbd') || v === 'N/A'
+}
+
 export function TonightCard({ overnight, activePerson }) {
   const hasRealAddress =
     overnight.address && !overnight.address.toLowerCase().includes('tbd')
@@ -11,6 +15,29 @@ export function TonightCard({ overnight, activePerson }) {
     : null
   const navLabel = activePerson === 'jonathan' ? 'Waze' : 'Apple Maps'
 
+  const rows = []
+  if (overnight.checkIn)
+    rows.push(['Check-in', overnight.checkIn])
+  if (overnight.checkOut)
+    rows.push(['Check-out', overnight.checkOut])
+  if (overnight.checkInMethod && !isTbd(overnight.checkInMethod))
+    rows.push(['Entry', overnight.checkInMethod])
+  if (overnight.host) {
+    const host = overnight.coHost
+      ? `${overnight.host} (co-host ${overnight.coHost})`
+      : overnight.host
+    rows.push(['Host', host])
+  }
+  if (overnight.hostPhone) rows.push(['Host phone', overnight.hostPhone])
+  if (overnight.hostContact) rows.push(['Host', overnight.hostContact])
+  if (overnight.reservationCode)
+    rows.push(['Reservation', overnight.reservationCode])
+  if (overnight.guests && overnight.guests !== 'Family')
+    rows.push(['Guests', overnight.guests])
+  if (overnight.cost) rows.push(['Cost', overnight.cost])
+  if (overnight.wifiPassword && !isTbd(overnight.wifiPassword))
+    rows.push(['Wi-Fi', overnight.wifiPassword])
+
   return (
     <aside className="tonight-card" aria-label="Tonight\u2019s lodging">
       <div className="tonight-label">Tonight</div>
@@ -19,29 +46,15 @@ export function TonightCard({ overnight, activePerson }) {
 
       <div className="tonight-body">
         <div className="tonight-row tonight-address">{overnight.address}</div>
-        {overnight.checkIn && (
-          <div className="tonight-row">
-            <span className="tonight-key">Check-in</span>
-            <span className="tonight-val">{overnight.checkIn}</span>
+        {rows.map(([k, v]) => (
+          <div className="tonight-row" key={k}>
+            <span className="tonight-key">{k}</span>
+            <span className="tonight-val">{v}</span>
           </div>
-        )}
-        {overnight.hostContact && (
-          <div className="tonight-row">
-            <span className="tonight-key">Host</span>
-            <span className="tonight-val">{overnight.hostContact}</span>
-          </div>
-        )}
-        {overnight.wifiPassword && (
-          <div className="tonight-row">
-            <span className="tonight-key">Wi-Fi</span>
-            <span className="tonight-val">{overnight.wifiPassword}</span>
-          </div>
-        )}
+        ))}
       </div>
 
-      {overnight.notes && (
-        <p className="tonight-notes">{overnight.notes}</p>
-      )}
+      {overnight.notes && <p className="tonight-notes">{overnight.notes}</p>}
 
       {navHref && (
         <a

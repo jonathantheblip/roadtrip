@@ -1,11 +1,7 @@
-import { useState } from 'react'
 import { HOUSTON_FRIDAY } from '../data/kennedale'
 import './HoustonFriday.css'
 
 export function HoustonFriday() {
-  const [activeOption, setActiveOption] = useState('a')
-  const option = HOUSTON_FRIDAY.options.find((o) => o.key === activeOption)
-
   return (
     <article className="houston-friday">
       <header className="houston-header">
@@ -20,30 +16,10 @@ export function HoustonFriday() {
         dangerouslySetInnerHTML={{ __html: HOUSTON_FRIDAY.intro }}
       />
 
-      <div className="option-toggle" role="tablist" aria-label="Schedule option">
-        {HOUSTON_FRIDAY.options.map((opt) => {
-          const isActive = activeOption === opt.key
-          return (
-            <button
-              key={opt.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              className={`option-btn ${isActive ? 'active' : ''}`}
-              onClick={() => setActiveOption(opt.key)}
-            >
-              <span className="option-btn-title">{opt.title}</span>
-              <span className="option-btn-subtitle">{opt.subtitle}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="option-panel" key={activeOption}>
-        <div className="option-condition">{option.condition}</div>
+      <div className="option-panel">
         <table className="schedule">
           <tbody>
-            {option.schedule.map((row, i) => (
+            {HOUSTON_FRIDAY.schedule.map((row, i) => (
               <tr key={i}>
                 <td className="schedule-time">{row.time}</td>
                 <td className="schedule-text">
