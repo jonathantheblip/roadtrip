@@ -1,4 +1,4 @@
-import { useMemo, useRef, useCallback } from 'react'
+import { useMemo } from 'react'
 import { STOPS } from '../data/stops'
 import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
 import { RouteMapLazy } from './RouteMapLazy'
@@ -14,12 +14,23 @@ import { TonightCard } from './TonightCard'
 import { FlightHomeCard } from './FlightHomeCard'
 import { PrepCard } from './PrepCard'
 import { GasWarning } from './GasWarning'
+import { NextUpCard } from './NextUpCard'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
+import { useVisited } from '../hooks/useVisited'
+import { useSwipeDays } from '../hooks/useSwipeDays'
+import { isDuringTrip } from '../utils/tripDay'
 import './ItineraryView.css'
 
 export function ItineraryView({ activePerson }) {
   const { filterDay, filterType, rainyDay, setFilterDay, setFilterType, setRainyDay, isFiltered } =
     useItineraryFilters()
+  const { visited, markVisited } = useVisited()
+  const { swipeX, swipeHandlers } = useSwipeDays(filterDay, setFilterDay)
+
+  const allPlanned = useMemo(
+    () => filterStops(STOPS, { category: 'planned', activePerson }),
+    [activePerson]
+  )
 
   const stops = useMemo(
     () =>
@@ -33,9 +44,9 @@ export function ItineraryView({ activePerson }) {
     [activePerson, filterDay, filterType, rainyDay]
   )
 
-  // Route the body based on filter state so structured days stay intact.
-  // Type filter is intentionally ignored when a structured day is selected —
-  // those days are atomic plans, not stop collections.
+  const duringTrip = isDuringTrip()
+  const showNextUp = duringTrip && filterDay !== 'all'
+
   let body
   if (filterDay === 'tue21' || filterDay === 'wed22') {
     body = (
@@ -80,7 +91,22 @@ export function ItineraryView({ activePerson }) {
         onTypeChange={setFilterType}
         onRainyDayChange={setRainyDay}
       />
-      {body}
+      {showNextUp && (
+        <NextUpCard
+          stops={allPlanned}
+          day={filterDay}
+          activePerson={activePerson}
+          visited={visited}
+          onSkip={markVisited}
+        />
+      )}
+      <div
+        className="swipe-area"
+        style={swipeX ? { transform: `translateX(${swipeX}px)` } : undefined}
+        {...swipeHandlers}
+      >
+        {body}
+      </div>
     </section>
   )
 }
@@ -175,8 +201,6 @@ function DayByDay({ stops, activePerson }) {
 }
 
 function DaySection({ day, stops, activePerson }) {
-  // Thursday gets an overview drive-box above the cards — it's the drive
-  // out of Kennedale into Houston.
   const isThursday = day === 'thu23'
   const overnight = OVERNIGHTS[day]
   const prep = PREP[day]
@@ -239,4 +263,3 @@ function FragmentOrRow({ cluster, stop, activePerson }) {
     </>
   )
 }
-

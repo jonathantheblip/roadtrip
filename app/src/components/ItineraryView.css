@@ -8,6 +8,11 @@
   border-radius: 0;
 }
 
+.swipe-area {
+  transition: transform 0.2s ease-out;
+  will-change: transform;
+}
+
 @keyframes tab-fade {
   from {
     opacity: 0;

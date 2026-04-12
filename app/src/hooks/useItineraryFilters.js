@@ -1,10 +1,8 @@
 import { useCallback, useState } from 'react'
+import { getTodayDayKey } from '../utils/tripDay'
 
-// Day + type filter state. State filter lives on the Discover tab only,
-// so the itinerary view doesn't touch it. Filters reset when user taps
-// the active pill again.
 export function useItineraryFilters() {
-  const [filterDay, setFilterDay] = useState('all')
+  const [filterDay, setFilterDay] = useState(() => getTodayDayKey() || 'all')
   const [filterType, setFilterType] = useState('all')
   const [rainyDay, setRainyDay] = useState(false)
 
