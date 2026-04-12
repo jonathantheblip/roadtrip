@@ -60,6 +60,6 @@ export const TYPES_ORDER = [
   { k: 'energy', l: 'Energy' },
   { k: 'photo', l: 'Photo' },
   { k: 'poi', l: 'POI' },
-  { k: 'gas', l: 'Gas' },
+  { k: 'gas', l: "Buc-ee's" },
   { k: 'viral', l: 'Viral' },
 ]

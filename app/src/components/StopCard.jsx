@@ -19,7 +19,7 @@ const TYPE_LABEL = {
   energy: 'Energy',
   photo: 'Photo',
   poi: 'POI',
-  gas: 'Gas',
+  gas: "Buc-ee's",
   viral: 'Viral',
 }
 

@@ -14,7 +14,7 @@ const KEY_LABELS = {
   energy: 'Energy',
   photo: 'Photo',
   poi: 'POI',
-  gas: 'Gas',
+  gas: "Buc-ee's",
   viral: 'Viral',
 }
 
