@@ -9,6 +9,7 @@ import './DiscoverView.css'
 export function DiscoverView({ activePerson }) {
   const [filterState, setFilterState] = useState('all')
   const [filterType, setFilterType] = useState('all')
+  const [rainyDay, setRainyDay] = useState(false)
 
   const stops = useMemo(
     () =>
@@ -17,8 +18,9 @@ export function DiscoverView({ activePerson }) {
         activePerson,
         state: filterState,
         type: filterType,
+        rainyDay,
       }),
-    [activePerson, filterState, filterType]
+    [activePerson, filterState, filterType, rainyDay]
   )
 
   let body
@@ -86,6 +88,11 @@ export function DiscoverView({ activePerson }) {
                 onClick={() => setFilterType(t.k)}
               />
             ))}
+            <FilterPill
+              label={rainyDay ? '\u2614 Rainy Day' : '\u2600\uFE0F Any Weather'}
+              active={rainyDay}
+              onClick={() => setRainyDay(!rainyDay)}
+            />
           </div>
         </div>
       </div>

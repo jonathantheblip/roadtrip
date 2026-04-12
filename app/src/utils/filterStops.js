@@ -9,13 +9,14 @@ export function personAllows(stop, activePerson) {
   return stop.persons.includes(activePerson) || stop.persons.includes('everyone')
 }
 
-export function filterStops(STOPS, { category, activePerson, day, type, state } = {}) {
+export function filterStops(STOPS, { category, activePerson, day, type, state, rainyDay } = {}) {
   return STOPS.filter((stop) => {
     if (category === 'planned' && stop.category === 'discover') return false
     if (category === 'discover' && stop.category !== 'discover') return false
     if (day && day !== 'all' && stop.day !== day) return false
     if (type && type !== 'all' && !stop.types.includes(type)) return false
     if (state && state !== 'all' && stop.state !== state) return false
+    if (rainyDay && stop.types.includes('energy') && stop.indoor === false) return false
     return personAllows(stop, activePerson)
   })
 }

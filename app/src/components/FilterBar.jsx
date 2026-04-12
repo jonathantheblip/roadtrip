@@ -4,8 +4,10 @@ import './FilterBar.css'
 export function FilterBar({
   filterDay,
   filterType,
+  rainyDay,
   onDayChange,
   onTypeChange,
+  onRainyDayChange,
 }) {
   return (
     <div className="filter-section">
@@ -43,6 +45,11 @@ export function FilterBar({
               onClick={() => onTypeChange(t.k)}
             />
           ))}
+          <FilterButton
+            label={rainyDay ? '\u2614 Rainy Day' : '\u2600\uFE0F Any Weather'}
+            active={rainyDay}
+            onClick={() => onRainyDayChange(!rainyDay)}
+          />
         </div>
       </div>
     </div>

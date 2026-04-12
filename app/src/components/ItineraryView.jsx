@@ -17,7 +17,7 @@ import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import './ItineraryView.css'
 
 export function ItineraryView({ activePerson }) {
-  const { filterDay, filterType, setFilterDay, setFilterType, isFiltered } =
+  const { filterDay, filterType, rainyDay, setFilterDay, setFilterType, setRainyDay, isFiltered } =
     useItineraryFilters()
 
   const stops = useMemo(
@@ -27,8 +27,9 @@ export function ItineraryView({ activePerson }) {
         activePerson,
         day: filterDay,
         type: filterType,
+        rainyDay,
       }),
-    [activePerson, filterDay, filterType]
+    [activePerson, filterDay, filterType, rainyDay]
   )
 
   // Route the body based on filter state so structured days stay intact.
@@ -68,8 +69,10 @@ export function ItineraryView({ activePerson }) {
       <FilterBar
         filterDay={filterDay}
         filterType={filterType}
+        rainyDay={rainyDay}
         onDayChange={setFilterDay}
         onTypeChange={setFilterType}
+        onRainyDayChange={setRainyDay}
       />
       {body}
     </section>
