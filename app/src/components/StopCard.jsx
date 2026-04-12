@@ -24,10 +24,11 @@ const TYPE_LABEL = {
   viral: 'Viral',
 }
 
-export function StopCard({ stop, activePerson }) {
+export function StopCard({ stop, activePerson, onDismiss }) {
   const { isVisited, toggle } = useVisitedContext()
   const isBucees = stop.name.toLowerCase().includes('buc-ee')
   const isPlanned = stop.category !== 'discover'
+  const isDiscover = stop.category === 'discover'
   const checked = isVisited(stop.id)
   const classes = ['card']
   if (stop.star) classes.push('star')
@@ -44,6 +45,16 @@ export function StopCard({ stop, activePerson }) {
           aria-label={checked ? 'Mark unvisited' : 'Mark visited'}
         >
           {checked && <span className="check-icon">✓</span>}
+        </button>
+      )}
+      {isDiscover && onDismiss && (
+        <button
+          type="button"
+          className="dismiss-btn"
+          onClick={() => onDismiss(stop.id)}
+          aria-label="Not interested"
+        >
+          ✕
         </button>
       )}
       <header className="card-name">

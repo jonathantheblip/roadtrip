@@ -5,6 +5,7 @@ import { filterStops } from '../utils/filterStops'
 import { StopCard } from './StopCard'
 import { EssentialsCard } from './EssentialsCard'
 import { RouteMapLazy } from './RouteMapLazy'
+import { useDismissed } from '../hooks/useDismissed'
 import './DiscoverView.css'
 
 export function DiscoverView({ activePerson }) {
@@ -12,6 +13,7 @@ export function DiscoverView({ activePerson }) {
   const [filterType, setFilterType] = useState('all')
   const [rainyDay, setRainyDay] = useState(false)
   const [viewMode, setViewMode] = useState('map')
+  const { dismissed, dismiss, undo, restore, toast } = useDismissed(activePerson)
 
   const stops = useMemo(
     () =>
@@ -21,8 +23,8 @@ export function DiscoverView({ activePerson }) {
         state: filterState,
         type: filterType,
         rainyDay,
-      }),
-    [activePerson, filterState, filterType, rainyDay]
+      }).filter((s) => !dismissed.includes(s.id)),
+    [activePerson, filterState, filterType, rainyDay, dismissed]
   )
 
   let body
@@ -33,13 +35,14 @@ export function DiscoverView({ activePerson }) {
       </div>
     )
   } else if (filterState === 'all') {
-    body = <GroupedByState stops={stops} activePerson={activePerson} />
+    body = <GroupedByState stops={stops} activePerson={activePerson} onDismiss={dismiss} />
   } else {
     body = (
       <FlatState
         state={filterState}
         stops={stops}
         activePerson={activePerson}
+        onDismiss={dismiss}
       />
     )
   }
@@ -130,6 +133,7 @@ export function DiscoverView({ activePerson }) {
       </div>
 
       {body}
+      {toast && <DismissToast onUndo={undo} />}
     </section>
   )
 }
@@ -147,7 +151,7 @@ function FilterPill({ label, active, onClick }) {
   )
 }
 
-function GroupedByState({ stops, activePerson }) {
+function GroupedByState({ stops, activePerson, onDismiss }) {
   const grouped = useMemo(() => {
     const acc = {}
     stops.forEach((s) => {
@@ -173,7 +177,7 @@ function GroupedByState({ stops, activePerson }) {
             <EssentialsCard state={state} />
             <div className="stops-grid">
               {list.map((s) => (
-                <StopCard key={s.id} stop={s} activePerson={activePerson} />
+                <StopCard key={s.id} stop={s} activePerson={activePerson} onDismiss={onDismiss} />
               ))}
             </div>
           </div>
@@ -183,7 +187,7 @@ function GroupedByState({ stops, activePerson }) {
   )
 }
 
-function FlatState({ state, stops, activePerson }) {
+function FlatState({ state, stops, activePerson, onDismiss }) {
   return (
     <div className="discover-state">
       <h3 className="discover-state-title">
@@ -195,9 +199,18 @@ function FlatState({ state, stops, activePerson }) {
       <EssentialsCard state={state} />
       <div className="stops-grid">
         {stops.map((s) => (
-          <StopCard key={s.id} stop={s} activePerson={activePerson} />
+          <StopCard key={s.id} stop={s} activePerson={activePerson} onDismiss={onDismiss} />
         ))}
       </div>
+    </div>
+  )
+}
+
+function DismissToast({ onUndo }) {
+  return (
+    <div className="dismiss-toast">
+      <span>Hidden.</span>
+      <button type="button" className="dismiss-undo" onClick={onUndo}>Undo</button>
     </div>
   )
 }
