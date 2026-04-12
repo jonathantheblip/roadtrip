@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { PIN_COLORS } from '../data/route'
+import { useGeolocation, distanceKm } from '../hooks/useGeolocation'
 import './RouteSvg.css'
 
 const STATE_ORDER = ['MA', 'CT', 'NY', 'PA', 'VA', 'TN', 'AL', 'MS', 'LA', 'TX']
@@ -29,6 +30,8 @@ function pinColor(stop) {
 }
 
 export function RouteSvg({ stops, onStopSelect, selectedStopId }) {
+  const { lastKnown } = useGeolocation()
+
   const { dots, routePath, stateLabels, svgHeight } = useMemo(() => {
     const grouped = {}
     stops.forEach((s) => {
@@ -66,6 +69,26 @@ export function RouteSvg({ stops, onStopSelect, selectedStopId }) {
     return { dots, routePath, stateLabels: labels, svgHeight: maxY + 40 }
   }, [stops])
 
+  const liveMarker = useMemo(() => {
+    if (!lastKnown || !dots.length) return null
+    let best = null
+    let bestD = Infinity
+    for (const d of dots) {
+      if (d.stop.lat == null) continue
+      const dist = distanceKm(lastKnown, { lat: d.stop.lat, lng: d.stop.lng })
+      if (dist < bestD) {
+        bestD = dist
+        best = d
+      }
+    }
+    if (!best) return null
+    const label = new Date(lastKnown.timestamp || Date.now()).toLocaleTimeString(
+      [],
+      { hour: 'numeric', minute: '2-digit' }
+    )
+    return { x: best.x, y: best.y, label }
+  }, [lastKnown, dots])
+
   return (
     <div className="route-svg-wrap">
       <svg
@@ -100,6 +123,27 @@ export function RouteSvg({ stops, onStopSelect, selectedStopId }) {
             </g>
           )
         })}
+
+        {liveMarker && (
+          <g className="live-marker">
+            <circle cx={liveMarker.x} cy={liveMarker.y} r={10} fill="#1976d2" opacity={0.2} />
+            <circle
+              cx={liveMarker.x}
+              cy={liveMarker.y}
+              r={5}
+              fill="#1976d2"
+              stroke="#fff"
+              strokeWidth={2}
+            />
+            <text
+              className="live-label"
+              x={liveMarker.x + 10}
+              y={liveMarker.y + 4}
+            >
+              Last updated {liveMarker.label}
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   )

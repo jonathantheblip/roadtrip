@@ -5,6 +5,8 @@ import {
   appleMapsUrl,
   openTikTokSearch,
 } from '../utils/navLinks'
+import { useGeolocation, distanceKm } from '../hooks/useGeolocation'
+import { useVisitedContext } from '../hooks/VisitedContext'
 import './NextUpCard.css'
 
 const PERSON_LABEL = {
@@ -12,9 +14,23 @@ const PERSON_LABEL = {
 }
 
 export function NextUpCard({ stops, day, activePerson, visited, onSkip }) {
+  const { position } = useGeolocation()
+  const { markVisited } = useVisitedContext()
+
   const nextStop = useMemo(() => {
     return stops.find((s) => s.day === day && !visited.includes(s.id))
   }, [stops, day, visited])
+
+  const passedStop = useMemo(() => {
+    if (!position || !nextStop || nextStop.lat == null) return null
+    const dayStops = stops.filter((s) => s.day === day && !visited.includes(s.id))
+    const idx = dayStops.indexOf(nextStop)
+    const after = dayStops[idx + 1]
+    if (!after || after.lat == null) return null
+    const dCurrent = distanceKm(position, { lat: nextStop.lat, lng: nextStop.lng })
+    const dNext = distanceKm(position, { lat: after.lat, lng: after.lng })
+    return dNext < dCurrent ? nextStop : null
+  }, [position, nextStop, stops, day, visited])
 
   if (!day || day === 'all') return null
 
@@ -54,6 +70,18 @@ export function NextUpCard({ stops, day, activePerson, visited, onSkip }) {
       )}
       {nextStop.hours && (
         <div className="next-up-meta">{nextStop.hours}</div>
+      )}
+      {passedStop && (
+        <div className="next-up-passed">
+          <span>Looks like you passed {passedStop.name}.</span>
+          <button
+            type="button"
+            className="next-up-passed-btn"
+            onClick={() => markVisited(passedStop.id)}
+          >
+            Mark visited
+          </button>
+        </div>
       )}
       <div className="next-up-actions">
         <NavButton address={nextStop.address} activePerson={activePerson} stop={nextStop} />

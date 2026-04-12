@@ -47,6 +47,13 @@
   pointer-events: none;
 }
 
+.route-svg .live-label {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  fill: #1976d2;
+}
+
 body[data-theme='rafa'] .route-svg .state-label {
   text-transform: uppercase;
   font-weight: 900;

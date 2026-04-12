@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { MapContainer, TileLayer, Polyline, CircleMarker, Marker, useMap } from 'react-leaflet'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MapContainer, TileLayer, Polyline, CircleMarker, Circle, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ROUTE_WAYPOINTS, PIN_COLORS, TILE_URLS, THEME_TILE } from '../data/route'
+import { useGeolocation } from '../hooks/useGeolocation'
 import './RouteMap.css'
 
 const ACCENT_COLORS = {
@@ -49,6 +50,69 @@ function FitBounds({ stops, selectedId }) {
   return null
 }
 
+const liveDotIcon = L.divIcon({
+  className: '',
+  html: '<div class="live-dot"></div>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+})
+
+function LiveDot({ position, onOffScreen }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!position) return
+    const check = () => {
+      const bounds = map.getBounds()
+      const inside = bounds.contains([position.lat, position.lng])
+      onOffScreen(!inside)
+    }
+    check()
+    map.on('moveend zoomend', check)
+    return () => map.off('moveend zoomend', check)
+  }, [position, map, onOffScreen])
+
+  if (!position) return null
+  return (
+    <>
+      {position.accuracy > 500 && (
+        <Circle
+          center={[position.lat, position.lng]}
+          radius={position.accuracy}
+          pathOptions={{
+            color: '#1976d2',
+            weight: 1,
+            opacity: 0.4,
+            fillColor: '#1976d2',
+            fillOpacity: 0.1,
+          }}
+        />
+      )}
+      <Marker position={[position.lat, position.lng]} icon={liveDotIcon} interactive={false} />
+    </>
+  )
+}
+
+function RecenterControl({ position, onDone }) {
+  const map = useMap()
+  const handle = useCallback(() => {
+    if (!position) return
+    map.flyTo([position.lat, position.lng], Math.max(map.getZoom(), 11), { duration: 0.5 })
+    onDone?.()
+  }, [position, map, onDone])
+  return (
+    <button
+      type="button"
+      className="recenter-btn"
+      onClick={handle}
+      aria-label="Recenter on my location"
+      title="Recenter"
+    >
+      ◉
+    </button>
+  )
+}
+
 function podcastIcon(accent) {
   return L.divIcon({
     className: '',
@@ -64,6 +128,8 @@ export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStop
   const accent = ACCENT_COLORS[activePerson] || '#6b8f8f'
   const mobile = useMemo(() => isMobile(), [])
   const isMedia = mode === 'media'
+  const { position, status } = useGeolocation()
+  const [offScreen, setOffScreen] = useState(false)
 
   const validStops = useMemo(
     () => stops.filter((s) => s.lat != null && s.lng != null),
@@ -125,6 +191,20 @@ export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStop
           />
         )
       })}
+      <LiveDot position={position} onOffScreen={setOffScreen} />
+      {position && offScreen && (
+        <RecenterControl position={position} onDone={() => setOffScreen(false)} />
+      )}
+      {status === 'denied' && (
+        <a
+          href="https://support.apple.com/guide/iphone/control-which-apps-can-access-your-location-iph3dd5f9be/ios"
+          target="_blank"
+          rel="noopener"
+          className="location-muted"
+        >
+          Location off — tap to enable
+        </a>
+      )}
     </MapContainer>
   )
 }

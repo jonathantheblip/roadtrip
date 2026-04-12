@@ -4,6 +4,7 @@ import { filterStops } from '../utils/filterStops'
 import { appleMapsUrl, wazeUrl } from '../utils/navLinks'
 import { isDuringTrip, getTodayDayKey } from '../utils/tripDay'
 import { useVisitedContext } from '../hooks/VisitedContext'
+import { useGeolocation, distanceKm } from '../hooks/useGeolocation'
 import './EmergencyFab.css'
 
 const BATHROOM_TYPES = new Set(['food', 'gas'])
@@ -12,6 +13,7 @@ export function EmergencyFab({ activePerson }) {
   const [open, setOpen] = useState(false)
   const [sheetVisible, setSheetVisible] = useState(false)
   const { visited } = useVisitedContext()
+  const { position } = useGeolocation()
 
   const todayKey = useMemo(() => getTodayDayKey(), [])
 
@@ -25,14 +27,29 @@ export function EmergencyFab({ activePerson }) {
     [todayStops, visited]
   )
 
+  const sortByDistance = (list) => {
+    if (!position) return list
+    return [...list]
+      .filter((s) => s.lat != null && s.lng != null)
+      .sort(
+        (a, b) =>
+          distanceKm(position, { lat: a.lat, lng: a.lng }) -
+          distanceKm(position, { lat: b.lat, lng: b.lng })
+      )
+  }
+
   const bathroomStops = useMemo(
-    () => unvisited.filter((s) => s.types.some((t) => BATHROOM_TYPES.has(t))).slice(0, 2),
-    [unvisited]
+    () =>
+      sortByDistance(
+        unvisited.filter((s) => s.types.some((t) => BATHROOM_TYPES.has(t)))
+      ).slice(0, 2),
+    [unvisited, position]
   )
 
   const energyStops = useMemo(
-    () => unvisited.filter((s) => s.types.includes('energy')).slice(0, 2),
-    [unvisited]
+    () =>
+      sortByDistance(unvisited.filter((s) => s.types.includes('energy'))).slice(0, 2),
+    [unvisited, position]
   )
 
   const handleOpen = useCallback(() => {

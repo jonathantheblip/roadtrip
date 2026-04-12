@@ -111,3 +111,27 @@
 .next-up-done .next-up-eyebrow {
   color: var(--muted);
 }
+
+.next-up-passed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg2);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+.next-up-passed-btn {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent);
+  color: var(--tag-text);
+  cursor: pointer;
+}
