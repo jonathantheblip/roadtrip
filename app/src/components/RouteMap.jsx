@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MapContainer, TileLayer, Polyline, CircleMarker, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Polyline, CircleMarker, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ROUTE_WAYPOINTS, PIN_COLORS, TILE_URLS, THEME_TILE } from '../data/route'
@@ -49,16 +49,28 @@ function FitBounds({ stops, selectedId }) {
   return null
 }
 
+function podcastIcon(accent) {
+  return L.divIcon({
+    className: '',
+    html: `<div class="podcast-pin" style="border-color:${accent}">🎧</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  })
+}
+
 export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStopId }) {
   const tileStyle = THEME_TILE[activePerson] || 'light'
   const tileUrl = TILE_URLS[tileStyle]
   const accent = ACCENT_COLORS[activePerson] || '#6b8f8f'
   const mobile = useMemo(() => isMobile(), [])
+  const isMedia = mode === 'media'
 
   const validStops = useMemo(
     () => stops.filter((s) => s.lat != null && s.lng != null),
     [stops]
   )
+
+  const headphoneIcon = useMemo(() => podcastIcon(accent), [accent])
 
   return (
     <MapContainer
@@ -78,6 +90,18 @@ export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStop
       />
       <FitBounds stops={validStops} selectedId={selectedStopId} />
       {validStops.map((stop) => {
+        if (isMedia) {
+          return (
+            <Marker
+              key={stop.id}
+              position={[stop.lat, stop.lng]}
+              icon={headphoneIcon}
+              eventHandlers={{
+                click: () => onStopSelect?.(stop),
+              }}
+            />
+          )
+        }
         const color = pinColor(stop)
         const isBucees = stop.name?.toLowerCase().includes('buc-ee')
         const isSelected = stop.id === selectedStopId
