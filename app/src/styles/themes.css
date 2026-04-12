@@ -8,6 +8,7 @@
 [data-theme='jonathan'] {
   --bg: #1a1714;
   --bg2: #242019;
+  --bg-nav: rgba(20, 17, 14, 0.82);
   --card: #2c2620;
   --text: #e8e0d4;
   --muted: #9a8e7e;
@@ -18,7 +19,12 @@
   --tag: #c0734a;
   --tag-text: #fff;
   --radius: 14px;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  /* Bloomberg Terminal meets whiskey bar — rim of copper glow on a
+     deep-black base, not a drop shadow. Depth comes from the rim. */
+  --shadow-card: 0 0 0 1px rgba(192, 115, 74, 0.14),
+    0 8px 22px rgba(0, 0, 0, 0.45);
+  --shadow-card-hover: 0 0 0 1px rgba(192, 115, 74, 0.28),
+    0 12px 32px rgba(0, 0, 0, 0.55);
   --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'DM Serif Display', Georgia, serif;
   --heading-weight: 400;
@@ -28,6 +34,7 @@
 [data-theme='helen'] {
   --bg: #f5f1ec;
   --bg2: #eae5dd;
+  --bg-nav: rgba(245, 241, 236, 0.78);
   --card: #ffffff;
   --text: #3a3530;
   --muted: #7a746a;
@@ -38,7 +45,11 @@
   --tag: #6b8f8f;
   --tag-text: #fff;
   --radius: 6px;
-  --shadow-card: 0 1px 2px rgba(60, 50, 40, 0.06), 0 2px 12px rgba(60, 50, 40, 0.03);
+  /* Kinfolk — soft sage shadow, paper-weight, whispers. */
+  --shadow-card: 0 1px 3px rgba(107, 143, 143, 0.08),
+    0 10px 30px rgba(107, 143, 143, 0.08);
+  --shadow-card-hover: 0 4px 8px rgba(107, 143, 143, 0.1),
+    0 18px 44px rgba(107, 143, 143, 0.12);
   --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'Playfair Display', Georgia, serif;
   --heading-weight: 400;
@@ -48,6 +59,7 @@
 [data-theme='aurelia'] {
   --bg: #fdf0f4;
   --bg2: #f9e4ec;
+  --bg-nav: rgba(253, 240, 244, 0.82);
   --card: #ffffff;
   --text: #3a2030;
   --muted: #9a7080;
@@ -57,8 +69,12 @@
   --border: #f0d0e0;
   --tag: #c2185b;
   --tag-text: #fff;
-  --radius: 16px;
-  --shadow-card: 0 1px 3px rgba(194, 24, 91, 0.08), 0 4px 18px rgba(194, 24, 91, 0.05);
+  --radius: 18px;
+  /* Pinterest pin — soft pink drop shadow. */
+  --shadow-card: 0 1px 3px rgba(194, 24, 91, 0.08),
+    0 10px 28px rgba(194, 24, 91, 0.12);
+  --shadow-card-hover: 0 4px 10px rgba(194, 24, 91, 0.12),
+    0 18px 40px rgba(194, 24, 91, 0.18);
   --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
   --heading-weight: 700;
@@ -68,6 +84,7 @@
 [data-theme='rafa'] {
   --bg: #0a0e1a;
   --bg2: #0f1528;
+  --bg-nav: rgba(8, 12, 22, 0.85);
   --card: #141e30;
   --text: #e0e8ff;
   --muted: #8090c0;
@@ -78,7 +95,12 @@
   --tag: #d32f2f;
   --tag-text: #fff;
   --radius: 4px;
-  --shadow-card: 0 0 0 1px rgba(21, 101, 192, 0.35), 0 2px 14px rgba(0, 0, 0, 0.55);
+  /* Mission control — electric blue rim + black depth, slight red wash. */
+  --shadow-card: 0 0 0 1px rgba(21, 101, 192, 0.4),
+    0 8px 32px rgba(0, 0, 0, 0.6), 0 0 60px rgba(21, 101, 192, 0.05);
+  --shadow-card-hover: 0 0 0 1px rgba(21, 101, 192, 0.7),
+    0 12px 42px rgba(0, 0, 0, 0.7),
+    0 0 80px rgba(21, 101, 192, 0.12);
   --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
   --heading-weight: 900;

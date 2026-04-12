@@ -8,6 +8,9 @@
 
 html {
   scroll-behavior: smooth;
+  /* Prevent overscroll bounce on the outermost scroll container — one
+     of the core things that separates a native feel from a webview. */
+  overscroll-behavior: none;
 }
 
 html,
@@ -18,24 +21,54 @@ body,
 }
 
 body {
-  font-family: system-ui, -apple-system, 'DM Sans', sans-serif;
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   font-feature-settings: 'kern', 'liga';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
+  overscroll-behavior: none;
+  /* Disable pull-to-refresh on iOS. */
+  overscroll-behavior-y: contain;
 }
 
-button {
-  font-family: inherit;
-  cursor: pointer;
-}
-
+/* Anchors never underline by default — every clickable piece of the UI
+   is styled as a real UI element (button, chip, card). */
 a {
   color: inherit;
+  text-decoration: none;
 }
 
-/* Keyboard focus — visible only for keyboard users, not mouse clicks.
-   Uses the active theme accent so it picks up per-person colors. */
+/* Buttons get a clean reset so no theme inherits browser chrome. */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  border: none;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* Keyboard focus — visible only for keyboard users. */
 :focus {
   outline: none;
 }
@@ -45,8 +78,7 @@ a {
   border-radius: 4px;
 }
 
-/* Respect user motion preferences: disable every transition and
-   animation for users who ask for reduced motion. */
+/* Reduced motion — respect the preference, disable all fancy animation. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

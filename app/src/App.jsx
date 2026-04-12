@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTheme } from './hooks/useTheme'
 import { PersonSelector } from './components/PersonSelector'
-import { Navigation } from './components/Navigation'
+import { BottomNav } from './components/BottomNav'
 import { ItineraryView } from './components/ItineraryView'
 import { MediaView } from './components/MediaView'
 import { DiscoverView } from './components/DiscoverView'
@@ -12,37 +12,52 @@ export default function App() {
   const { activePerson, theme, setPerson } = useTheme()
   const [activeTab, setActiveTab] = useState('itinerary')
 
-  // Scroll the content back to the top when the user switches tabs or
-  // persons so they land on the fresh view instead of stranded mid-page.
+  // Scroll the scroll container back to the top when the user switches
+  // tabs or persons so they land on the fresh view from the top.
   const handleTabChange = (tab) => {
     setActiveTab(tab)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    // Small delay so state commits before scrolling
+    requestAnimationFrame(() => {
+      const sc = document.getElementById('scroll-area')
+      if (sc) sc.scrollTo({ top: 0, behavior: 'smooth' })
+    })
   }
 
   const handlePersonChange = (p) => {
     setPerson(p)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    requestAnimationFrame(() => {
+      const sc = document.getElementById('scroll-area')
+      if (sc) sc.scrollTo({ top: 0, behavior: 'smooth' })
+    })
   }
 
   return (
     <main className="app">
-      <header className="app-header">
-        <h1>{theme.title}</h1>
-        <p className="sub">{theme.subtitle}</p>
+      <header className="top-bar">
+        <div className="top-bar-title">
+          <h1>{theme.title}</h1>
+          <p className="top-bar-sub">{theme.subtitle}</p>
+        </div>
+        <PersonSelector active={activePerson} onChange={handlePersonChange} />
       </header>
 
-      <div className="sticky-nav">
-        <PersonSelector active={activePerson} onChange={handlePersonChange} />
-        <Navigation active={activeTab} onChange={handleTabChange} />
+      <div
+        className="scroll-area"
+        id="scroll-area"
+        key={`${activeTab}-${activePerson}`}
+      >
+        <div className="view-inner">
+          {activeTab === 'itinerary' && (
+            <ItineraryView activePerson={activePerson} />
+          )}
+          {activeTab === 'media' && <MediaView activePerson={activePerson} />}
+          {activeTab === 'discover' && (
+            <DiscoverView activePerson={activePerson} />
+          )}
+        </div>
       </div>
 
-      <div className="tab-content" key={`${activeTab}-${activePerson}`}>
-        {activeTab === 'itinerary' && (
-          <ItineraryView activePerson={activePerson} />
-        )}
-        {activeTab === 'media' && <MediaView activePerson={activePerson} />}
-        {activeTab === 'discover' && <DiscoverView activePerson={activePerson} />}
-      </div>
+      <BottomNav active={activeTab} onChange={handleTabChange} />
     </main>
   )
 }

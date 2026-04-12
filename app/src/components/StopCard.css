@@ -1,10 +1,11 @@
 .card {
+  position: relative;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
-  padding: 16px 18px;
-  margin-bottom: 10px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
   transition:
     transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 0.28s ease,
@@ -14,16 +15,87 @@
 }
 
 .card:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
 }
 
+.card:active {
+  transform: translateY(0);
+}
+
+/* ============================================
+   Star (top pick) — genuinely elevated.
+   Gradient wash, accent rim, subtle glow halo.
+   ============================================ */
 .card.star {
-  border-left: 4px solid var(--accent);
+  background: linear-gradient(
+    180deg,
+    var(--card) 0%,
+    color-mix(in srgb, var(--card) 92%, var(--accent)) 100%
+  );
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    var(--shadow-card),
+    0 0 40px -12px var(--accent);
+  border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
 }
 
+.card.star::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 30%,
+    var(--accent) 70%,
+    transparent 100%
+  );
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.card.star:hover {
+  transform: translateY(-3px) scale(1.004);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-card-hover),
+    0 0 60px -10px var(--accent);
+}
+
+/* ============================================
+   Buc-ee's — unmistakable warm yellow glow
+   ============================================ */
 .card.bucees {
-  border-left: 4px solid #fdd835;
-  background: color-mix(in srgb, var(--card) 92%, #fdd835);
+  background: color-mix(in srgb, var(--card) 88%, #fdd835);
+  box-shadow:
+    0 0 0 1px rgba(253, 216, 53, 0.5),
+    var(--shadow-card),
+    0 0 40px -12px rgba(253, 216, 53, 0.7);
+  border-color: rgba(253, 216, 53, 0.6);
+}
+
+.card.bucees::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #fdd835, #f9a825);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+[data-theme='rafa'] .card.bucees::after {
+  content: '🦫';
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 20px;
+  opacity: 0.7;
+  filter: drop-shadow(0 0 8px rgba(253, 216, 53, 0.5));
 }
 
 .card-name {
@@ -318,16 +390,38 @@
 
 /* Helen — paper-weight square cards */
 [data-theme='helen'] .card {
-  padding: 22px 24px;
-  box-shadow: 0 1px 2px rgba(60, 50, 40, 0.05);
+  padding: 24px 26px;
+  box-shadow: var(--shadow-card);
   border-color: rgba(60, 50, 40, 0.1);
   background: #fff;
 }
 [data-theme='helen'] .card:hover {
-  box-shadow: 0 8px 24px rgba(60, 50, 40, 0.08);
+  box-shadow: var(--shadow-card-hover);
 }
 [data-theme='helen'] .card.star {
-  border-left: 2px solid var(--accent2);
+  background: linear-gradient(180deg, #fff 0%, #fbf6ec 100%);
+  border-color: var(--accent2);
+  box-shadow:
+    0 0 0 1px var(--accent2),
+    0 1px 2px rgba(184, 149, 106, 0.1),
+    0 14px 40px rgba(184, 149, 106, 0.14);
+}
+[data-theme='helen'] .card.star::before {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent2) 30%,
+    var(--accent2) 70%,
+    transparent 100%
+  );
+  height: 1.5px;
+}
+[data-theme='helen'] .card.bucees {
+  background: linear-gradient(180deg, #fff 0%, #fef6d8 100%);
+  border-color: rgba(253, 216, 53, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(253, 216, 53, 0.45),
+    0 14px 40px rgba(253, 216, 53, 0.2);
 }
 [data-theme='helen'] .card-name {
   font-size: 20px;
@@ -389,13 +483,33 @@
   color: #fff;
 }
 
-/* Aurelia — softer pink cards with rose accents */
+/* Aurelia — soft pink Pinterest-pin cards */
 [data-theme='aurelia'] .card {
-  padding: 18px 20px;
+  padding: 20px 22px;
 }
 [data-theme='aurelia'] .card.star {
-  border-left: 4px solid var(--accent2);
-  box-shadow: 0 1px 3px rgba(194, 24, 91, 0.1), 0 4px 18px rgba(194, 24, 91, 0.07);
+  background: linear-gradient(180deg, #fff 0%, #fdeaf1 100%);
+  border-color: rgba(233, 30, 128, 0.3);
+  box-shadow:
+    0 0 0 1px rgba(233, 30, 128, 0.25),
+    0 14px 40px rgba(194, 24, 91, 0.2);
+}
+[data-theme='aurelia'] .card.star::before {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent2) 20%,
+    var(--accent) 50%,
+    var(--accent2) 80%,
+    transparent 100%
+  );
+}
+[data-theme='aurelia'] .card.bucees {
+  background: linear-gradient(180deg, #fff 0%, #fef6d8 100%);
+  border-color: rgba(253, 216, 53, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(253, 216, 53, 0.45),
+    0 14px 40px rgba(253, 216, 53, 0.22);
 }
 [data-theme='aurelia'] .card-name {
   font-weight: 700;
@@ -412,12 +526,33 @@
 }
 [data-theme='rafa'] .card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 0 0 1px var(--accent2), 0 8px 28px rgba(0, 0, 0, 0.65);
+  box-shadow: var(--shadow-card-hover);
 }
 [data-theme='rafa'] .card.star {
-  box-shadow: 0 0 0 1px var(--accent), 0 0 36px rgba(211, 47, 47, 0.22),
-    0 4px 16px rgba(0, 0, 0, 0.55);
-  border-left: 5px solid var(--accent);
+  background: var(--card);
+  background-image:
+    linear-gradient(180deg, rgba(211, 47, 47, 0.14) 0%, rgba(211, 47, 47, 0) 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, transparent 100%);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 3px rgba(211, 47, 47, 0.18),
+    0 12px 36px rgba(0, 0, 0, 0.65),
+    0 0 60px -10px rgba(211, 47, 47, 0.45);
+  border-color: var(--accent);
+}
+[data-theme='rafa'] .card.star::before {
+  background: linear-gradient(90deg, transparent, var(--accent3), var(--accent), var(--accent3), transparent);
+  height: 3px;
+}
+[data-theme='rafa'] .card.bucees {
+  background: var(--card);
+  background-image:
+    linear-gradient(180deg, rgba(253, 216, 53, 0.15) 0%, rgba(253, 216, 53, 0) 60%);
+  border-color: rgba(253, 216, 53, 0.6);
+  box-shadow:
+    0 0 0 1px rgba(253, 216, 53, 0.55),
+    0 12px 36px rgba(0, 0, 0, 0.6),
+    0 0 50px -10px rgba(253, 216, 53, 0.45);
 }
 [data-theme='rafa'] .card-name {
   color: var(--accent3);

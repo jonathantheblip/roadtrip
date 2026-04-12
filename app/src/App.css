@@ -1,50 +1,75 @@
+/* ==========================================================================
+   Native-app shell — edge-to-edge, sticky top bar, fixed bottom nav
+   ========================================================================== */
+
 .app {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 20px 16px 80px;
+  width: 100%;
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow-x: hidden;
+  transition: background-color 0.4s ease, color 0.4s ease;
 }
 
-.app-header {
+/* ============================================
+   Sticky top bar — title strip + person selector.
+   Content scrolls underneath via backdrop blur.
+   ============================================ */
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  background: var(--bg-nav);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  padding: calc(12px + env(safe-area-inset-top)) 16px 10px;
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color 0.4s ease,
+    border-bottom-color 0.25s ease,
+    padding 0.4s ease;
+}
+
+.top-bar-title {
   text-align: center;
-  padding: 18px 0 8px;
+  padding: 6px 0 12px;
 }
 
-.app-header h1 {
+.top-bar-title h1 {
   font-family: var(--font-display);
-  font-size: 28px;
+  font-size: 22px;
   font-weight: var(--heading-weight);
   color: var(--accent);
   line-height: 1.1;
   letter-spacing: -0.01em;
-  transition: color 0.4s ease;
+  transition: color 0.4s ease, font-size 0.4s ease;
 }
 
-.app-header .sub {
-  font-size: 13px;
+.top-bar-sub {
+  font-size: 11.5px;
   color: var(--muted);
-  margin-top: 6px;
+  margin-top: 3px;
   transition: color 0.4s ease;
 }
 
-/* Sticky nav — keep person selector + tabs visible at any scroll depth. */
-.sticky-nav {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: var(--bg);
-  margin: 0 -16px;
-  padding: 0 16px;
-  transition: background-color 0.4s ease;
+/* ============================================
+   Scroll area — flex-1, edge-to-edge, bottom-padded
+   to clear the fixed bottom nav.
+   ============================================ */
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  animation: view-fade 0.2s ease-out;
 }
 
-.tab-content {
-  animation: app-tab-fade 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@keyframes app-tab-fade {
+@keyframes view-fade {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -52,152 +77,135 @@
   }
 }
 
-/* ============================================
-   Helen — editorial header treatment
-   ============================================ */
-[data-theme='helen'] .app-header {
-  padding: 28px 0 12px;
-}
-[data-theme='helen'] .app-header h1 {
-  font-size: 32px;
-  color: #2a2520;
-  letter-spacing: -0.015em;
-}
-[data-theme='helen'] .app-header .sub {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-size: 15px;
-}
-[data-theme='helen'] .app-header::after {
-  content: '';
-  display: block;
-  width: 80px;
-  height: 1px;
-  background: var(--accent2);
-  margin: 14px auto 0;
+.view-inner {
+  padding: 14px 16px calc(96px + env(safe-area-inset-bottom));
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 /* ============================================
-   Aurelia — rounder weight, deeper rose
+   Helen — editorial magazine top bar
+   Centered italic Playfair title, brass hairline under
    ============================================ */
-[data-theme='aurelia'] .app-header h1 {
+[data-theme='helen'] .top-bar {
+  background: rgba(250, 246, 239, 0.82);
+  padding-top: calc(18px + env(safe-area-inset-top));
+}
+[data-theme='helen'] .top-bar-title {
+  padding-top: 2px;
+  padding-bottom: 14px;
+  position: relative;
+}
+[data-theme='helen'] .top-bar-title h1 {
+  font-size: 26px;
+  font-style: italic;
+  font-weight: 400;
+  color: #2a2520;
+  letter-spacing: -0.015em;
+}
+[data-theme='helen'] .top-bar-sub {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 13px;
+}
+[data-theme='helen'] .top-bar-title::after {
+  content: '';
+  display: block;
+  width: 64px;
+  height: 1px;
+  background: var(--accent2);
+  margin: 10px auto 0;
+}
+
+/* ============================================
+   Aurelia — curated notion board top bar
+   ============================================ */
+[data-theme='aurelia'] .top-bar-title h1 {
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.005em;
 }
 
 /* ============================================
-   Rafa — command-center header
+   Rafa — command center top bar
+   Dramatic header, gradient underbar, yellow subtitle
    ============================================ */
-[data-theme='rafa'] .app-header {
-  position: relative;
-  padding-top: 22px;
+[data-theme='rafa'] .top-bar {
+  background: rgba(8, 12, 22, 0.88);
+  border-bottom: 2px solid var(--accent2);
+  padding-top: calc(14px + env(safe-area-inset-top));
 }
-[data-theme='rafa'] .app-header h1 {
-  font-size: 30px;
+[data-theme='rafa'] .top-bar-title h1 {
+  font-size: 26px;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: -0.01em;
   color: var(--text);
-  line-height: 1.08;
+  line-height: 1.1;
 }
-[data-theme='rafa'] .app-header h1::after {
+[data-theme='rafa'] .top-bar-title h1::after {
   content: '';
   display: block;
-  width: 90px;
-  height: 4px;
-  margin: 12px auto 0;
+  width: 80px;
+  height: 3px;
+  margin: 10px auto 0;
   background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
-  border-radius: 2px;
+  border-radius: 1.5px;
 }
-[data-theme='rafa'] .app-header .sub {
+[data-theme='rafa'] .top-bar-sub {
   color: var(--accent3);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+  margin-top: 6px;
 }
 
 /* ============================================
-   iPad Pro (1024px+): widen container, bump font sizes for Rafa,
-   optional 2-column stop grid for Rafa's command-center layout.
-   Other themes get a wider reading width but stay single-column.
+   Jonathan — Bloomberg Terminal top bar
+   Understated, copper glow on the title
+   ============================================ */
+[data-theme='jonathan'] .top-bar-title h1 {
+  text-shadow: 0 0 18px rgba(192, 115, 74, 0.18);
+}
+
+/* ============================================
+   iPad Pro — widen for Rafa's command center
+   Other themes keep the magazine reading width
    ============================================ */
 @media (min-width: 1024px) {
-  .app {
-    max-width: 720px;
-    padding: 28px 24px 100px;
+  .view-inner {
+    max-width: 780px;
+    padding: 24px 24px calc(112px + env(safe-area-inset-bottom));
   }
-
-  .app-header h1 {
+  .top-bar-title h1 {
+    font-size: 28px;
+  }
+  [data-theme='rafa'] .view-inner {
+    max-width: 1060px;
+    padding: 28px 28px calc(128px + env(safe-area-inset-bottom));
+  }
+  [data-theme='rafa'] .top-bar-title h1 {
     font-size: 36px;
   }
-  .app-header .sub {
-    font-size: 15px;
-  }
-
-  /* Helen reads as a magazine at any width — just roomier. */
-  [data-theme='helen'] .app-header h1 {
-    font-size: 42px;
-  }
-
-  /* Rafa gets the command-center iPad treatment: wider canvas,
-     bigger type, and a 2-column card grid where applicable. */
-  [data-theme='rafa'] .app {
-    max-width: 1000px;
-    padding: 32px 28px 120px;
-  }
-  [data-theme='rafa'] .app-header h1 {
-    font-size: 44px;
-  }
-  [data-theme='rafa'] .app-header .sub {
+  [data-theme='rafa'] .top-bar-sub {
     font-size: 12px;
   }
-  [data-theme='rafa'] .section-label {
-    font-size: 20px;
-  }
-  [data-theme='rafa'] .card-name {
-    font-size: 19px;
-  }
-  [data-theme='rafa'] .pitch {
-    font-size: 14.5px;
-    line-height: 1.55;
-  }
-  [data-theme='rafa'] .stops-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    align-items: stretch;
-  }
-  [data-theme='rafa'] .stops-grid > .card {
-    margin-bottom: 0;
-  }
-  [data-theme='rafa'] .stops-grid > .cluster-header {
-    grid-column: 1 / -1;
-    font-size: 13px;
-    margin: 12px 0 2px;
-  }
-  [data-theme='rafa'] .filter-section {
-    padding: 22px 18px 12px;
-  }
-  [data-theme='rafa'] .tab-btn {
-    font-size: 13.5px;
-    padding: 16px 8px 14px;
+  [data-theme='helen'] .top-bar-title h1 {
+    font-size: 34px;
   }
 }
 
 /* ============================================
-   Print styles — readable offline paper fallback.
-   Hides sticky nav, filters, and card action buttons; keeps
-   every card and schedule visible for printed itineraries.
+   Print — flatten the shell for paper copies
    ============================================ */
 @media print {
   body {
     background: #fff !important;
     color: #111 !important;
   }
-  .sticky-nav,
-  .person-bar,
-  .tab-bar,
+  .top-bar,
+  .bn,
   .filter-section,
   .card-actions,
   .podcast-cta,
@@ -205,11 +213,11 @@
   .option-toggle {
     display: none !important;
   }
-  .tab-content,
-  .itinerary,
-  .discover,
-  .podcast-section {
-    animation: none !important;
+  .scroll-area,
+  .view-inner {
+    padding: 0 !important;
+    max-width: 100% !important;
+    overflow: visible !important;
   }
   .card,
   .kennedale-day,
@@ -220,13 +228,6 @@
     box-shadow: none !important;
     border: 1px solid #ccc !important;
     background: #fff !important;
-    color: #111 !important;
-  }
-  .app {
-    max-width: 100% !important;
-    padding: 0 !important;
-  }
-  .app-header h1 {
     color: #111 !important;
   }
 }

@@ -19,14 +19,22 @@
 
 .section-label {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 28px;
   font-weight: var(--heading-weight);
   color: var(--accent);
-  margin: 26px 0 10px;
-  padding-bottom: 6px;
+  margin: 44px 0 18px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
-  line-height: 1.15;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   transition: color 0.4s ease, border-color 0.4s ease;
+}
+
+/* First day section doesn't need the huge top margin — the top-bar
+   already gives it breathing room. */
+.day-section:first-child .section-label,
+.stops-grid + .day-section .section-label {
+  margin-top: 32px;
 }
 
 .stops-grid {
@@ -95,18 +103,20 @@
    Per-theme overrides
    ============================================ */
 
-/* Helen — italic section labels with a brass rule extending right */
+/* Helen — italic section labels with a brass rule extending right,
+   generous whitespace, magazine-scale headline. */
 [data-theme='helen'] .section-label {
   font-style: italic;
   font-weight: 400;
-  font-size: 22px;
+  font-size: 34px;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 22px;
   border: none;
   padding: 0;
-  margin: 32px 0 14px;
-  letter-spacing: -0.005em;
+  margin: 52px 0 22px;
+  letter-spacing: -0.015em;
+  color: #2a2520;
 }
 [data-theme='helen'] .section-label::after {
   content: '';
@@ -151,15 +161,16 @@
 [data-theme='rafa'] .section-label {
   background: transparent;
   color: var(--accent3);
-  padding: 10px 14px;
+  padding: 14px 18px;
   border: none;
-  border-left: 5px solid var(--accent);
+  border-left: 6px solid var(--accent);
   position: relative;
-  margin: 28px 0 14px;
-  letter-spacing: 0.03em;
+  margin: 48px 0 22px;
+  letter-spacing: 0.05em;
   font-weight: 900;
   text-transform: uppercase;
-  font-size: 16px;
+  font-size: 24px;
+  line-height: 1.05;
 }
 [data-theme='rafa'] .section-label::after {
   content: '';

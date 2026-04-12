@@ -1,0 +1,162 @@
+.bn {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  background: var(--bg-nav);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid var(--border);
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  transition:
+    background-color 0.4s ease,
+    border-top-color 0.4s ease;
+}
+
+.bn-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px 4px;
+  color: var(--muted);
+  border-radius: 12px;
+  transition:
+    color 0.25s ease,
+    transform 0.15s ease;
+  min-width: 60px;
+  max-width: 140px;
+}
+
+.bn-tab:active {
+  transform: scale(0.94);
+}
+
+.bn-tab.active {
+  color: var(--accent);
+}
+
+.bn-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+}
+
+.bn-icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.bn-tab.active .bn-icon svg {
+  transform: scale(1.08);
+}
+
+.bn-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* ============================================
+   Helen — editorial italic labels, brass underline
+   ============================================ */
+[data-theme='helen'] .bn {
+  border-top: 1px solid var(--accent2);
+  background: rgba(250, 246, 239, 0.82);
+}
+[data-theme='helen'] .bn-label {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+[data-theme='helen'] .bn-tab.active {
+  color: var(--accent);
+}
+[data-theme='helen'] .bn-tab.active .bn-label {
+  position: relative;
+}
+
+/* ============================================
+   Aurelia — soft rose, cute bubble highlight on active
+   ============================================ */
+[data-theme='aurelia'] .bn-tab.active {
+  color: var(--accent);
+}
+[data-theme='aurelia'] .bn-tab.active .bn-icon svg {
+  filter: drop-shadow(0 2px 6px rgba(194, 24, 91, 0.35));
+}
+
+/* ============================================
+   Rafa — command center, heavy uppercase labels,
+   oversized touch targets, yellow active pinning
+   ============================================ */
+[data-theme='rafa'] .bn {
+  background: rgba(8, 12, 22, 0.88);
+  border-top: 2px solid var(--accent2);
+  padding: 10px 12px calc(14px + env(safe-area-inset-bottom));
+}
+[data-theme='rafa'] .bn-tab {
+  padding: 10px 6px 6px;
+}
+[data-theme='rafa'] .bn-icon {
+  width: 28px;
+  height: 28px;
+}
+[data-theme='rafa'] .bn-label {
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  font-size: 10px;
+}
+[data-theme='rafa'] .bn-tab.active {
+  color: var(--accent3);
+}
+[data-theme='rafa'] .bn-tab.active .bn-icon svg {
+  filter: drop-shadow(0 0 10px rgba(253, 216, 53, 0.6));
+}
+[data-theme='rafa'] .bn-tab.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 3px;
+  background: var(--accent);
+}
+[data-theme='rafa'] .bn-tab {
+  position: relative;
+}
+
+/* ============================================
+   Jonathan — warm copper glow on active
+   ============================================ */
+[data-theme='jonathan'] .bn-tab.active .bn-icon svg {
+  filter: drop-shadow(0 0 12px rgba(192, 115, 74, 0.5));
+}
+
+/* ============================================
+   iPad Pro — oversized bottom nav for Rafa's theme
+   ============================================ */
+@media (min-width: 1024px) {
+  [data-theme='rafa'] .bn {
+    padding: 14px 24px calc(18px + env(safe-area-inset-bottom));
+  }
+  [data-theme='rafa'] .bn-icon {
+    width: 32px;
+    height: 32px;
+  }
+  [data-theme='rafa'] .bn-label {
+    font-size: 11px;
+  }
+}
