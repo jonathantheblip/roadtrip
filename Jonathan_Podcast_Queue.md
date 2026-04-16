@@ -1,6 +1,52 @@
 # Jonathan — Podcast Listening Queue
 
-General listening queue for the road trip and beyond. Not tied to route locations. Show in Jonathan's Media tab only. All links are Overcast.
+General listening queue for the road trip and beyond. Not tied to route locations. Show in Jonathan's Media tab only. Jonathan's personal rows use Overcast links. The **For the Family** subtitle below uses Apple Podcasts deeplinks (Helen, Aurelia, and Rafa are on Apple ecosystem).
+
+## For the Family
+
+**Greeking Out (National Geographic Kids)** — Kid-friendly retellings of Greek myths. Narrator Kenny Curtis (30-year kids radio veteran) + the "Oracle of WiFi" interrupting with historical facts. Funny, smart, not dumbed down. 10 seasons on podcast apps (S11–12 are YouTube-only). Episodes are standalone — cherry-pick.
+
+- Apple Podcasts: https://podcasts.apple.com/us/podcast/greeking-out-from-national-geographic-kids/id1483233279
+- Overcast (Jonathan): https://overcast.fm/itunes1483233279
+
+### Starter episodes
+
+**Start here (everyone):**
+
+| Episode | Tag | Why |
+|---------|-----|-----|
+| S1E1: Jason & the Golden Fleece | 🚗 The Car | The original road trip quest. A man crossing unknown lands to reclaim something lost. Start the podcast here, start it on Day 1. |
+
+**Rafa picks (monsters, fights, creatures):**
+
+| Episode | Why |
+|---------|-----|
+| S1E3: Ancient Greek Monster Mash | Cyclops, Sphinx, Scylla — three monsters, one episode. His Godzilla gateway to mythology. |
+| S5E3: Ancient Greek Monster Mash: The Sequel | If S1E3 lands, this is his second hit. More creatures, same energy. |
+| S9: Bellerophon & Pegasus (2 parts) | A boy and a flying horse fight a chimera. Spider-Man energy with wings. |
+
+**Aurelia picks (competition, strong women):**
+
+| Episode | Why |
+|---------|-----|
+| S2: Atalanta the Huntress | A woman who outran every man who tried to marry her. Athletic, independent, didn't need saving. The volleyball player's myth. |
+| S4E8: The Ancient Olympics | Ancient athletes, competition, fandom, rule-breaking. Sports origin story. |
+
+**Helen picks (art, craft, weaving):**
+
+| Episode | Why |
+|---------|-----|
+| S1E5: Arachne the Weaver | A mortal artist challenges Athena to an art contest. Weaving as defiance. Art as identity. She'll get this one. |
+
+**Jonathan / long drives:**
+
+| Episode | Why |
+|---------|-----|
+| S8E1–E6: The Odyssey arc | A man trying to get home from a very long trip. Sea monsters, bad decisions, hubris. You'll relate by Day 4. |
+
+---
+
+## Jonathan's queue (Overcast links below)
 
 ## Currently listening / retry
 

@@ -1,0 +1,285 @@
+/* ==========================================================================
+   NavBar — persistent "Next Stop" + quick-search row above the BottomNav.
+   Themed via the app-root data-theme attribute; the 4 variants live at
+   the bottom of this file.
+   ========================================================================== */
+
+/* BottomNav height ≈ 64–72px depending on safe-area. We float above it. */
+:root {
+  --nav-bar-bottom: calc(env(safe-area-inset-bottom) + 68px);
+}
+
+.nav-bar {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: var(--nav-bar-bottom);
+  z-index: 99;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 12px);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  padding: 8px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.nav-bar-inner {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+.next-stop {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  border-radius: calc(var(--radius, 12px) - 4px);
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 0.15s ease;
+}
+
+.next-stop:hover,
+.next-stop:focus-visible {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  outline: none;
+}
+
+.next-stop-arrow {
+  font-size: 20px;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.next-stop-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.next-stop-name {
+  font-family: var(--font-display, inherit);
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-stop-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-stop-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  min-width: 72px;
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--tag-text, #fff);
+  background: var(--accent);
+  border-radius: calc(var(--radius, 12px) - 4px);
+  text-decoration: none;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+
+.next-stop-go:active {
+  transform: scale(0.97);
+}
+
+.next-stop-go:hover {
+  filter: brightness(1.08);
+}
+
+.next-stop-detail {
+  padding: 4px 10px 2px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.next-stop-flag {
+  color: var(--accent2, var(--accent));
+  font-weight: 600;
+}
+
+/* Quick-search row */
+.quick-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.quick-row::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-btn {
+  flex: 1 0 auto;
+  min-width: 56px;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: calc(var(--radius, 12px) - 6px);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 20%, var(--border));
+  color: var(--text);
+  text-decoration: none;
+  transition:
+    background-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.quick-btn:active {
+  transform: scale(0.96);
+}
+
+.quick-btn:hover {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+.quick-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.quick-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.quick-btn.emergency {
+  background: color-mix(in oklab, var(--accent2, #e53935) 15%, transparent);
+  border-color: color-mix(in oklab, var(--accent2, #e53935) 40%, var(--border));
+}
+
+.quick-btn.emergency .quick-label {
+  color: var(--accent2, #e53935);
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   THEME VARIANTS
+   ========================================================================== */
+
+/* Jonathan — dark card, compact, muted. */
+[data-theme='jonathan'] .next-stop-name {
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+[data-theme='jonathan'] .next-stop-go {
+  color: var(--bg);
+  letter-spacing: 0.08em;
+}
+
+/* Helen — sage border, brass arrow, Playfair name. */
+[data-theme='helen'] .nav-bar {
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
+}
+
+[data-theme='helen'] .next-stop-arrow {
+  color: var(--accent2); /* brass */
+}
+
+[data-theme='helen'] .next-stop-name {
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+
+/* Aurelia — soft pink card, deep rose navigate button. */
+[data-theme='aurelia'] .nav-bar {
+  background: color-mix(in oklab, var(--accent) 8%, var(--card));
+}
+
+[data-theme='aurelia'] .next-stop-go {
+  background: var(--accent);
+  letter-spacing: 0.08em;
+}
+
+/* Rafa — high contrast, uppercase destination, launch-button NAVIGATE.
+   Quick buttons bigger; Emergency styled hot. */
+[data-theme='rafa'] .next-stop-name {
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-size: 16px;
+}
+
+[data-theme='rafa'] .next-stop-go {
+  background: var(--accent2, #e53935);
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent2) 30%, transparent);
+}
+
+[data-theme='rafa'] .quick-btn {
+  min-width: 64px;
+  min-height: 56px;
+}
+
+[data-theme='rafa'] .quick-icon {
+  font-size: 24px;
+}
+
+[data-theme='rafa'] .quick-label {
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+[data-theme='rafa'] .quick-btn.emergency {
+  background: var(--accent2, #e53935);
+  border-color: var(--accent2, #e53935);
+}
+
+[data-theme='rafa'] .quick-btn.emergency .quick-label,
+[data-theme='rafa'] .quick-btn.emergency .quick-icon {
+  color: #fff;
+}
+
+/* Reserve scroll space so the floating bar doesn't cover itinerary content.
+   The ItineraryView and other tabs pad their bottom via the :has() rule on
+   .app. */
+.app:has(.nav-bar) .view-inner {
+  padding-bottom: calc(var(--nav-bar-bottom) + 110px);
+}

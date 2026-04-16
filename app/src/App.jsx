@@ -4,6 +4,7 @@ import { useVisited } from './hooks/useVisited'
 import { VisitedContext } from './hooks/VisitedContext'
 import { PersonSelector } from './components/PersonSelector'
 import { BottomNav } from './components/BottomNav'
+import { NavBar } from './components/NavBar'
 import { EmergencyFab } from './components/EmergencyFab'
 import { ItineraryView } from './components/ItineraryView'
 import { MediaView } from './components/MediaView'
@@ -85,6 +86,7 @@ export default function App() {
         )}
       </div>
 
+      <NavBar activePerson={activePerson} visible={activeTab === 'itinerary'} />
       <EmergencyFab activePerson={activePerson} />
       <BottomNav active={activeTab} onChange={handleTabChange} />
     </main>

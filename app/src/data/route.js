@@ -16,7 +16,7 @@ export const ROUTE_WAYPOINTS = [
   [32.353, -90.878],   // Vicksburg MS
   [32.509, -92.119],   // Monroe LA
   [32.525, -93.750],   // Shreveport LA
-  [32.460, -96.637],   // Kennedale/DFW TX
+  [32.460, -96.637],   // Arlington/DFW TX
   [29.760, -95.370],   // Houston TX
 ]
 

@@ -3,18 +3,19 @@
 
 export const OVERNIGHTS = {
   fri17: {
-    lodging: 'Cozy Rustic Farmhouse With Wood Stove',
-    region: 'Catskills (Delaware County), NY',
-    host: 'Olivia',
-    hostConfirmed: true,
-    address: 'TBD — get from Airbnb app listing page',
-    checkIn: '3:00 PM',
+    lodging: 'Postcard Cabins Eastern Catskills',
+    region: 'Catskill, NY',
+    host: 'Postcard Cabins (contactless)',
+    hostPhone: '888-236-2427',
+    address: '282 Cairo Junction Rd, Catskill, NY 12414',
+    checkIn: '4:00 PM',
     checkOut: 'Sat 11:00 AM',
-    checkInMethod: 'TBD — message Olivia for details',
-    guests: '3 adults, 1 child',
+    checkInMethod: 'Contactless — details sent by text morning of',
+    reservationCode: '#92285479 (bunk) · #92289948 (queen)',
+    guests: '3 adults, 1 child (2 cabins)',
     wifiPassword: null,
     notes:
-      'Host confirmed — "looking forward to hosting you and your family." This was the 1-night exception to 3-night minimum — it worked.',
+      'Two cabins booked: bunk bed + queen. Neighboring cabin request submitted — not guaranteed. No restaurants on-site — bring groceries (Hannaford run at 3:00 PM covers this). Each cabin: two-burner stove, cookware, dishware, mini-fridge. Fire pit + grill grate outside (wood fire, build it yourself). 60 wooded acres. Cell service spotty; landline in each cabin. Contactless check-in via text.',
   },
   sat18: {
     lodging: 'The Cottage on Cottage',
@@ -46,9 +47,9 @@ export const OVERNIGHTS = {
   },
   mon20: {
     lodging: "Aunt Donna's house",
-    region: 'Kennedale, TX',
+    region: 'Arlington, TX',
     host: 'Aunt Donna',
-    address: "TBD — get Donna's address from Jonathan",
+    address: '2331 Bay Lakes Court, Arlington, TX 76016',
     checkIn: 'N/A — family home',
     checkOut: 'N/A',
     checkInMethod: 'N/A',

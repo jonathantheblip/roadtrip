@@ -102,7 +102,7 @@ export const PREP = {
 
   sun19: {
     forDay: 'mon20',
-    forLabel: 'Mon 20 · McComb to Kennedale',
+    forLabel: 'Mon 20 · McComb to Arlington',
     title: 'Prep for tomorrow',
     sections: [
       {
@@ -160,9 +160,16 @@ export const PREP = {
 
   wed22: {
     forDay: 'thu23',
-    forLabel: 'Thu 23 · Kennedale to Houston',
+    forLabel: 'Thu 23 · Arlington to Houston',
     title: 'Prep for tomorrow',
     sections: [
+      {
+        audience: 'warning',
+        items: [
+          'AXIOM 3 PM TOUR — closed-toe shoes required. NO phones / iPads / cameras inside; everything checked at reception. Photography banned. Pack/set aside tonight.',
+          'Early start: 8 AM breakfast with the aunts, depart Arlington 9:30 AM. No sleeping in.',
+        ],
+      },
       {
         audience: 'helen',
         items: [

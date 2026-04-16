@@ -36,6 +36,7 @@ export function MapCard({ stop, activePerson, onDismiss, mode }) {
     else setOpen(false)
   }, [stop])
 
+
   const dismiss = useCallback(() => {
     setOpen(false)
     setTimeout(() => onDismiss?.(), 300)
@@ -67,7 +68,7 @@ export function MapCard({ stop, activePerson, onDismiss, mode }) {
 
   return (
     <>
-      <div className="map-card-backdrop" onClick={dismiss} />
+      <div className="map-card-backdrop" onClick={dismiss} onTouchMove={dismiss} />
       <div
         ref={cardRef}
         className={`map-card ${open ? 'open' : ''} ${dragging ? 'dragging' : ''}`}

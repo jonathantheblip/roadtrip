@@ -219,21 +219,30 @@ function DaySection({ day, stops, activePerson }) {
       )}
       {isThursday && (
         <div className="drive-box">
-          <strong>Morning:</strong> Relax with Aunt Donna. Both aunts if Aunt
-          Debra can flex. Late breakfast.
+          <strong>⚠️ Axiom rules:</strong> closed-toe shoes; NO phones, iPads,
+          or cameras inside — everything gets checked at reception.
           <br />
-          <strong>Optional 10am:</strong> Fort Worth Stockyards cattle drive
-          (11:30am).
+          <strong>8:00am:</strong> Goodbye breakfast with Donna &amp; Debra.
           <br />
-          <strong>12pm:</strong> Lunch with the aunts.
+          <strong>9:30am:</strong> Depart Arlington (I-45 South).
           <br />
-          <strong>1:30pm:</strong> Depart for Houston — Jonathan drives so
-          Helen can gawk at the scenery.
+          <strong>~10:30am:</strong> Collin Street Bakery, Corsicana (15 min).
           <br />
-          <strong>~6pm:</strong> Arrive at 1301 Marshall St, Houston.
+          <strong>~12:15pm:</strong> Buc-ee&rsquo;s Madisonville — lunch (30
+          min).
           <br />
-          <strong>7pm:</strong> Dinner with Chris &amp; Yvonne — Hugo&rsquo;s
-          recommended.
+          <strong>~1:00pm:</strong> Sam Houston Statue — 5-min photo.
+          <br />
+          <strong>3:00pm:</strong> Axiom EVA tour with Chris (~45&ndash;60
+          min).
+          <br />
+          <strong>~4:40pm:</strong> Rice University campus walk (Aurelia&rsquo;s
+          request).
+          <br />
+          <strong>6:15pm:</strong> Dinner at Hugo&rsquo;s (14-item veg menu)
+          — straight from Rice.
+          <br />
+          <strong>~8:30pm:</strong> Check into 1301 Marshall St, Houston.
         </div>
       )}
       <div className="stops-grid">
