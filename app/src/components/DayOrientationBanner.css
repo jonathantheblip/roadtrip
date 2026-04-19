@@ -1,25 +1,21 @@
-/* Day Orientation Banner — persistent glanceable strip below the top-bar. */
+/* Day Orientation Banner — rides inside .top-bar so it stays pinned with
+   the header when users scroll. Parent handles sticky + backdrop blur. */
 
 .dob {
-  position: sticky;
-  top: var(--topbar-h, 64px);
-  z-index: 70;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 8px 16px;
-  background: var(--bg-nav);
-  backdrop-filter: saturate(180%) blur(18px);
-  -webkit-backdrop-filter: saturate(180%) blur(18px);
-  border-bottom: 1px solid var(--border);
+  padding: 10px 4px 2px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
   font: inherit;
+  background: transparent;
   color: var(--text);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.4s ease, color 0.4s ease;
+  transition: color 0.4s ease, border-color 0.4s ease;
 }
 
 .dob:active {
@@ -76,26 +72,22 @@
   letter-spacing: 0.04em;
 }
 
-.dob-idx {
+.dob-progress {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.dob-progress strong {
+  color: var(--text);
 }
 
-/* Per-theme tuning — keep the strip subdued so it doesn't fight the top bar. */
+/* Per-theme tuning — no more backgrounds (inherits from .top-bar). */
 
 [data-theme='jonathan'] .dob {
-  background: rgba(22, 16, 42, 0.78);
-  border-bottom-color: rgba(253, 216, 53, 0.18);
-}
-[data-theme='helen'] .dob {
-  background: rgba(250, 246, 239, 0.82);
-}
-[data-theme='aurelia'] .dob {
-  background: rgba(253, 240, 244, 0.82);
+  border-top-color: rgba(253, 216, 53, 0.18);
 }
 [data-theme='rafa'] .dob {
-  background: rgba(8, 12, 22, 0.85);
-  border-bottom-color: rgba(21, 101, 192, 0.3);
+  border-top-color: rgba(21, 101, 192, 0.3);
 }

@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { DAYS_ORDER } from '../data/meta'
 import { OVERNIGHTS } from '../data/overnight'
 import {
-  TRIP_DATES, DAY_TZ, DAY_TZ_CROSSOVER, DEST_CITY, DOW_LONG,
+  TRIP_DATES, DAY_TZ, DAY_TZ_CROSSOVER, DEST_CITY, DOW_SHORT, DOW_LONG,
 } from '../data/tripCalendar'
+import {
+  milesAtEndOfDay, percentOfTrip, TOTAL_MILES, fmtMiles,
+} from '../data/mileage'
 import './DayOrientationBanner.css'
 
 // Feature 5 — Day Orientation Banner.
@@ -70,15 +73,19 @@ export function DayOrientationBanner({ onTap }) {
   const state = useMemo(() => {
     if (!dayKey) return null
     const date = TRIP_DATES[dayKey]
-    const dow = DOW_LONG[date.getDay()]
+    // Short day name for the compact row; full name used for aria-label
+    // so screen readers still hear "Sunday" rather than "Sun".
+    const dow = DOW_SHORT[date.getDay()]
+    const dowLong = DOW_LONG[date.getDay()]
     const month = date.toLocaleDateString('en-US', { month: 'short' })
     const day = date.getDate()
     const city = DEST_CITY[dayKey] || '—'
     const tzCross = DAY_TZ_CROSSOVER[dayKey]
     const tz = tzCross || DAY_TZ[dayKey]
-    const idx = dayIdx(dayKey)
+    const miles = milesAtEndOfDay(dayKey)
+    const pct = percentOfTrip(dayKey)
     return {
-      dow, month, day, city, tz, tzCross: !!tzCross, idx, dayKey,
+      dow, dowLong, month, day, city, tz, tzCross: !!tzCross, miles, pct, dayKey,
     }
   }, [dayKey])
 
@@ -89,7 +96,10 @@ export function DayOrientationBanner({ onTap }) {
       type="button"
       className={`dob ${arrived ? 'dob-arrived' : ''} ${state.tzCross ? 'dob-tz-cross' : ''}`}
       onClick={() => onTap?.(state.dayKey)}
-      aria-label={`${state.dow} ${state.month} ${state.day}, ${state.tz}, heading to ${state.city}, day ${state.idx} of 8`}
+      aria-label={
+        `${state.dowLong} ${state.month} ${state.day}, ${state.tz}, heading to ${state.city}, ` +
+        `${state.miles} of ${TOTAL_MILES} miles, ${state.pct} percent`
+      }
     >
       <span className="dob-date">
         <strong>{state.dow}</strong> · {state.month} {state.day}
@@ -101,7 +111,9 @@ export function DayOrientationBanner({ onTap }) {
         → {truncCity(state.city)}
         {arrived && <span className="dob-arrived-tag"> · arrived</span>}
       </span>
-      <span className="dob-idx">Day {state.idx}/8</span>
+      <span className="dob-progress" title={`${fmtMiles(state.miles)} of ${fmtMiles(TOTAL_MILES)}`}>
+        <strong>{fmtMiles(state.miles)}</strong> · {state.pct}%
+      </span>
     </button>
   )
 }

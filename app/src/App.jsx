@@ -76,14 +76,13 @@ export default function App() {
           <p className="top-bar-sub">{theme.subtitle}</p>
         </div>
         <PersonSelector active={activePerson} onChange={handlePersonChange} />
+        <DayOrientationBanner
+          onTap={() => {
+            setActiveTab('itinerary')
+            requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+          }}
+        />
       </header>
-
-      <DayOrientationBanner
-        onTap={() => {
-          setActiveTab('itinerary')
-          requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
-        }}
-      />
 
       <div className="view-inner" key={`${activeTab}-${activePerson}`}>
         {activeTab === 'itinerary' && (

@@ -118,6 +118,11 @@ export function useTheme() {
 
   useEffect(() => {
     const theme = THEMES[activePerson]
+    // Mirror data-theme on BOTH <html> and <body> — the pre-React
+    // bootstrap sets both on initial paint, and if we only updated body
+    // here, <html>'s background would stick on whatever the user was
+    // when the PWA first loaded.
+    document.documentElement.setAttribute('data-theme', activePerson)
     document.body.setAttribute('data-theme', activePerson)
 
     try {
