@@ -17,22 +17,30 @@ export function googleMapsUrl(address) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
 }
 
-// TikTok: try the app's custom URL scheme first, fall back to the web
-// if the app isn't installed. The mobile web search renders blank so we
-// warn before navigating.
+// TikTok: try the app's custom URL scheme via window.open so a deep-link
+// miss doesn't leave a blank Safari tab replacing the PWA.
+// Spec v2 requirement: use window.open, not anchor navigation or
+// location.href, because anchor-style navigation to tiktok:// on iOS
+// produces a blank frame when the TikTok app isn't installed.
 export function openTikTokSearch(name) {
   const q = encodeURIComponent(name)
   const deepLink = `tiktok://search?q=${q}`
   const webUrl = `https://www.tiktok.com/search?q=${q}`
 
+  // Open in a new tab/window first — this is what fixes the blank screen.
+  // If the TikTok app claims the URL, iOS backgrounds us and the new tab
+  // gets closed. If not, we fall through to the web URL.
+  const win = window.open(deepLink, '_blank')
+
   const fallback = setTimeout(() => {
     if (!document.hidden) {
-      window.alert(
-        `Opening TikTok search in Safari — if it looks blank, search for "${name}" directly in the TikTok app.`
-      )
-      window.location.href = webUrl
+      if (win && !win.closed) {
+        try { win.location.href = webUrl } catch { /* cross-origin, ignore */ }
+      } else {
+        window.open(webUrl, '_blank')
+      }
     }
-  }, 1200)
+  }, 900)
 
   const onHide = () => {
     if (document.hidden) {
@@ -41,6 +49,4 @@ export function openTikTokSearch(name) {
     }
   }
   document.addEventListener('visibilitychange', onHide)
-
-  window.location.href = deepLink
 }

@@ -6,6 +6,47 @@ import {
   PERSON_APP_TITLE,
 } from '../utils/appIcon'
 
+// Per-person manifest generation.
+// iOS Safari reads <link rel="manifest"> at Add-to-Home-Screen time, so
+// swapping this before the user taps Share captures the correct theme
+// color, background, icon, and start_url for the installed PWA.
+function buildPersonManifest(person) {
+  const bgByPerson = {
+    jonathan: '#16102a',
+    helen:    '#f5f1ec',
+    aurelia:  '#fdf0f4',
+    rafa:     '#0a0e1a',
+  }
+  const bg = bgByPerson[person] || bgByPerson.jonathan
+  const iconUri = appIconSvgDataUri(person)
+  const manifest = {
+    name: `Jackson Family Road Trip — ${person[0].toUpperCase() + person.slice(1)}`,
+    short_name: PERSON_APP_TITLE[person] || 'Road Trip',
+    description: 'April 17–24, 2026 · Belmont to Texas and back',
+    // start_url bakes in the selected person so a home-screen launch
+    // always opens as the person who installed it, even when the
+    // browser history/cookie state has been cleared.
+    start_url: `./?person=${person}&tab=itinerary`,
+    scope: './',
+    display: 'standalone',
+    background_color: bg,
+    theme_color: bg,
+    orientation: 'portrait',
+    icons: [
+      {
+        src: iconUri,
+        sizes: '512x512',
+        type: 'image/svg+xml',
+        purpose: 'any maskable',
+      },
+    ],
+  }
+  return (
+    'data:application/manifest+json;charset=utf-8,' +
+    encodeURIComponent(JSON.stringify(manifest))
+  )
+}
+
 const STORAGE_KEY = 'rt_person_v2'
 const COOKIE_KEY = 'rt_person'
 const DEFAULT = 'jonathan'
@@ -142,6 +183,22 @@ export function useTheme() {
       }
     } catch {
       /* older browsers */
+    }
+
+    // Swap the <link rel="manifest"> href to a per-person data: manifest
+    // so iOS captures the correct theme_color, icon, and start_url at
+    // Add-to-Home-Screen time. Without this, the installed PWA always
+    // uses Jonathan's static manifest.
+    try {
+      const manifestLink = document.querySelector('link[rel="manifest"]')
+      if (manifestLink) {
+        const href = buildPersonManifest(activePerson)
+        if (manifestLink.getAttribute('href') !== href) {
+          manifestLink.setAttribute('href', href)
+        }
+      }
+    } catch {
+      /* ignore */
     }
   }, [activePerson])
 

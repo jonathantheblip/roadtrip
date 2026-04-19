@@ -9,10 +9,12 @@ import { EmergencyFab } from './components/EmergencyFab'
 import { ItineraryView } from './components/ItineraryView'
 import { MediaView } from './components/MediaView'
 import { DiscoverView } from './components/DiscoverView'
+import { TripView } from './components/TripView'
+import { DayOrientationBanner } from './components/DayOrientationBanner'
 import './styles/themes.css'
 import './App.css'
 
-const VALID_TABS = ['itinerary', 'media', 'discover']
+const VALID_TABS = ['itinerary', 'media', 'discover', 'trip']
 
 // Read the initial tab from the ?tab= query param so a saved
 // Add-to-Home-Screen URL remembers where the user was. Fall back
@@ -76,6 +78,13 @@ export default function App() {
         <PersonSelector active={activePerson} onChange={handlePersonChange} />
       </header>
 
+      <DayOrientationBanner
+        onTap={() => {
+          setActiveTab('itinerary')
+          requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+        }}
+      />
+
       <div className="view-inner" key={`${activeTab}-${activePerson}`}>
         {activeTab === 'itinerary' && (
           <ItineraryView activePerson={activePerson} />
@@ -83,6 +92,9 @@ export default function App() {
         {activeTab === 'media' && <MediaView activePerson={activePerson} />}
         {activeTab === 'discover' && (
           <DiscoverView activePerson={activePerson} />
+        )}
+        {activeTab === 'trip' && (
+          <TripView activePerson={activePerson} />
         )}
       </div>
 

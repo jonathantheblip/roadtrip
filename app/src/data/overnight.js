@@ -34,16 +34,39 @@ export const OVERNIGHTS = {
       'Jonathan alone for ashes ceremony. Privacy, porch, views. Keypad entry — no host coordination needed.',
   },
   sun19: {
-    lodging: "Grandma's house",
+    lodging: 'The Threefoot Hotel (Tribute Portfolio)',
+    region: 'Meridian, MS',
+    host: 'Marriott · Bonvoy',
+    hostPhone: '(601) 207-8700',
+    address: '601 22nd Ave, Meridian, MS 39301',
+    checkIn: '8:15 PM CT (Sun) — desk is 24/7',
+    checkOut: 'Mon 10:00 AM CT',
+    checkInMethod: 'Front desk · Bonvoy app mobile key',
+    reservationCode: '80722561 · 80726084 (two rooms)',
+    cost: 'Two rooms · Bonvoy points',
+    guests: '3 adults, 1 child (2 rooms)',
+    wifiPassword: null,
+    notes:
+      '1929 Art Deco skyscraper, tallest in East MS, on the National Register. ' +
+      'Self-park at Arts District Garage (712 24th Ave, 1 block) — avoid the $30 valet. ' +
+      'Gold status does NOT include free breakfast at Tribute. 6:01 Local on ' +
+      'ground floor opens 6 AM for Monday breakfast. Boxcar rooftop on 16th floor ' +
+      '4–10 PM Sundays.',
+  },
+  mon20_grandma: {
+    // Monday anchor visit — NOT an overnight. Kept here for reference so the
+    // trip app can surface details about the 2.5-hour lunch stop without
+    // bleeding into the overnight card.
+    lodging: "Grandma's (day visit only, no overnight)",
     region: 'McComb, MS',
     host: 'Grandma',
     address: '1064 Quin Lane, McComb, MS 39648',
-    checkIn: 'N/A — family home',
-    checkOut: 'N/A',
-    checkInMethod: 'N/A',
+    checkIn: '11:00 AM CT (Mon)',
+    checkOut: '1:30 PM CT — sharp',
     guests: 'Family',
-    wifiPassword: null,
-    notes: 'No booking needed. Staying overnight.',
+    notes:
+      'Monday anchor lunch (2h 30m). Broadway Deli pickup brought to Grandma. ' +
+      'Leave 1:30 PM CT sharp — slipping past 3 hours pushes Kennedale arrival past 9 PM.',
   },
   mon20: {
     lodging: "Aunt Donna's house",

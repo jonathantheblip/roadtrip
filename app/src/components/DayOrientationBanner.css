@@ -1,0 +1,101 @@
+/* Day Orientation Banner — persistent glanceable strip below the top-bar. */
+
+.dob {
+  position: sticky;
+  top: var(--topbar-h, 64px);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  background: var(--bg-nav);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border-bottom: 1px solid var(--border);
+  font: inherit;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+.dob:active {
+  opacity: 0.85;
+}
+
+.dob-date {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dob-date strong {
+  font-weight: 700;
+}
+
+.dob-tz {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+
+.dob-tz-cross .dob-tz {
+  background: var(--accent);
+  color: var(--tag-text);
+  animation: dob-tz-blink 2.2s ease-in-out infinite;
+}
+
+@keyframes dob-tz-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.dob-dest {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.dob-arrived-tag {
+  color: #2d8a4e;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dob-idx {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-theme tuning — keep the strip subdued so it doesn't fight the top bar. */
+
+[data-theme='jonathan'] .dob {
+  background: rgba(22, 16, 42, 0.78);
+  border-bottom-color: rgba(253, 216, 53, 0.18);
+}
+[data-theme='helen'] .dob {
+  background: rgba(250, 246, 239, 0.82);
+}
+[data-theme='aurelia'] .dob {
+  background: rgba(253, 240, 244, 0.82);
+}
+[data-theme='rafa'] .dob {
+  background: rgba(8, 12, 22, 0.85);
+  border-bottom-color: rgba(21, 101, 192, 0.3);
+}

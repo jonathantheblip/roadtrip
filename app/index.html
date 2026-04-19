@@ -22,6 +22,62 @@
     <title>Jackson Family Road Trip</title>
   </head>
   <body>
+    <!--
+      Pre-React bootstrap. Runs synchronously before the deferred module
+      script so the FIRST PAINT already reflects the saved person.
+      Without this, an installed PWA launches as Jonathan for a frame
+      even when the saved home-screen URL is ?person=helen, because
+      the theme variables and theme-color meta only update after
+      useTheme's effect commits.
+
+      Priority matches useTheme.readStored():
+        1. ?person= query param (captured by Add-to-Home-Screen)
+        2. rt_person cookie (crosses Safari → standalone boundary)
+        3. rt_person_v2 localStorage (survives in-browser reloads)
+    -->
+    <script>
+      (function () {
+        var VALID = ['jonathan', 'helen', 'aurelia', 'rafa'];
+        var p = null;
+        try {
+          var q = new URLSearchParams(location.search).get('person');
+          if (VALID.indexOf(q) >= 0) p = q;
+        } catch (e) {}
+        if (!p) {
+          var m = document.cookie.match(/(?:^|; )rt_person=([^;]*)/);
+          if (m) {
+            var v = decodeURIComponent(m[1]);
+            if (VALID.indexOf(v) >= 0) p = v;
+          }
+        }
+        if (!p) {
+          try {
+            var ls = localStorage.getItem('rt_person_v2');
+            if (VALID.indexOf(ls) >= 0) p = ls;
+          } catch (e) {}
+        }
+        if (!p) p = 'jonathan';
+        document.documentElement.setAttribute('data-theme', p);
+        document.body.setAttribute('data-theme', p);
+        var themeColors = {
+          jonathan: '#16102a',
+          helen:    '#f5f1ec',
+          aurelia:  '#fdf0f4',
+          rafa:     '#0a0e1a',
+        };
+        var tc = document.querySelector('meta[name="theme-color"]');
+        if (tc) tc.setAttribute('content', themeColors[p]);
+        var sb = document.querySelector(
+          'meta[name="apple-mobile-web-app-status-bar-style"]'
+        );
+        if (sb) {
+          sb.setAttribute(
+            'content',
+            p === 'jonathan' || p === 'rafa' ? 'black-translucent' : 'default'
+          );
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

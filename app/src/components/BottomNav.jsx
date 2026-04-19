@@ -37,6 +37,18 @@ const TABS = [
       </svg>
     ),
   },
+  {
+    k: 'trip',
+    label: 'Trip',
+    icon: (
+      // Notebook + pencil — the "on the road, writing it down" icon.
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4z" />
+        <path d="M14 4v6h6" />
+        <path d="M8 13h6M8 17h4" />
+      </svg>
+    ),
+  },
 ]
 
 export function BottomNav({ active, onChange }) {

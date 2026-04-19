@@ -15,6 +15,7 @@ import { FlightHomeCard } from './FlightHomeCard'
 import { PrepCard } from './PrepCard'
 import { GasWarning } from './GasWarning'
 import { NextUpCard } from './NextUpCard'
+import { TomorrowHeadsUp } from './TomorrowHeadsUp'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import { useVisitedContext } from '../hooks/VisitedContext'
 import { useSwipeDays } from '../hooks/useSwipeDays'
@@ -100,6 +101,7 @@ export function ItineraryView({ activePerson }) {
           onSkip={markVisited}
         />
       )}
+      {duringTrip && <TomorrowHeadsUp />}
       <div
         className="swipe-area"
         style={swipeX ? { transform: `translateX(${swipeX}px)` } : undefined}
