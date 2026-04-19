@@ -12,7 +12,7 @@ let dbPromise = null
 
 function openDb() {
   if (dbPromise) return dbPromise
-  dbPromise = new Promise((resolve, reject) => {
+  const p = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
@@ -26,7 +26,9 @@ function openDb() {
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
-  return dbPromise
+  dbPromise = p
+  p.catch(() => { if (dbPromise === p) dbPromise = null })
+  return p
 }
 
 function req2promise(r) {

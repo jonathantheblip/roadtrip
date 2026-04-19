@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
+import { DAYS_ORDER } from '../data/meta'
 import { OVERNIGHTS } from '../data/overnight'
+import {
+  TRIP_DATES, DAY_TZ, DAY_TZ_CROSSOVER, DEST_CITY, DOW_LONG,
+} from '../data/tripCalendar'
 import './DayOrientationBanner.css'
 
 // Feature 5 — Day Orientation Banner.
@@ -9,44 +12,6 @@ import './DayOrientationBanner.css'
 //
 // Day boundary rolls at 3 AM local time, not midnight — late arrivals like
 // Sat→Sun 12:25 AM should still read as "Saturday" until morning.
-
-// Trip dates are authoritative in ET for this trip. We compute "trip day"
-// from a local clock but offset the boundary to 3 AM so late arrivals read
-// as the previous day until daybreak.
-const TRIP_DATES = {
-  fri17: new Date(2026, 3, 17),
-  sat18: new Date(2026, 3, 18),
-  sun19: new Date(2026, 3, 19),
-  mon20: new Date(2026, 3, 20),
-  tue21: new Date(2026, 3, 21),
-  wed22: new Date(2026, 3, 22),
-  thu23: new Date(2026, 3, 23),
-  fri24: new Date(2026, 3, 24),
-}
-
-// Destination city names for each overnight. Short, not the hotel name.
-const DEST_CITY = {
-  fri17: 'Catskill, NY',
-  sat18: 'Elizabethton, TN',
-  sun19: 'Meridian, MS',
-  mon20: 'Arlington, TX',
-  tue21: 'Arlington, TX',
-  wed22: 'Arlington, TX',
-  thu23: 'Houston, TX',
-  fri24: 'Home (Boston)',
-}
-
-// Day time-zone. Crossovers occur sun19 (ET→CT mid-drive) and fri24
-// (CT→ET via flight). Others are stable. The banner highlights the
-// crossover with an arrow when we're on that day.
-const DAY_TZ = {
-  fri17: 'ET', sat18: 'ET', sun19: 'CT', mon20: 'CT',
-  tue21: 'CT', wed22: 'CT', thu23: 'CT', fri24: 'ET',
-}
-const DAY_TZ_CROSSOVER = {
-  sun19: 'ET → CT',
-  fri24: 'CT → ET',
-}
 
 function todayDayKey(now = new Date()) {
   // 3 AM boundary: if hour < 3, treat as yesterday for trip-day purposes.
@@ -83,15 +48,29 @@ function useNowTicker(intervalMs = 60 * 1000) {
 
 export function DayOrientationBanner({ onTap }) {
   const now = useNowTicker()
-  const [arrived, setArrived] = useState(false)
 
   const dayKey = todayDayKey(now)
 
+  // Arrived state — flip once the current local time is past tonight's
+  // check-in time. Reads directly from OVERNIGHTS[dayKey].checkIn rather
+  // than tracking a separate state machine.
+  const arrived = useMemo(() => {
+    if (!dayKey) return false
+    const checkInStr = OVERNIGHTS[dayKey]?.checkIn || ''
+    const m = checkInStr.match(/(\d{1,2}):(\d{2})\s*(PM|AM)/i)
+    if (!m) return false
+    let hh = parseInt(m[1], 10) % 12
+    if (/pm/i.test(m[3])) hh += 12
+    const mm = parseInt(m[2], 10)
+    const cutoff = new Date(TRIP_DATES[dayKey].getTime())
+    cutoff.setHours(hh, mm, 0, 0)
+    return now >= cutoff
+  }, [dayKey, now])
+
   const state = useMemo(() => {
     if (!dayKey) return null
-    const dowNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const date = TRIP_DATES[dayKey]
-    const dow = dowNames[date.getDay()]
+    const dow = DOW_LONG[date.getDay()]
     const month = date.toLocaleDateString('en-US', { month: 'short' })
     const day = date.getDate()
     const city = DEST_CITY[dayKey] || '—'

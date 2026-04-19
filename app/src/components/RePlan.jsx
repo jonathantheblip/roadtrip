@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CURATED, curatedByRegion } from '../data/curatedStops'
+import { curatedByRegion } from '../data/curatedStops'
 import { evaluateStop } from '../utils/scoreStop'
 import { recentMealCategories } from '../utils/actualLog'
 import { listAllFlags } from '../utils/riskWatch'
@@ -17,14 +17,6 @@ const SITUATIONS = [
 ]
 
 const FAMILY_KEYS = Object.keys(FAMILY)
-
-const CATEGORY_TO_TYPE = {
-  food: 'meal',
-  energy: 'activity',
-  photo: 'drive-by',
-  poi: 'activity',
-  gas: 'gas',
-}
 
 export function RePlan({ activePerson }) {
   const [origin, setOrigin] = useState('wvwc')
@@ -57,8 +49,9 @@ export function RePlan({ activePerson }) {
 
   const candidates = useMemo(() => {
     const o = LOCATIONS[origin]
-    const list = o ? curatedByRegion(o.lat, o.lng, 200) : CURATED
-    return list
+    // origin is always a valid LOCATIONS key (populated from the dropdown),
+    // so curatedByRegion always has coords — no fallback branch needed.
+    return curatedByRegion(o.lat, o.lng, 200)
       .filter((s) => {
         if (need === 'meal') return s.types?.includes('food')
         if (need === 'photo') return s.types?.includes('photo')

@@ -4,6 +4,17 @@
 
 export const THEME_ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
 
+// Base background / status-bar color per person. Shared by useTheme
+// (manifest builder, <meta name="theme-color">) and the inline
+// bootstrap script in index.html. Keep in sync with :root backgrounds
+// in themes.css and appIcon.js CONFIG.bg.
+export const THEME_COLORS = {
+  jonathan: '#16102a',
+  helen:    '#f5f1ec',
+  aurelia:  '#fdf0f4',
+  rafa:     '#0a0e1a',
+}
+
 export const THEMES = {
   jonathan: {
     key: 'jonathan',

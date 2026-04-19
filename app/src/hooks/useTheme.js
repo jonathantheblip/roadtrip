@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { THEMES, THEME_ORDER } from '../data/themes'
+import { THEMES, THEME_ORDER, THEME_COLORS } from '../data/themes'
 import {
   appIconSvgDataUri,
   appIconPngDataUri,
@@ -11,13 +11,7 @@ import {
 // swapping this before the user taps Share captures the correct theme
 // color, background, icon, and start_url for the installed PWA.
 function buildPersonManifest(person) {
-  const bgByPerson = {
-    jonathan: '#16102a',
-    helen:    '#f5f1ec',
-    aurelia:  '#fdf0f4',
-    rafa:     '#0a0e1a',
-  }
-  const bg = bgByPerson[person] || bgByPerson.jonathan
+  const bg = THEME_COLORS[person] || THEME_COLORS.jonathan
   const iconUri = appIconSvgDataUri(person)
   const manifest = {
     name: `Jackson Family Road Trip — ${person[0].toUpperCase() + person.slice(1)}`,

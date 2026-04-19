@@ -1,15 +1,5 @@
 import { DAYS_ORDER } from '../data/meta'
-
-const TRIP_DATES = {
-  fri17: new Date(2026, 3, 17),
-  sat18: new Date(2026, 3, 18),
-  sun19: new Date(2026, 3, 19),
-  mon20: new Date(2026, 3, 20),
-  tue21: new Date(2026, 3, 21),
-  wed22: new Date(2026, 3, 22),
-  thu23: new Date(2026, 3, 23),
-  fri24: new Date(2026, 3, 24),
-}
+import { TRIP_DATES } from '../data/tripCalendar'
 
 export function getTodayDayKey() {
   const now = new Date()

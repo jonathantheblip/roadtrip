@@ -34,6 +34,18 @@ export function AudioMemo({ date }) {
   const streamRef = useRef(null)
   const tickerRef = useRef(null)
   const startedAtRef = useRef(0)
+  // Track the currently-held objectURL so cleanup revokes the actual
+  // URL that was created, not a stale closure-captured one. setState is
+  // async and closures over audioUrl would see yesterday's value.
+  const audioUrlRef = useRef(null)
+
+  const setAudioUrlTracked = (url) => {
+    if (audioUrlRef.current && audioUrlRef.current !== url) {
+      URL.revokeObjectURL(audioUrlRef.current)
+    }
+    audioUrlRef.current = url
+    setAudioUrl(url)
+  }
 
   // Load any existing memo for this date.
   useEffect(() => {
@@ -41,13 +53,16 @@ export function AudioMemo({ date }) {
     getMemo(date).then((m) => {
       if (!active) return
       setMemo(m || null)
-      if (m?.blob) setAudioUrl(URL.createObjectURL(m.blob))
+      if (m?.blob) setAudioUrlTracked(URL.createObjectURL(m.blob))
+      else setAudioUrlTracked(null)
     }).catch(() => {})
     return () => {
       active = false
-      if (audioUrl) URL.revokeObjectURL(audioUrl)
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current)
+        audioUrlRef.current = null
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date])
 
   const stopAllTracks = () => {
@@ -83,8 +98,7 @@ export function AudioMemo({ date }) {
         const dur = Math.min(MAX_SECONDS, Math.round((Date.now() - startedAtRef.current) / 1000))
         const saved = await saveMemo({ date, blob, durationSeconds: dur, mime: usedMime })
         setMemo(saved)
-        if (audioUrl) URL.revokeObjectURL(audioUrl)
-        setAudioUrl(URL.createObjectURL(blob))
+        setAudioUrlTracked(URL.createObjectURL(blob))
         stopAllTracks()
         setRecording(false)
         setElapsed(0)
@@ -114,8 +128,7 @@ export function AudioMemo({ date }) {
   const handleDelete = async () => {
     if (!confirm('Delete this memo?')) return
     await deleteMemo(date)
-    if (audioUrl) URL.revokeObjectURL(audioUrl)
-    setAudioUrl(null)
+    setAudioUrlTracked(null)
     setMemo(null)
   }
 

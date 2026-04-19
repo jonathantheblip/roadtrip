@@ -35,11 +35,6 @@ export const DAY_FULL_LABELS = {
   fri24: 'Fri Apr 24',
 }
 
-// Days whose itinerary is rendered by dedicated structured components
-// instead of the generic stop-card view. Step 4 lands the components;
-// step 3 shows a placeholder card for these days.
-export const STRUCTURED_DAYS = new Set(['tue21', 'wed22', 'fri24'])
-
 export const STATES_ORDER = ['MA', 'CT', 'NY', 'PA', 'VA', 'TN', 'AL', 'MS', 'LA', 'TX']
 
 export const STATE_NAMES = {

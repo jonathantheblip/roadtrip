@@ -13,7 +13,7 @@ let dbPromise = null
 
 function openDb() {
   if (dbPromise) return dbPromise
-  dbPromise = new Promise((resolve, reject) => {
+  const p = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
@@ -32,7 +32,12 @@ function openDb() {
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
-  return dbPromise
+  dbPromise = p
+  // Clear the cached promise on failure so the next call can retry the
+  // open (e.g. after a transient quota or upgrade error), instead of
+  // replaying the same rejection forever.
+  p.catch(() => { if (dbPromise === p) dbPromise = null })
+  return p
 }
 
 function tx(storeNames, mode = 'readonly') {
@@ -171,11 +176,6 @@ export async function saveMemo({ date, blob, durationSeconds, mime }) {
 export async function getMemo(date) {
   const { stores } = await tx(['memos'])
   return req2promise(stores[0].get(date))
-}
-
-export async function getAllMemos() {
-  const { stores } = await tx(['memos'])
-  return req2promise(stores[0].getAll())
 }
 
 export async function deleteMemo(date) {

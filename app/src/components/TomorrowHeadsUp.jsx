@@ -1,14 +1,9 @@
 import { useEffect, useState } from 'react'
 import { STOPS } from '../data/stops'
 import { DAYS_ORDER, DAY_FULL_LABELS } from '../data/meta'
+import { TRIP_DATE_ISO } from '../data/tripCalendar'
 import { listAllFlags, flagsForStopsOnDate } from '../utils/riskWatch'
 import { getTodayDayKey, nextDayKey } from '../utils/tripDay'
-
-const TRIP_DATES = {
-  fri17: '2026-04-17', sat18: '2026-04-18', sun19: '2026-04-19',
-  mon20: '2026-04-20', tue21: '2026-04-21', wed22: '2026-04-22',
-  thu23: '2026-04-23', fri24: '2026-04-24',
-}
 
 // Feature 4 Layer 1 — surface tomorrow's risk flags on today's Itinerary.
 // Appears in the evening (>= 4 PM local) or whenever today's planned stops
@@ -22,7 +17,7 @@ export function TomorrowHeadsUp() {
     const tomorrowKey = today ? nextDayKey(today) : DAYS_ORDER[0]
     if (!tomorrowKey) return
     setTomorrowDayKey(tomorrowKey)
-    const tomorrowIso = TRIP_DATES[tomorrowKey]
+    const tomorrowIso = TRIP_DATE_ISO[tomorrowKey]
     const tomorrowDate = new Date(tomorrowIso + 'T12:00:00')
     const stops = STOPS.filter((s) => s.day === tomorrowKey && s.category !== 'discover')
     listAllFlags().then((flags) => {
