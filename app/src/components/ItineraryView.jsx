@@ -16,6 +16,7 @@ import { PrepCard } from './PrepCard'
 import { GasWarning } from './GasWarning'
 import { NextUpCard } from './NextUpCard'
 import { TomorrowHeadsUp } from './TomorrowHeadsUp'
+import { CeremonyMorningOptions } from './CeremonyMorningOptions'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import { useVisitedContext } from '../hooks/VisitedContext'
 import { useSwipeDays } from '../hooks/useSwipeDays'
@@ -121,6 +122,8 @@ function FilteredList({ stops, activePerson, filterDay }) {
   const gas =
     filterDay && filterDay !== 'all' ? GAS_WARNINGS[filterDay] : null
 
+  const showCeremony = filterDay === 'sun19'
+
   if (stops.length === 0) {
     return (
       <>
@@ -128,6 +131,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
         {overnight && (
           <TonightCard overnight={overnight} activePerson={activePerson} />
         )}
+        {showCeremony && <CeremonyMorningOptions activePerson={activePerson} />}
         <div className="empty">No itinerary stops match.</div>
         {prep && <PrepCard prep={prep} activePerson={activePerson} />}
       </>
@@ -139,6 +143,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
       {overnight && (
         <TonightCard overnight={overnight} activePerson={activePerson} />
       )}
+      {showCeremony && <CeremonyMorningOptions activePerson={activePerson} />}
       <div className="stops-grid">
         {stops.map((s) => (
           <StopCard key={s.id} stop={s} activePerson={activePerson} />
@@ -204,6 +209,7 @@ function DayByDay({ stops, activePerson }) {
 
 function DaySection({ day, stops, activePerson }) {
   const isThursday = day === 'thu23'
+  const isSunday = day === 'sun19'
   const overnight = OVERNIGHTS[day]
   const prep = PREP[day]
   const gas = GAS_WARNINGS[day]
@@ -219,6 +225,7 @@ function DaySection({ day, stops, activePerson }) {
       {overnight && (
         <TonightCard overnight={overnight} activePerson={activePerson} />
       )}
+      {isSunday && <CeremonyMorningOptions activePerson={activePerson} />}
       {isThursday && (
         <div className="drive-box">
           <strong>⚠️ Axiom rules:</strong> closed-toe shoes; NO phones, iPads,

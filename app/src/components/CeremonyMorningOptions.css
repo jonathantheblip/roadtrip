@@ -1,0 +1,173 @@
+/* Ceremony-morning options — Sunday Apr 19 decision aid.
+   Clearly labeled as OPTIONS, not a locked plan. No default styling. */
+
+.cmo {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.cmo-header {
+  margin-bottom: 10px;
+}
+.cmo-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+.cmo-header h3 {
+  margin: 3px 0 2px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.cmo-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cmo-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cmo-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg2);
+  overflow: hidden;
+  transition: border-color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+
+.cmo-item-emph {
+  /* Emphasize options that serve the active persona — subtle accent
+     rim, not a "recommended" badge. No option is marked default. */
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cmo-item-dim {
+  opacity: 0.72;
+}
+
+.cmo-summary {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 10px 12px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cmo-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.cmo-id {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--muted);
+  flex: 0 0 auto;
+  width: 16px;
+}
+.cmo-title {
+  font-weight: 600;
+  font-size: 15px;
+  flex: 1 1 auto;
+  line-height: 1.25;
+}
+.cmo-caret {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  padding-left: 6px;
+}
+
+.cmo-meta-row {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  padding-left: 24px;
+}
+
+.cmo-serves {
+  margin-top: 6px;
+  padding-left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cmo-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.cmo-serves-names {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.cmo-gotcha {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(212, 119, 44, 0.14);
+  color: #d4772c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cmo-detail {
+  padding: 0 14px 12px 36px;
+  border-top: 1px dashed var(--border);
+  margin-top: 4px;
+  color: var(--text);
+}
+.cmo-detail p {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0 0;
+}
+
+.cmo-footer {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* Per-theme tweak — Rafa's command center prefers angular edges. */
+[data-theme='rafa'] .cmo-item {
+  border-radius: 4px;
+}
+[data-theme='rafa'] .cmo-avatar {
+  border-radius: 2px;
+}
+[data-theme='aurelia'] .cmo-item {
+  border-radius: 14px;
+}
