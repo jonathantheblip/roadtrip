@@ -7,6 +7,7 @@ import {
 import {
   milesAtEndOfDay, percentOfTrip, TOTAL_MILES, fmtMiles,
 } from '../data/mileage'
+import { prevDayKey } from '../utils/tripDay'
 import './DayOrientationBanner.css'
 
 // Feature 5 — Day Orientation Banner.
@@ -82,12 +83,17 @@ export function DayOrientationBanner({ onTap }) {
     const city = DEST_CITY[dayKey] || '—'
     const tzCross = DAY_TZ_CROSSOVER[dayKey]
     const tz = tzCross || DAY_TZ[dayKey]
-    const miles = milesAtEndOfDay(dayKey)
-    const pct = percentOfTrip(dayKey)
+    // Point-in-time progress: until we've checked into tonight's lodging,
+    // show yesterday's cumulative miles (the real "so far"). Once arrived,
+    // bump to today's end-of-day total. First day: pre-arrival reads 0.
+    const prevKey = prevDayKey(dayKey)
+    const priorMiles = prevKey ? milesAtEndOfDay(prevKey) : 0
+    const miles = arrived ? milesAtEndOfDay(dayKey) : priorMiles
+    const pct = TOTAL_MILES ? Math.round((miles / TOTAL_MILES) * 100) : 0
     return {
       dow, dowLong, month, day, city, tz, tzCross: !!tzCross, miles, pct, dayKey,
     }
-  }, [dayKey])
+  }, [dayKey, arrived])
 
   if (!state) return null
 
