@@ -17,6 +17,8 @@ import { GasWarning } from './GasWarning'
 import { NextUpCard } from './NextUpCard'
 import { TomorrowHeadsUp } from './TomorrowHeadsUp'
 import { CeremonyMorningOptions } from './CeremonyMorningOptions'
+import { MondayWeatherCard } from './MondayWeatherCard'
+import { useWeatherPath } from '../hooks/useWeatherPath'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import { useVisitedContext } from '../hooks/VisitedContext'
 import { useSwipeDays } from '../hooks/useSwipeDays'
@@ -28,6 +30,7 @@ export function ItineraryView({ activePerson }) {
     useItineraryFilters()
   const { visited, markVisited } = useVisitedContext()
   const { swipeX, swipeHandlers } = useSwipeDays(filterDay, setFilterDay)
+  const { path: weatherPath } = useWeatherPath()
 
   const allPlanned = useMemo(
     () => filterStops(STOPS, { category: 'planned', activePerson }),
@@ -35,15 +38,22 @@ export function ItineraryView({ activePerson }) {
   )
 
   const stops = useMemo(
-    () =>
-      filterStops(STOPS, {
+    () => {
+      let base = filterStops(STOPS, {
         category: 'planned',
         activePerson,
         day: filterDay,
         type: filterType,
         rainyDay,
-      }),
-    [activePerson, filterDay, filterType, rainyDay]
+      })
+      // Monday weather path: if user committed to "wet", hide the
+      // dry-only stops (Lincoln Parish Park + its Ruston mural chaser).
+      if (weatherPath === 'wet') {
+        base = base.filter((s) => !(s.day === 'mon20' && s.conditional === 'dry-only'))
+      }
+      return base
+    },
+    [activePerson, filterDay, filterType, rainyDay, weatherPath]
   )
 
   const duringTrip = isDuringTrip()
@@ -123,6 +133,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
     filterDay && filterDay !== 'all' ? GAS_WARNINGS[filterDay] : null
 
   const showCeremony = filterDay === 'sun19'
+  const showWeather = filterDay === 'mon20'
 
   if (stops.length === 0) {
     return (
@@ -132,6 +143,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
           <TonightCard overnight={overnight} activePerson={activePerson} />
         )}
         {showCeremony && <CeremonyMorningOptions activePerson={activePerson} />}
+        {showWeather && <MondayWeatherCard activePerson={activePerson} />}
         <div className="empty">No itinerary stops match.</div>
         {prep && <PrepCard prep={prep} activePerson={activePerson} />}
       </>
@@ -144,6 +156,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
         <TonightCard overnight={overnight} activePerson={activePerson} />
       )}
       {showCeremony && <CeremonyMorningOptions activePerson={activePerson} />}
+      {showWeather && <MondayWeatherCard activePerson={activePerson} />}
       <div className="stops-grid">
         {stops.map((s) => (
           <StopCard key={s.id} stop={s} activePerson={activePerson} />
@@ -210,6 +223,7 @@ function DayByDay({ stops, activePerson }) {
 function DaySection({ day, stops, activePerson }) {
   const isThursday = day === 'thu23'
   const isSunday = day === 'sun19'
+  const isMonday = day === 'mon20'
   const overnight = OVERNIGHTS[day]
   const prep = PREP[day]
   const gas = GAS_WARNINGS[day]
@@ -226,6 +240,7 @@ function DaySection({ day, stops, activePerson }) {
         <TonightCard overnight={overnight} activePerson={activePerson} />
       )}
       {isSunday && <CeremonyMorningOptions activePerson={activePerson} />}
+      {isMonday && <MondayWeatherCard activePerson={activePerson} />}
       {isThursday && (
         <div className="drive-box">
           <strong>⚠️ Axiom rules:</strong> closed-toe shoes; NO phones, iPads,

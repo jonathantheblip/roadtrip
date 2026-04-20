@@ -1,0 +1,147 @@
+/* Monday weather-conditional path card — two timelines + toggle. */
+
+.mwx-card {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.mwx-header {
+  margin-bottom: 10px;
+}
+.mwx-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+.mwx-header h3 {
+  margin: 3px 0 2px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.mwx-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mwx-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mwx-pill {
+  flex: 1 1 45%;
+  min-width: 140px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.mwx-pill.active {
+  background: var(--accent);
+  color: var(--tag-text);
+  border-color: var(--accent);
+}
+.mwx-reset {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.mwx-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 520px) {
+  .mwx-grid { grid-template-columns: 1fr; }
+}
+
+.mwx-timeline {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg2);
+  transition: border-color 0.2s, opacity 0.2s;
+}
+.mwx-timeline-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.mwx-timeline-dim {
+  opacity: 0.55;
+}
+.mwx-tl-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.mwx-timeline ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mwx-timeline li {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.mwx-tl-time {
+  flex: 0 0 60px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-weight: 600;
+}
+.mwx-tl-what {
+  flex: 1 1 auto;
+  color: var(--text);
+}
+
+.mwx-flex {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.mwx-flex summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+.mwx-flex ul {
+  margin: 6px 0 0 16px;
+  padding: 0;
+  color: var(--text);
+}
+.mwx-flex li {
+  margin-bottom: 3px;
+  line-height: 1.4;
+}

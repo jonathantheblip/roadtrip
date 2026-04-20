@@ -151,4 +151,30 @@ export const RISK_SEED = [
     keywords: ['barber vintage', 'barber motorsports'],
     linkedStopIds: ['u4'],
   },
+  // Seeded per CHANGE_ORDER_2026-04-19_MONDAY §PWA Implementation Notes
+  {
+    id: 'rf-kiroli-park',
+    subject: 'Kiroli Park, West Monroe LA',
+    riskType: 'closed-renovation',
+    details:
+      'CLOSED INDEFINITELY — storm damage Jan 2026, 3-4 months repair projected ' +
+      'as of Mar 2026. Do not route here.',
+    source: 'chat planning Apr 19 2026',
+    keywords: ['kiroli park', 'kiroli'],
+    linkedStopIds: [],
+  },
+  {
+    id: 'rf-monday-storms-ruston',
+    subject: 'Monday Apr 20 afternoon storms — Ruston/Lincoln Parish',
+    riskType: 'other',
+    details:
+      '70% chance of afternoon/evening thunderstorms after 1 PM CT Monday ' +
+      'along I-20 Ruston corridor. Storms clear westward — East Texas dry by evening. ' +
+      'Check Lincoln Parish Park vs. skip-to-Shreveport path on arrival.',
+    source: 'NWS forecast Apr 19',
+    appliesToDates: ['2026-04-20'],
+    appliesToTimesOfDay: { start: '13:00', end: '23:59' },
+    keywords: ['lincoln parish park', 'ruston'],
+    linkedStopIds: ['m5'],
+  },
 ]
