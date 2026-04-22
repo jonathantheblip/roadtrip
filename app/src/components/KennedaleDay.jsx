@@ -29,6 +29,35 @@ export function KennedaleDay({ day }) {
           <ScheduleTable rows={data.evening.schedule} />
         </div>
       )}
+
+      {data.bail && (
+        <details className="kd-bail">
+          <summary>{data.bail.label}</summary>
+          <ul>
+            {data.bail.rows.map((r, i) => (
+              <li key={i}>
+                <strong>{r.trigger}:</strong> {r.pivot}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {data.nostalgia && (
+        <details className="kd-nostalgia">
+          <summary>{data.nostalgia.label}</summary>
+          {data.nostalgia.note && <p className="kd-note">{data.nostalgia.note}</p>}
+          <ul>
+            {data.nostalgia.rows.map((r, i) => <li key={i}>{r}</li>)}
+          </ul>
+        </details>
+      )}
+
+      {data.cutFromOriginal && (
+        <p className="kd-cut" title="What was dropped from the previous plan">
+          <em>Changed:</em> {data.cutFromOriginal}
+        </p>
+      )}
     </article>
   )
 }

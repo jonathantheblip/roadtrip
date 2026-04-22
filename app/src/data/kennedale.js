@@ -78,30 +78,106 @@ export const KENNEDALE_DAYS = {
   wed22: {
     key: 'wed22',
     dayLabel: 'Wed Apr 22',
-    title: 'DFW Day 2: Six Flags + Viral Treats',
-    subtitle: 'All-together energy day · Donna welcome',
+    title: 'DFW Day 2: Six Flags Replacement',
+    subtitle:
+      'iFLY Frisco (booked) · Meow Wolf Grapevine · Aurelia shopping · bail at every stage',
     schedule: [
       {
         time: '9:30',
-        text: '<strong>Six Flags Over Texas</strong>, Arlington. Gates open.',
+        text: "<strong>Depart Donna's</strong> for iFLY Frisco. Pack waivers confirmation.",
+        bring: 'iFLY waivers completed night before. Cash / card with ceiling for Aurelia shopping budget.',
+      },
+      {
+        time: '10:15',
+        text: 'Arrive <strong>iFLY Frisco</strong>. 8380 State Hwy 121, Frisco (not The Colony). 10:30 AM slot.',
+      },
+      {
+        time: '10:30',
+        text: '<strong>iFLY</strong> weekday Super Saver. Rafa 1 flight (~$75). Aurelia + Jonathan 2-flight Super Saver (~$75 ea). Helen spectates. Booked &gt;48h ahead — refund/reschedule rights preserved.',
+      },
+      {
+        time: '~11:45',
+        text: 'Exit iFLY, drive ~20 min to Southlake.',
+      },
+      {
+        time: '12:15',
+        text: 'Lunch: <strong>Flower Child Southlake</strong>. Real vegetarian for Helen, kid-friendly.',
+      },
+      {
+        time: '1:30',
+        text: '<strong>Meow Wolf Grapevine</strong> (return visit). Rafa tour-guides Helen. Aurelia + Jonathan take their own pass.',
+      },
+      {
+        time: '3:00',
+        text: '<strong>Bubble Planet</strong> walk-by (Grapevine Mills, same complex). $18.90 adult / $13.90 child. <em>Not pre-booked</em> — skip if energy spent. Ball pit may be too tall for Rafa.',
+      },
+      {
+        time: '3:00',
+        text: '<strong>Grapevine Mills shopping</strong> for Aurelia. Mall literally attached. 45–60 min. Budget frame: "$75, you pick" — the agency is the point.',
         bring:
-          'Comfortable shoes, change of clothes for Rafa, sunscreen, ponchos if rain',
+          'Aurelia targets: American Eagle / Aerie, Hollister, PacSun, Hot Topic. Secondary: H&amp;M, Forever 21, Lids, Herschel, Dr. Martens. Helen anchor: LOFT Outlet / J.Crew Factory / Bath &amp; Body Works. Rafa containment: Round 1 bowling/arcade (drop-in), LEGO Store, Peppa Pig World of Play.',
       },
       {
-        time: 'AM',
-        text: 'Jonathan + Aurelia &rarr; big coasters. Helen + Rafa &rarr; Bugs Bunny Boomtown. Donna: Rafa partner if she comes (frees Helen to ride with Aurelia).',
-      },
-      { time: '12:30', text: 'Regroup for lunch inside the park.' },
-      { time: '3:30', text: 'Leave before meltdown.' },
-      {
-        time: '4pm',
-        text: '<strong>SomiSomi</strong> or <strong>Amorino Gelato</strong>. Viral dessert stop.',
+        time: '4:15',
+        text: 'Depart Grapevine Mills.',
       },
       {
-        time: '6pm',
-        text: 'Dinner: <strong>Rodeo Goat</strong>. Casual, patio. Great veggie options.',
+        time: '4:45',
+        text: "Home Arlington. 2.5h decompression before Rafa's 7:15 bedtime.",
+      },
+      {
+        time: 'Evening',
+        text: "Quiet night. <em>Donna farewell dinner moved to TUESDAY night</em> — not Thursday morning (Thursday is 7 AM wheels-up).",
       },
     ],
+    bail: {
+      label: 'Bail options (every decision point has a pivot)',
+      rows: [
+        {
+          trigger: 'Kids reject iFLY at breakfast',
+          pivot: "Drive straight to Meow Wolf Grapevine for 10 AM open (25 min). Lunch Main Street Bistro or Mi Día From Scratch. Afternoon Gaylord Texan atrium (free walk-in, $17 parking). Home by 4.",
+        },
+        {
+          trigger: 'Rafa balks at iFLY gear-up',
+          pivot: 'Aurelia + Jonathan fly as booked. Helen + Rafa spectate. $75 worst case. Already priced in — this is the expected scenario.',
+        },
+        {
+          trigger: 'Aurelia also bails at iFLY',
+          pivot: 'Skip iFLY. Drive 30 min south to Meow Wolf. Early lunch Flower Child Southlake on the way. Bubble Planet as backup.',
+        },
+        {
+          trigger: 'Mood collapses post-iFLY',
+          pivot: 'Skip Meow Wolf + Bubble Planet. Grapevine Main Street walk (10 min from iFLY). Aurelia photographs, Helen real lunch, Rafa runs sidewalks. Home by 3:30.',
+        },
+        {
+          trigger: 'Meow Wolf is too much for Rafa (sensory)',
+          pivot: 'Jonathan + Rafa exit to Round 1 for bowling/arcade. Helen + Aurelia finish Meow Wolf. Reconvene early dinner.',
+        },
+        {
+          trigger: "Rafa toast during shopping",
+          pivot: 'Jonathan + Rafa at Round 1 while Helen + Aurelia shop. Meet at car 4:15.',
+        },
+        {
+          trigger: 'Weather surprises',
+          pivot: "Everything indoor — no pivot needed. iFLY, Meow Wolf, Bubble Planet, Gaylord atrium all weather-proof.",
+        },
+        {
+          trigger: 'Jonathan wants solo-Aurelia time',
+          pivot: "Aurelia + Jonathan SomiSomi Carrollton run (35 min RT from Arlington). Slots into 4:30–6:30. Helen + Rafa at Donna's.",
+        },
+      ],
+    },
+    nostalgia: {
+      label: "Nostalgia pivots (Jonathan's discretion, not in main plan)",
+      note: 'All near The Colony, ~10 min each from iFLY Frisco:',
+      rows: [
+        '5716 Truitt — old house drive-by',
+        'BB Owen Elementary',
+        'Soccer fields — Rafa bait',
+      ],
+    },
+    cutFromOriginal:
+      'Six Flags Over Texas removed (kids not ready). SomiSomi / Rodeo Goat removed — evening is decompression at Donna\'s.',
   },
 }
 
@@ -111,9 +187,9 @@ const HOUSTON_FRIDAY_VARIANTS = {
   b6932: {
     dayLabel: 'Fri Apr 24',
     title: 'Fly Home (pack-and-go)',
-    subtitle: 'Optional Broken Obelisk walk · B6 932 IAH → BOS · 1:17 PM',
+    subtitle: 'B6 932 IAH → BOS · 1:17 PM · Art happened Thursday',
     intro:
-      'Current flight B6 932 departs IAH at 1:17 PM &mdash; Friday is pack-and-go only. No Menil art morning. Axiom and Rice already happened Thursday evening. <em>If flight changes to UA 592, flip <code>FLIGHT_SCENARIO</code> to see the full art morning.</em>',
+      'Flight B6 932 departs IAH at 1:17 PM &mdash; Friday is pack-and-go only. Rothko Chapel + Menil main building already happened Thursday in compressed form (see Thursday schedule). <em>Optional morning bail: if Helen wants the Twombly Drawing Institute show, it&rsquo;s possible to squeeze in 10&ndash;11:30 AM before the airport — tight but doable, Menil Drawing Institute opens at 10 AM and IAH is 35 min from Montrose.</em>',
     flightText: '✈️ B6 932 · IAH → BOS · Nonstop · Departs 1:17 PM · Arrives 5:58 PM EDT',
     footer:
       'Home in Belmont ~7:00 PM. Saturday volleyball tournament PM wave preserved.',
@@ -127,8 +203,12 @@ const HOUSTON_FRIDAY_VARIANTS = {
         text: '<em>Optional:</em> walk to <strong>Broken Obelisk</strong> &amp; Menil grounds (dawn&ndash;dusk, free, outdoor). Skip if running late.',
       },
       {
+        time: '10:00',
+        text: '<em>Optional bail:</em> <strong>Menil Drawing Institute</strong> — <em>The Gift of Drawing: Cy Twombly</em> (opens 10 AM, closes Aug 9). Tight but possible if Helen wants it. Leave by 11:30 AM.',
+      },
+      {
         time: '10:15',
-        text: 'Load car, depart for IAH.',
+        text: 'Load car, depart for IAH <em>(push to 11:30 if taking the Twombly bail)</em>.',
         bring: 'Confirm JetBlue check-in done on app.',
       },
       {
@@ -144,6 +224,19 @@ const HOUSTON_FRIDAY_VARIANTS = {
         text: 'Home in Belmont.',
       },
     ],
+    bail: {
+      label: 'Bail options for Friday',
+      rows: [
+        {
+          trigger: 'Helen wants the Twombly Drawing Institute show',
+          pivot: 'Menil Drawing Institute opens 10 AM. Walk there from Airbnb, leave by 11:30 AM for IAH (35 min drive). Tight but doable.',
+        },
+        {
+          trigger: 'Flight delayed',
+          pivot: 'Rothko Chapel re-visit as standby — it is 5 min from the Airbnb.',
+        },
+      ],
+    },
   },
 
   ua592: {

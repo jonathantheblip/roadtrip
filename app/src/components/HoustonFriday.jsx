@@ -42,6 +42,19 @@ export function HoustonFriday() {
         </table>
       </div>
 
+      {HOUSTON_FRIDAY.bail && (
+        <details className="bail-options">
+          <summary>{HOUSTON_FRIDAY.bail.label}</summary>
+          <ul>
+            {HOUSTON_FRIDAY.bail.rows.map((r, i) => (
+              <li key={i}>
+                <strong>{r.trigger}:</strong> {r.pivot}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       <p className="houston-footer">{HOUSTON_FRIDAY.footer}</p>
     </article>
   )

@@ -229,3 +229,32 @@
   font-size: 12px;
   letter-spacing: 0.03em;
 }
+
+/* Bail-options block — sits below the Thursday drive-box */
+.bail-options {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.bail-options summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.bail-options ul {
+  margin: 8px 0 0 18px;
+  padding: 0;
+}
+.bail-options li {
+  margin-bottom: 6px;
+}
+.bail-options strong {
+  color: var(--accent);
+}

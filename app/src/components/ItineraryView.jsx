@@ -18,6 +18,7 @@ import { NextUpCard } from './NextUpCard'
 import { TomorrowHeadsUp } from './TomorrowHeadsUp'
 import { CeremonyMorningOptions } from './CeremonyMorningOptions'
 import { MondayWeatherCard } from './MondayWeatherCard'
+import { ThursdayDriveBox } from './ThursdayDriveBox'
 import { useWeatherPath } from '../hooks/useWeatherPath'
 import { useItineraryFilters } from '../hooks/useItineraryFilters'
 import { useVisitedContext } from '../hooks/VisitedContext'
@@ -134,6 +135,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
 
   const showCeremony = filterDay === 'sun19'
   const showWeather = filterDay === 'mon20'
+  const showThursday = filterDay === 'thu23'
 
   if (stops.length === 0) {
     return (
@@ -144,6 +146,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
         )}
         {showCeremony && <CeremonyMorningOptions activePerson={activePerson} />}
         {showWeather && <MondayWeatherCard activePerson={activePerson} />}
+        {showThursday && <ThursdayDriveBox />}
         <div className="empty">No itinerary stops match.</div>
         {prep && <PrepCard prep={prep} activePerson={activePerson} />}
       </>
@@ -157,6 +160,7 @@ function FilteredList({ stops, activePerson, filterDay }) {
       )}
       {showCeremony && <CeremonyMorningOptions activePerson={activePerson} />}
       {showWeather && <MondayWeatherCard activePerson={activePerson} />}
+      {showThursday && <ThursdayDriveBox />}
       <div className="stops-grid">
         {stops.map((s) => (
           <StopCard key={s.id} stop={s} activePerson={activePerson} />
@@ -241,34 +245,7 @@ function DaySection({ day, stops, activePerson }) {
       )}
       {isSunday && <CeremonyMorningOptions activePerson={activePerson} />}
       {isMonday && <MondayWeatherCard activePerson={activePerson} />}
-      {isThursday && (
-        <div className="drive-box">
-          <strong>⚠️ Axiom rules:</strong> closed-toe shoes; NO phones, iPads,
-          or cameras inside — everything gets checked at reception.
-          <br />
-          <strong>8:00am:</strong> Goodbye breakfast with Donna &amp; Debra.
-          <br />
-          <strong>9:30am:</strong> Depart Arlington (I-45 South).
-          <br />
-          <strong>~10:30am:</strong> Collin Street Bakery, Corsicana (15 min).
-          <br />
-          <strong>~12:15pm:</strong> Buc-ee&rsquo;s Madisonville — lunch (30
-          min).
-          <br />
-          <strong>~1:00pm:</strong> Sam Houston Statue — 5-min photo.
-          <br />
-          <strong>3:00pm:</strong> Axiom EVA tour with Chris (~45&ndash;60
-          min).
-          <br />
-          <strong>~4:40pm:</strong> Rice University campus walk (Aurelia&rsquo;s
-          request).
-          <br />
-          <strong>6:15pm:</strong> Dinner at Hugo&rsquo;s (14-item veg menu)
-          — straight from Rice.
-          <br />
-          <strong>~8:30pm:</strong> Check into 1301 Marshall St, Houston.
-        </div>
-      )}
+      {isThursday && <ThursdayDriveBox />}
       <div className="stops-grid">
         {stops.map((s) => {
           const showCluster = s.cluster && s.cluster !== curCluster
