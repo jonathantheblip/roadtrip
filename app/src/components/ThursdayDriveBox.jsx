@@ -6,10 +6,10 @@ export function ThursdayDriveBox() {
   return (
     <>
       <div className="drive-box">
-        <strong>⚠️ Thursday compressed:</strong> Donna farewell dinner was
-        moved to Tuesday night. No Donna breakfast Thursday. Axiom rules:
-        closed-toe shoes; NO phones, iPads, or cameras inside — everything
-        gets checked at reception.
+        <strong>⚠️ Thursday compressed:</strong> Donna farewell dinner
+        happened Wednesday night at Hurtado. No Donna breakfast Thursday.
+        Axiom rules: closed-toe shoes; NO phones, iPads, or cameras inside
+        — everything gets checked at reception.
         <br />
         <strong>7:00am:</strong> Depart Arlington (I-45 South). Car packed
         the night before.

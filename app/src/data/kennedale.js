@@ -78,106 +78,84 @@ export const KENNEDALE_DAYS = {
   wed22: {
     key: 'wed22',
     dayLabel: 'Wed Apr 22',
-    title: 'DFW Day 2: Six Flags Replacement',
+    title: 'Grapevine Mills full day + Hurtado with Donna',
     subtitle:
-      'iFLY Frisco (booked) · Meow Wolf Grapevine · Aurelia shopping · bail at every stage',
+      'Meow Wolf · Bubble Planet · Peppa Pig · Round 1 · shopping · Hurtado 5:30 PM · Donna farewell dinner',
     schedule: [
       {
-        time: '9:30',
-        text: "<strong>Depart Donna's</strong> for iFLY Frisco. Pack waivers confirmation.",
-        bring: 'iFLY waivers completed night before. Cash / card with ceiling for Aurelia shopping budget.',
-      },
-      {
         time: '10:15',
-        text: 'Arrive <strong>iFLY Frisco</strong>. 8380 State Hwy 121, Frisco (not The Colony). 10:30 AM slot.',
+        text: "<strong>Depart Donna's</strong> (2331 Bay Lakes Ct, Arlington).",
+        bring: "Card with ceiling for Aurelia's shopping budget ($75, she picks). Rafa snacks.",
       },
       {
-        time: '10:30',
-        text: '<strong>iFLY</strong> weekday Super Saver. Rafa 1 flight (~$75). Aurelia + Jonathan 2-flight Super Saver (~$75 ea). Helen spectates. Booked &gt;48h ahead — refund/reschedule rights preserved.',
+        time: '10:45',
+        text: 'Arrive <strong>Grapevine Mills</strong> — 3000 Grapevine Mills Pkwy, Grapevine.',
       },
       {
-        time: '~11:45',
-        text: 'Exit iFLY, drive ~20 min to Southlake.',
+        time: '10:45–12:30',
+        text: '<strong>Meow Wolf: The Real Unreal</strong> (Suite 253). <em>Rafa tour-guides Helen</em> — her first visit. Aurelia + Jonathan take their own pass.',
       },
       {
-        time: '12:15',
-        text: 'Lunch: <strong>Flower Child Southlake</strong>. Real vegetarian for Helen, kid-friendly.',
+        time: '12:30',
+        text: 'Lunch — mall food court or <strong>Rainforest Cafe</strong> if Rafa needs the show.',
       },
       {
         time: '1:30',
-        text: '<strong>Meow Wolf Grapevine</strong> (return visit). Rafa tour-guides Helen. Aurelia + Jonathan take their own pass.',
+        text: '<strong>Bubble Planet</strong> walk-by. $18.90 adult / $13.90 child if we commit. Ball pit possibly too tall for Rafa — not pre-booked.',
       },
       {
-        time: '3:00',
-        text: '<strong>Bubble Planet</strong> walk-by (Grapevine Mills, same complex). $18.90 adult / $13.90 child. <em>Not pre-booked</em> — skip if energy spent. Ball pit may be too tall for Rafa.',
+        time: '2:00',
+        text: '<strong>Peppa Pig World of Play</strong> — 30-min attempt for Rafa (edge case, he is almost 5).',
       },
       {
-        time: '3:00',
-        text: '<strong>Grapevine Mills shopping</strong> for Aurelia. Mall literally attached. 45–60 min. Budget frame: "$75, you pick" — the agency is the point.',
-        bring:
-          'Aurelia targets: American Eagle / Aerie, Hollister, PacSun, Hot Topic. Secondary: H&amp;M, Forever 21, Lids, Herschel, Dr. Martens. Helen anchor: LOFT Outlet / J.Crew Factory / Bath &amp; Body Works. Rafa containment: Round 1 bowling/arcade (drop-in), LEGO Store, Peppa Pig World of Play.',
+        time: '2:30',
+        text: '<strong>Round 1 Bowling &amp; Arcade</strong> — divide and conquer. Jonathan + Rafa bowl, Helen + Aurelia start shopping.',
       },
       {
-        time: '4:15',
+        time: '3:30',
+        text: '<strong>LEGO Store</strong> + <strong>Aurelia shopping</strong>. Store targets: American Eagle, Aerie, Hollister (both locations), PacSun, Hot Topic, H&amp;M, Forever 21, Herschel Supply Co.',
+        bring: '"$75, you pick" — the agency is the point. Not a gift-economy move, a trip-souvenir-she-actually-wears move.',
+      },
+      {
+        time: '4:30',
         text: 'Depart Grapevine Mills.',
       },
       {
-        time: '4:45',
-        text: "Home Arlington. 2.5h decompression before Rafa's 7:15 bedtime.",
+        time: '4:55',
+        text: "Home to change at Donna's.",
       },
       {
-        time: 'Evening',
-        text: "Quiet night. <em>Donna farewell dinner moved to TUESDAY night</em> — not Thursday morning (Thursday is 7 AM wheels-up).",
+        time: '5:30',
+        text: "<strong>Hurtado Barbecue — Arlington</strong>, 317 E Main St. <em>Donna farewell dinner</em>. Helen-safe: bean tacos, rajas tacos, cheese quesadillas confirmed on the veg menu.",
+      },
+      {
+        time: '7:15',
+        text: "Rafa bedtime. Car packed tonight — Thursday is 7:00 AM wheels-up.",
       },
     ],
     bail: {
-      label: 'Bail options (every decision point has a pivot)',
+      label: 'Bail options for today',
       rows: [
         {
-          trigger: 'Kids reject iFLY at breakfast',
-          pivot: "Drive straight to Meow Wolf Grapevine for 10 AM open (25 min). Lunch Main Street Bistro or Mi Día From Scratch. Afternoon Gaylord Texan atrium (free walk-in, $17 parking). Home by 4.",
+          trigger: 'Kids are wrecked by 2 PM',
+          pivot: "Skip Peppa Pig and the Round 1 second half. Go home early. Rafa naps before Hurtado.",
         },
         {
-          trigger: 'Rafa balks at iFLY gear-up',
-          pivot: 'Aurelia + Jonathan fly as booked. Helen + Rafa spectate. $75 worst case. Already priced in — this is the expected scenario.',
+          trigger: 'Aurelia wants more shopping time',
+          pivot: "Helen stays with Aurelia, Jonathan takes Rafa home at 3:30 to decompress. Everyone reconverges at Hurtado 5:30.",
         },
         {
-          trigger: 'Aurelia also bails at iFLY',
-          pivot: 'Skip iFLY. Drive 30 min south to Meow Wolf. Early lunch Flower Child Southlake on the way. Bubble Planet as backup.',
+          trigger: 'Rafa melts down at Meow Wolf',
+          pivot: "Straight to Round 1 for the bowling reset. Skip Peppa Pig.",
         },
         {
-          trigger: 'Mood collapses post-iFLY',
-          pivot: 'Skip Meow Wolf + Bubble Planet. Grapevine Main Street walk (10 min from iFLY). Aurelia photographs, Helen real lunch, Rafa runs sidewalks. Home by 3:30.',
+          trigger: 'Hurtado wait is long (walk-in)',
+          pivot: "Call on arrival for quote; if >25 min, Babe's Chicken or Esparza's Fort Worth are Donna-approved backups.",
         },
-        {
-          trigger: 'Meow Wolf is too much for Rafa (sensory)',
-          pivot: 'Jonathan + Rafa exit to Round 1 for bowling/arcade. Helen + Aurelia finish Meow Wolf. Reconvene early dinner.',
-        },
-        {
-          trigger: "Rafa toast during shopping",
-          pivot: 'Jonathan + Rafa at Round 1 while Helen + Aurelia shop. Meet at car 4:15.',
-        },
-        {
-          trigger: 'Weather surprises',
-          pivot: "Everything indoor — no pivot needed. iFLY, Meow Wolf, Bubble Planet, Gaylord atrium all weather-proof.",
-        },
-        {
-          trigger: 'Jonathan wants solo-Aurelia time',
-          pivot: "Aurelia + Jonathan SomiSomi Carrollton run (35 min RT from Arlington). Slots into 4:30–6:30. Helen + Rafa at Donna's.",
-        },
-      ],
-    },
-    nostalgia: {
-      label: "Nostalgia pivots (Jonathan's discretion, not in main plan)",
-      note: 'All near The Colony, ~10 min each from iFLY Frisco:',
-      rows: [
-        '5716 Truitt — old house drive-by',
-        'BB Owen Elementary',
-        'Soccer fields — Rafa bait',
       ],
     },
     cutFromOriginal:
-      'Six Flags Over Texas removed (kids not ready). SomiSomi / Rodeo Goat removed — evening is decompression at Donna\'s.',
+      'iFLY Frisco removed (Aurelia declined morning-of). Flower Child Southlake removed. Evening decompression replaced with Hurtado + Donna farewell dinner.',
   },
 }
 
