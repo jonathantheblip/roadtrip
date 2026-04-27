@@ -7,7 +7,12 @@ import { allStops } from '../data/trips'
 export function RafaView({ trip, onOpenStop }) {
   const rafaStops = allStops(trip).filter((s) => s.for.includes('rafa'))
   const today = trip.days[trip.days.length - 1]
-  const featured = rafaStops.find((s) => /axiom/i.test(s.name)) || rafaStops[rafaStops.length - 1]
+  const heroForRafa =
+    trip.heroStopId && rafaStops.find((s) => s.id === trip.heroStopId)
+  const featured =
+    heroForRafa ||
+    rafaStops.find((s) => /axiom|monster|truck/i.test(s.name)) ||
+    rafaStops[rafaStops.length - 1]
 
   // Auto-counts
   const cabins = trip.days.filter((d) => /cabin|airbnb|donna|grandma/i.test(d.lodging || '')).length
@@ -25,7 +30,12 @@ export function RafaView({ trip, onOpenStop }) {
             style={{ background: '#6BE3A0' }}
           ></span>
           <p className="f-arc text-[11px] font-medium tt-widest uppercase opacity-80">
-            Mission {trip.status === 'archived' ? 'Complete' : 'Active'}
+            Mission{' '}
+            {trip.status === 'archived'
+              ? 'Complete'
+              : trip.status === 'planning'
+                ? 'Incoming'
+                : 'Active'}
           </p>
         </div>
         <p className="f-mono text-[10px] tt-widest uppercase opacity-50">
@@ -34,13 +44,7 @@ export function RafaView({ trip, onOpenStop }) {
       </div>
 
       <header className="px-5 pb-6">
-        <h1 className="f-arc text-6xl font-black leading-85 tt-tightest">
-          <span className="rafa-yellow">SPACE</span>
-          <br />
-          <span className="rafa-blue">SHIP</span>
-          <br />
-          <span style={{ color: '#fff' }}>TRIP</span>
-        </h1>
+        <RafaTitle trip={trip} />
         <p className="f-arc text-base font-medium opacity-70 mt-3 tt-tight">
           {trip.status === 'archived'
             ? 'You went to a lot of places.'
@@ -148,6 +152,32 @@ export function RafaView({ trip, onOpenStop }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// 3-color stacked title that picks words intentionally per trip.
+// Jackson trip → SPACE / SHIP / TRIP (the Axiom day defines it)
+// NYC trip     → MONSTER / TRUCK / DAY (the closing anchor)
+// Anything else → first three meaningful words from the title.
+function RafaTitle({ trip }) {
+  let words
+  if (trip.id === 'jackson-2026') {
+    words = ['SPACE', 'SHIP', 'TRIP']
+  } else if (trip.id === 'nyc-rafa-2026') {
+    words = ['MONSTER', 'TRUCK', 'DAY']
+  } else {
+    const cleaned = (trip.title || '').toUpperCase().replace(/[^A-Z\s]/g, ' ').split(/\s+/).filter(Boolean)
+    words = cleaned.slice(0, 3)
+    while (words.length < 3) words.push('TRIP')
+  }
+  return (
+    <h1 className="f-arc text-6xl font-black leading-85 tt-tightest">
+      <span className="rafa-yellow">{words[0]}</span>
+      <br />
+      <span className="rafa-blue">{words[1]}</span>
+      <br />
+      <span style={{ color: '#fff' }}>{words[2]}</span>
+    </h1>
   )
 }
 

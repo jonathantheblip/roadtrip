@@ -1,6 +1,7 @@
 import { Bookmark } from 'lucide-react'
 import { allStops } from '../data/trips'
 import { listMemoriesForStop } from '../lib/memoryStore'
+import { FlightStatus, findArrivalStop } from './FlightStatus'
 
 // Helen's view — archival, photo-forward. Hero memory is the chapel for
 // the Jackson trip; for any trip we lean on a `heroStopId` if set, else
@@ -12,6 +13,7 @@ export function HelenView({ trip, traveler, onOpenStop }) {
     (trip.heroStopId && all.find((s) => s.id === trip.heroStopId)) ||
     helenStops[helenStops.length - 1] ||
     all.slice(-1)[0]
+  const arrival = findArrivalStop(trip)
 
   if (!hero) {
     return (
@@ -25,6 +27,11 @@ export function HelenView({ trip, traveler, onOpenStop }) {
           </h1>
           <p className="f-news-i text-lg opacity-60 mt-3 max-w-sm">{trip.epigraph}</p>
         </header>
+        {arrival && (
+          <section className="px-6 pt-6">
+            <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
+          </section>
+        )}
         <section className="px-6 py-12">
           <p className="f-news text-lg leading-relaxed helen-soft max-w-prose">{trip.overview}</p>
         </section>
@@ -35,16 +42,34 @@ export function HelenView({ trip, traveler, onOpenStop }) {
   return (
     <div className="min-h-screen helen-bone pb-32">
       <header className="px-6 pt-12 pb-2">
-        <p className="f-mono text-[10px] tt-widest uppercase opacity-40 mb-2">An Archive</p>
+        <p className="f-mono text-[10px] tt-widest uppercase opacity-40 mb-2">
+          {trip.status === 'archived' ? 'An Archive' : 'A Weekend'}
+        </p>
         <h1 className="f-news tt-tightest text-5xl leading-95">
-          The Drive,
-          <br />
-          <span className="f-news-i">in moments</span>
+          {trip.status === 'archived' ? (
+            <>
+              The Drive,
+              <br />
+              <span className="f-news-i">in moments</span>
+            </>
+          ) : (
+            <>
+              {trip.title}
+            </>
+          )}
         </h1>
         <p className="f-news-i text-lg opacity-60 mt-3 max-w-sm">
-          {trip.dateRange} · {helenStops.length} stops you anchored to
+          {trip.status === 'archived'
+            ? `${trip.dateRange} · ${helenStops.length} stops you anchored to`
+            : trip.epigraph}
         </p>
       </header>
+
+      {arrival && (
+        <section className="px-6 pt-6">
+          <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
+        </section>
+      )}
 
       <section className="px-6 pt-8 pb-10 tap" onClick={() => onOpenStop(hero.day, hero.id)}>
         <div className="helen-photo aspect-4-5 mb-4 helen-deckle"></div>

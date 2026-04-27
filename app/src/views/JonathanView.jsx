@@ -1,13 +1,15 @@
 import { ArrowRight, Circle, Headphones } from 'lucide-react'
 import { mapsLink } from '../lib/mapsLink'
+import { FlightStatus, findArrivalStop } from './FlightStatus'
 
 // Jonathan's view — operations console, editorial. Today/tomorrow framing
 // for a trip in progress; for an archived trip the same surface reads as
 // "the run sheet of record".
-export function JonathanView({ trip, onOpenStop, onOpenSettings }) {
+export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
   // For archived trips, "today" = the last day; for planning, day 1 if any.
   const today = trip.days[trip.days.length - 1]
   const upcoming = null
+  const arrival = findArrivalStop(trip)
 
   if (!today) {
     return <EmptyJonathan trip={trip} onOpenSettings={onOpenSettings} />
@@ -40,6 +42,12 @@ export function JonathanView({ trip, onOpenStop, onOpenSettings }) {
         />
         <Stat label="Lodging" big={today.lodging?.split(',')[0] || '—'} sub="" />
       </section>
+
+      {arrival && (
+        <section className="px-6 py-5 border-b jj-rule">
+          <FlightStatus stop={arrival.stop} variant="panel" framing="your" traveler={traveler} />
+        </section>
+      )}
 
       <section className="px-6 py-6 border-b jj-rule">
         <p className="smallcaps f-dm text-[11px] opacity-60 mb-4">The Plan</p>

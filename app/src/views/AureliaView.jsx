@@ -1,13 +1,21 @@
 import { Music, Lock } from 'lucide-react'
 import { allStops } from '../data/trips'
 import { listMemoriesForStop } from '../lib/memoryStore'
+import { FlightStatus, findArrivalStop } from './FlightStatus'
 
 // Aurelia's view — peach/blush, Caprasimo, scrapbook register.
 // Highlights, day chips, soundtrack slot. Privacy lock surfaced on each memory row.
 export function AureliaView({ trip, traveler, onOpenStop }) {
   const aureliaStops = allStops(trip).filter((s) => s.for.includes('aurelia'))
+  const all = allStops(trip)
+  const heroForAurelia =
+    trip.heroStopId && aureliaStops.find((s) => s.id === trip.heroStopId)
   const hero =
-    aureliaStops.find((s) => /rice/i.test(s.name)) || aureliaStops[0] || allStops(trip)[0]
+    heroForAurelia ||
+    aureliaStops.find((s) => /rice/i.test(s.name)) ||
+    aureliaStops[0] ||
+    all[0]
+  const arrival = findArrivalStop(trip)
 
   return (
     <div className="min-h-screen au-cream pb-32">
@@ -25,6 +33,12 @@ export function AureliaView({ trip, traveler, onOpenStop }) {
           A place for what you actually cared about.
         </p>
       </header>
+
+      {arrival && (
+        <section className="px-6 pb-6">
+          <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
+        </section>
+      )}
 
       {hero && (
         <section className="px-6 pb-6">

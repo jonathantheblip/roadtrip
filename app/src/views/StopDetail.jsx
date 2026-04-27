@@ -8,6 +8,7 @@ import {
   saveMemory,
   deleteMemory,
 } from '../lib/memoryStore'
+import { FlightStatus } from './FlightStatus'
 
 // Stop detail with memory authoring. Visibility toggle (shared/private)
 // is intentionally explicit — Aurelia in particular needs to choose,
@@ -104,6 +105,17 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
       <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
         <p className="f-news text-lg leading-relaxed opacity-80 max-w-prose">{stop.note}</p>
       </section>
+
+      {stop.flightNumber && (
+        <section className="px-6 py-6" style={{ borderBottom: '1px solid #DDD3C2' }}>
+          <FlightStatus
+            stop={stop}
+            variant="panel"
+            framing={traveler === 'jonathan' ? 'your' : 'their'}
+            traveler={traveler}
+          />
+        </section>
+      )}
 
       <section className="px-6 py-8">
         <div className="flex items-center justify-between mb-3">
