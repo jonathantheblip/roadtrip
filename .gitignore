@@ -3,3 +3,4 @@ app/dist
 app/.vite
 *.log
 .DS_Store
+.claude/
