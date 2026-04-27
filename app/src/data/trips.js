@@ -467,7 +467,7 @@ export const NYC_TRIP = {
           time: '5:17 PM',
           name: 'DL 4961 lands at LGA',
           kind: 'arrival',
-          for: ['jonathan', 'helen', 'aurelia'],
+          for: ['jonathan'],
           note: 'Jonathan inbound from Indianapolis. Helen and Aurelia tracking flight in real time.',
           address: 'LaGuardia Airport, Queens, NY',
           lat: 40.7769,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, MapPin, Lock, Unlock, Trash2, ExternalLink } from 'lucide-react'
+import { ChevronLeft, MapPin, Lock, Unlock, Trash2, ExternalLink, Bed, Key } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { mapsLink } from '../lib/mapsLink'
 import {
@@ -132,6 +132,12 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
         </section>
       )}
 
+      {isLodgingStop(trip, day, stop) && (
+        <section className="px-6 py-6" style={{ borderBottom: '1px solid #DDD3C2' }}>
+          <LodgingPanel lodging={trip.lodging} />
+        </section>
+      )}
+
       <section className="px-6 py-8">
         <div className="flex items-center justify-between mb-3">
           <p className="smallcaps f-dm text-[11px] opacity-70">Your memory</p>
@@ -198,6 +204,57 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
             </div>
           ))}
         </section>
+      )}
+    </div>
+  )
+}
+
+// Match a stop against the trip's lodging record. Surfaces the rich
+// lodging panel (check-in/out times, Buzzmein portal) whenever the user
+// taps into a lodging stop on a day that lists the trip lodging.
+function isLodgingStop(trip, day, stop) {
+  if (!trip?.lodging || stop.kind !== 'lodging') return false
+  const lodgingName = trip.lodging.name
+  if (!lodgingName) return false
+  // Day-level join: every NYC day's `lodging` field is "Murray Hill Airbnb"
+  // until checkout day, where it becomes "— (home)". Match on that to
+  // decide whether the trip-level lodging applies to this stop.
+  return day?.lodging === lodgingName
+}
+
+function LodgingPanel({ lodging }) {
+  return (
+    <div
+      className="rounded-sm p-4"
+      style={{ border: '1px solid #DDD3C2', background: '#FBF8F2' }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Bed size={14} />
+        <p className="smallcaps f-dm text-[11px] opacity-70">{lodging.name}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <p className="f-mono text-[9px] tt-widest uppercase opacity-50">Check in</p>
+          <p className="f-news text-base leading-tight">{lodging.checkIn || '—'}</p>
+        </div>
+        <div>
+          <p className="f-mono text-[9px] tt-widest uppercase opacity-50">Check out</p>
+          <p className="f-news text-base leading-tight">{lodging.checkOut || '—'}</p>
+        </div>
+      </div>
+      {lodging.notes && (
+        <p className="f-dm text-sm opacity-70 leading-relaxed mb-3">{lodging.notes}</p>
+      )}
+      {lodging.portalUrl && (
+        <a
+          className="btn-pill"
+          href={lodging.portalUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <Key size={12} />
+          Buzzmein guest portal
+        </a>
       )}
     </div>
   )
