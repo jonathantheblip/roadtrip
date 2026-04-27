@@ -2,6 +2,7 @@ import { Bookmark } from 'lucide-react'
 import { allStops } from '../data/trips'
 import { listMemoriesForStop } from '../lib/memoryStore'
 import { FlightStatus, findArrivalStop } from './FlightStatus'
+import { useHelenDark } from '../hooks/useHelenDark'
 
 // Helen's view — archival, photo-forward. Hero memory is the chapel for
 // the Jackson trip; for any trip we lean on a `heroStopId` if set, else
@@ -14,10 +15,12 @@ export function HelenView({ trip, traveler, onOpenStop }) {
     helenStops[helenStops.length - 1] ||
     all.slice(-1)[0]
   const arrival = findArrivalStop(trip)
+  const [dark] = useHelenDark()
+  const rootClass = `min-h-screen helen-bone pb-32${dark ? ' helen-dark' : ''}`
 
   if (!hero) {
     return (
-      <div className="min-h-screen helen-bone pb-32">
+      <div className={rootClass}>
         <header className="px-6 pt-12 pb-2">
           <p className="f-mono text-[10px] tt-widest uppercase opacity-40 mb-2">An Archive</p>
           <h1 className="f-news tt-tightest text-5xl leading-95">
@@ -40,7 +43,7 @@ export function HelenView({ trip, traveler, onOpenStop }) {
   }
 
   return (
-    <div className="min-h-screen helen-bone pb-32">
+    <div className={rootClass}>
       <header className="px-6 pt-12 pb-2">
         <p className="f-mono text-[10px] tt-widest uppercase opacity-40 mb-2">
           {trip.status === 'archived' ? 'An Archive' : 'A Weekend'}

@@ -10,7 +10,33 @@ import { TripIndex } from './views/TripIndex'
 import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
+import { useHelenDark } from './hooks/useHelenDark'
 import './styles/platform.css'
+
+// Per-traveler palette tokens for the fixed top bar. Spec §6 dark/light:
+// Jonathan permanent dark; Aurelia permanent light; Rafa permanent dark;
+// Helen toggles via her settings. Returns { gradient, text }.
+function topBarTokens(traveler, helenDark) {
+  if (traveler === 'jonathan' || traveler === 'rafa') {
+    return {
+      gradient: 'linear-gradient(to bottom, rgba(20,17,13,.92), rgba(20,17,13,0))',
+      text: '#F2EBDA',
+      opacity: 0.7,
+    }
+  }
+  if (traveler === 'helen' && helenDark) {
+    return {
+      gradient: 'linear-gradient(to bottom, rgba(20,17,13,.92), rgba(20,17,13,0))',
+      text: '#F2EBDA',
+      opacity: 0.7,
+    }
+  }
+  return {
+    gradient: 'linear-gradient(to bottom, rgba(245,240,231,.85), rgba(245,240,231,0))',
+    text: '#1A1614',
+    opacity: 0.5,
+  }
+}
 
 const STORAGE_KEY = 'rt_person_v2'
 
@@ -67,6 +93,8 @@ export default function App() {
   const [tripId, setTripId] = useState(readActiveTripId)
   const [drafts, setDrafts] = useState([]) // session-local trips created via NewTrip
   const [view, setView] = useState({ name: 'trip' }) // 'index' | 'trip' | 'stop' | 'settings' | 'new'
+  const [helenDark] = useHelenDark()
+  const topBar = topBarTokens(traveler, helenDark)
 
   // Persist traveler across reloads + standalone PWA boundary.
   useEffect(() => {
@@ -175,10 +203,7 @@ export default function App() {
             zIndex: 40,
             paddingTop: 'max(8px, env(safe-area-inset-top))',
             paddingBottom: 8,
-            background:
-              traveler === 'rafa'
-                ? 'linear-gradient(to bottom, rgba(14,21,48,.92), rgba(14,21,48,0))'
-                : 'linear-gradient(to bottom, rgba(245,240,231,.85), rgba(245,240,231,0))',
+            background: topBar.gradient,
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
             display: 'flex',
@@ -198,8 +223,8 @@ export default function App() {
                 fontSize: 10,
                 letterSpacing: '0.18em',
                 textTransform: 'uppercase',
-                opacity: traveler === 'rafa' ? 0.8 : 0.5,
-                color: traveler === 'rafa' ? '#fff' : '#1A1614',
+                opacity: topBar.opacity,
+                color: topBar.text,
               }}
             >
               ← Trips
@@ -215,8 +240,8 @@ export default function App() {
               fontSize: 10,
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
-              opacity: traveler === 'rafa' ? 0.8 : 0.5,
-              color: traveler === 'rafa' ? '#fff' : '#1A1614',
+              opacity: topBar.opacity,
+              color: topBar.text,
             }}
           >
             {allTrips.map((t) => (
@@ -225,6 +250,25 @@ export default function App() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={openSettings}
+            aria-label="Trip settings"
+            style={{
+              background: 'transparent',
+              border: 0,
+              padding: '0 4px',
+              cursor: 'pointer',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 10,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              opacity: topBar.opacity,
+              color: topBar.text,
+            }}
+          >
+            ⋯
+          </button>
         </div>
       )}
 

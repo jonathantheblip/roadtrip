@@ -58,7 +58,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
               className={`fade-up d${Math.min(i + 1, 6)} py-3 ${
                 i < today.stops.length - 1 ? 'border-b' : ''
               } flex items-start gap-4 tap`}
-              style={{ borderColor: '#E5DCC8' }}
+              style={{ borderColor: 'rgba(242, 235, 218, 0.12)' }}
               onClick={() => onOpenStop(today.n, s.id)}
             >
               <span className="f-mono text-[10px] tt-wide uppercase opacity-50 w-16 flex-shrink-0 pt-1">
@@ -97,10 +97,9 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
         </div>
         <div className="flex items-start gap-3">
           <div
-            className="w-12 h-12 rounded-sm flex items-center justify-center flex-shrink-0"
-            style={{ background: '#1A1614' }}
+            className="w-12 h-12 rounded-sm flex items-center justify-center flex-shrink-0 jj-inverse"
           >
-            <Headphones size={18} color="#FBF8F2" />
+            <Headphones size={18} />
           </div>
           <div className="flex-1">
             <p className="f-news text-base leading-tight">Midnight Burger</p>

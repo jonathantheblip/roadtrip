@@ -147,13 +147,38 @@ button { font: inherit; }
 }
 .helen-deckle { box-shadow: 0 0 0 8px #FBF8F2, 0 8px 24px rgba(26,22,20,.08); }
 
-/* ---- Theme: Jonathan -------------------------------------------------- */
-.jj-paper { background: #F8F6F1; color: #1A1614; }
-.jj-rule { border-color: #BFB29C; }
-.jj-soft { color: #4A413A; }
-.jj-faded { color: #8A7F73; }
-.jj-divide-h { border-top: 1px solid #BFB29C; border-bottom: 1px solid #BFB29C; padding: 1px 0; }
-.jj-ox { color: #8B2B1F; }
+/* Helen dark variant — opt-in via her settings (spec §6). Black ground
+   with oxblood accents preserved. The deckle ring switches to dark so
+   it doesn't ring the photo with a cream halo. */
+.helen-bone.helen-dark { background: #14110D; color: #F2EBDA; }
+.helen-dark .helen-rule,
+.helen-dark.helen-rule { border-color: rgba(242, 235, 218, 0.18); }
+.helen-dark .helen-soft { color: #C9C0AB; }
+.helen-dark .helen-faded { color: #8A8270; }
+.helen-dark .helen-deckle {
+  box-shadow: 0 0 0 8px #1F1A14, 0 8px 24px rgba(0,0,0,.35);
+}
+
+/* ---- Theme: Jonathan (permanent dark) --------------------------------
+   Per spec §6: dark editorial newsprint. Black/charcoal ground,
+   paper-white text, oxblood accents preserved. No light variant.
+   "Bloomberg terminal that read literary magazines." */
+.jj-paper { background: #14110D; color: #F2EBDA; }
+.jj-rule { border-color: rgba(242, 235, 218, 0.18); }
+.jj-soft { color: #C9C0AB; }
+.jj-faded { color: #8A8270; }
+.jj-divide-h {
+  border-top: 1px solid rgba(242, 235, 218, 0.18);
+  border-bottom: 1px solid rgba(242, 235, 218, 0.18);
+  padding: 1px 0;
+}
+.jj-ox { color: #C0573F; }
+/* Inline-card elements that previously used dark on light now flip:
+   the headphones tile, the loyalty cards, the queue rules. */
+.jj-inverse {
+  background: #F2EBDA;
+  color: #14110D;
+}
 
 /* ---- Theme: Aurelia --------------------------------------------------- */
 .au-cream { background: #FFF8F2; color: #4A1F0A; }

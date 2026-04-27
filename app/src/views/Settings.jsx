@@ -1,10 +1,12 @@
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw } from 'lucide-react'
+import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
+import { useHelenDark } from '../hooks/useHelenDark'
 
 // Per-trip settings panel: calendar export, shared album link, identity reset.
 // CloudKit sync, screenshot ingestion, and Gmail wiring will live here too.
 export function Settings({ trip, traveler, onBack, onChangeTraveler }) {
+  const [helenDark, toggleHelenDark] = useHelenDark()
   return (
     <div className="min-h-screen helen-paper pb-32" style={{ color: '#1A1614' }}>
       <header
@@ -64,6 +66,32 @@ export function Settings({ trip, traveler, onBack, onChangeTraveler }) {
           </p>
         )}
       </section>
+
+      {traveler === 'helen' && (
+        <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
+          <div className="flex items-center gap-2 mb-3">
+            {helenDark ? <Moon size={14} /> : <Sun size={14} />}
+            <p className="smallcaps f-dm text-[11px] opacity-70">Appearance</p>
+          </div>
+          <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
+            Light archive by default. Dark mode pulls the photos forward and lets the oxblood
+            accents do more work.
+          </p>
+          <button
+            type="button"
+            className="btn-pill"
+            onClick={toggleHelenDark}
+            style={{
+              background: helenDark ? '#14110D' : 'transparent',
+              color: helenDark ? '#F2EBDA' : 'inherit',
+              borderColor: helenDark ? '#14110D' : 'currentColor',
+            }}
+          >
+            {helenDark ? <Moon size={12} /> : <Sun size={12} />}
+            {helenDark ? 'Dark mode on' : 'Switch to dark mode'}
+          </button>
+        </section>
+      )}
 
       <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
         <div className="flex items-center gap-2 mb-3">
