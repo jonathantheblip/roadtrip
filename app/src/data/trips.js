@@ -501,14 +501,15 @@ export const NYC_TRIP = {
       stops: [
         {
           id: 'n2-1',
-          time: 'Matinee',
+          time: '2:00 PM',
           name: 'The Lion King',
           kind: 'theater',
           for: ['jonathan', 'helen', 'aurelia', 'rafa'],
-          note: 'Minskoff Theatre. Confirm exact showtime when tickets land — typically 2 PM Sat matinee.',
+          note: 'Minskoff Theatre, Sat May 2 matinee. Availability "Low" on Broadway Direct as of Apr 27 — book promptly. Tiers $132.50 → $269.50.',
           address: '200 W 45th St, New York, NY 10036',
           lat: 40.7587,
           lng: -73.9858,
+          url: 'https://tickets.broadwaydirect.com/shop/tickets/series/546654/1797085',
         },
       ],
     },

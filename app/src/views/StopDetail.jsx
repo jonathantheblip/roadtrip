@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, MapPin, Lock, Unlock, Trash2 } from 'lucide-react'
+import { ChevronLeft, MapPin, Lock, Unlock, Trash2, ExternalLink } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { mapsLink } from '../lib/mapsLink'
 import {
@@ -9,6 +9,13 @@ import {
   deleteMemory,
 } from '../lib/memoryStore'
 import { FlightStatus } from './FlightStatus'
+
+function urlLabel(stop) {
+  const ticketKinds = new Set(['theater', 'show', 'concert', 'tour', 'arrival', 'departure'])
+  if (ticketKinds.has(stop.kind)) return 'Tickets'
+  if (/^breakfast|lunch|dinner|brunch|snack$/i.test(stop.kind)) return 'Menu'
+  return 'Open link'
+}
 
 // Stop detail with memory authoring. Visibility toggle (shared/private)
 // is intentionally explicit — Aurelia in particular needs to choose,
@@ -89,17 +96,25 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
             </span>
           ))}
         </div>
-        {stop.address && (
-          <a
-            className="btn-pill"
-            href={mapsLink(stop, traveler)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <MapPin size={12} />
-            {TRAVELERS[traveler]?.maps === 'waze' ? 'Open in Waze' : 'Open in Maps'}
-          </a>
-        )}
+        <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {stop.address && (
+            <a
+              className="btn-pill"
+              href={mapsLink(stop, traveler)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <MapPin size={12} />
+              {TRAVELERS[traveler]?.maps === 'waze' ? 'Open in Waze' : 'Open in Maps'}
+            </a>
+          )}
+          {stop.url && (
+            <a className="btn-pill" href={stop.url} target="_blank" rel="noreferrer">
+              <ExternalLink size={12} />
+              {urlLabel(stop)}
+            </a>
+          )}
+        </div>
       </header>
 
       <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
