@@ -155,6 +155,22 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, o
           environment{' '}
           <span className="f-mono text-[11px]">{CLOUDKIT_META.environment}</span>.
         </p>
+        {/*
+          Apple's SDK looks for the element whose id matches the
+          `signInButton.id` we passed to CK.configure (see lib/cloudkit.js)
+          and mounts its own button into it. The mount happens once, soon
+          after setUpAuth() resolves — so the element has to be in the DOM
+          before the hook runs, not behind a state-dependent conditional.
+          We render it unconditionally and just hide it when the user is
+          signed in or CloudKit isn't reachable.
+        */}
+        <div
+          id="apple-sign-in"
+          style={{
+            display: ck.state === 'signedOut' ? 'block' : 'none',
+            marginBottom: 8,
+          }}
+        />
         {ck.state === 'unconfigured' && (
           <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
             CloudKit env vars not present in the bundle.
@@ -182,20 +198,10 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, o
           </>
         )}
         {ck.state === 'signedOut' && (
-          <>
-            {/*
-              CloudKit JS auto-mounts its sign-in button into the element
-              whose id matches the `signInButton.id` we passed to
-              CK.configure (see lib/cloudkit.js). Rendering this div is
-              the entire integration — no onClick needed; Apple's SDK
-              opens the auth popup and fires whenUserSignsIn().
-            */}
-            <div id="apple-sign-in" />
-            <p className="f-dm text-[12px] opacity-60 mt-3 max-w-prose">
-              Uses your iCloud account. Sign-in opens an Apple popup and
-              never sees your password.
-            </p>
-          </>
+          <p className="f-dm text-[12px] opacity-60 mt-1 max-w-prose">
+            Uses your iCloud account. Sign-in opens an Apple popup and
+            never sees your password.
+          </p>
         )}
         {ck.state === 'signedIn' && (
           <>
