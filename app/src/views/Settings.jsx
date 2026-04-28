@@ -161,9 +161,22 @@ export function Settings({ trip, traveler, dark, onBack, onChangeTraveler }) {
           <p className="f-dm text-sm opacity-70">Connecting to iCloud…</p>
         )}
         {ck.state === 'error' && (
-          <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
-            Connection failed: {ck.error || 'unknown'}.
-          </p>
+          <>
+            <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
+              CloudKit error: {ck.error || 'unknown'}.
+            </p>
+            <p className="f-dm text-[12px] opacity-60 mt-2 max-w-prose">
+              Most often this means the dev origin isn't whitelisted in the CloudKit dashboard,
+              or Safari is blocking the iCloud auth cookie. Check the console for the raw error.
+            </p>
+            <button
+              type="button"
+              className="btn-pill mt-3"
+              onClick={ck.refresh}
+            >
+              <RefreshCw size={12} /> Retry
+            </button>
+          </>
         )}
         {ck.state === 'signedOut' && (
           <button

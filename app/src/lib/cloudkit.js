@@ -92,22 +92,18 @@ export async function getContainer() {
   return containerHandle
 }
 
-// Convenience: returns { signedIn, userRecordName, userIdentity } or
-// null if CloudKit isn't reachable. Setup is idempotent — safe to call
-// from a render path that just wants to know "are we signed in?".
+// Convenience: returns { signedIn, userRecordName, userIdentity }.
+// Throws on auth/transport failure so callers can surface the real
+// reason (origin not whitelisted, third-party cookies blocked, etc.)
+// instead of papering over it with a generic "unreachable" message.
 export async function getCurrentUser() {
-  try {
-    const container = await getContainer()
-    const userInfo = await container.setUpAuth()
-    if (!userInfo) return { signedIn: false }
-    return {
-      signedIn: true,
-      userRecordName: userInfo.userRecordName,
-      userIdentity: userInfo,
-    }
-  } catch (err) {
-    console.warn('CloudKit setUpAuth failed', err)
-    return null
+  const container = await getContainer()
+  const userInfo = await container.setUpAuth()
+  if (!userInfo) return { signedIn: false }
+  return {
+    signedIn: true,
+    userRecordName: userInfo.userRecordName,
+    userIdentity: userInfo,
   }
 }
 

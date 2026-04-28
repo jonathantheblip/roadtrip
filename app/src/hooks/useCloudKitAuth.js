@@ -30,11 +30,6 @@ export function useCloudKitAuth() {
       const container = await getContainer()
       containerRef.current = container
       const u = await getCurrentUser()
-      if (!u) {
-        setState('error')
-        setError('CloudKit unreachable')
-        return
-      }
       if (u.signedIn) {
         setUser(u.userIdentity)
         setState('signedIn')
