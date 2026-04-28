@@ -9,6 +9,7 @@ import {
   deleteMemory,
 } from '../lib/memoryStore'
 import { FlightStatus } from './FlightStatus'
+import { DayChips } from './DayChips'
 
 function urlLabel(stop) {
   const ticketKinds = new Set(['theater', 'show', 'concert', 'tour', 'arrival', 'departure'])
@@ -72,21 +73,8 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
 
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
-      {trip.days.length > 1 && onOpenDay && (
-        <div className="day-chips" aria-label="Days in this trip">
-          {trip.days.map((d) => (
-            <button
-              key={d.n}
-              type="button"
-              onClick={() => onOpenDay(d.n)}
-              className={`day-chip${d.n === day.n ? ' active' : ''}`}
-              aria-current={d.n === day.n ? 'page' : undefined}
-              aria-label={`Day ${d.n}${d.title ? ' — ' + d.title : ''}`}
-            >
-              {d.n}
-            </button>
-          ))}
-        </div>
+      {onOpenDay && (
+        <DayChips days={trip.days} activeDayN={day.n} onJump={onOpenDay} />
       )}
       <header className="px-6 pt-6 pb-6 border-b surface-rule">
         <button

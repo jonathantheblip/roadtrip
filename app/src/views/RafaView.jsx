@@ -1,5 +1,6 @@
 import { Rocket, Star, Trophy } from 'lucide-react'
 import { allStops } from '../data/trips'
+import { DayChips } from './DayChips'
 
 // Rafa's view — NASA register, dark navy + grid texture, big tap targets.
 // Read-only by intent: Rafa doesn't author memories. Counts are derived
@@ -51,6 +52,8 @@ export function RafaView({ trip, onOpenStop }) {
             : 'Big trip coming up.'}
         </p>
       </header>
+
+      <DayChips days={trip.days} />
 
       {featured && (
         <section className="px-5 pb-5">
@@ -119,26 +122,37 @@ export function RafaView({ trip, onOpenStop }) {
         <p className="f-arc text-xs font-bold tt-widest uppercase opacity-60 mb-3">
           Where you went
         </p>
-        <div className="flex flex-col gap-2">
-          {rafaStops.map((s, i) => (
-            <div
-              key={s.id}
-              className={`rafa-card rounded-2xl p-4 fade-up d${Math.min(i + 1, 6)} flex items-center gap-3 tap`}
-              onClick={() => onOpenStop(s.day, s.id)}
-            >
-              <span
-                className="rafa-bg-yellow f-arc font-black text-base w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ color: '#1A1614' }}
-              >
-                {s.day}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="f-arc text-base font-bold tt-tight truncate">{s.name}</p>
-                <p className="f-arc text-xs opacity-60 truncate">{s.note}</p>
+        {trip.days.map((day) => {
+          const stops = day.stops.filter((s) => s.for.includes('rafa'))
+          if (!stops.length) return null
+          return (
+            <div key={day.n} id={`trip-day-${day.n}`} style={{ marginBottom: 16 }}>
+              <p className="f-arc text-[11px] font-bold tt-widest uppercase opacity-60 mb-2">
+                Day {day.n} · {day.date}
+              </p>
+              <div className="flex flex-col gap-2">
+                {stops.map((s, i) => (
+                  <div
+                    key={s.id}
+                    className={`rafa-card rounded-2xl p-4 fade-up d${Math.min(i + 1, 6)} flex items-center gap-3 tap`}
+                    onClick={() => onOpenStop(day.n, s.id)}
+                  >
+                    <span
+                      className="rafa-bg-yellow f-arc font-black text-base w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ color: '#1A1614' }}
+                    >
+                      {day.n}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="f-arc text-base font-bold tt-tight truncate">{s.name}</p>
+                      <p className="f-arc text-xs opacity-60 truncate">{s.note}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
+          )
+        })}
       </section>
 
       <div className="overflow-hidden border-y rafa-rule py-3 mt-2">

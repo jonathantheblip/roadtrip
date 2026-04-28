@@ -2,19 +2,21 @@ import { Music, Lock } from 'lucide-react'
 import { allStops } from '../data/trips'
 import { listMemoriesForStop } from '../lib/memoryStore'
 import { FlightStatus, findArrivalStop } from './FlightStatus'
+import { DayChips } from './DayChips'
+import { RoadSearch } from './RoadSearch'
 
 // Aurelia's view — peach/blush, Caprasimo, scrapbook register.
-// Highlights, day chips, soundtrack slot. Privacy lock surfaced on each memory row.
+// Day chips at top jump between days; vertical scroll runs through her
+// stops in chronological order, day by day. Hero card preserved at the
+// top when the trip has one tagged for her.
 export function AureliaView({ trip, traveler, onOpenStop }) {
   const aureliaStops = allStops(trip).filter((s) => s.for.includes('aurelia'))
-  const all = allStops(trip)
   const heroForAurelia =
     trip.heroStopId && aureliaStops.find((s) => s.id === trip.heroStopId)
   const hero =
     heroForAurelia ||
     aureliaStops.find((s) => /rice/i.test(s.name)) ||
-    aureliaStops[0] ||
-    all[0]
+    aureliaStops[0]
   const arrival = findArrivalStop(trip)
 
   return (
@@ -33,6 +35,8 @@ export function AureliaView({ trip, traveler, onOpenStop }) {
           A place for what you actually cared about.
         </p>
       </header>
+
+      <DayChips days={trip.days} />
 
       {arrival && (
         <section className="px-6 pb-6">
@@ -63,57 +67,70 @@ export function AureliaView({ trip, traveler, onOpenStop }) {
         </section>
       )}
 
-      <section className="px-6 pb-6">
-        <p className="smallcaps f-dm text-[11px] opacity-60 mb-3">Things you said yes to</p>
-        <div className="grid grid-cols-2 gap-3">
-          {aureliaStops.slice(0, 4).map((s, i) => (
-            <div
-              key={s.id}
-              className="rounded-2xl p-4 tap"
-              style={{ background: i % 2 === 0 ? '#FCE4D6' : '#F5D8C0' }}
-              onClick={() => onOpenStop(s.day, s.id)}
-            >
-              <p className="f-cap text-xl leading-tight au-deep">{s.name}</p>
-              <p className="f-news-i text-xs opacity-70 mt-1">{s.kind}</p>
+      {trip.days.map((day) => {
+        const stops = day.stops.filter((s) => s.for.includes('aurelia'))
+        if (!stops.length) return null
+        return (
+          <section
+            key={day.n}
+            id={`trip-day-${day.n}`}
+            className="px-6 pb-8 pt-6 border-t au-rule"
+          >
+            <div className="flex items-baseline justify-between mb-4">
+              <p className="f-cap text-3xl au-deep leading-none">Day {day.n}</p>
+              <p className="f-mono text-[10px] tt-widest uppercase opacity-50">{day.date}</p>
             </div>
-          ))}
-        </div>
-      </section>
+            <p className="f-news-i text-base opacity-70 mb-4">{day.title}</p>
+
+            {day.drive?.miles > 50 && (
+              <div className="mb-5">
+                <RoadSearch traveler={traveler} />
+              </div>
+            )}
+
+            <ol>
+              {stops.map((s, i) => {
+                const memCount = listMemoriesForStop(s.id, traveler).length
+                return (
+                  <li
+                    key={s.id}
+                    className={`fade-up d${Math.min(i + 1, 6)} flex items-baseline gap-3 tap`}
+                    style={{ paddingTop: 4, paddingBottom: 4 }}
+                    onClick={() => onOpenStop(day.n, s.id)}
+                  >
+                    <span className="f-mono text-[10px] tt-wide uppercase opacity-50 w-16 flex-shrink-0 pt-2">
+                      {s.time}
+                    </span>
+                    <div
+                      className="flex-1 min-w-0"
+                      style={{ borderBottom: '1px solid #F0D8C0', paddingBottom: 10 }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="f-news text-base tt-tight leading-tight">
+                          {s.name}
+                          {s.tentative && (
+                            <span className="f-mono text-[9px] tt-widest uppercase opacity-50" style={{ marginLeft: 6 }}>
+                              TBD
+                            </span>
+                          )}
+                        </p>
+                        {memCount > 0 && (
+                          <Lock size={11} className="opacity-50" aria-label="Has memory" />
+                        )}
+                      </div>
+                      <p className="f-mono text-[10px] opacity-50 uppercase tt-wide mt-1">
+                        {s.kind}
+                      </p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          </section>
+        )
+      })}
 
       <section className="px-6 pb-6 pt-6 border-t au-rule">
-        <p className="smallcaps f-dm text-[11px] opacity-60 mb-4">Where you were</p>
-        <ol>
-          {aureliaStops.map((s, i) => {
-            const memCount = listMemoriesForStop(s.id, traveler).length
-            return (
-              <li
-                key={s.id}
-                className={`fade-up d${Math.min(i + 1, 6)} flex items-baseline gap-3 tap`}
-                style={{ paddingTop: 4, paddingBottom: 4 }}
-                onClick={() => onOpenStop(s.day, s.id)}
-              >
-                <span className="f-cap text-2xl au-deep w-8">{s.day}</span>
-                <div
-                  className="flex-1 min-w-0"
-                  style={{ borderBottom: '1px solid #F0D8C0', paddingBottom: 8 }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="f-news text-base tt-tight leading-tight">{s.name}</p>
-                    {memCount > 0 && (
-                      <Lock size={11} className="opacity-50" aria-label="Has memory" />
-                    )}
-                  </div>
-                  <p className="f-mono text-[10px] opacity-50 uppercase tt-wide mt-1">
-                    {s.time} · {s.kind}
-                  </p>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      </section>
-
-      <section className="px-6 pb-6">
         <div className="au-blush rounded-3xl p-5">
           <div className="flex items-center gap-2 mb-2">
             <Music size={14} />

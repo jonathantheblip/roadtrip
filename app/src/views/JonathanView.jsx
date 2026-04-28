@@ -1,17 +1,17 @@
-import { ArrowRight, Circle, Headphones } from 'lucide-react'
+import { ArrowRight, Headphones } from 'lucide-react'
 import { mapsLink } from '../lib/mapsLink'
 import { FlightStatus, findArrivalStop } from './FlightStatus'
+import { DayChips } from './DayChips'
+import { RoadSearch } from './RoadSearch'
 
-// Jonathan's view — operations console, editorial. Today/tomorrow framing
-// for a trip in progress; for an archived trip the same surface reads as
-// "the run sheet of record".
+// Jonathan's view — operations console, editorial newsprint dark.
+// Renders the trip chronologically day-by-day with sticky day chips at
+// the top so any day is one tap away. RoadSearch surfaces on driving
+// days. Queue widget anchors the bottom.
 export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
-  // For archived trips, "today" = the last day; for planning, day 1 if any.
-  const today = trip.days[trip.days.length - 1]
-  const upcoming = null
   const arrival = findArrivalStop(trip)
 
-  if (!today) {
+  if (!trip.days.length) {
     return <EmptyJonathan trip={trip} onOpenSettings={onOpenSettings} />
   }
 
@@ -20,28 +20,19 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
       <header className="px-6 pt-12 pb-6 border-b jj-rule">
         <div className="flex items-baseline justify-between">
           <p className="f-mono text-[10px] tt-widest uppercase opacity-50">
-            Vol I · Day {today.n} of {trip.days.length}
+            {trip.status === 'archived' ? 'Vol I · Archive' : 'Vol II · Run sheet'}
           </p>
-          <p className="f-mono text-[10px] tt-widest uppercase opacity-50">{today.date}</p>
+          <p className="f-mono text-[10px] tt-widest uppercase opacity-50">
+            {trip.dateRange}
+          </p>
         </div>
         <h1 className="f-news tt-tightest text-5xl mt-3 leading-92">
-          {today.title.split(' ').slice(0, 1).join(' ')}
-          <br />
-          <span className="f-news-i opacity-70">
-            {today.title.split(' ').slice(1).join(' ') || 'the run sheet'}
-          </span>
+          {trip.title.split(/[—,:]/)[0]}
         </h1>
+        <p className="f-news-i text-base opacity-60 mt-2">{trip.epigraph || trip.subtitle}</p>
       </header>
 
-      <section className="jj-divide-h py-4 px-6 grid grid-cols-3 gap-4">
-        <Stat label="Drive" big={`${today.drive.miles} mi`} sub={today.drive.hours} />
-        <Stat
-          label="Stops"
-          big={`${today.stops.length}`}
-          sub={today.stops.slice(0, 2).map((s) => s.name).join(' · ')}
-        />
-        <Stat label="Lodging" big={today.lodging?.split(',')[0] || '—'} sub="" />
-      </section>
+      <DayChips days={trip.days} />
 
       {arrival && (
         <section className="px-6 py-5 border-b jj-rule">
@@ -49,46 +40,60 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
         </section>
       )}
 
-      <section className="px-6 py-6 border-b jj-rule">
-        <p className="smallcaps f-dm text-[11px] opacity-60 mb-4">The Plan</p>
-        <ol>
-          {today.stops.map((s, i) => (
-            <li
-              key={s.id}
-              className={`fade-up d${Math.min(i + 1, 6)} py-3 ${
-                i < today.stops.length - 1 ? 'border-b' : ''
-              } flex items-start gap-4 tap`}
-              style={{ borderColor: 'rgba(242, 235, 218, 0.12)' }}
-              onClick={() => onOpenStop(today.n, s.id)}
-            >
-              <span className="f-mono text-[10px] tt-wide uppercase opacity-50 w-16 flex-shrink-0 pt-1">
-                {s.time}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="f-news text-lg tt-tight leading-tight">{s.name}</p>
-                <p className="f-dm text-[11px] opacity-60 mt-1">{s.note}</p>
-              </div>
-              <ArrowRight size={12} className="opacity-40" style={{ marginTop: 6 }} />
-            </li>
-          ))}
-        </ol>
-      </section>
+      {trip.days.map((day) => (
+        <section
+          key={day.n}
+          id={`trip-day-${day.n}`}
+          className="px-6 py-6 border-b jj-rule"
+        >
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="f-mono text-[10px] tt-widest uppercase opacity-50">
+              Day {day.n} · {day.date}
+            </p>
+            {day.drive?.miles > 0 && (
+              <p className="f-mono text-[10px] tt-wide opacity-40">
+                {day.drive.miles} mi · {day.drive.hours}
+              </p>
+            )}
+          </div>
+          <h2 className="f-news tt-tightest text-3xl leading-tight mb-4">{day.title}</h2>
 
-      <section className="px-6 py-6 border-b jj-rule">
-        <p className="smallcaps f-dm text-[11px] opacity-60 mb-3">All Days</p>
-        <ul>
-          {trip.days.map((d) => (
-            <li key={d.n} className="flex items-baseline gap-3 py-2">
-              <span className="f-news-i text-2xl opacity-40 leading-none w-8">{d.n}</span>
-              <div className="flex-1 min-w-0">
-                <p className="f-mono text-[10px] tt-widest uppercase opacity-50">{d.date}</p>
-                <p className="f-news text-base tt-tight leading-tight">{d.title}</p>
-              </div>
-              <span className="f-mono text-[10px] opacity-40">{d.drive.miles}mi</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+          {day.drive?.miles > 50 && (
+            <div className="mb-5">
+              <RoadSearch traveler={traveler} />
+            </div>
+          )}
+
+          <ol>
+            {day.stops.map((s, i) => (
+              <li
+                key={s.id}
+                className={`fade-up d${Math.min(i + 1, 6)} py-3 ${
+                  i < day.stops.length - 1 ? 'border-b' : ''
+                } flex items-start gap-4 tap`}
+                style={{ borderColor: 'rgba(242, 235, 218, 0.12)' }}
+                onClick={() => onOpenStop(day.n, s.id)}
+              >
+                <span className="f-mono text-[10px] tt-wide uppercase opacity-50 w-16 flex-shrink-0 pt-1">
+                  {s.time}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="f-news text-lg tt-tight leading-tight">
+                    {s.name}
+                    {s.tentative && (
+                      <span className="f-mono text-[9px] tt-widest uppercase opacity-50" style={{ marginLeft: 8 }}>
+                        TBD
+                      </span>
+                    )}
+                  </p>
+                  <p className="f-dm text-[11px] opacity-60 mt-1" style={{ whiteSpace: 'pre-line' }}>{s.note}</p>
+                </div>
+                <ArrowRight size={12} className="opacity-40" style={{ marginTop: 6 }} />
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
 
       <section className="px-6 py-6 border-b jj-rule">
         <div className="flex items-baseline justify-between mb-3">
@@ -96,9 +101,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
           <span className="f-mono text-[9px] tt-widest uppercase opacity-40">Overcast</span>
         </div>
         <div className="flex items-start gap-3">
-          <div
-            className="w-12 h-12 rounded-sm flex items-center justify-center flex-shrink-0 jj-inverse"
-          >
+          <div className="w-12 h-12 rounded-sm flex items-center justify-center flex-shrink-0 jj-inverse">
             <Headphones size={18} />
           </div>
           <div className="flex-1">
@@ -116,10 +119,10 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
           <button className="btn-pill" type="button" onClick={onOpenSettings}>
             Trip settings
           </button>
-          {today.stops[0] && (
+          {trip.days[0]?.stops[0] && (
             <a
               className="btn-solid"
-              href={mapsLink(today.stops[0], 'jonathan')}
+              href={mapsLink(trip.days[0].stops[0], 'jonathan')}
               target="_blank"
               rel="noreferrer"
             >
@@ -132,24 +135,12 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
   )
 }
 
-function Stat({ label, big, sub }) {
-  return (
-    <div>
-      <p className="f-mono text-[9px] tt-widest uppercase opacity-50">{label}</p>
-      <p className="f-news text-2xl tt-tight mt-1 leading-tight">{big}</p>
-      {sub && <p className="f-dm text-[11px] opacity-60 truncate">{sub}</p>}
-    </div>
-  )
-}
-
 function EmptyJonathan({ trip, onOpenSettings }) {
   return (
     <div className="min-h-screen jj-paper pb-32">
       <header className="px-6 pt-12 pb-6 border-b jj-rule">
         <p className="f-mono text-[10px] tt-widest uppercase opacity-50">Vol II · Planning</p>
-        <h1 className="f-news tt-tightest text-5xl mt-3 leading-92">
-          {trip.title}
-        </h1>
+        <h1 className="f-news tt-tightest text-5xl mt-3 leading-92">{trip.title}</h1>
         <p className="f-news-i text-base opacity-60 mt-3 max-w-sm">{trip.epigraph}</p>
       </header>
       <section className="px-6 py-8">
