@@ -159,6 +159,74 @@ button { font: inherit; }
   box-shadow: 0 0 0 8px #1F1A14, 0 8px 24px rgba(0,0,0,.35);
 }
 
+/* ---- Surface tokens (StopDetail / Settings / utility surfaces) ------
+   Light by default, dark when wrapped in .surface-dark. The same
+   classes are used by FlightStatus and LodgingPanel so they pick up
+   the surrounding theme automatically — no prop drilling.
+   ---------------------------------------------------------------- */
+.surface-light { background: #FBF8F2; color: #1A1614; }
+.surface-dark { background: #14110D; color: #F2EBDA; }
+.surface-rule { border-color: #DDD3C2; }
+.surface-dark .surface-rule,
+.surface-dark.surface-rule { border-color: rgba(242, 235, 218, 0.18); }
+
+/* Embedded panels (flight, lodging) — same shape, palette follows the
+   nearest surface ancestor. */
+.embed-panel {
+  border: 1px solid #DDD3C2;
+  background: #FBF8F2;
+  color: #1A1614;
+  border-radius: 2px;
+  padding: 16px;
+}
+.surface-dark .embed-panel,
+.jj-paper .embed-panel,
+.helen-bone.helen-dark .embed-panel {
+  background: #1F1A14;
+  border-color: rgba(242, 235, 218, 0.18);
+  color: #F2EBDA;
+}
+
+/* Day chip strip — sticky inter-day nav on StopDetail. */
+.day-chips {
+  position: sticky;
+  top: max(40px, calc(env(safe-area-inset-top) + 32px));
+  z-index: 30;
+  display: flex;
+  gap: 6px;
+  padding: 8px 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: inherit;
+}
+.day-chips::-webkit-scrollbar { display: none; }
+.day-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  opacity: 0.4;
+  flex-shrink: 0;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.day-chip:hover { opacity: 0.7; }
+.day-chip.active {
+  background: #8B2B1F;
+  border-color: #8B2B1F;
+  color: #F2EBDA;
+  opacity: 1;
+}
+
 /* ---- Theme: Jonathan (permanent dark) --------------------------------
    Per spec §6: dark editorial newsprint. Black/charcoal ground,
    paper-white text, oxblood accents preserved. No light variant.
@@ -289,6 +357,20 @@ button { font: inherit; }
   resize: vertical;
 }
 .memory-textarea:focus { outline: none; border-color: #1A1614; }
+/* Dark surfaces flip the textarea so it doesn't read as a cream
+   slab inside a charcoal page. */
+.surface-dark .memory-textarea,
+.jj-paper .memory-textarea,
+.helen-bone.helen-dark .memory-textarea {
+  background: #1F1A14;
+  color: #F2EBDA;
+  border-color: rgba(242, 235, 218, 0.22);
+}
+.surface-dark .memory-textarea:focus,
+.jj-paper .memory-textarea:focus,
+.helen-bone.helen-dark .memory-textarea:focus {
+  border-color: #F2EBDA;
+}
 
 .toggle-row {
   display: inline-flex; align-items: center; gap: 8px;

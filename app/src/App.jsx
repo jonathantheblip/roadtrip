@@ -95,6 +95,12 @@ export default function App() {
   const [view, setView] = useState({ name: 'trip' }) // 'index' | 'trip' | 'stop' | 'settings' | 'new'
   const [helenDark] = useHelenDark()
   const topBar = topBarTokens(traveler, helenDark)
+  // Spec §6: Jonathan + Rafa permanent dark; Helen dark when toggled on.
+  // Aurelia stays light. This drives the StopDetail / Settings surface.
+  const darkSurface =
+    traveler === 'jonathan' ||
+    traveler === 'rafa' ||
+    (traveler === 'helen' && helenDark)
 
   // Persist traveler across reloads + standalone PWA boundary.
   useEffect(() => {
@@ -143,6 +149,17 @@ export default function App() {
   }
   function openStop(dayN, stopId) {
     setView({ name: 'stop', dayN, stopId })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
+  // Day-chip strip on StopDetail uses this to jump between days. The
+  // chip gives Day N → first stop of that day; the Stop view itself is
+  // the only deep-link target we have today.
+  function openDayFirstStop(dayN) {
+    if (!trip) return
+    const target = trip.days.find((d) => d.n === dayN)
+    const firstStop = target?.stops?.[0]
+    if (!firstStop) return
+    setView({ name: 'stop', dayN, stopId: firstStop.id })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
   function openSettings() {
@@ -282,13 +299,16 @@ export default function App() {
             day={day}
             stop={stop}
             traveler={traveler}
+            dark={darkSurface}
             onBack={() => setView({ name: 'trip' })}
+            onOpenDay={openDayFirstStop}
           />
         )}
         {view.name === 'settings' && trip && (
           <Settings
             trip={trip}
             traveler={traveler}
+            dark={darkSurface}
             onBack={() => setView({ name: 'trip' })}
             onChangeTraveler={handleTravelerSwitch}
           />

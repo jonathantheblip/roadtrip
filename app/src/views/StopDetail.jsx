@@ -20,7 +20,11 @@ function urlLabel(stop) {
 // Stop detail with memory authoring. Visibility toggle (shared/private)
 // is intentionally explicit — Aurelia in particular needs to choose,
 // not have it inferred. Author is always the active traveler.
-export function StopDetail({ trip, day, stop, traveler, onBack }) {
+//
+// `dark` flips the page surface to charcoal/cream so it matches Jonathan,
+// Rafa, and dark-mode Helen. Embedded panels (flight, lodging) react to
+// the parent surface via .embed-panel CSS so they don't need the prop.
+export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay }) {
   const own = loadOwnMemoryForStop(stop.id, traveler)
   const [memoryId, setMemoryId] = useState(own?.id || null)
   const [text, setText] = useState(own?.text || '')
@@ -67,11 +71,24 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
   )
 
   return (
-    <div className="min-h-screen helen-paper pb-32" style={{ color: '#1A1614' }}>
-      <header
-        className="px-6 pt-6 pb-6"
-        style={{ borderBottom: '1px solid #DDD3C2' }}
-      >
+    <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
+      {trip.days.length > 1 && onOpenDay && (
+        <div className="day-chips" aria-label="Days in this trip">
+          {trip.days.map((d) => (
+            <button
+              key={d.n}
+              type="button"
+              onClick={() => onOpenDay(d.n)}
+              className={`day-chip${d.n === day.n ? ' active' : ''}`}
+              aria-current={d.n === day.n ? 'page' : undefined}
+              aria-label={`Day ${d.n}${d.title ? ' — ' + d.title : ''}`}
+            >
+              {d.n}
+            </button>
+          ))}
+        </div>
+      )}
+      <header className="px-6 pt-6 pb-6 border-b surface-rule">
         <button
           onClick={onBack}
           className="link-quiet flex items-center gap-1 f-dm text-xs opacity-70"
@@ -117,12 +134,12 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
         </div>
       </header>
 
-      <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
+      <section className="px-6 py-8 border-b surface-rule">
         <p className="f-news text-lg leading-relaxed opacity-80 max-w-prose">{stop.note}</p>
       </section>
 
       {stop.flightNumber && (
-        <section className="px-6 py-6" style={{ borderBottom: '1px solid #DDD3C2' }}>
+        <section className="px-6 py-6 border-b surface-rule">
           <FlightStatus
             stop={stop}
             variant="panel"
@@ -133,7 +150,7 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
       )}
 
       {isLodgingStop(trip, day, stop) && (
-        <section className="px-6 py-6" style={{ borderBottom: '1px solid #DDD3C2' }}>
+        <section className="px-6 py-6 border-b surface-rule">
           <LodgingPanel lodging={trip.lodging} />
         </section>
       )}
@@ -192,7 +209,7 @@ export function StopDetail({ trip, day, stop, traveler, onBack }) {
       </section>
 
       {sharedMemories.length > 0 && (
-        <section className="px-6 py-8" style={{ borderTop: '1px solid #DDD3C2' }}>
+        <section className="px-6 py-8 border-t surface-rule">
           <p className="smallcaps f-dm text-[11px] opacity-70 mb-4">From the family</p>
           {sharedMemories.map((m) => (
             <div key={m.id} style={{ marginBottom: 24 }}>
@@ -224,10 +241,7 @@ function isLodgingStop(trip, day, stop) {
 
 function LodgingPanel({ lodging }) {
   return (
-    <div
-      className="rounded-sm p-4"
-      style={{ border: '1px solid #DDD3C2', background: '#FBF8F2' }}
-    >
+    <div className="embed-panel">
       <div className="flex items-center gap-2 mb-3">
         <Bed size={14} />
         <p className="smallcaps f-dm text-[11px] opacity-70">{lodging.name}</p>

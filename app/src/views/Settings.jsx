@@ -5,14 +5,11 @@ import { useHelenDark } from '../hooks/useHelenDark'
 
 // Per-trip settings panel: calendar export, shared album link, identity reset.
 // CloudKit sync, screenshot ingestion, and Gmail wiring will live here too.
-export function Settings({ trip, traveler, onBack, onChangeTraveler }) {
+export function Settings({ trip, traveler, dark, onBack, onChangeTraveler }) {
   const [helenDark, toggleHelenDark] = useHelenDark()
   return (
-    <div className="min-h-screen helen-paper pb-32" style={{ color: '#1A1614' }}>
-      <header
-        className="px-6 pt-6 pb-6"
-        style={{ borderBottom: '1px solid #DDD3C2' }}
-      >
+    <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
+      <header className="px-6 pt-6 pb-6 border-b surface-rule">
         <button
           onClick={onBack}
           className="link-quiet flex items-center gap-1 f-dm text-xs opacity-70"
@@ -25,7 +22,7 @@ export function Settings({ trip, traveler, onBack, onChangeTraveler }) {
         <p className="f-news-i text-base opacity-60 mt-2">{trip.title}</p>
       </header>
 
-      <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
+      <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">
           <Calendar size={14} />
           <p className="smallcaps f-dm text-[11px] opacity-70">Calendar</p>
@@ -44,7 +41,7 @@ export function Settings({ trip, traveler, onBack, onChangeTraveler }) {
         </div>
       </section>
 
-      <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
+      <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">
           <ImageIcon size={14} />
           <p className="smallcaps f-dm text-[11px] opacity-70">Shared album</p>
@@ -68,7 +65,7 @@ export function Settings({ trip, traveler, onBack, onChangeTraveler }) {
       </section>
 
       {traveler === 'helen' && (
-        <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
+        <section className="px-6 py-8 border-b surface-rule">
           <div className="flex items-center gap-2 mb-3">
             {helenDark ? <Moon size={14} /> : <Sun size={14} />}
             <p className="smallcaps f-dm text-[11px] opacity-70">Appearance</p>
@@ -93,7 +90,7 @@ export function Settings({ trip, traveler, onBack, onChangeTraveler }) {
         </section>
       )}
 
-      <section className="px-6 py-8" style={{ borderBottom: '1px solid #DDD3C2' }}>
+      <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">
           <RotateCcw size={14} />
           <p className="smallcaps f-dm text-[11px] opacity-70">Who you are</p>

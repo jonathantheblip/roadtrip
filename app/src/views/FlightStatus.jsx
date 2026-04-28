@@ -66,11 +66,16 @@ export function FlightStatus({ stop, variant = 'pill', framing = 'their', travel
   )
 }
 
-function statusColor(label) {
-  if (!label) return '#1A1614'
-  if (label.startsWith('DELAYED') || label === 'CANCELLED') return '#8B2B1F'
-  if (label === 'LANDED') return '#8A7F73'
-  return '#1A1614'
+// Status pill color. Inherits surface color (currentColor) for the default
+// "scheduled" state so it works on both light and dark surfaces; oxblood
+// for problems, an opacity-faded inherit for landed/historical.
+function statusStyle(label) {
+  if (!label) return { color: 'currentColor' }
+  if (label.startsWith('DELAYED') || label === 'CANCELLED') {
+    return { color: '#C0573F' } // oxblood — passes contrast on both palettes
+  }
+  if (label === 'LANDED') return { color: 'inherit', opacity: 0.55 }
+  return { color: 'currentColor' }
 }
 
 function PillBody({ stop, statusLabel, live, fallbackUrl }) {
@@ -81,12 +86,12 @@ function PillBody({ stop, statusLabel, live, fallbackUrl }) {
       rel="noreferrer"
       className="link-quiet inline-flex items-center gap-2 px-3 py-1 rounded-full"
       style={{
-        background: 'rgba(26,22,20,0.06)',
+        background: 'rgba(128, 128, 128, 0.12)',
         fontFamily: 'JetBrains Mono, monospace',
         fontSize: 10,
         letterSpacing: '0.18em',
         textTransform: 'uppercase',
-        color: statusColor(statusLabel),
+        ...statusStyle(statusLabel),
       }}
     >
       <Plane size={11} />
@@ -113,10 +118,7 @@ function PanelBody({
 }) {
   const heading = framing === 'your' ? 'Your flight' : 'Jonathan’s flight'
   return (
-    <div
-      className="rounded-sm p-4"
-      style={{ border: '1px solid #DDD3C2', background: '#FBF8F2' }}
-    >
+    <div className="embed-panel">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <Plane size={14} />
@@ -159,7 +161,7 @@ function PanelBody({
             fontSize: 10,
             letterSpacing: '0.18em',
             textTransform: 'uppercase',
-            color: statusColor(statusLabel),
+            ...statusStyle(statusLabel),
           }}
         >
           {statusLabel}
