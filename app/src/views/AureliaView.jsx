@@ -16,6 +16,8 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
+  const [activeDay, setActiveDay] = useState(trip.days[0]?.n)
+  const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const mems = listMemoriesForTrip(trip.id, traveler)
   const stopsById = new Map(
     allStops(trip).map((s) => [s.id, s])
@@ -81,9 +83,158 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
         </div>
       </div>
 
+      {/* Day picker — Helen-style cards in Aurelia's pink palette so
+          she can navigate the itinerary alongside the scrapbook. */}
+      <div style={{ padding: '4px 18px 0', display: 'flex', gap: 6 }}>
+        {trip.days.map((d) => {
+          const isActive = d.n === activeDay
+          const dow = (d.date || '').split(' ')[0]
+          return (
+            <button
+              key={d.n}
+              type="button"
+              onClick={() => setActiveDay(d.n)}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                borderRadius: 12,
+                background: isActive ? 'var(--accent)' : 'var(--card)',
+                color: isActive ? 'var(--accent-ink, #fff)' : 'var(--muted)',
+                border: isActive ? 'none' : '1px solid var(--border)',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 9,
+                  letterSpacing: '0.1em',
+                  opacity: 0.75,
+                }}
+              >
+                DAY {d.n}
+              </div>
+              <div
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  marginTop: 2,
+                }}
+              >
+                {dow}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Day eyebrow + serif day title */}
+      <div style={{ padding: '14px 18px 0' }}>
+        <Eyebrow color="var(--muted)">
+          DAY {day.n} · {(day.date || '').toUpperCase()}
+        </Eyebrow>
+        <div
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 22,
+            fontWeight: 700,
+            lineHeight: 1.1,
+            marginTop: 4,
+            color: 'var(--text)',
+            fontStyle: 'italic',
+          }}
+        >
+          {day.title}
+        </div>
+      </div>
+
+      {/* Compact stop list for the active day — taps deep-link into
+          StopDetail (which has the threaded composer). */}
+      <div style={{ padding: '12px 18px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {day.stops.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => onOpenStop(day.n, s.id)}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+              }}
+            >
+              <Eyebrow color="var(--muted)">{s.time}</Eyebrow>
+              <Eyebrow color="var(--faint, var(--muted))">
+                {(s.kind || '').toUpperCase()}
+              </Eyebrow>
+            </div>
+            <div
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 16,
+                fontWeight: 600,
+                marginTop: 4,
+                lineHeight: 1.18,
+              }}
+            >
+              {s.name}
+            </div>
+            {s.note && (
+              <div
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 12,
+                  fontStyle: 'italic',
+                  color: 'var(--muted)',
+                  marginTop: 4,
+                  lineHeight: 1.4,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {s.note}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Postcards section header */}
       <div
         style={{
-          padding: '4px 16px 12px',
+          padding: '28px 18px 4px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          borderTop: '1px solid var(--border)',
+          marginTop: 28,
+        }}
+      >
+        <Eyebrow color="var(--accent)" style={{ fontWeight: 600 }}>
+          POSTCARDS
+        </Eyebrow>
+        <Eyebrow color="var(--muted)">
+          {mems.length} {mems.length === 1 ? 'CARD' : 'CARDS'}
+        </Eyebrow>
+      </div>
+
+      <div
+        style={{
+          padding: '8px 16px 12px',
           display: 'flex',
           flexDirection: 'column',
           gap: 22,
