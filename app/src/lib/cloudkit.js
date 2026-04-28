@@ -1,5 +1,5 @@
 // CloudKit JS loader + configuration. Spec §4 (Memory schema lives in
-// the iCloud.com.jacksonfamily.roadtrip container).
+// the iCloud.com.jacksonfamily.trips container).
 //
 // CloudKit JS is loaded from Apple's CDN on demand (rather than at app
 // boot) so the bundle stays small and the network request only fires
