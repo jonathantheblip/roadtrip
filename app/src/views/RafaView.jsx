@@ -1,5 +1,5 @@
+import { useState } from 'react'
 import { Mic } from 'lucide-react'
-import { allStops } from '../data/trips'
 
 // Rafa — Mission. Design-bundle authoritative
 // (prototype.jsx#RafaMission). Near-black ground with ochre warning
@@ -9,15 +9,30 @@ import { allStops } from '../data/trips'
 // title + time, then a giant "TELL A STORY" mic button at the bottom.
 
 export function RafaView({ trip, onOpenStop }) {
-  const rafaStops = allStops(trip).filter((s) => s.for?.includes('rafa'))
+  // Which day's mission is on screen. Default to today-if-in-trip,
+  // else day 1. Lets a 3-day weekend show three different missions
+  // instead of one summary card that doesn't change.
+  const [activeDayN, setActiveDayN] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const onToday = trip.days.find((d) => d.isoDate === today)
+    return onToday?.n || trip.days[0]?.n || 1
+  })
+  const day = trip.days.find((d) => d.n === activeDayN) || trip.days[0]
+  // Stops Rafa cares about on the active day. Fall back to all
+  // rafa-tagged stops on that day (if `for` isn't set, treat the
+  // whole day as fair game).
+  const rafaStopsToday = (day?.stops || []).map((s) => ({ ...s, day: day.n, dayDate: day.date }))
+    .filter((s) => !s.for || s.for.length === 0 || s.for.includes('rafa'))
+  // Hero pinning still wins if the configured heroStop falls on this
+  // day; otherwise pick by excitement keyword, else last/first.
   const heroForRafa =
-    trip.heroStopId && rafaStops.find((s) => s.id === trip.heroStopId)
+    trip.heroStopId && rafaStopsToday.find((s) => s.id === trip.heroStopId)
   const featured =
     heroForRafa ||
-    rafaStops.find((s) => /monster|truck|rocket|axiom/i.test(s.name)) ||
-    rafaStops[rafaStops.length - 1] ||
-    rafaStops[0]
-  const others = rafaStops.filter((s) => s.id !== featured?.id).slice(0, 2)
+    rafaStopsToday.find((s) => /monster|truck|rocket|axiom|circus|zoo|park/i.test(s.name)) ||
+    rafaStopsToday[rafaStopsToday.length - 1] ||
+    rafaStopsToday[0]
+  const others = rafaStopsToday.filter((s) => s.id !== featured?.id).slice(0, 2)
 
   // Status string drives the eyebrow: planning → INCOMING, archived →
   // COMPLETE, anything else → ACTIVE.
@@ -32,7 +47,6 @@ export function RafaView({ trip, onOpenStop }) {
   // trip title if no per-trip override is set up.
   const titleWords = pickTitleWords(trip)
 
-  // Total day count for the eyebrow ("DAY 3 / 3").
   const dayCount = trip.days.length
 
   return (
@@ -54,9 +68,72 @@ export function RafaView({ trip, onOpenStop }) {
       >
         <Eyebrow color="var(--accent)">● MISSION {status}</Eyebrow>
         <Eyebrow color="var(--muted)">
-          DAY {dayCount} / {dayCount}
+          DAY {activeDayN} / {dayCount}
         </Eyebrow>
       </div>
+
+      {/* Day picker — chunky, finger-sized chips for a 5-year-old. Hide
+          when there's only one day (no point) and when there's no day
+          info at all. */}
+      {trip.days.length > 1 && (
+        <div
+          style={{
+            padding: '12px 14px 0',
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+          }}
+          aria-label="Days in this mission"
+        >
+          {trip.days.map((d) => {
+            const isActive = d.n === activeDayN
+            const dow = (d.date || '').split(' ')[0] || ''
+            return (
+              <button
+                key={d.n}
+                type="button"
+                onClick={() => setActiveDayN(d.n)}
+                aria-pressed={isActive}
+                style={{
+                  flex: '0 0 auto',
+                  minWidth: 56,
+                  padding: '10px 12px',
+                  background: isActive ? 'var(--accent)' : 'transparent',
+                  color: isActive ? 'var(--accent-ink, #1A0A0B)' : 'var(--muted)',
+                  border: isActive ? 'none' : '1.5px solid var(--border)',
+                  borderRadius: 14,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: 9,
+                    letterSpacing: '0.12em',
+                    opacity: 0.8,
+                  }}
+                >
+                  DAY {d.n}
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'Fraunces, Georgia, serif',
+                    fontSize: 16,
+                    fontWeight: 800,
+                    marginTop: 2,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {dow}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Block-serif title — ochre stack */}
       <div style={{ padding: '14px 18px 8px' }}>

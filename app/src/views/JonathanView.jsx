@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip, listMemoriesForStop } from '../lib/memoryStore'
 import { Avatar, AvatarStack } from '../components/Avatar'
@@ -103,7 +103,14 @@ function flightHeadline(arrival) {
 }
 
 export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
-  const day = trip.days[0]
+  // Default to today if it falls within the trip — Jonathan opens the
+  // app mid-trip and expects the current day. Otherwise day 1.
+  const [activeDayN, setActiveDayN] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const onToday = trip.days.find((d) => d.isoDate === today)
+    return onToday?.n || trip.days[0]?.n || 1
+  })
+  const day = trip.days.find((d) => d.n === activeDayN) || trip.days[0]
   const arrival = findArrivalStop(trip)
   const headline = splitHeadline(day)
   const openLoops = useMemo(() => deriveOpenLoops(trip), [trip])
@@ -145,6 +152,50 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
       </div>
       <JRule color="var(--text)" weight={2} style={{ margin: '6px 16px 0', opacity: 0.28 }} />
       <JRule color="var(--text)" style={{ margin: '2px 16px 0', opacity: 0.16 }} />
+
+      {/* Day strip — taps swap which day the masthead, ticker, and
+          plan section read from. Jackson is 8 days, NYC is 3, so we
+          let the row scroll horizontally if it overflows. */}
+      {trip.days.length > 1 && (
+        <div
+          style={{
+            margin: '10px 16px 0',
+            display: 'flex',
+            gap: 6,
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+          }}
+          aria-label="Days in this trip"
+        >
+          {trip.days.map((d) => {
+            const isActive = d.n === activeDayN
+            return (
+              <button
+                key={d.n}
+                type="button"
+                onClick={() => setActiveDayN(d.n)}
+                aria-pressed={isActive}
+                style={{
+                  flex: '0 0 auto',
+                  padding: '5px 10px',
+                  background: isActive ? 'var(--text)' : 'transparent',
+                  color: isActive ? 'var(--bg)' : 'var(--muted)',
+                  border: isActive ? '1px solid var(--text)' : '1px solid var(--border)',
+                  cursor: 'pointer',
+                  fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+                  fontSize: 10,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  fontWeight: isActive ? 600 : 500,
+                }}
+              >
+                D{d.n} · {(d.date || '').split(' ')[0] || ''}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div style={{ padding: '14px 16px 4px' }}>
         <div
