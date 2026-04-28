@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw } from 'lucide-react'
+import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import { useCloudKitAuth } from '../hooks/useCloudKitAuth'
@@ -14,10 +14,15 @@ import { mergeFromRemote } from '../lib/memoryStore'
 // surface theming there share a single source of truth — calling
 // useHelenDark() locally gave each consumer its own state, so flipping
 // it inside Settings didn't update the surface class App computes.
-export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, onBack, onChangeTraveler }) {
+export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, tripsApi, onBack, onChangeTraveler }) {
   const ck = useCloudKitAuth()
   const [syncMsg, setSyncMsg] = useState(null)
   const [syncing, setSyncing] = useState(false)
+  const [seedMsg, setSeedMsg] = useState(null)
+  const [seeding, setSeeding] = useState(false)
+  const [albumDraft, setAlbumDraft] = useState(trip?.sharedAlbumURL || '')
+  const [albumSaving, setAlbumSaving] = useState(false)
+  const [albumSavedTick, setAlbumSavedTick] = useState(0)
 
   async function runPull() {
     setSyncing(true)
@@ -30,6 +35,52 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, o
       setSyncMsg(`Pull failed: ${err?.message || String(err)}`)
     } finally {
       setSyncing(false)
+    }
+  }
+
+  async function runSeed() {
+    if (!tripsApi?.seed) return
+    setSeeding(true)
+    setSeedMsg(null)
+    try {
+      const result = await tripsApi.seed()
+      if (result.reason === 'unconfigured') {
+        setSeedMsg('CloudKit not configured — nothing to seed.')
+      } else {
+        setSeedMsg(
+          result.pushed === 0
+            ? 'iCloud already has every seed trip — nothing to do.'
+            : `Pushed ${result.pushed} trip${result.pushed === 1 ? '' : 's'} to iCloud.`
+        )
+      }
+    } catch (err) {
+      setSeedMsg(`Seed failed: ${err?.message || String(err)}`)
+    } finally {
+      setSeeding(false)
+    }
+  }
+
+  async function saveAlbumUrl() {
+    if (!tripsApi?.saveTrip) return
+    const trimmed = albumDraft.trim()
+    setAlbumSaving(true)
+    try {
+      await tripsApi.saveTrip({ ...trip, sharedAlbumURL: trimmed })
+      setAlbumSavedTick((t) => t + 1)
+    } finally {
+      setAlbumSaving(false)
+    }
+  }
+
+  async function clearAlbumUrl() {
+    setAlbumDraft('')
+    if (!tripsApi?.saveTrip) return
+    setAlbumSaving(true)
+    try {
+      await tripsApi.saveTrip({ ...trip, sharedAlbumURL: '' })
+      setAlbumSavedTick((t) => t + 1)
+    } finally {
+      setAlbumSaving(false)
     }
   }
 
@@ -73,20 +124,99 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, o
           <p className="smallcaps f-dm text-[11px] opacity-70">Shared album</p>
         </div>
         {trip.sharedAlbumURL ? (
-          <a
-            className="link-quiet f-news text-base"
-            href={trip.sharedAlbumURL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open in iCloud Photos →
-          </a>
+          <>
+            <a
+              className="link-quiet f-news text-base inline-flex items-center gap-1"
+              href={trip.sharedAlbumURL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open in iCloud Photos <ExternalLink size={12} />
+            </a>
+            <p className="f-mono text-[10px] opacity-50 mt-2 break-all">
+              {trip.sharedAlbumURL}
+            </p>
+            <div className="flex mt-3" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={clearAlbumUrl}
+                disabled={albumSaving}
+              >
+                Replace URL
+              </button>
+            </div>
+          </>
         ) : (
-          <p className="f-news text-base leading-relaxed opacity-80 max-w-prose">
-            No iCloud Shared Album linked yet. Helen creates the album in Photos, enables Public
-            Website, then pastes the URL into the trip record. (Manual entry form will land in the
-            next pass.)
-          </p>
+          <>
+            <p className="f-news text-base leading-relaxed opacity-80 max-w-prose mb-4">
+              The Shared Album is the family's photo backbone — Helen creates one
+              album in Photos, enables Public Website, and pastes the URL below.
+              Anyone with the link can view photos in a browser without an Apple
+              ID; family members on iOS see the album natively in Photos.
+            </p>
+            <ol
+              className="f-news text-base leading-relaxed opacity-80 max-w-prose"
+              style={{ paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 14 }}
+            >
+              <li>
+                Open Photos on your Mac or iPhone. Select the photos you want in
+                the album, tap <em>Share</em> → <em>Shared Album</em> → <em>New Shared Album</em>.
+                Name it something memorable like
+                <span className="f-mono text-[12px] mx-1 px-1 rounded" style={{ background: 'var(--bg2)' }}>
+                  {trip.title}
+                </span>.
+              </li>
+              <li>
+                Once the album exists, open it and tap <em>Subscribers</em> (or the
+                people icon). Enable <strong>Public Website</strong> — Photos
+                generates a long iCloud share URL that starts with{' '}
+                <span className="f-mono text-[12px]">https://www.icloud.com/sharedalbum/</span>.
+              </li>
+              <li>
+                Tap <em>Share Link</em>, copy the URL, and paste it into the field
+                below. The trip's photo backbone is live the moment you save.
+              </li>
+            </ol>
+            <div className="flex mt-5" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                type="url"
+                inputMode="url"
+                placeholder="https://www.icloud.com/sharedalbum/…"
+                value={albumDraft}
+                onChange={(e) => setAlbumDraft(e.target.value)}
+                className="memory-textarea"
+                style={{ flex: 1, minWidth: 240, minHeight: 'auto', padding: 10, fontSize: 13, fontFamily: 'JetBrains Mono, ui-monospace, monospace' }}
+                aria-label="iCloud shared album URL"
+              />
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={saveAlbumUrl}
+                disabled={!albumDraft.trim() || albumSaving}
+                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+              >
+                {albumSaving ? <RefreshCw size={12} /> : <Check size={12} />}
+                {albumSaving ? 'Saving…' : 'Save link'}
+              </button>
+            </div>
+            {albumSavedTick > 0 && (
+              <p className="f-dm text-[12px] opacity-60 mt-2 italic">
+                Cleared. Paste the new URL above.
+              </p>
+            )}
+            <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
+              Apple's docs:{' '}
+              <a
+                className="link-quiet"
+                href="https://support.apple.com/guide/photos/share-photos-and-videos-pht7a4c4d4ed/mac"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Share photos and videos with Shared Albums →
+              </a>
+            </p>
+          </>
         )}
       </section>
 
@@ -219,7 +349,16 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, o
                 onClick={runPull}
                 disabled={syncing}
               >
-                <RefreshCw size={12} /> {syncing ? 'Pulling…' : 'Pull from iCloud'}
+                <RefreshCw size={12} /> {syncing ? 'Pulling…' : 'Pull memories'}
+              </button>
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={runSeed}
+                disabled={seeding}
+                title="Push the bundled Jackson + NYC trips to iCloud. Idempotent — re-running only adds anything that's missing."
+              >
+                <Upload size={12} /> {seeding ? 'Seeding…' : 'Seed trips to iCloud'}
               </button>
               <button
                 type="button"
@@ -232,6 +371,16 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, o
             {syncMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{syncMsg}</p>
             )}
+            {seedMsg && (
+              <p className="f-dm text-[12px] opacity-70 mt-3 italic">{seedMsg}</p>
+            )}
+            <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
+              Trips currently sourced from{' '}
+              <span className="f-mono text-[10px]">{tripsApi?.source || 'unknown'}</span>
+              {' · '}
+              {tripsApi?.trips?.length || 0} trip
+              {(tripsApi?.trips?.length || 0) === 1 ? '' : 's'} loaded.
+            </p>
           </>
         )}
       </section>

@@ -23,6 +23,7 @@ import { getContainer, isCloudKitConfigured } from './cloudkit'
 import { loadAsset } from './memAssets'
 
 const RECORD_TYPE = 'Memory'
+const TRIP_RECORD_TYPE = 'Trip'
 const SHARED_ZONE = 'Family'
 
 // Pull every Memory record (both zones) into a flat array. Used by
@@ -201,4 +202,95 @@ async function blobToCKAsset(blob, filenameHint) {
     return new File([blob], filenameHint, { type: blob.type || 'application/octet-stream' })
   }
   return blob
+}
+
+// ─── Trip records ───────────────────────────────────────────────────
+//
+// Trip storage model: one CloudKit `Trip` record per trip in the
+// shared "Family" zone. Whole nested trip object goes in `dataJson` so
+// reads stay simple (no joining Days/Stops back together client-side).
+// Typed columns alongside (`dateRangeStart`, `dateRangeEnd`, `endCity`)
+// give us indexed querying for future "by month" or "by location"
+// browsing without touching the read path. Auto-deploys on first
+// save in dev environment; promote-to-production via dashboard.
+
+export async function pullTrips() {
+  if (!isCloudKitConfigured()) return []
+  const container = await getContainer()
+  try {
+    const shared = container.sharedCloudDatabase
+    const r = await shared.performQuery({
+      recordType: TRIP_RECORD_TYPE,
+      zoneID: { zoneName: SHARED_ZONE },
+    })
+    if (!r.records) return []
+    return r.records.map(tripFromCKRecord).filter(Boolean)
+  } catch (err) {
+    console.warn('CloudKit pullTrips failed', err)
+    return []
+  }
+}
+
+export async function pushTrip(trip) {
+  if (!isCloudKitConfigured()) return false
+  const container = await getContainer()
+  const db = container.sharedCloudDatabase
+  const fields = {}
+  put(fields, 'tripId', trip.id)
+  put(fields, 'title', trip.title)
+  put(fields, 'endCity', trip.endCity)
+  put(fields, 'dateRangeStart', trip.dateRangeStart)
+  put(fields, 'dateRangeEnd', trip.dateRangeEnd)
+  put(fields, 'updatedAt', new Date().toISOString())
+  // Whole payload as JSON. Keep this last so it doesn't get visually
+  // confused with the indexed columns above when reading the record.
+  put(fields, 'dataJson', JSON.stringify(trip))
+  const record = {
+    recordType: TRIP_RECORD_TYPE,
+    recordName: `trip_${trip.id}`,
+    zoneID: { zoneName: SHARED_ZONE },
+    fields,
+  }
+  try {
+    await db.saveRecords([record])
+    return true
+  } catch (err) {
+    console.warn('CloudKit pushTrip failed', err)
+    return false
+  }
+}
+
+export async function deleteTrip(tripId) {
+  if (!isCloudKitConfigured()) return false
+  const container = await getContainer()
+  const db = container.sharedCloudDatabase
+  try {
+    await db.deleteRecords([
+      { recordName: `trip_${tripId}`, zoneID: { zoneName: SHARED_ZONE } },
+    ])
+    return true
+  } catch (err) {
+    console.warn('CloudKit deleteTrip failed', err)
+    return false
+  }
+}
+
+function tripFromCKRecord(rec) {
+  const f = rec.fields || {}
+  const v = (k) => (f[k] ? f[k].value : undefined)
+  const json = v('dataJson')
+  if (!json) return null
+  try {
+    const trip = JSON.parse(json)
+    // Indexed columns are authoritative for the few fields they cover —
+    // keeps the JSON blob and column values from drifting if a write
+    // ever sets one and not the other.
+    if (v('dateRangeStart')) trip.dateRangeStart = v('dateRangeStart')
+    if (v('dateRangeEnd')) trip.dateRangeEnd = v('dateRangeEnd')
+    if (v('endCity')) trip.endCity = v('endCity')
+    return trip
+  } catch (err) {
+    console.warn('CloudKit tripFromCKRecord JSON parse failed', err)
+    return null
+  }
 }

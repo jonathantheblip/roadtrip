@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { Plus } from 'lucide-react'
-import { TRIPS } from '../data/trips'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { AvatarStack } from '../components/Avatar'
@@ -18,8 +17,8 @@ import { AvatarStack } from '../components/Avatar'
 //   • AvatarStack of travelers + "<start> → <end>" route
 //   • live memory count read from listMemoriesForTrip
 
-export function TripIndex({ traveler = 'helen', onOpenTrip, onNewTrip }) {
-  const ordered = [...TRIPS].sort((a, b) => priority(a) - priority(b))
+export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTrip }) {
+  const ordered = [...trips].sort((a, b) => priority(a) - priority(b))
   const liveCounts = useMemo(() => {
     const map = new Map()
     for (const t of ordered) {

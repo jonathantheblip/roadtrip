@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { TRIPS, findTrip, findDay, findStop } from './data/trips'
+import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
 import { JonathanView } from './views/JonathanView'
@@ -11,6 +11,7 @@ import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
 import { useHelenDark } from './hooks/useHelenDark'
+import { useTrips } from './hooks/useTrips'
 import './styles/platform.css'
 
 // Per-traveler palette tokens for the fixed top bar. Spec §6 dark/light:
@@ -77,23 +78,23 @@ function writeTravelerCookie(value) {
   }
 }
 
-function readActiveTripId() {
+// Read the requested trip id from the URL — actual existence check
+// happens in the render pass once useTrips has resolved.
+function readRequestedTripId() {
   try {
-    const q = new URLSearchParams(window.location.search).get('trip')
-    if (q && TRIPS.find((t) => t.id === q)) return q
+    return new URLSearchParams(window.location.search).get('trip') || null
   } catch {
-    /* ignore */
+    return null
   }
-  // Default: Jackson (most recently active for this family)
-  return TRIPS[0]?.id || null
 }
 
 export default function App() {
   const [traveler, setTraveler] = useState(readTraveler)
-  const [tripId, setTripId] = useState(readActiveTripId)
-  const [drafts, setDrafts] = useState([]) // session-local trips created via NewTrip
+  const [tripId, setTripId] = useState(readRequestedTripId)
   const [view, setView] = useState({ name: 'trip' }) // 'index' | 'trip' | 'stop' | 'settings' | 'new'
   const [helenDark, toggleHelenDark] = useHelenDark()
+  const tripsApi = useTrips()
+  const allTrips = tripsApi.trips
   const topBar = topBarTokens(traveler, helenDark)
   // Spec §6: Jonathan + Rafa permanent dark; Helen dark when toggled on.
   // Aurelia stays light. This drives the StopDetail / Settings surface.
@@ -143,8 +144,7 @@ export default function App() {
     }
   }, [tripId])
 
-  const allTrips = [...drafts, ...TRIPS]
-  const trip = allTrips.find((t) => t.id === tripId) || allTrips[0]
+  const trip = (tripId && allTrips.find((t) => t.id === tripId)) || allTrips[0]
   const day = view.name === 'stop' && trip ? findDay(trip, view.dayN) : null
   const stop = view.name === 'stop' && day ? findStop(day, view.stopId) : null
 
@@ -180,8 +180,8 @@ export default function App() {
     setView({ name: 'new' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
-  function handleCreateTrip(newTrip) {
-    setDrafts((d) => [newTrip, ...d])
+  async function handleCreateTrip(newTrip) {
+    await tripsApi.addTrip(newTrip)
     setTripId(newTrip.id)
     setView({ name: 'trip' })
   }
@@ -297,7 +297,12 @@ export default function App() {
 
       <div key={`${view.name}-${tripId}-${traveler}`}>
         {view.name === 'index' && (
-          <TripIndex traveler={traveler} onOpenTrip={openTrip} onNewTrip={openNewTrip} />
+          <TripIndex
+            traveler={traveler}
+            trips={allTrips}
+            onOpenTrip={openTrip}
+            onNewTrip={openNewTrip}
+          />
         )}
         {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} />}
         {view.name === 'trip' && trip && renderTripView()}
@@ -319,6 +324,7 @@ export default function App() {
             dark={darkSurface}
             helenDark={helenDark}
             onToggleHelenDark={toggleHelenDark}
+            tripsApi={tripsApi}
             onBack={() => setView({ name: 'trip' })}
             onChangeTraveler={handleTravelerSwitch}
           />

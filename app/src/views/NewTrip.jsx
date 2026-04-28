@@ -134,7 +134,7 @@ export function NewTrip({ onBack, onCreate }) {
 
         <div className="flex items-center justify-between" style={{ marginTop: 24 }}>
           <p className="f-dm text-[11px] opacity-50 italic max-w-sm">
-            Saved locally for this session. CloudKit persistence wires up next.
+            Syncs to iCloud once you're signed in; cached locally either way.
           </p>
           <button type="submit" className="btn-solid">
             Create trip
