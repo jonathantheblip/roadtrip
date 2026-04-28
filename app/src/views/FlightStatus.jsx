@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Plane, RefreshCw, ExternalLink } from 'lucide-react'
-import { getFlightStatus, airlineStatusUrl, formatStatusLabel } from '../lib/flightStatus'
+import { getFlightStatus, flightAwareUrl, formatStatusLabel } from '../lib/flightStatus'
 
 // Two render modes:
 //   variant="pill"   → compact inline pill (used inside stop cards)
@@ -38,7 +38,7 @@ export function FlightStatus({ stop, variant = 'pill', framing = 'their', travel
   }, [stop.flightNumber, stop.flightDate])
 
   const statusLabel = formatStatusLabel(data) || 'SCHEDULED'
-  const fallbackUrl = airlineStatusUrl(stop.flightNumber)
+  const fallbackUrl = flightAwareUrl(stop.flightNumber)
   const live = !!data
 
   if (variant === 'pill') {
@@ -197,7 +197,7 @@ function PanelBody({
             className="link-quiet inline-flex items-center gap-1 f-mono"
             style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}
           >
-            airline status <ExternalLink size={11} />
+            FlightAware <ExternalLink size={11} />
           </a>
         )}
       </div>
