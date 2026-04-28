@@ -182,14 +182,20 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, o
           </>
         )}
         {ck.state === 'signedOut' && (
-          <button
-            type="button"
-            className="btn-pill"
-            onClick={ck.signIn}
-            style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
-          >
-            <Cloud size={12} /> Sign in with iCloud
-          </button>
+          <>
+            {/*
+              CloudKit JS auto-mounts its sign-in button into the element
+              whose id matches the `signInButton.id` we passed to
+              CK.configure (see lib/cloudkit.js). Rendering this div is
+              the entire integration — no onClick needed; Apple's SDK
+              opens the auth popup and fires whenUserSignsIn().
+            */}
+            <div id="apple-sign-in" />
+            <p className="f-dm text-[12px] opacity-60 mt-3 max-w-prose">
+              Uses your iCloud account. Sign-in opens an Apple popup and
+              never sees your password.
+            </p>
+          </>
         )}
         {ck.state === 'signedIn' && (
           <>
