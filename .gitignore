@@ -4,3 +4,4 @@ app/.vite
 *.log
 .DS_Store
 .claude/
+.env
