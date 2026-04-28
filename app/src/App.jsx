@@ -290,7 +290,9 @@ export default function App() {
       )}
 
       <div key={`${view.name}-${tripId}-${traveler}`}>
-        {view.name === 'index' && <TripIndex onOpenTrip={openTrip} onNewTrip={openNewTrip} />}
+        {view.name === 'index' && (
+          <TripIndex traveler={traveler} onOpenTrip={openTrip} onNewTrip={openNewTrip} />
+        )}
         {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} />}
         {view.name === 'trip' && trip && renderTripView()}
         {view.name === 'stop' && trip && day && stop && (

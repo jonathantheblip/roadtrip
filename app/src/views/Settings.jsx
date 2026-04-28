@@ -1,12 +1,35 @@
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import { useHelenDark } from '../hooks/useHelenDark'
+import { useCloudKitAuth } from '../hooks/useCloudKitAuth'
+import { CLOUDKIT_META } from '../lib/cloudkit'
+import { pullAll } from '../lib/cloudKitSync'
+import { mergeFromRemote } from '../lib/memoryStore'
 
 // Per-trip settings panel: calendar export, shared album link, identity reset.
 // CloudKit sync, screenshot ingestion, and Gmail wiring will live here too.
 export function Settings({ trip, traveler, dark, onBack, onChangeTraveler }) {
   const [helenDark, toggleHelenDark] = useHelenDark()
+  const ck = useCloudKitAuth()
+  const [syncMsg, setSyncMsg] = useState(null)
+  const [syncing, setSyncing] = useState(false)
+
+  async function runPull() {
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const remote = await pullAll()
+      const merged = mergeFromRemote(remote)
+      setSyncMsg(`Pulled ${remote.length} record${remote.length === 1 ? '' : 's'}; ${merged} merged into local cache.`)
+    } catch (err) {
+      setSyncMsg(`Pull failed: ${err?.message || String(err)}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
       <header className="px-6 pt-6 pb-6 border-b surface-rule">
@@ -117,13 +140,80 @@ export function Settings({ trip, traveler, dark, onBack, onChangeTraveler }) {
         </div>
       </section>
 
+      <section className="px-6 py-8 border-b surface-rule">
+        <div className="flex items-center gap-2 mb-3">
+          {ck.state === 'signedIn' ? <Cloud size={14} /> : <CloudOff size={14} />}
+          <p className="smallcaps f-dm text-[11px] opacity-70">iCloud sync</p>
+        </div>
+        <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
+          Memories save locally first, then mirror to CloudKit so the four
+          family Apple IDs see the same thread. Container{' '}
+          <span className="f-mono text-[11px]">{CLOUDKIT_META.container || '—'}</span>,{' '}
+          environment{' '}
+          <span className="f-mono text-[11px]">{CLOUDKIT_META.environment}</span>.
+        </p>
+        {ck.state === 'unconfigured' && (
+          <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
+            CloudKit env vars not present in the bundle.
+          </p>
+        )}
+        {ck.state === 'loading' && (
+          <p className="f-dm text-sm opacity-70">Connecting to iCloud…</p>
+        )}
+        {ck.state === 'error' && (
+          <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
+            Connection failed: {ck.error || 'unknown'}.
+          </p>
+        )}
+        {ck.state === 'signedOut' && (
+          <button
+            type="button"
+            className="btn-pill"
+            onClick={ck.signIn}
+            style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+          >
+            <Cloud size={12} /> Sign in with iCloud
+          </button>
+        )}
+        {ck.state === 'signedIn' && (
+          <>
+            <p className="f-dm text-sm opacity-70 mb-3">
+              Signed in as{' '}
+              <span className="f-mono text-[11px]">
+                {ck.user?.userRecordName || 'iCloud user'}
+              </span>
+              .
+            </p>
+            <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={runPull}
+                disabled={syncing}
+              >
+                <RefreshCw size={12} /> {syncing ? 'Pulling…' : 'Pull from iCloud'}
+              </button>
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={ck.signOut}
+              >
+                Sign out
+              </button>
+            </div>
+            {syncMsg && (
+              <p className="f-dm text-[12px] opacity-70 mt-3 italic">{syncMsg}</p>
+            )}
+          </>
+        )}
+      </section>
+
       <section className="px-6 py-8">
         <p className="smallcaps f-dm text-[11px] opacity-70 mb-3">Coming next</p>
         <ul className="f-news text-base leading-relaxed opacity-80" style={{ paddingLeft: 18 }}>
-          <li>CloudKit sync across the four family Apple IDs (needs container provisioning).</li>
           <li>Screenshot ingestion via Claude API (needs API key + Worker proxy).</li>
           <li>Gmail ingestion (Pass 2, OAuth client already provisioned).</li>
-          <li>Per-stop photo upload.</li>
+          <li>FlightAware AeroAPI live data (needs Cloudflare Worker proxy).</li>
         </ul>
       </section>
     </div>

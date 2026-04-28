@@ -1,7 +1,7 @@
-// Memory store. Pass 1 backs CloudKit-shaped APIs with localStorage so
-// authoring works tonight. The signatures match what the CloudKit JS
-// adapter will provide, so when the container is provisioned we swap
-// the implementation without touching call sites.
+// Memory store. localStorage is the canonical local cache; CloudKit
+// (when configured + signed in) acts as a write-through mirror via
+// lib/cloudKitSync. Local writes are synchronous and offline-tolerant;
+// remote pushes fire-and-forget after the local write returns.
 //
 // Visibility:
 //   "shared"  → goes to the family-shared zone (now: localStorage shared key)
@@ -132,6 +132,10 @@ export function saveMemory({
   if (idx >= 0) target[idx] = record
   else target.push(record)
   writeJson(key, target)
+  // Mirror to CloudKit (fire-and-forget). Bails fast if not configured
+  // / not signed in / network down. Imported lazily so the cloudKitSync
+  // module's CloudKit JS dependency only loads after a real sync need.
+  scheduleMirror({ type: 'save', record })
   return record
 }
 
@@ -140,6 +144,61 @@ export function deleteMemory(record) {
     record.visibility === 'private' ? PRIVATE_KEY(record.authorTraveler) : SHARED_KEY
   const list = readJson(key).filter((m) => m.id !== record.id)
   writeJson(key, list)
+  scheduleMirror({ type: 'delete', record })
+}
+
+// Tiny serial queue so a fast burst of saves doesn't fan out to N
+// parallel CloudKit calls. We don't await — UI stays instant.
+let mirrorChain = Promise.resolve()
+function scheduleMirror(op) {
+  mirrorChain = mirrorChain
+    .then(async () => {
+      try {
+        const sync = await import('./cloudKitSync.js')
+        if (op.type === 'save') await sync.pushMemory(op.record)
+        else if (op.type === 'delete') await sync.deleteRemote(op.record)
+      } catch {
+        /* offline / unconfigured / schema mismatch — local stays canonical */
+      }
+    })
+    .catch(() => {})
+}
+
+// Merge a batch of remote memories into the local store. Last-write-
+// wins by updatedAt. Used by Settings after a successful sign-in pull.
+export function mergeFromRemote(remoteRecords) {
+  if (!Array.isArray(remoteRecords) || !remoteRecords.length) return 0
+  const sharedList = readJson(SHARED_KEY)
+  const sharedMap = new Map(sharedList.map((m) => [m.id, m]))
+  const privateBuckets = new Map()
+  let added = 0
+  for (const r of remoteRecords) {
+    if (!r?.id) continue
+    if (r.visibility === 'private') {
+      const author = r.authorTraveler
+      if (!author) continue
+      if (!privateBuckets.has(author)) {
+        privateBuckets.set(author, new Map(readJson(PRIVATE_KEY(author)).map((m) => [m.id, m])))
+      }
+      const bucket = privateBuckets.get(author)
+      const existing = bucket.get(r.id)
+      if (!existing || (r.updatedAt && r.updatedAt > existing.updatedAt)) {
+        bucket.set(r.id, r)
+        added += 1
+      }
+    } else {
+      const existing = sharedMap.get(r.id)
+      if (!existing || (r.updatedAt && r.updatedAt > existing.updatedAt)) {
+        sharedMap.set(r.id, r)
+        added += 1
+      }
+    }
+  }
+  writeJson(SHARED_KEY, Array.from(sharedMap.values()))
+  for (const [author, bucket] of privateBuckets) {
+    writeJson(PRIVATE_KEY(author), Array.from(bucket.values()))
+  }
+  return added
 }
 
 // Single-entry convenience: load the active traveler's memory for a stop
