@@ -1,14 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // Sticky day-chip strip used at the top of every themed view (and on
 // StopDetail). Tap a chip → smooth-scroll to the day section anchor
 // (`id="trip-day-N"`) inside the same view. Active chip tracks the day
 // nearest the top of the viewport via IntersectionObserver.
 //
-// Spec: every traveler sees this; scales horizontally to long trips
-// like Jackson's 8-day drive.
+// Sticky positioning and overflow-x scroll on the same element triggers
+// a Safari touch bug where chips near the strip edges swallow taps;
+// the wrapper / scroll-wrapper split below avoids it.
+//
+// While a programmatic scroll is in flight, the observer is suppressed
+// for ~700ms so the active chip doesn't flicker through intermediate
+// days during the animation.
 export function DayChips({ days, activeDayN, onJump }) {
   const [observed, setObserved] = useState(activeDayN || days[0]?.n)
+  const suppressObserverUntil = useRef(0)
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
@@ -19,7 +25,7 @@ export function DayChips({ days, activeDayN, onJump }) {
 
     const obs = new IntersectionObserver(
       (entries) => {
-        // Pick the topmost intersecting day section.
+        if (Date.now() < suppressObserverUntil.current) return
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
@@ -41,6 +47,11 @@ export function DayChips({ days, activeDayN, onJump }) {
   const active = activeDayN ?? observed
 
   function handleClick(d) {
+    // Optimistically reflect the tap so the user sees the chip light up
+    // immediately, even before scroll/navigate completes.
+    setObserved(d.n)
+    suppressObserverUntil.current = Date.now() + 700
+
     if (onJump) {
       onJump(d.n)
       return
@@ -55,18 +66,20 @@ export function DayChips({ days, activeDayN, onJump }) {
 
   return (
     <div className="day-chips" aria-label="Days in this trip">
-      {days.map((d) => (
-        <button
-          key={d.n}
-          type="button"
-          onClick={() => handleClick(d)}
-          className={`day-chip${d.n === active ? ' active' : ''}`}
-          aria-current={d.n === active ? 'page' : undefined}
-          aria-label={`Day ${d.n}${d.title ? ' — ' + d.title : ''}`}
-        >
-          {d.n}
-        </button>
-      ))}
+      <div className="day-chips-scroll">
+        {days.map((d) => (
+          <button
+            key={d.n}
+            type="button"
+            onClick={() => handleClick(d)}
+            className={`day-chip${d.n === active ? ' active' : ''}`}
+            aria-current={d.n === active ? 'page' : undefined}
+            aria-label={`Day ${d.n}${d.title ? ' — ' + d.title : ''}`}
+          >
+            {d.n}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

@@ -187,39 +187,50 @@ button { font: inherit; }
   color: #F2EBDA;
 }
 
-/* Day chip strip — sticky inter-day nav on StopDetail. */
+/* Day chip strip — sticky inter-day nav. Sticky positioning and
+   overflow scrolling on the same element is a known Safari touch bug
+   (taps near the strip's edge get swallowed by the scroll container),
+   so the sticky wrapper and the horizontal scroll wrapper are split. */
 .day-chips {
   position: sticky;
   top: max(40px, calc(env(safe-area-inset-top) + 32px));
   z-index: 30;
-  display: flex;
-  gap: 6px;
-  padding: 8px 24px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
   background: inherit;
 }
-.day-chips::-webkit-scrollbar { display: none; }
+.day-chips-scroll {
+  display: flex;
+  gap: 8px;
+  padding: 10px 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.day-chips-scroll::-webkit-scrollbar { display: none; }
 .day-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
-  height: 30px;
-  padding: 0 10px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 12px;
   border-radius: 9999px;
   border: 1px solid currentColor;
   background: transparent;
   color: inherit;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.08em;
   cursor: pointer;
-  opacity: 0.4;
+  opacity: 0.45;
   flex-shrink: 0;
-  transition: opacity .15s ease, background .15s ease, color .15s ease;
+  /* manipulation: lets the browser treat the tap as a click immediately
+     instead of waiting to see if it's the start of a horizontal scroll. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(139, 43, 31, 0.18);
+  transition: opacity .15s ease, background .15s ease, color .15s ease,
+              transform .12s ease;
 }
-.day-chip:hover { opacity: 0.7; }
+.day-chip:hover { opacity: 0.75; }
+.day-chip:active { transform: scale(0.93); opacity: 1; }
 .day-chip.active {
   background: #8B2B1F;
   border-color: #8B2B1F;
