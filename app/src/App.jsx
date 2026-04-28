@@ -93,7 +93,7 @@ export default function App() {
   const [tripId, setTripId] = useState(readActiveTripId)
   const [drafts, setDrafts] = useState([]) // session-local trips created via NewTrip
   const [view, setView] = useState({ name: 'trip' }) // 'index' | 'trip' | 'stop' | 'settings' | 'new'
-  const [helenDark] = useHelenDark()
+  const [helenDark, toggleHelenDark] = useHelenDark()
   const topBar = topBarTokens(traveler, helenDark)
   // Spec §6: Jonathan + Rafa permanent dark; Helen dark when toggled on.
   // Aurelia stays light. This drives the StopDetail / Settings surface.
@@ -311,6 +311,8 @@ export default function App() {
             trip={trip}
             traveler={traveler}
             dark={darkSurface}
+            helenDark={helenDark}
+            onToggleHelenDark={toggleHelenDark}
             onBack={() => setView({ name: 'trip' })}
             onChangeTraveler={handleTravelerSwitch}
           />

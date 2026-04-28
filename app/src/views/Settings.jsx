@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
-import { useHelenDark } from '../hooks/useHelenDark'
 import { useCloudKitAuth } from '../hooks/useCloudKitAuth'
 import { CLOUDKIT_META } from '../lib/cloudkit'
 import { pullAll } from '../lib/cloudKitSync'
@@ -10,8 +9,12 @@ import { mergeFromRemote } from '../lib/memoryStore'
 
 // Per-trip settings panel: calendar export, shared album link, identity reset.
 // CloudKit sync, screenshot ingestion, and Gmail wiring will live here too.
-export function Settings({ trip, traveler, dark, onBack, onChangeTraveler }) {
-  const [helenDark, toggleHelenDark] = useHelenDark()
+//
+// helenDark / onToggleHelenDark come from App so the toggle here and the
+// surface theming there share a single source of truth — calling
+// useHelenDark() locally gave each consumer its own state, so flipping
+// it inside Settings didn't update the surface class App computes.
+export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, onBack, onChangeTraveler }) {
   const ck = useCloudKitAuth()
   const [syncMsg, setSyncMsg] = useState(null)
   const [syncing, setSyncing] = useState(false)
@@ -100,7 +103,7 @@ export function Settings({ trip, traveler, dark, onBack, onChangeTraveler }) {
           <button
             type="button"
             className="btn-pill"
-            onClick={toggleHelenDark}
+            onClick={onToggleHelenDark}
             style={{
               background: helenDark ? '#14110D' : 'transparent',
               color: helenDark ? '#F2EBDA' : 'inherit',
