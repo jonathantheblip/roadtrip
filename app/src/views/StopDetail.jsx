@@ -1,16 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, MapPin, Lock, Unlock, Trash2, ExternalLink, Bed, Key } from 'lucide-react'
+import { ChevronLeft, MapPin, ExternalLink, Bed, Key } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { mapsLink } from '../lib/mapsLink'
-import {
-  loadOwnMemoryForStop,
-  listMemoriesForStop,
-  saveMemory,
-  deleteMemory,
-} from '../lib/memoryStore'
 import { FlightStatus } from './FlightStatus'
 import { DayChips } from './DayChips'
-import { AudioMemo } from '../components/AudioMemo'
+import { ThreadedMemories } from '../components/ThreadedMemories'
 
 function urlLabel(stop) {
   const ticketKinds = new Set(['theater', 'show', 'concert', 'tour', 'arrival', 'departure'])
@@ -19,59 +12,12 @@ function urlLabel(stop) {
   return 'Open link'
 }
 
-// Stop detail with memory authoring. Visibility toggle (shared/private)
-// is intentionally explicit — Aurelia in particular needs to choose,
-// not have it inferred. Author is always the active traveler.
-//
-// `dark` flips the page surface to charcoal/cream so it matches Jonathan,
-// Rafa, and dark-mode Helen. Embedded panels (flight, lodging) react to
-// the parent surface via .embed-panel CSS so they don't need the prop.
+// Stop detail. Memories live in the ThreadedMemories component (Design
+// Direction 02 — collaborative thread per stop with text / voice /
+// photo composer at the bottom). `dark` flips the page surface to
+// charcoal/cream so it matches Jonathan / Rafa / dark-mode Helen.
+// Embedded panels (flight, lodging) react to the surface via CSS.
 export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay }) {
-  const own = loadOwnMemoryForStop(stop.id, traveler)
-  const [memoryId, setMemoryId] = useState(own?.id || null)
-  const [text, setText] = useState(own?.text || '')
-  const [visibility, setVisibility] = useState(own?.visibility || 'shared')
-  const [savedAt, setSavedAt] = useState(null)
-  const saveTimer = useRef(null)
-
-  // Auto-save on text/visibility change. Debounced so typing stays responsive.
-  useEffect(() => {
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    if (!text.trim() && !memoryId) return
-    saveTimer.current = setTimeout(() => {
-      try {
-        if (!text.trim() && memoryId) {
-          // empty text → treat as delete
-          deleteMemory({
-            id: memoryId,
-            visibility,
-            authorTraveler: traveler,
-          })
-          setMemoryId(null)
-          setSavedAt(new Date())
-          return
-        }
-        const rec = saveMemory({
-          id: memoryId,
-          tripId: trip.id,
-          stopId: stop.id,
-          authorTraveler: traveler,
-          visibility,
-          text,
-        })
-        setMemoryId(rec.id)
-        setSavedAt(new Date())
-      } catch (err) {
-        console.error('memory save failed', err)
-      }
-    }, 600)
-    return () => clearTimeout(saveTimer.current)
-  }, [text, visibility, memoryId, trip.id, stop.id, traveler])
-
-  const sharedMemories = listMemoriesForStop(stop.id, traveler).filter(
-    (m) => m.authorTraveler !== traveler
-  )
-
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
       {onOpenDay && (
@@ -145,81 +91,8 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
       )}
 
       <section className="px-6 py-8">
-        <div className="flex items-center justify-between mb-3">
-          <p className="smallcaps f-dm text-[11px] opacity-70">Your memory</p>
-          <span className="f-mono text-[10px] opacity-40">
-            {savedAt
-              ? `saved ${savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-              : ''}
-          </span>
-        </div>
-        <textarea
-          className="memory-textarea"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="What happened here. What it felt like. The thing you don't want to forget."
-        />
-        <div className="flex items-center justify-between mt-3">
-          <button
-            type="button"
-            className="toggle-row"
-            onClick={() => setVisibility(visibility === 'private' ? 'shared' : 'private')}
-            aria-pressed={visibility === 'private'}
-            style={{ background: 'transparent', border: 0, padding: 0 }}
-          >
-            {visibility === 'private' ? <Lock size={12} /> : <Unlock size={12} />}
-            <span>{visibility === 'private' ? 'Private to you' : 'Shared with the family'}</span>
-          </button>
-          {memoryId && text.trim() && (
-            <button
-              type="button"
-              className="toggle-row"
-              style={{ background: 'transparent', border: 0, padding: 0, color: '#8B2B1F' }}
-              onClick={() => {
-                deleteMemory({
-                  id: memoryId,
-                  visibility,
-                  authorTraveler: traveler,
-                })
-                setMemoryId(null)
-                setText('')
-                setSavedAt(new Date())
-              }}
-            >
-              <Trash2 size={12} /> Delete
-            </button>
-          )}
-        </div>
-        <p className="f-dm text-[11px] opacity-50 italic mt-3">
-          {visibility === 'private'
-            ? 'Saved only to your device.'
-            : 'Saved to the family share. CloudKit sync wires up next.'}
-        </p>
-
-        {day?.isoDate && (
-          <div style={{ marginTop: 24 }}>
-            <p className="smallcaps f-dm text-[11px] opacity-70 mb-2">
-              Voice memo · one per day
-            </p>
-            <AudioMemo date={day.isoDate} />
-          </div>
-        )}
+        <ThreadedMemories trip={trip} stop={stop} traveler={traveler} />
       </section>
-
-      {sharedMemories.length > 0 && (
-        <section className="px-6 py-8 border-t surface-rule">
-          <p className="smallcaps f-dm text-[11px] opacity-70 mb-4">From the family</p>
-          {sharedMemories.map((m) => (
-            <div key={m.id} style={{ marginBottom: 24 }}>
-              <p className="f-mono text-[10px] tt-widest uppercase opacity-50 mb-2">
-                {TRAVELERS[m.authorTraveler]?.name || m.authorTraveler} ·{' '}
-                {new Date(m.createdAt).toLocaleDateString()}
-              </p>
-              <p className="f-news text-base leading-relaxed opacity-80">{m.text}</p>
-            </div>
-          ))}
-        </section>
-      )}
     </div>
   )
 }
