@@ -28,7 +28,7 @@ export function RafaView({ trip, onOpenStop }) {
         <div className="flex items-center gap-2">
           <span
             className="w-2.5 h-2.5 rounded-full pulse-dot"
-            style={{ background: '#6BE3A0' }}
+            style={{ background: 'var(--accent)' }}
           ></span>
           <p className="f-arc text-[11px] font-medium tt-widest uppercase opacity-80">
             Mission{' '}
@@ -59,13 +59,13 @@ export function RafaView({ trip, onOpenStop }) {
         <section className="px-5 pb-5">
           <div
             className="rafa-card rounded-3xl p-6 border-2 tap"
-            style={{ borderColor: '#FFD93D' }}
+            style={{ borderColor: 'var(--accent)' }}
             onClick={() => onOpenStop(featured.day, featured.id)}
           >
             <div className="flex items-center justify-between mb-3">
               <span
                 className="rafa-bg-yellow f-arc font-black text-xs px-3 py-1 rounded-full tt-wide"
-                style={{ color: '#1A1614' }}
+                style={{ color: 'var(--accent-ink)' }}
               >
                 {featured.time}
               </span>
@@ -84,7 +84,11 @@ export function RafaView({ trip, onOpenStop }) {
           <div
             key={s.id}
             className="rounded-3xl p-5 tap"
-            style={{ background: i === 0 ? '#1F7BD8' : '#E63333' }}
+            style={{
+              background: i === 0 ? 'var(--card)' : 'var(--accent2)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+            }}
             onClick={() => onOpenStop(s.day, s.id)}
           >
             <div className="flex items-center justify-between mb-2">
@@ -139,7 +143,7 @@ export function RafaView({ trip, onOpenStop }) {
                   >
                     <span
                       className="rafa-bg-yellow f-arc font-black text-base w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ color: '#1A1614' }}
+                      style={{ color: 'var(--accent-ink)' }}
                     >
                       {day.n}
                     </span>
@@ -190,7 +194,7 @@ function RafaTitle({ trip }) {
       <br />
       <span className="rafa-blue">{words[1]}</span>
       <br />
-      <span style={{ color: '#fff' }}>{words[2]}</span>
+      <span style={{ color: 'var(--text)' }}>{words[2]}</span>
     </h1>
   )
 }

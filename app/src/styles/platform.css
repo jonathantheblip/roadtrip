@@ -8,7 +8,13 @@
    ========================================================================== */
 
 /* ---- Fonts ------------------------------------------------------------- */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,300;1,6..72,400;1,6..72,500;1,6..72,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=JetBrains+Mono:wght@400;500;600&family=Caprasimo&family=Archivo:wght@400;500;700;900&display=swap');
+/* Design bundle (2026-04-27) is authoritative: Fraunces (serif) +
+   Inter Tight (grotesk) + JetBrains Mono. Newsreader / DM Sans /
+   Caprasimo / Archivo retained for legacy `.f-news` / `.f-dm` /
+   `.f-cap` / `.f-arc` utility classes — they alias to the Design
+   families below so existing markup picks up the new look without a
+   sweeping rename. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,500;1,9..144,600&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; box-sizing: border-box; }
 
@@ -17,12 +23,17 @@ body { margin: 0; }
 button { font: inherit; }
 
 /* ---- Type families ----------------------------------------------------- */
-.f-news { font-family: 'Newsreader', Georgia, serif; }
-.f-news-i { font-family: 'Newsreader', Georgia, serif; font-style: italic; }
-.f-dm { font-family: 'DM Sans', system-ui, sans-serif; }
+/* `.f-news` / `.f-dm` / `.f-cap` / `.f-arc` are aliased to the Design
+   families so existing markup adopts the new look. New code should
+   prefer `.f-serif` / `.f-sans` / `.f-mono`. */
+.f-serif { font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif; }
+.f-sans { font-family: 'Inter Tight', -apple-system, system-ui, sans-serif; }
+.f-news { font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif; }
+.f-news-i { font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif; font-style: italic; }
+.f-dm { font-family: 'Inter Tight', -apple-system, system-ui, sans-serif; }
 .f-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
-.f-cap { font-family: 'Caprasimo', Georgia, serif; }
-.f-arc { font-family: 'Archivo', system-ui, sans-serif; }
+.f-cap { font-family: 'Fraunces', Georgia, serif; }
+.f-arc { font-family: 'Inter Tight', system-ui, sans-serif; }
 
 .tt-tightest { letter-spacing: -0.045em; }
 .tt-tight { letter-spacing: -0.025em; }
@@ -129,62 +140,71 @@ button { font: inherit; }
 .pulse-dot { animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 
-/* ---- Theme: Helen ------------------------------------------------------ */
-.helen-bone { background: #F5F0E7; color: #1A1614; }
-.helen-paper { background: #FBF8F2; }
-.helen-rule { border-color: #BFB29C; }
-.helen-soft { color: #4A413A; }
-.helen-faded { color: #8A7F73; }
+/* ---- Theme classes ----------------------------------------------------
+   `.helen-bone` / `.helen-paper` / `.jj-paper` etc. exist for
+   per-traveler view markup and now drive their colors from the
+   active CSS theme variables (see styles/themes.css). The rules
+   below are intentionally token-driven so any future palette change
+   only needs to land in themes.css.
+   ----------------------------------------------------------------- */
+.helen-bone { background: var(--bg); color: var(--text); }
+.helen-paper { background: var(--card); }
+.helen-rule { border-color: var(--border); }
+.helen-soft { color: var(--text); opacity: 0.78; }
+.helen-faded { color: var(--muted); }
 .helen-photo {
-  background: linear-gradient(135deg, #E8DFCB 0%, #D9CDB3 100%);
+  background: linear-gradient(135deg, var(--bg2) 0%, var(--card) 100%);
   position: relative; overflow: hidden;
 }
 .helen-photo::after {
   content: ''; position: absolute; inset: 0;
   background-image:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.45) 0%, transparent 55%),
-    radial-gradient(circle at 75% 75%, rgba(139,43,31,.10) 0%, transparent 55%);
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.20) 0%, transparent 55%),
+    radial-gradient(circle at 75% 75%, rgba(0,0,0,.08) 0%, transparent 55%);
 }
-.helen-deckle { box-shadow: 0 0 0 8px #FBF8F2, 0 8px 24px rgba(26,22,20,.08); }
+.helen-deckle { box-shadow: 0 0 0 8px var(--card), 0 8px 24px rgba(0,0,0,.10); }
 
-/* Helen dark variant — opt-in via her settings (spec §6). Black ground
-   with oxblood accents preserved. The deckle ring switches to dark so
-   it doesn't ring the photo with a cream halo. */
-.helen-bone.helen-dark { background: #14110D; color: #F2EBDA; }
+/* Helen dark variant — opt-in via her settings (spec §6). Mirrors
+   Jonathan's Kottke-dark palette while she's in dark mode. Class is
+   applied alongside `.helen-bone` by HelenView. */
+.helen-bone.helen-dark {
+  background: #0E0F11;
+  color: #EDE6D6;
+}
 .helen-dark .helen-rule,
-.helen-dark.helen-rule { border-color: rgba(242, 235, 218, 0.18); }
-.helen-dark .helen-soft { color: #C9C0AB; }
-.helen-dark .helen-faded { color: #8A8270; }
+.helen-dark.helen-rule { border-color: rgba(237, 230, 214, 0.16); }
+.helen-dark .helen-soft { color: rgba(237, 230, 214, 0.86); }
+.helen-dark .helen-faded { color: rgba(237, 230, 214, 0.58); }
 .helen-dark .helen-deckle {
-  box-shadow: 0 0 0 8px #1F1A14, 0 8px 24px rgba(0,0,0,.35);
+  box-shadow: 0 0 0 8px #15171A, 0 8px 24px rgba(0,0,0,.5);
 }
 
 /* ---- Surface tokens (StopDetail / Settings / utility surfaces) ------
-   Light by default, dark when wrapped in .surface-dark. The same
-   classes are used by FlightStatus and LodgingPanel so they pick up
-   the surrounding theme automatically — no prop drilling.
+   Light by default, dark when wrapped in .surface-dark. Both pull from
+   the active theme so a Helen surface looks like Helen, an Aurelia
+   surface looks like Aurelia, etc.
    ---------------------------------------------------------------- */
-.surface-light { background: #FBF8F2; color: #1A1614; }
-.surface-dark { background: #14110D; color: #F2EBDA; }
-.surface-rule { border-color: #DDD3C2; }
+.surface-light { background: var(--card); color: var(--text); }
+.surface-dark { background: var(--bg2); color: var(--text); }
+.surface-rule { border-color: var(--border); }
 .surface-dark .surface-rule,
-.surface-dark.surface-rule { border-color: rgba(242, 235, 218, 0.18); }
+.surface-dark.surface-rule { border-color: var(--border); }
 
 /* Embedded panels (flight, lodging) — same shape, palette follows the
    nearest surface ancestor. */
 .embed-panel {
-  border: 1px solid #DDD3C2;
-  background: #FBF8F2;
-  color: #1A1614;
-  border-radius: 2px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: var(--radius);
   padding: 16px;
 }
 .surface-dark .embed-panel,
 .jj-paper .embed-panel,
 .helen-bone.helen-dark .embed-panel {
-  background: #1F1A14;
-  border-color: rgba(242, 235, 218, 0.18);
-  color: #F2EBDA;
+  background: var(--bg2);
+  border-color: var(--border);
+  color: var(--text);
 }
 
 /* Day chip strip — sticky inter-day nav. Sticky positioning and
@@ -272,23 +292,27 @@ button { font: inherit; }
   box-shadow: 0 1px 3px rgba(107, 42, 15, 0.1);
 }
 
-/* ---- Theme: Rafa ------------------------------------------------------ */
-.rafa-bg { background: #0E1530; color: #fff; }
-.rafa-card { background: #1A2447; }
-.rafa-card-2 { background: #251F47; }
-.rafa-yellow { color: #FFD93D; }
-.rafa-red { color: #FF4747; }
-.rafa-blue { color: #4DAEFF; }
-.rafa-green { color: #6BE3A0; }
-.rafa-bg-red { background: #E63333; }
-.rafa-bg-blue { background: #1F7BD8; }
-.rafa-bg-yellow { background: #F5C518; }
-.rafa-bg-green { background: #1FAE5F; }
-.rafa-rule { border-color: #2A3567; }
+/* ---- Theme: Rafa ------------------------------------------------------
+   Driven from Rafa's Design tokens (themes.css) — ochre warning on
+   near-black oxblood ground. The "mission" color callouts collapse to
+   the two Design accents (ochre + oxblood) instead of the prior
+   yellow/blue/red/green spread. */
+.rafa-bg { background: var(--bg); color: var(--text); }
+.rafa-card { background: var(--bg2); }
+.rafa-card-2 { background: var(--card); }
+.rafa-yellow { color: var(--accent); }    /* ochre */
+.rafa-red { color: var(--accent2); }      /* oxblood */
+.rafa-blue { color: var(--text); }
+.rafa-green { color: var(--accent); }
+.rafa-bg-red { background: var(--accent2); color: var(--text); }
+.rafa-bg-blue { background: var(--card); color: var(--text); }
+.rafa-bg-yellow { background: var(--accent); color: var(--accent-ink); }
+.rafa-bg-green { background: var(--accent); color: var(--accent-ink); }
+.rafa-rule { border-color: var(--border); }
 .grid-bg {
   background-image:
-    linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+    linear-gradient(rgba(255, 246, 232, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 246, 232, 0.04) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 

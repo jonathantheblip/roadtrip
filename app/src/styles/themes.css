@@ -18,109 +18,112 @@
 
 :root,
 [data-theme='jonathan'] {
-  /* Dark purple base with yellow + red accents. Deep indigo-purple
-     background, pale lavender-cream text, yellow for the primary
-     glow and red for the secondary alarm. */
-  --bg: #16102a;
-  --bg2: #1e1838;
-  --bg-nav: rgba(22, 16, 42, 0.82);
-  --card: #201a3a;
-  --text: #ece3f2;
-  --muted: #9a90b0;
-  --accent: #fdd835;
-  --accent2: #e53935;
-  --accent3: #fdd835;
-  --border: #2f2449;
-  --tag: #fdd835;
-  --tag-text: #16102a;
-  --radius: 14px;
-  /* Bloomberg Terminal meets whiskey bar — rim of yellow glow on
-     a deep purple base, with a subtle red wash for depth. */
-  --shadow-card: 0 0 0 1px rgba(253, 216, 53, 0.18),
-    0 8px 22px rgba(0, 0, 0, 0.5),
-    0 0 40px rgba(229, 57, 53, 0.04);
-  --shadow-card-hover: 0 0 0 1px rgba(253, 216, 53, 0.36),
-    0 12px 32px rgba(0, 0, 0, 0.6),
-    0 0 60px rgba(229, 57, 53, 0.08);
-  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --font-display: 'DM Serif Display', Georgia, serif;
-  --heading-weight: 400;
+  /* Editorial console — Kottke-dark. Paper-cream on near-black with
+     oxblood links. Per Design system.jsx TRAVELERS.jonathan.theme. */
+  --bg: #0E0F11;
+  --bg2: #15171A;
+  --bg-nav: rgba(14, 15, 17, 0.86);
+  --card: #1C1E22;
+  --text: #EDE6D6;
+  --muted: rgba(237, 230, 214, 0.58);
+  --faint: rgba(237, 230, 214, 0.30);
+  --accent: #A33A2E;          /* oxblood link */
+  --accent2: #A33A2E;
+  --accent3: #EDE6D6;         /* used as bright dot */
+  --accent-ink: #FFF6E8;
+  --border: rgba(237, 230, 214, 0.16);
+  --tag: #A33A2E;
+  --tag-text: #FFF6E8;
+  --radius: 6px;
+  /* Newsroom plate — thin oxblood rim, deep ink drop, no glow. */
+  --shadow-card: 0 0 0 1px rgba(237, 230, 214, 0.06),
+    0 8px 22px rgba(0, 0, 0, 0.55);
+  --shadow-card-hover: 0 0 0 1px rgba(163, 58, 46, 0.36),
+    0 12px 32px rgba(0, 0, 0, 0.7);
+  --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --heading-weight: 600;
   --body-weight: 400;
 }
 
 [data-theme='helen'] {
-  --bg: #f5f1ec;
-  --bg2: #eae5dd;
-  --bg-nav: rgba(245, 241, 236, 0.78);
-  --card: #ffffff;
-  --text: #3a3530;
-  --muted: #7a746a;
-  --accent: #6b8f8f;
-  --accent2: #b8956a;
-  --accent3: #6b8f8f;
-  --border: #d4cfc7;
-  --tag: #6b8f8f;
-  --tag-text: #fff;
-  --radius: 6px;
-  /* Kinfolk — soft sage shadow, paper-weight, whispers. */
-  --shadow-card: 0 1px 3px rgba(107, 143, 143, 0.08),
-    0 10px 30px rgba(107, 143, 143, 0.08);
-  --shadow-card-hover: 0 4px 8px rgba(107, 143, 143, 0.1),
-    0 18px 44px rgba(107, 143, 143, 0.12);
-  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --font-display: 'Playfair Display', Georgia, serif;
-  --heading-weight: 400;
+  /* Linen archive — sage on warm paper. */
+  --bg: #F2EFE7;
+  --bg2: #E6E1D2;
+  --bg-nav: rgba(242, 239, 231, 0.86);
+  --card: #FFFFFF;
+  --text: #15201A;
+  --muted: rgba(21, 32, 26, 0.62);
+  --faint: rgba(21, 32, 26, 0.32);
+  --accent: #2E5D3A;          /* forest */
+  --accent2: #2E5D3A;
+  --accent3: #2E5D3A;
+  --accent-ink: #FFFFFF;
+  --border: rgba(21, 32, 26, 0.13);
+  --tag: #2E5D3A;
+  --tag-text: #FFFFFF;
+  --radius: 4px;
+  --shadow-card: 0 1px 3px rgba(21, 32, 26, 0.06),
+    0 10px 30px rgba(21, 32, 26, 0.06);
+  --shadow-card-hover: 0 4px 8px rgba(21, 32, 26, 0.08),
+    0 18px 44px rgba(21, 32, 26, 0.10);
+  --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --heading-weight: 500;
   --body-weight: 400;
 }
 
 [data-theme='aurelia'] {
-  --bg: #fdf0f4;
-  --bg2: #f9e4ec;
-  --bg-nav: rgba(253, 240, 244, 0.82);
-  --card: #ffffff;
-  --text: #3a2030;
-  --muted: #9a7080;
-  --accent: #c2185b;
-  --accent2: #e91e80;
-  --accent3: #c2185b;
-  --border: #f0d0e0;
-  --tag: #c2185b;
-  --tag-text: #fff;
-  --radius: 18px;
-  /* Pinterest pin — soft pink drop shadow. */
-  --shadow-card: 0 1px 3px rgba(194, 24, 91, 0.08),
-    0 10px 28px rgba(194, 24, 91, 0.12);
-  --shadow-card-hover: 0 4px 10px rgba(194, 24, 91, 0.12),
-    0 18px 40px rgba(194, 24, 91, 0.18);
-  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --heading-weight: 700;
+  /* Hot-pink scrapbook on rose paper. */
+  --bg: #FCE8EE;
+  --bg2: #F8D2DF;
+  --bg-nav: rgba(252, 232, 238, 0.86);
+  --card: #FFF2F6;
+  --text: #3D0E22;
+  --muted: rgba(61, 14, 34, 0.62);
+  --faint: rgba(61, 14, 34, 0.32);
+  --accent: #E8478C;          /* hot pink */
+  --accent2: #E8478C;
+  --accent3: #E8478C;
+  --accent-ink: #FFFFFF;
+  --border: rgba(61, 14, 34, 0.14);
+  --tag: #E8478C;
+  --tag-text: #FFFFFF;
+  --radius: 14px;
+  --shadow-card: 0 1px 3px rgba(232, 71, 140, 0.10),
+    0 10px 28px rgba(232, 71, 140, 0.14);
+  --shadow-card-hover: 0 4px 10px rgba(232, 71, 140, 0.16),
+    0 18px 40px rgba(232, 71, 140, 0.20);
+  --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --heading-weight: 600;
   --body-weight: 500;
 }
 
 [data-theme='rafa'] {
-  --bg: #0a0e1a;
-  --bg2: #0f1528;
-  --bg-nav: rgba(8, 12, 22, 0.85);
-  --card: #141e30;
-  --text: #e0e8ff;
-  --muted: #8090c0;
-  --accent: #d32f2f;
-  --accent2: #1565c0;
-  --accent3: #fdd835;
-  --border: #1f2a42;
-  --tag: #d32f2f;
-  --tag-text: #fff;
+  /* Mission warning — ochre on near-black oxblood ground. */
+  --bg: #1A0A0B;
+  --bg2: #2A1012;
+  --bg-nav: rgba(26, 10, 11, 0.88);
+  --card: #3C1518;
+  --text: #FFF6E8;
+  --muted: rgba(255, 246, 232, 0.70);
+  --faint: rgba(255, 246, 232, 0.38);
+  --accent: #FFB833;          /* ochre warning */
+  --accent2: #C9342A;         /* oxblood */
+  --accent3: #FFB833;
+  --accent-ink: #1A0A0B;
+  --border: rgba(255, 246, 232, 0.18);
+  --tag: #FFB833;
+  --tag-text: #1A0A0B;
   --radius: 4px;
-  /* Mission control — electric blue rim + black depth, slight red wash. */
-  --shadow-card: 0 0 0 1px rgba(21, 101, 192, 0.4),
-    0 8px 32px rgba(0, 0, 0, 0.6), 0 0 60px rgba(21, 101, 192, 0.05);
-  --shadow-card-hover: 0 0 0 1px rgba(21, 101, 192, 0.7),
-    0 12px 42px rgba(0, 0, 0, 0.7),
-    0 0 80px rgba(21, 101, 192, 0.12);
-  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --heading-weight: 900;
+  --shadow-card: 0 0 0 1px rgba(255, 184, 51, 0.18),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+  --shadow-card-hover: 0 0 0 1px rgba(255, 184, 51, 0.36),
+    0 12px 42px rgba(0, 0, 0, 0.8);
+  --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --heading-weight: 700;
   --body-weight: 500;
 }
 
@@ -151,26 +154,30 @@ body {
    a descendant of an element with the attr — which never matches
    since body can't be its own descendant). */
 
-/* Rafa's deep-space backdrop gets fixed radial gradients so the theme
-   feels lit from two directions, not painted flat. */
+/* Rafa's near-black ground gets a warm-ochre top wash and an oxblood
+   bottom wash — the same warning-glow lighting as the Design Phone. */
 body[data-theme='rafa'] {
   background-image:
-    radial-gradient(ellipse at 20% 0%, rgba(21, 101, 192, 0.18) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 100%, rgba(211, 47, 47, 0.12) 0%, transparent 50%);
+    radial-gradient(ellipse at 50% 0%, rgba(255, 184, 51, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 100%, rgba(201, 52, 42, 0.18) 0%, transparent 50%);
   background-attachment: fixed;
 }
 
-/* Helen's warm linen backdrop gets a subtle warm wash near the top. */
+/* Helen's warm linen backdrop with a paper-bright top wash. */
 body[data-theme='helen'] {
-  background-image: radial-gradient(ellipse at top, #fbf8f3 0%, var(--bg) 60%);
+  background-image: radial-gradient(ellipse at top, #FBF7EE 0%, var(--bg) 60%);
   background-attachment: fixed;
 }
 
-/* Jonathan's dark purple backdrop gets a yellow-wash top and a red
-   wash bottom to pick up the accents. Feels lit, not flat. */
+/* Jonathan's Kottke-dark ground stays mostly flat — a single faint
+   oxblood top wash keeps it from looking like a void. */
 body[data-theme='jonathan'] {
   background-image:
-    radial-gradient(ellipse at 50% 0%, rgba(253, 216, 53, 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse at 50% 100%, rgba(229, 57, 53, 0.08) 0%, transparent 50%);
+    radial-gradient(ellipse at 50% 0%, rgba(163, 58, 46, 0.06) 0%, transparent 50%);
   background-attachment: fixed;
+}
+
+/* Aurelia's rose paper is intentionally flat — the cards do the work. */
+body[data-theme='aurelia'] {
+  background-image: none;
 }
