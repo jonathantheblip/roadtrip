@@ -7,6 +7,7 @@ import {
   deleteMemory,
 } from '../lib/memoryStore'
 import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
+import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
 import { Avatar, AvatarStack } from './Avatar'
 import { VoiceRecorder } from './VoiceRecorder'
 
@@ -63,10 +64,8 @@ export function ThreadedMemories({ trip, stop, traveler }) {
     // Save audio to IndexedDB and write a pending Memory immediately so
     // the bubble appears in-thread right away. Transcript fills in once
     // Whisper returns.
-    const audioKey = `mem_${Date.now().toString(36)}_${Math.random()
-      .toString(36)
-      .slice(2, 7)}`
-    await saveAudioBlob(audioKey, blob, mime)
+    const audioKey = makeAssetKey('audio')
+    await saveAsset('audio', audioKey, blob, mime)
     const initial = saveMemory({
       tripId: trip.id,
       stopId: stop.id,
@@ -275,7 +274,7 @@ function VoiceBubble({ mem, isMe, dot }) {
   useEffect(() => {
     let active = true
     if (mem.audioRef?.key) {
-      loadAudioBlob(mem.audioRef.key).then((blob) => {
+      loadAsset('audio', mem.audioRef.key).then((blob) => {
         if (!active || !blob) return
         const u = URL.createObjectURL(blob)
         setUrl(u)
@@ -518,52 +517,6 @@ function Composer({
       </div>
     </div>
   )
-}
-
-// ---- IndexedDB helpers for voice blobs (separate store from the
-// daily AudioMemo flow). Keyed by an opaque random key referenced from
-// the Memory record's audioRef. -----------------------------------
-
-const DB_NAME = 'roadtrip-mem-audio'
-const STORE = 'audio'
-let dbP = null
-function openDb() {
-  if (dbP) return dbP
-  dbP = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1)
-    req.onupgradeneeded = () => {
-      const db = req.result
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'key' })
-      }
-    }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-  dbP.catch(() => {
-    if (dbP) dbP = null
-  })
-  return dbP
-}
-
-async function saveAudioBlob(key, blob, mime) {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, 'readwrite')
-    t.objectStore(STORE).put({ key, blob, mime, savedAt: Date.now() })
-    t.oncomplete = () => resolve()
-    t.onerror = () => reject(t.error)
-  })
-}
-
-async function loadAudioBlob(key) {
-  const db = await openDb()
-  return new Promise((resolve) => {
-    const t = db.transaction(STORE)
-    const req = t.objectStore(STORE).get(key)
-    req.onsuccess = () => resolve(req.result?.blob || null)
-    req.onerror = () => resolve(null)
-  })
 }
 
 function formatTime(iso) {

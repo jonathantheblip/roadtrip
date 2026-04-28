@@ -281,6 +281,10 @@ Memory {
   transcriptLang?: string        // BCP-47, e.g. 'en'
   transcriptionStatus?: 'pending' | 'done' | 'failed' | 'skipped'
 
+  // photo-kind (PostcardComposer / Direction 03)
+  photoRef?: { storage: 'idb', key: string }   // single attached photo
+  mood?: string                  // free string; Postcard surfaces "felt {mood}"
+
   // social
   reactions?: Array<{ by: TravelerId, emoji: string, at: ISO8601 }>
 

@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
+import { loadAsset } from '../lib/memAssets'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { Avatar, AvatarStack } from '../components/Avatar'
+import { PostcardComposer } from '../components/PostcardComposer'
 import { allStops } from '../data/trips'
 
 // Aurelia — Postcard Scrapbook ("Trip Book"). Design-bundle authoritative
@@ -10,11 +13,15 @@ import { allStops } from '../data/trips'
 // avatars, location). Hot-pink FAB at the bottom-right.
 
 export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
-  // Pull the live memories for this trip and turn them into postcards.
+  // Re-render after the composer saves so the new postcard pops in.
+  const [refreshTick, setRefreshTick] = useState(0)
+  const [composing, setComposing] = useState(false)
   const mems = listMemoriesForTrip(trip.id, traveler)
   const stopsById = new Map(
     allStops(trip).map((s) => [s.id, s])
   )
+  // Suppress unused-warning while keeping the dep in scope.
+  void refreshTick
 
   // Tilts give the postcard pile its scrapbook feel. Stable per memory id
   // so a re-render doesn't shuffle them.
@@ -104,10 +111,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
       <button
         type="button"
         aria-label="Compose postcard"
-        onClick={() => {
-          const target = trip.days[0]?.stops?.[0]
-          if (target) onOpenStop(trip.days[0].n, target.id)
-        }}
+        onClick={() => setComposing(true)}
         style={{
           position: 'fixed',
           right: 16,
@@ -127,6 +131,17 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
       >
         +
       </button>
+
+      {composing && (
+        <PostcardComposer
+          trip={trip}
+          traveler={traveler}
+          onClose={(result) => {
+            setComposing(false)
+            if (result?.saved) setRefreshTick((t) => t + 1)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -136,9 +151,25 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
   const time = formatTime(mem.createdAt)
   const loc = (stop?.address || '').split(',')[0] || ''
   const taggedBy = stop?.for || []
-  const mood = inferMood(mem)
+  const mood = mem.mood || inferMood(mem)
   const caption =
     mem.text || mem.caption || mem.transcript || '(saved without words)'
+  const [photoUrl, setPhotoUrl] = useState(null)
+  useEffect(() => {
+    let active = true
+    if (mem.photoRef?.key) {
+      loadAsset('photo', mem.photoRef.key).then((blob) => {
+        if (!active || !blob) return
+        const u = URL.createObjectURL(blob)
+        setPhotoUrl(u)
+      })
+    }
+    return () => {
+      active = false
+      if (photoUrl) URL.revokeObjectURL(photoUrl)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mem.photoRef?.key])
 
   return (
     <button
@@ -176,7 +207,9 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
           width: '100%',
           aspectRatio: '5 / 3',
           borderRadius: 2,
-          background: `repeating-linear-gradient(45deg, ${tint}, ${tint} 6px, ${shade(tint, -10)} 6px, ${shade(tint, -10)} 12px)`,
+          background: photoUrl
+            ? `url(${photoUrl}) center/cover no-repeat`
+            : `repeating-linear-gradient(45deg, ${tint}, ${tint} 6px, ${shade(tint, -10)} 6px, ${shade(tint, -10)} 12px)`,
         }}
       />
       <div

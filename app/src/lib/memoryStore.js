@@ -12,7 +12,9 @@
 //   { id, stopId, tripId, authorTraveler, visibility, kind,
 //     text?, photoExternalURLs?, caption?,
 //     audioRef?, durationSeconds?, transcript?, transcriptLang?,
-//     transcriptionStatus?, reactions?,
+//     transcriptionStatus?,
+//     photoRef?, mood?,
+//     reactions?,
 //     createdAt, updatedAt }
 //
 // Backward compatibility: pre-§4 records have no `kind`. Read paths
@@ -75,6 +77,8 @@ export function saveMemory({
   transcript,
   transcriptLang,
   transcriptionStatus,
+  photoRef,
+  mood,
   reactions,
 }) {
   const now = new Date().toISOString()
@@ -96,7 +100,9 @@ export function saveMemory({
 
   // Default kind for legacy callers that only pass text. New surfaces
   // always set kind explicitly.
-  const resolvedKind = kind || (audioRef ? 'voice' : photoExternalURLs?.length ? 'photo' : 'text')
+  const resolvedKind =
+    kind ||
+    (audioRef ? 'voice' : photoRef || photoExternalURLs?.length ? 'photo' : 'text')
 
   const record = {
     id: id || makeId(),
@@ -113,6 +119,8 @@ export function saveMemory({
     transcript,
     transcriptLang,
     transcriptionStatus,
+    photoRef,
+    mood,
     reactions: reactions || [],
     createdAt: existingShared?.createdAt || existingPriv?.createdAt || now,
     updatedAt: now,
