@@ -73,6 +73,33 @@
   --body-weight: 400;
 }
 
+[data-theme='helen-dark'] {
+  /* Linen archive at night — warm near-black with oxblood accents. */
+  --bg: #14110D;
+  --bg2: #1F1B14;
+  --bg-nav: rgba(20, 17, 13, 0.88);
+  --card: #2A241B;
+  --text: #F2EBDA;
+  --muted: rgba(242, 235, 218, 0.62);
+  --faint: rgba(242, 235, 218, 0.32);
+  --accent: #B0463F;          /* oxblood, a touch warm so photos pop */
+  --accent2: #B0463F;
+  --accent3: #B0463F;
+  --accent-ink: #F2EBDA;
+  --border: rgba(242, 235, 218, 0.13);
+  --tag: #B0463F;
+  --tag-text: #F2EBDA;
+  --radius: 4px;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-card-hover: 0 4px 8px rgba(0, 0, 0, 0.45),
+    0 18px 44px rgba(0, 0, 0, 0.45);
+  --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --heading-weight: 500;
+  --body-weight: 400;
+}
+
 [data-theme='aurelia'] {
   /* Hot-pink scrapbook on rose paper. */
   --bg: #FCE8EE;
@@ -166,6 +193,13 @@ body[data-theme='rafa'] {
 /* Helen's warm linen backdrop with a paper-bright top wash. */
 body[data-theme='helen'] {
   background-image: radial-gradient(ellipse at top, #FBF7EE 0%, var(--bg) 60%);
+  background-attachment: fixed;
+}
+
+/* Helen-dark: a faint oxblood top wash so the warm near-black feels
+   lit-from-above rather than flat. */
+body[data-theme='helen-dark'] {
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(176, 70, 63, 0.10) 0%, transparent 55%);
   background-attachment: fixed;
 }
 

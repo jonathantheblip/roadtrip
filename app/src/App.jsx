@@ -110,8 +110,6 @@ export default function App() {
       /* ignore */
     }
     writeTravelerCookie(traveler)
-    document.documentElement.setAttribute('data-theme', traveler)
-    document.body.setAttribute('data-theme', traveler)
     try {
       const url = new URL(window.location.href)
       if (url.searchParams.get('person') !== traveler) {
@@ -122,6 +120,14 @@ export default function App() {
       /* ignore */
     }
   }, [traveler])
+
+  // The CSS theme cascade. Helen has two palettes — `helen` (linen
+  // archive) and `helen-dark` (oxblood evening). Re-runs on toggle.
+  useEffect(() => {
+    const themeName = traveler === 'helen' && helenDark ? 'helen-dark' : traveler
+    document.documentElement.setAttribute('data-theme', themeName)
+    document.body.setAttribute('data-theme', themeName)
+  }, [traveler, helenDark])
 
   // Mirror tripId in the URL too, so a home-screen save remembers it.
   useEffect(() => {
