@@ -4,6 +4,13 @@
 **Target implementer:** Claude Code
 **Scope:** Three additions to Spec v2. Same non-negotiables apply (offline-capable, one-handed iPhone use, per-persona theming preserved).
 
+> **Naming note (2026-04-27):** code comments and earlier drafts refer to
+> `TripPlatform_BuildSpec_v2.md`. That file does not exist — the canonical
+> spec is this document (`ROADTRIP_PWA_BUILD_SPEC_V3.md`) plus its V2
+> ancestor. Treat this V3 as authoritative. The §4 / §6 references in
+> `app/src/lib/memoryStore.js` and `app/src/styles/platform.css` resolve
+> to §4 (Memory schema) and §6 (Per-view dark mode) below.
+
 ## What's new in v3
 
 1. **Feature 4 — Closure & Risk Watch** (proactive closure flagging)
@@ -240,6 +247,193 @@ Features 4 and 5 are small and can slot in opportunistically. Don't block anythi
 ## Seed data notes
 
 When Feature 1 is built, seed with `saturday_apr18_actual.md`. When Feature 4 is built, seed with the closure list in this document. When all three are live, the app has real content from day one instead of being empty.
+
+## §4 — Memory record schema (Design-authoritative, 2026-04-27)
+
+Supersedes prior loose treatment of memories as a single textarea per stop.
+The Family Trips Redesign bundle (Claude Design handoff, 2026-04-27)
+re-modelled memories as **threaded items per stop** — collaboration-first.
+Where this section conflicts with anything else in V2 / V3 prose, this
+section wins.
+
+### Record shape
+
+```ts
+Memory {
+  id: string                 // "mem_<base36>_<rand>"
+  tripId: string             // e.g. "nyc-rafa-2026"
+  stopId: string             // e.g. "n2-4"
+  authorTraveler: TravelerId // 'jonathan' | 'helen' | 'aurelia' | 'rafa'
+  visibility: 'shared' | 'private'
+  kind: 'text' | 'photo' | 'voice'
+
+  // text-kind
+  text?: string
+
+  // photo-kind
+  photoExternalURLs?: string[]   // CloudKit asset URLs (Pass 2)
+  caption?: string
+
+  // voice-kind (Whisper-transcribed; see §7)
+  audioRef?: { storage: 'idb', key: string }   // local IndexedDB blob
+  durationSeconds?: number
+  transcript?: string
+  transcriptLang?: string        // BCP-47, e.g. 'en'
+  transcriptionStatus?: 'pending' | 'done' | 'failed' | 'skipped'
+
+  // social
+  reactions?: Array<{ by: TravelerId, emoji: string, at: ISO8601 }>
+
+  // bookkeeping
+  createdAt: ISO8601
+  updatedAt: ISO8601
+}
+```
+
+### Backward compatibility (Pass 1 → Pass 2)
+
+The Pass-1 store (`app/src/lib/memoryStore.js`) writes records with no
+`kind`. Read paths must treat a missing `kind` as `'text'`. New writes
+always set `kind`. Migration is lazy — records get the field on next
+update; no batch rewrite.
+
+### CloudKit mapping
+
+When CloudKit JS lands (container approval received 2026-04-27, schema
+provisioning still pending Apple Dev console clicks):
+
+- Record type: `Memory`
+- Zones: `_defaultZone` (private) + `Family` custom zone (shared)
+- Fields: 1:1 with the shape above. `audioRef` becomes `audio: CKAsset`;
+  `photoExternalURLs` becomes `photos: [CKAsset]`. `reactions` is
+  serialised as a JSON string in `reactionsJson` (CloudKit doesn't have
+  arrays of records natively).
+
+### UI (per Design bundle)
+
+Four directions exist as artboards; Direction 02 (Threaded Memories) is
+the recommended primary surface, with Direction 04 (Voice-First Field
+Recorder) folded in as the in-thread compose mode. Build order:
+
+1. Pass 1 (now): single-author per-stop textarea + voice memo button
+   that records, transcribes, and saves the transcript as the memory
+   text. (Already shipped before this push; this section retro-documents
+   the schema.)
+2. Pass 2 (CloudKit live): threaded view, multiple memories per stop,
+   reactions, photo attachments via CloudKit assets.
+3. Pass 3: Direction 03 "postcard" finishing-move on a memory you love.
+
+### Open questions
+
+- Reaction emoji set: free-form vs. curated (the Design uses heart /
+  pizza / camera / etc. — defer to Pass 2).
+- Per-traveler memory feeds ("Aurelia's only thread"): mentioned as
+  "next" in the Design cover note. Defer to Pass 3.
+
+---
+
+## §5b — Flight tracking schema (FlightAware AeroAPI v4)
+
+Lives in `app/src/lib/flightStatus.js`. Already implemented; the
+AeroAPI key is pending and will be wired via a Cloudflare Worker proxy
+(set `VITE_FLIGHT_API` to the proxy URL). The browser never sees the key.
+
+### Per-stop fields (in `data/trips.js`)
+
+```ts
+Stop {
+  // ...standard stop fields
+  flightNumber?: string         // "DL4961" — IATA accepted
+  flightOrigin?: string         // "IND" — IATA airport
+  flightDest?: string           // "LGA"
+  flightDate?: string           // "2026-05-01" (YYYY-MM-DD, local to origin)
+  scheduledArrivalLocal?: string // "17:17" (HH:MM, destination local)
+}
+```
+
+### Live response shape (normalised from AeroAPI)
+
+```ts
+FlightStatus {
+  status: 'scheduled' | 'active' | 'delayed' | 'landed' | 'cancelled' | 'diverted'
+  scheduledArrival: ISO8601 | null
+  estimatedArrival: ISO8601 | null
+  actualArrival: ISO8601 | null
+  origin:      { airport, terminal, gate }
+  destination: { airport, terminal, gate, baggage }
+  delayMinutes: number
+}
+```
+
+### Fallback behaviour
+
+Without a proxy URL, `getFlightStatus()` returns `null` and the UI
+degrades to a "tap for live" link to the FlightAware public page for
+the flight (`/live/flight/<ident>`). No carrier-detection logic; works
+for all airlines.
+
+---
+
+## §6 — Per-view dark mode
+
+Already wired in `app/src/App.jsx` (`darkSurface`) and
+`app/src/hooks/useHelenDark.js`. Documented here so future work doesn't
+re-litigate.
+
+| Traveler | Surface | Override |
+|---|---|---|
+| Jonathan | Permanent dark (charcoal/cream) | none |
+| Helen    | Light by default | toggle in her settings (`useHelenDark`) |
+| Aurelia  | Permanent light (pink) | none |
+| Rafa     | Unchanged from current build (deep blue mission-control) | none |
+
+The Design bundle proposes alternate per-traveler tokens (Helen sage
+`#2E5D3A`, Aurelia hot pink `#E8478C`, Rafa ochre on near-black). Those
+are explicitly **deferred** — the user's instruction was "polish, not
+redesign." Apply Design dot colors via `data/travelers.js` for memory
+attribution; keep shipped surface palettes intact.
+
+---
+
+## §7 — Voice transcription (OpenAI Whisper)
+
+Drives the Direction-04 voice-first authoring surface.
+
+### Pipeline
+
+1. `AudioMemo` records via MediaRecorder API (m4a / webm fallback).
+2. Blob saved to IndexedDB via `utils/actualLog`.
+3. `lib/whisper.js#transcribeAudio(blob)` POSTs `multipart/form-data` to
+   `${VITE_WHISPER_PROXY}/audio/transcriptions` with `model=whisper-1`.
+4. The proxy injects `Authorization: Bearer $OPENAI_API_KEY` and
+   forwards to `https://api.openai.com/v1/audio/transcriptions`.
+5. Returned transcript is attached to the Memory as `transcript`,
+   `transcriptionStatus = 'done'`. On failure: `'failed'` with the
+   audio still playable.
+
+### Local development
+
+Vite dev server proxies `/openai-proxy/*` to `https://api.openai.com/v1/*`,
+reading `OPENAI_API_KEY` from `.env` (server-side only — never bundled
+into the client). Set `VITE_WHISPER_PROXY=/openai-proxy` for local dev.
+
+### Production
+
+Same shape, different proxy URL — point `VITE_WHISPER_PROXY` at a
+Cloudflare Worker (TBD; tracked alongside the AeroAPI worker in the
+GitHub Pages → Worker integration backlog). Without a configured proxy,
+recording still works but transcription is silently skipped
+(`transcriptionStatus = 'skipped'`).
+
+### Cost / safety notes
+
+- Whisper-1 is $0.006/min. 60-second cap per memo → ~$0.36/hour of
+  recordings. Negligible for a family of four on a single trip.
+- Never expose `OPENAI_API_KEY` to the browser. The Vite dev proxy is
+  fine for local; production must go through a Worker.
+- `.env` is `.gitignore`d (rule added 2026-04-27).
+
+---
 
 ## Non-negotiables (unchanged from v2)
 

@@ -8,9 +8,15 @@
 //   "private" → author-only, never appears for other travelers
 //               (now: localStorage namespaced by traveler id)
 //
-// Schema (matches spec §4):
-//   { id, stopId, tripId, authorTraveler, visibility, text,
-//     photoExternalURLs, createdAt, updatedAt }
+// Schema (V3 spec §4 — Design-authoritative):
+//   { id, stopId, tripId, authorTraveler, visibility, kind,
+//     text?, photoExternalURLs?, caption?,
+//     audioRef?, durationSeconds?, transcript?, transcriptLang?,
+//     transcriptionStatus?, reactions?,
+//     createdAt, updatedAt }
+//
+// Backward compatibility: pre-§4 records have no `kind`. Read paths
+// treat missing `kind` as 'text'. New writes always set `kind`.
 
 const SHARED_KEY = 'rt_memories_shared_v1'
 const PRIVATE_KEY = (traveler) => `rt_memories_private_${traveler}_v1`
@@ -60,12 +66,19 @@ export function saveMemory({
   stopId,
   authorTraveler,
   visibility,
+  kind,
   text,
-  photoExternalURLs = [],
+  caption,
+  photoExternalURLs,
+  audioRef,
+  durationSeconds,
+  transcript,
+  transcriptLang,
+  transcriptionStatus,
+  reactions,
 }) {
   const now = new Date().toISOString()
   const key = visibility === 'private' ? PRIVATE_KEY(authorTraveler) : SHARED_KEY
-  const list = readJson(key)
 
   // Find any existing record across both keys (move-between-zones case)
   const sharedList = readJson(SHARED_KEY)
@@ -81,14 +94,26 @@ export function saveMemory({
     writeJson(PRIVATE_KEY(authorTraveler), privList.filter((m) => m.id !== id))
   }
 
+  // Default kind for legacy callers that only pass text. New surfaces
+  // always set kind explicitly.
+  const resolvedKind = kind || (audioRef ? 'voice' : photoExternalURLs?.length ? 'photo' : 'text')
+
   const record = {
     id: id || makeId(),
     tripId,
     stopId,
     authorTraveler,
     visibility,
+    kind: resolvedKind,
     text,
-    photoExternalURLs,
+    caption,
+    photoExternalURLs: photoExternalURLs || [],
+    audioRef,
+    durationSeconds,
+    transcript,
+    transcriptLang,
+    transcriptionStatus,
+    reactions: reactions || [],
     createdAt: existingShared?.createdAt || existingPriv?.createdAt || now,
     updatedAt: now,
   }

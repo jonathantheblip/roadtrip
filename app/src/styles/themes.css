@@ -2,6 +2,18 @@
    THEME SYSTEM — CSS custom properties per theme
    Applied via [data-theme="<person>"] on <body>. Values drive every
    themed surface in the app (backgrounds, cards, text, accents, fonts).
+
+   The Family Trips Redesign bundle (Claude Design handoff, 2026-04-27)
+   proposes alternate per-traveler tokens — Helen sage `#2E5D3A`,
+   Aurelia hot pink `#E8478C`, Rafa ochre `#FFB833` on near-black
+   `#1A0A0B`, Jonathan oxblood `#A33A2E` on `#0E0F11`. Those are
+   deferred per "polish, not redesign" guidance — only the per-traveler
+   *dot* colors are imported (see app/src/data/travelers.js TRAVELER_DOT).
+
+   Per-view dark mode (V3 spec §6): Jonathan permanent dark, Helen
+   toggle (useHelenDark), Aurelia permanent light, Rafa unchanged
+   (deep-blue mission-control). Those rules live in App.jsx
+   (`darkSurface`); this file only defines the surface tokens.
    ========================================================================== */
 
 :root,

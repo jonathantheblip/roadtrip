@@ -1,6 +1,13 @@
 // Per-traveler integration mapping. The themed views read this to decide
 // which Maps app to deep-link to, which music service to surface, etc.
-// Mirrors the table in TripPlatform_BuildSpec_v2.md §5.
+// Mirrors the table in V3 spec §5 (legacy comments referenced
+// `TripPlatform_BuildSpec_v2.md` — see V3 naming note at the top of
+// ROADTRIP_PWA_BUILD_SPEC_V3.md).
+//
+// TRAVELER_DOT below mirrors the Family Trips Redesign bundle's
+// per-traveler dot colors (system.jsx → TRAVELERS[*].dot). These are
+// the canonical author-attribution colors and are independent of each
+// view's surface palette in themes.css.
 
 export const TRAVELER_ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
 
@@ -52,9 +59,12 @@ export const TRAVELERS = {
 }
 
 // Person-tag swatches used inside themed surfaces (small dots / chips).
+// Aligned with the Design bundle's traveler dots — Jonathan navy,
+// Helen forest, Aurelia hot pink, Rafa oxblood. Drives memory
+// attribution chips in StopDetail and the threaded-memory direction.
 export const TRAVELER_DOT = {
-  jonathan: '#1A1614',
-  helen: '#8B2B1F',
-  aurelia: '#C77A45',
-  rafa: '#E63333',
+  jonathan: '#1E3A6F',
+  helen: '#2E5D3A',
+  aurelia: '#E8478C',
+  rafa: '#C9342A',
 }

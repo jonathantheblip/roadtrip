@@ -156,13 +156,24 @@ export async function getAllDays() {
 
 // -------- audio memos (Feature 6) --------
 
-export async function saveMemo({ date, blob, durationSeconds, mime }) {
+export async function saveMemo({
+  date,
+  blob,
+  durationSeconds,
+  mime,
+  transcript,
+  transcriptLang,
+  transcriptionStatus,
+}) {
   const record = {
     date,
     blob,
     durationSeconds,
     mime: mime || blob?.type || 'audio/mp4',
     recordedAt: new Date().toISOString(),
+    transcript: transcript ?? null,
+    transcriptLang: transcriptLang ?? null,
+    transcriptionStatus: transcriptionStatus ?? 'pending',
   }
   const { t, stores } = await tx(['memos'], 'readwrite')
   stores[0].put(record)
@@ -171,6 +182,25 @@ export async function saveMemo({ date, blob, durationSeconds, mime }) {
     t.onerror = () => reject(t.error)
   })
   return record
+}
+
+// Patch an existing memo with a transcript after async Whisper return.
+export async function updateMemoTranscript(date, { transcript, transcriptLang, transcriptionStatus }) {
+  const { t, stores } = await tx(['memos'], 'readwrite')
+  const cur = await req2promise(stores[0].get(date))
+  if (!cur) return null
+  const next = {
+    ...cur,
+    transcript: transcript ?? cur.transcript ?? null,
+    transcriptLang: transcriptLang ?? cur.transcriptLang ?? null,
+    transcriptionStatus: transcriptionStatus ?? cur.transcriptionStatus ?? 'pending',
+  }
+  stores[0].put(next)
+  await new Promise((resolve, reject) => {
+    t.oncomplete = resolve
+    t.onerror = () => reject(t.error)
+  })
+  return next
 }
 
 export async function getMemo(date) {

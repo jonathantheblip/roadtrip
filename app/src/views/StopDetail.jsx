@@ -10,6 +10,7 @@ import {
 } from '../lib/memoryStore'
 import { FlightStatus } from './FlightStatus'
 import { DayChips } from './DayChips'
+import { AudioMemo } from '../components/AudioMemo'
 
 function urlLabel(stop) {
   const ticketKinds = new Set(['theater', 'show', 'concert', 'tour', 'arrival', 'departure'])
@@ -194,6 +195,15 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
             ? 'Saved only to your device.'
             : 'Saved to the family share. CloudKit sync wires up next.'}
         </p>
+
+        {day?.isoDate && (
+          <div style={{ marginTop: 24 }}>
+            <p className="smallcaps f-dm text-[11px] opacity-70 mb-2">
+              Voice memo · one per day
+            </p>
+            <AudioMemo date={day.isoDate} />
+          </div>
+        )}
       </section>
 
       {sharedMemories.length > 0 && (

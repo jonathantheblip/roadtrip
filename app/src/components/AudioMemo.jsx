@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { saveMemo, getMemo, deleteMemo, memoFilename } from '../utils/actualLog'
+import {
+  saveMemo,
+  getMemo,
+  deleteMemo,
+  memoFilename,
+  updateMemoTranscript,
+} from '../utils/actualLog'
+import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 
 // Feature 6 — Daily Audio Memo.
 // One memo per day, hard capped at 60 seconds.
@@ -96,12 +103,31 @@ export function AudioMemo({ date }) {
         const usedMime = recorder.mimeType || 'audio/mp4'
         const blob = new Blob(chunksRef.current, { type: usedMime })
         const dur = Math.min(MAX_SECONDS, Math.round((Date.now() - startedAtRef.current) / 1000))
-        const saved = await saveMemo({ date, blob, durationSeconds: dur, mime: usedMime })
+        const initialStatus = isWhisperConfigured() ? 'pending' : 'skipped'
+        const saved = await saveMemo({
+          date,
+          blob,
+          durationSeconds: dur,
+          mime: usedMime,
+          transcriptionStatus: initialStatus,
+        })
         setMemo(saved)
         setAudioUrlTracked(URL.createObjectURL(blob))
         stopAllTracks()
         setRecording(false)
         setElapsed(0)
+        // Fire-and-forget transcription. The memo is already saved and
+        // playable; the transcript is a bonus that arrives async.
+        if (isWhisperConfigured()) {
+          transcribeWithStatus(blob).then(async (out) => {
+            const patched = await updateMemoTranscript(date, {
+              transcript: out.transcript || null,
+              transcriptLang: out.language || null,
+              transcriptionStatus: out.status,
+            })
+            if (patched) setMemo(patched)
+          })
+        }
       }
       startedAtRef.current = Date.now()
       recorder.start()
@@ -169,6 +195,30 @@ export function AudioMemo({ date }) {
         <>
           {audioUrl && (
             <audio className="memo-player" controls src={audioUrl} preload="metadata" />
+          )}
+          {memo.transcriptionStatus === 'pending' && (
+            <p className="sub" style={{ marginTop: 8, fontStyle: 'italic', opacity: 0.7 }}>
+              Transcribing…
+            </p>
+          )}
+          {memo.transcriptionStatus === 'done' && memo.transcript && (
+            <blockquote
+              style={{
+                margin: '10px 0 4px',
+                padding: '8px 12px',
+                borderLeft: '3px solid currentColor',
+                opacity: 0.85,
+                fontSize: 14,
+                lineHeight: 1.45,
+              }}
+            >
+              {memo.transcript}
+            </blockquote>
+          )}
+          {memo.transcriptionStatus === 'failed' && (
+            <p className="sub" style={{ marginTop: 8, opacity: 0.6 }}>
+              Transcription failed — audio still saved.
+            </p>
           )}
           <div className="form-actions">
             <button type="button" className="btn-secondary" onClick={startRecording}>
