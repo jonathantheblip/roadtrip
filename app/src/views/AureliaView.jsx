@@ -1,145 +1,356 @@
-import { Music, Lock } from 'lucide-react'
+import { listMemoriesForTrip } from '../lib/memoryStore'
+import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { Avatar, AvatarStack } from '../components/Avatar'
 import { allStops } from '../data/trips'
-import { listMemoriesForStop } from '../lib/memoryStore'
-import { FlightStatus, findArrivalStop } from './FlightStatus'
-import { DayChips } from './DayChips'
-import { RoadSearch } from './RoadSearch'
 
-// Aurelia's view — peach/blush, Caprasimo, scrapbook register.
-// Day chips at top jump between days; vertical scroll runs through her
-// stops in chronological order, day by day. Hero card preserved at the
-// top when the trip has one tagged for her.
-export function AureliaView({ trip, traveler, onOpenStop }) {
-  const aureliaStops = allStops(trip).filter((s) => s.for.includes('aurelia'))
-  const heroForAurelia =
-    trip.heroStopId && aureliaStops.find((s) => s.id === trip.heroStopId)
-  const hero =
-    heroForAurelia ||
-    aureliaStops.find((s) => /rice/i.test(s.name)) ||
-    aureliaStops[0]
-  const arrival = findArrivalStop(trip)
+// Aurelia — Postcard Scrapbook ("Trip Book"). Design-bundle authoritative
+// (prototype.jsx#AureliaBook). Italic serif title on rose paper, a stack
+// of slightly-rotated polaroid cards (each carrying tape, a photo
+// placeholder, an italic quote, author + time + felt-mood, WITH
+// avatars, location). Hot-pink FAB at the bottom-right.
+
+export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
+  // Pull the live memories for this trip and turn them into postcards.
+  const mems = listMemoriesForTrip(trip.id, traveler)
+  const stopsById = new Map(
+    allStops(trip).map((s) => [s.id, s])
+  )
+
+  // Tilts give the postcard pile its scrapbook feel. Stable per memory id
+  // so a re-render doesn't shuffle them.
+  function tiltFor(id) {
+    let h = 0
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+    const range = 3.5 // ±3.5 deg
+    return ((h % 1000) / 1000 - 0.5) * 2 * range
+  }
+
+  // Tints cycle through Aurelia's warm scrapbook palette.
+  const tints = ['#e8a880', '#c9a890', '#b8a8c8', '#d6c5a8', '#e8c2b0']
 
   return (
-    <div className="min-h-screen au-cream pb-32">
-      <header className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="w-2 h-2 rounded-full pulse-dot" style={{ background: '#F0A36B' }}></span>
-          <p className="f-mono text-[10px] tt-widest uppercase opacity-50">A · since 2012</p>
+    <div
+      style={{
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        minHeight: '100vh',
+        paddingBottom: 120,
+        position: 'relative',
+      }}
+    >
+      <div
+        style={{
+          padding: '60px 18px 0',
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Eyebrow color="var(--muted)">A · SINCE 2012</Eyebrow>
+        <Eyebrow color="var(--muted)">HER STUFF</Eyebrow>
+      </div>
+      <div style={{ padding: '8px 18px 12px' }}>
+        <div
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 36,
+            fontWeight: 700,
+            lineHeight: 0.95,
+            fontStyle: 'italic',
+            color: 'var(--text)',
+          }}
+        >
+          Aurelia's<br />Trip Book
         </div>
-        <h1 className="f-cap text-5xl leading-85 au-deep">
-          Aurelia's
-          <br />
-          Trip Book
-        </h1>
-        <p className="f-news-i text-base opacity-70 mt-3">
-          A place for what you actually cared about.
-        </p>
-      </header>
-
-      <DayChips days={trip.days} />
-
-      {arrival && (
-        <section className="px-6 pb-6">
-          <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
-        </section>
-      )}
-
-      {hero && (
-        <section className="px-6 pb-6">
-          <div
-            className="relative au-blush rounded-3xl p-6 tap"
-            onClick={() => onOpenStop(hero.day, hero.id)}
-          >
-            <span
-              className="absolute au-tape px-4 py-1 f-mono text-[9px] tt-widest uppercase"
-              style={{ top: -12, left: 24 }}
-            >
-              non-negotiable
-            </span>
-            <p className="f-mono text-[10px] tt-widest uppercase opacity-50 mb-2 mt-2">
-              Day {hero.day} · {hero.time}
-            </p>
-            <h2 className="f-cap text-3xl leading-tight mb-1">{hero.name}</h2>
-            <p className="f-news-i text-base opacity-70 mb-4">{hero.kind}</p>
-            <div className="helen-photo aspect-16-10 rounded-2xl"></div>
-            <p className="f-dm text-sm opacity-80 mt-4 leading-relaxed">{hero.note}</p>
-          </div>
-        </section>
-      )}
-
-      {trip.days.map((day) => {
-        const stops = day.stops.filter((s) => s.for.includes('aurelia'))
-        if (!stops.length) return null
-        return (
-          <section
-            key={day.n}
-            id={`trip-day-${day.n}`}
-            className="px-6 pb-8 pt-6 border-t au-rule"
-          >
-            <div className="flex items-baseline justify-between mb-4">
-              <p className="f-cap text-3xl au-deep leading-none">Day {day.n}</p>
-              <p className="f-mono text-[10px] tt-widest uppercase opacity-50">{day.date}</p>
-            </div>
-            <p className="f-news-i text-base opacity-70 mb-4">{day.title}</p>
-
-            {day.drive?.miles > 50 && (
-              <div className="mb-5">
-                <RoadSearch traveler={traveler} />
-              </div>
-            )}
-
-            <ol>
-              {stops.map((s, i) => {
-                const memCount = listMemoriesForStop(s.id, traveler).length
-                return (
-                  <li
-                    key={s.id}
-                    className={`fade-up d${Math.min(i + 1, 6)} flex items-baseline gap-3 tap`}
-                    style={{ paddingTop: 4, paddingBottom: 4 }}
-                    onClick={() => onOpenStop(day.n, s.id)}
-                  >
-                    <span className="f-mono text-[10px] tt-wide uppercase opacity-50 w-16 flex-shrink-0 pt-2">
-                      {s.time}
-                    </span>
-                    <div
-                      className="flex-1 min-w-0"
-                      style={{ borderBottom: '1px solid #F0D8C0', paddingBottom: 10 }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="f-news text-base tt-tight leading-tight">
-                          {s.name}
-                          {s.tentative && (
-                            <span className="f-mono text-[9px] tt-widest uppercase opacity-50" style={{ marginLeft: 6 }}>
-                              TBD
-                            </span>
-                          )}
-                        </p>
-                        {memCount > 0 && (
-                          <Lock size={11} className="opacity-50" aria-label="Has memory" />
-                        )}
-                      </div>
-                      <p className="f-mono text-[10px] opacity-50 uppercase tt-wide mt-1">
-                        {s.kind}
-                      </p>
-                    </div>
-                  </li>
-                )
-              })}
-            </ol>
-          </section>
-        )
-      })}
-
-      <section className="px-6 pb-6 pt-6 border-t au-rule">
-        <div className="au-blush rounded-3xl p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Music size={14} />
-            <p className="f-mono text-[10px] tt-widest uppercase opacity-60">Soundtrack</p>
-          </div>
-          <p className="f-news text-lg tt-tight">Add your trip playlist</p>
-          <p className="f-news-i text-sm opacity-60">Spotify link goes here.</p>
+        <div
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 13,
+            fontStyle: 'italic',
+            color: 'var(--muted)',
+            marginTop: 8,
+          }}
+        >
+          a place for what you actually cared about.
         </div>
-      </section>
+      </div>
+
+      <div
+        style={{
+          padding: '4px 16px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 22,
+        }}
+      >
+        {mems.length === 0 ? (
+          <EmptyState onOpenStop={onOpenStop} firstStop={trip.days[0]?.stops[0]} firstDay={trip.days[0]?.n} />
+        ) : (
+          mems.map((m, i) => {
+            const stop = stopsById.get(m.stopId)
+            return (
+              <Postcard
+                key={m.id}
+                tilt={tiltFor(m.id)}
+                tint={tints[i % tints.length]}
+                mem={m}
+                stop={stop}
+                onClick={() => stop && onOpenStop(stop.day, stop.id)}
+              />
+            )
+          })
+        )}
+      </div>
+
+      <button
+        type="button"
+        aria-label="Compose postcard"
+        onClick={() => {
+          const target = trip.days[0]?.stops?.[0]
+          if (target) onOpenStop(trip.days[0].n, target.id)
+        }}
+        style={{
+          position: 'fixed',
+          right: 16,
+          bottom: 92,
+          width: 56,
+          height: 56,
+          borderRadius: '50%',
+          border: 'none',
+          background: 'var(--accent)',
+          color: 'var(--accent-ink, #fff)',
+          fontSize: 28,
+          fontWeight: 300,
+          cursor: 'pointer',
+          boxShadow: '0 10px 28px rgba(232, 71, 140, 0.45)',
+          zIndex: 20,
+        }}
+      >
+        +
+      </button>
     </div>
   )
+}
+
+function Postcard({ tilt, tint, mem, stop, onClick }) {
+  const author = TRAVELERS[mem.authorTraveler]
+  const time = formatTime(mem.createdAt)
+  const loc = (stop?.address || '').split(',')[0] || ''
+  const taggedBy = stop?.for || []
+  const mood = inferMood(mem)
+  const caption =
+    mem.text || mem.caption || mem.transcript || '(saved without words)'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: 'var(--card)',
+        borderRadius: 4,
+        padding: 10,
+        boxShadow: '0 10px 28px rgba(61, 14, 34, 0.16)',
+        transform: `rotate(${tilt}deg)`,
+        position: 'relative',
+        cursor: 'pointer',
+        border: 0,
+        textAlign: 'left',
+        color: 'var(--text)',
+      }}
+    >
+      {/* paper tape */}
+      <div
+        style={{
+          position: 'absolute',
+          top: -8,
+          left: 32,
+          width: 54,
+          height: 16,
+          background: 'rgba(255, 255, 255, 0.55)',
+          transform: 'rotate(-6deg)',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+        }}
+      />
+      {/* photo */}
+      <div
+        style={{
+          width: '100%',
+          aspectRatio: '5 / 3',
+          borderRadius: 2,
+          background: `repeating-linear-gradient(45deg, ${tint}, ${tint} 6px, ${shade(tint, -10)} 6px, ${shade(tint, -10)} 12px)`,
+        }}
+      />
+      <div
+        style={{
+          marginTop: 10,
+          padding: '0 6px',
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 14,
+          fontStyle: 'italic',
+          lineHeight: 1.35,
+        }}
+      >
+        “{caption}”
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '8px 6px 0',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Avatar id={mem.authorTraveler} size={18} />
+          <span
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 9,
+              color: 'var(--muted)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            {(author?.name || mem.authorTraveler).toLowerCase()} · {time}
+          </span>
+        </div>
+        <span
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontStyle: 'italic',
+            fontSize: 11,
+            color: 'var(--accent)',
+          }}
+        >
+          felt {mood}
+        </span>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '6px 6px 0',
+          borderTop: '1px dashed var(--border)',
+          marginTop: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 8,
+              color: 'var(--faint)',
+              letterSpacing: '0.1em',
+            }}
+          >
+            WITH
+          </span>
+          <AvatarStack ids={taggedBy} size={14} gap={-3} />
+        </div>
+        <span
+          style={{
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 8,
+            color: 'var(--faint)',
+            letterSpacing: '0.1em',
+          }}
+        >
+          {loc}
+        </span>
+      </div>
+    </button>
+  )
+}
+
+function EmptyState({ onOpenStop, firstStop, firstDay }) {
+  return (
+    <div
+      style={{
+        padding: 24,
+        background: 'var(--card)',
+        borderRadius: 6,
+        textAlign: 'center',
+        boxShadow: '0 6px 20px rgba(61, 14, 34, 0.10)',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 18,
+          fontStyle: 'italic',
+          color: 'var(--muted)',
+          marginBottom: 12,
+        }}
+      >
+        no postcards yet — tap a stop to make the first one.
+      </div>
+      <button
+        type="button"
+        onClick={() => firstStop && onOpenStop(firstDay, firstStop.id)}
+        style={{
+          padding: '8px 16px',
+          borderRadius: 16,
+          border: 'none',
+          background: 'var(--accent)',
+          color: 'var(--accent-ink, #fff)',
+          fontFamily: 'Inter Tight, system-ui, sans-serif',
+          fontWeight: 600,
+          fontSize: 12,
+          cursor: 'pointer',
+        }}
+      >
+        Open Day 1
+      </button>
+    </div>
+  )
+}
+
+function Eyebrow({ children, color, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 11,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        color: color || 'currentColor',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+// Hand-rolled "felt {mood}" classifier from the memory's words. Cheap
+// keyword bucket for v1; easy to swap for a sentiment model later.
+function inferMood(mem) {
+  const t = (mem.text || mem.transcript || mem.caption || '').toLowerCase()
+  if (!t) return 'quiet'
+  if (/lol|haha|loud|wild|chaos|crazy|run/.test(t)) return 'chaos'
+  if (/love|gorgeous|beautiful|stunning|pretty|magic/.test(t)) return 'beautiful'
+  if (/sad|tired|hard|miss|lonely|cold/.test(t)) return 'tender'
+  if (/win|yes|great|nailed|amazing|excellent/.test(t)) return 'triumphant'
+  return 'quiet'
+}
+
+function shade(hex, pct) {
+  const n = parseInt(hex.slice(1), 16)
+  let r = (n >> 16) + pct
+  let g = ((n >> 8) & 0xff) + pct
+  let b = (n & 0xff) + pct
+  r = Math.max(0, Math.min(255, r))
+  g = Math.max(0, Math.min(255, g))
+  b = Math.max(0, Math.min(255, b))
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
+}
+
+function formatTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  } catch {
+    return ''
+  }
 }

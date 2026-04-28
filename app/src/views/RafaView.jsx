@@ -1,209 +1,329 @@
-import { Rocket, Star, Trophy } from 'lucide-react'
+import { Mic } from 'lucide-react'
 import { allStops } from '../data/trips'
-import { DayChips } from './DayChips'
 
-// Rafa's view — NASA register, dark navy + grid texture, big tap targets.
-// Read-only by intent: Rafa doesn't author memories. Counts are derived
-// from the trip data, not hardcoded.
+// Rafa — Mission. Design-bundle authoritative
+// (prototype.jsx#RafaMission). Near-black ground with ochre warning
+// type. Eyebrow status + day count, big block-serif title that takes
+// over the screen, italic deck, anchor card in ochre with a time chip
+// and emoji, two chunky alt cards (blue + green) with emoji + uppercase
+// title + time, then a giant "TELL A STORY" mic button at the bottom.
+
 export function RafaView({ trip, onOpenStop }) {
-  const rafaStops = allStops(trip).filter((s) => s.for.includes('rafa'))
-  const today = trip.days[trip.days.length - 1]
+  const rafaStops = allStops(trip).filter((s) => s.for?.includes('rafa'))
   const heroForRafa =
     trip.heroStopId && rafaStops.find((s) => s.id === trip.heroStopId)
   const featured =
     heroForRafa ||
-    rafaStops.find((s) => /axiom|monster|truck/i.test(s.name)) ||
-    rafaStops[rafaStops.length - 1]
+    rafaStops.find((s) => /monster|truck|rocket|axiom/i.test(s.name)) ||
+    rafaStops[rafaStops.length - 1] ||
+    rafaStops[0]
+  const others = rafaStops.filter((s) => s.id !== featured?.id).slice(0, 2)
 
-  // Auto-counts
-  const cabins = trip.days.filter((d) => /cabin|airbnb|donna|grandma/i.test(d.lodging || '')).length
-  const museums = rafaStops.filter((s) => /museum|center/i.test(s.kind) || /museum/i.test(s.name)).length
-  const dinosaurs = rafaStops.filter((s) =>
-    /dinosaur|fossil|natural science/i.test(`${s.name} ${s.kind}`)
-  ).length
+  // Status string drives the eyebrow: planning → INCOMING, archived →
+  // COMPLETE, anything else → ACTIVE.
+  const status =
+    trip.status === 'archived'
+      ? 'COMPLETE'
+      : trip.status === 'planning'
+        ? 'INCOMING'
+        : 'ACTIVE'
+
+  // Big stacked title — three short words. Falls back to slicing the
+  // trip title if no per-trip override is set up.
+  const titleWords = pickTitleWords(trip)
+
+  // Total day count for the eyebrow ("DAY 3 / 3").
+  const dayCount = trip.days.length
 
   return (
-    <div className="min-h-screen rafa-bg grid-bg pb-32 relative overflow-hidden">
-      <div className="px-5 pt-12 pb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span
-            className="w-2.5 h-2.5 rounded-full pulse-dot"
-            style={{ background: 'var(--accent)' }}
-          ></span>
-          <p className="f-arc text-[11px] font-medium tt-widest uppercase opacity-80">
-            Mission{' '}
-            {trip.status === 'archived'
-              ? 'Complete'
-              : trip.status === 'planning'
-                ? 'Incoming'
-                : 'Active'}
-          </p>
-        </div>
-        <p className="f-mono text-[10px] tt-widest uppercase opacity-50">
-          DAY {today?.n || '—'} / {trip.days.length || '—'}
-        </p>
+    <div
+      style={{
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        minHeight: '100vh',
+        paddingBottom: 120,
+      }}
+    >
+      {/* Status eyebrow */}
+      <div
+        style={{
+          padding: '60px 18px 0',
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Eyebrow color="var(--accent)">● MISSION {status}</Eyebrow>
+        <Eyebrow color="var(--muted)">
+          DAY {dayCount} / {dayCount}
+        </Eyebrow>
       </div>
 
-      <header className="px-5 pb-6">
-        <RafaTitle trip={trip} />
-        <p className="f-arc text-base font-medium opacity-70 mt-3 tt-tight">
-          {trip.status === 'archived'
-            ? 'You went to a lot of places.'
-            : 'Big trip coming up.'}
-        </p>
-      </header>
+      {/* Block-serif title — ochre stack */}
+      <div style={{ padding: '14px 18px 8px' }}>
+        <div
+          style={{
+            fontFamily: 'Fraunces, "Iowan Old Style", Georgia, serif',
+            fontSize: 52,
+            fontWeight: 900,
+            lineHeight: 0.85,
+            color: 'var(--accent)',
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {titleWords.map((w, i) => (
+            <span key={i}>
+              {w}
+              {i < titleWords.length - 1 && <br />}
+            </span>
+          ))}
+        </div>
+        <div
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 13,
+            color: 'var(--muted)',
+            marginTop: 8,
+            fontStyle: 'italic',
+          }}
+        >
+          {status === 'COMPLETE' ? 'you went to a lot of places.' : 'big trip coming up.'}
+        </div>
+      </div>
 
-      <DayChips days={trip.days} />
-
+      {/* Anchor card — ochre */}
       {featured && (
-        <section className="px-5 pb-5">
+        <button
+          type="button"
+          onClick={() => onOpenStop(featured.day, featured.id)}
+          style={{
+            display: 'block',
+            width: 'calc(100% - 28px)',
+            margin: '8px 14px 0',
+            padding: 14,
+            background: 'var(--accent)',
+            color: 'var(--accent-ink, #1A0A0B)',
+            borderRadius: 16,
+            position: 'relative',
+            overflow: 'hidden',
+            border: 0,
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
           <div
-            className="rafa-card rounded-3xl p-6 border-2 tap"
-            style={{ borderColor: 'var(--accent)' }}
-            onClick={() => onOpenStop(featured.day, featured.id)}
+            style={{
+              position: 'absolute',
+              top: -20,
+              right: -20,
+              width: 100,
+              height: 100,
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.12)',
+            }}
+          />
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 10,
+              position: 'relative',
+            }}
           >
-            <div className="flex items-center justify-between mb-3">
-              <span
-                className="rafa-bg-yellow f-arc font-black text-xs px-3 py-1 rounded-full tt-wide"
-                style={{ color: 'var(--accent-ink)' }}
-              >
-                {featured.time}
-              </span>
-              <Rocket size={28} className="rafa-yellow" />
+            <div
+              style={{
+                background: 'rgba(255,255,255,0.18)',
+                padding: '4px 10px',
+                borderRadius: 10,
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 10,
+                letterSpacing: '0.14em',
+                fontWeight: 600,
+                color: 'inherit',
+              }}
+            >
+              {featured.time}
             </div>
-            <h2 className="f-arc text-3xl font-black leading-tight tt-tight">
-              {featured.name.toUpperCase()}
-            </h2>
-            <p className="f-arc text-base opacity-80 mt-2">{featured.note}</p>
+            <span style={{ fontSize: 24 }}>{emojiFor(featured)}</span>
           </div>
-        </section>
+          <div
+            style={{
+              fontFamily: 'Fraunces, Georgia, serif',
+              fontSize: 24,
+              fontWeight: 800,
+              lineHeight: 1,
+              position: 'relative',
+            }}
+          >
+            {featured.name}
+          </div>
+          {featured.note && (
+            <div
+              style={{
+                fontSize: 11,
+                marginTop: 8,
+                opacity: 0.85,
+                position: 'relative',
+                lineHeight: 1.4,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {featured.note}
+            </div>
+          )}
+        </button>
       )}
 
-      <section className="px-5 pb-5 grid grid-cols-2 gap-3">
-        {rafaStops.slice(0, 2).map((s, i) => (
-          <div
-            key={s.id}
-            className="rounded-3xl p-5 tap"
-            style={{
-              background: i === 0 ? 'var(--card)' : 'var(--accent2)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-            }}
-            onClick={() => onOpenStop(s.day, s.id)}
-          >
-            <div className="flex items-center justify-between mb-2">
-              {i === 0 ? <Trophy size={22} /> : <Star size={22} />}
-              <span
-                className="f-arc text-[10px] font-bold tt-wide px-2 py-1 rounded-full"
-                style={{ background: 'rgba(0,0,0,0.3)' }}
+      {/* Two chunky alt cards */}
+      {others.length > 0 && (
+        <div
+          style={{
+            padding: '14px 14px 0',
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 8,
+          }}
+        >
+          {others.map((s, i) => {
+            const bg = i === 0 ? '#3D6FB8' : '#2E5D3A'
+            return (
+              <button
+                type="button"
+                key={s.id}
+                onClick={() => onOpenStop(s.day, s.id)}
+                style={{
+                  background: bg,
+                  color: '#fff',
+                  borderRadius: 14,
+                  padding: 12,
+                  border: 0,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
               >
-                {s.time}
-              </span>
-            </div>
-            <p className="f-arc text-xl font-black tt-tight leading-tight">
-              {s.name.toUpperCase().slice(0, 14)}
-            </p>
-            <p className="f-arc text-xs opacity-80">{s.kind}</p>
-          </div>
-        ))}
-      </section>
-
-      <section className="px-5 pb-5">
-        <div className="rafa-card-2 rounded-3xl p-6">
-          <p className="f-arc text-xs font-medium opacity-60 tt-widest uppercase mb-2">
-            Things you did
-          </p>
-          <div className="grid grid-cols-4 gap-3 text-center">
-            <CountStat n={cabins || 1} label="cabins" />
-            <CountStat n={museums || 0} label="museums" />
-            <CountStat n={dinosaurs || 1} label="dinosaur" />
-            <CountStat n="∞" label="snacks" />
-          </div>
+                <div style={{ fontSize: 22 }}>{i === 0 ? '🏆' : '⭐'}</div>
+                <div
+                  style={{
+                    fontFamily: 'Fraunces, Georgia, serif',
+                    fontSize: 14,
+                    fontWeight: 800,
+                    marginTop: 8,
+                    lineHeight: 1,
+                  }}
+                >
+                  {s.name.toUpperCase()}
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: 9,
+                    letterSpacing: '0.1em',
+                    marginTop: 6,
+                    opacity: 0.85,
+                  }}
+                >
+                  {s.time?.toUpperCase()}
+                </div>
+              </button>
+            )
+          })}
         </div>
-      </section>
+      )}
 
-      <section className="px-5 pb-5">
-        <p className="f-arc text-xs font-bold tt-widest uppercase opacity-60 mb-3">
-          Where you went
-        </p>
-        {trip.days.map((day) => {
-          const stops = day.stops.filter((s) => s.for.includes('rafa'))
-          if (!stops.length) return null
-          return (
-            <div key={day.n} id={`trip-day-${day.n}`} style={{ marginBottom: 16 }}>
-              <p className="f-arc text-[11px] font-bold tt-widest uppercase opacity-60 mb-2">
-                Day {day.n} · {day.date}
-              </p>
-              <div className="flex flex-col gap-2">
-                {stops.map((s, i) => (
-                  <div
-                    key={s.id}
-                    className={`rafa-card rounded-2xl p-4 fade-up d${Math.min(i + 1, 6)} flex items-center gap-3 tap`}
-                    onClick={() => onOpenStop(day.n, s.id)}
-                  >
-                    <span
-                      className="rafa-bg-yellow f-arc font-black text-base w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ color: 'var(--accent-ink)' }}
-                    >
-                      {day.n}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="f-arc text-base font-bold tt-tight truncate">{s.name}</p>
-                      <p className="f-arc text-xs opacity-60 truncate">{s.note}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </section>
-
-      <div className="overflow-hidden border-y rafa-rule py-3 mt-2">
-        <div className="ticker f-arc text-base font-bold rafa-yellow">
-          <span style={{ padding: '0 24px' }}>
-            ★ DINOSAURS ★ SPACESHIPS ★ GIRAFFES ★ STEAM TRAINS ★ BUC-EE ★ COMETS ★{' '}
+      {/* TELL A STORY mic */}
+      <div style={{ padding: '20px 14px 0' }}>
+        <button
+          type="button"
+          onClick={() => featured && onOpenStop(featured.day, featured.id)}
+          style={{
+            width: '100%',
+            height: 80,
+            borderRadius: 40,
+            background: 'var(--accent)',
+            color: 'var(--accent-ink, #1A0A0B)',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 14,
+            boxShadow: '0 12px 30px rgba(255, 184, 51, 0.35)',
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 22,
+            fontWeight: 800,
+          }}
+        >
+          <span
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: '50%',
+              background: 'rgba(0,0,0,0.18)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Mic size={28} />
           </span>
-          <span style={{ padding: '0 24px' }}>
-            ★ DINOSAURS ★ SPACESHIPS ★ GIRAFFES ★ STEAM TRAINS ★ BUC-EE ★ COMETS ★{' '}
-          </span>
+          TELL A STORY
+        </button>
+        <div
+          style={{
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 10,
+            color: 'var(--muted)',
+            letterSpacing: '0.14em',
+            textAlign: 'center',
+            marginTop: 8,
+          }}
+        >
+          HOLD AND TALK · MOM AND DAD WILL HEAR
         </div>
       </div>
     </div>
   )
 }
 
-// 3-color stacked title that picks words intentionally per trip.
-// Jackson trip → SPACE / SHIP / TRIP (the Axiom day defines it)
-// NYC trip     → MONSTER / TRUCK / DAY (the closing anchor)
-// Anything else → first three meaningful words from the title.
-function RafaTitle({ trip }) {
-  let words
-  if (trip.id === 'jackson-2026') {
-    words = ['SPACE', 'SHIP', 'TRIP']
-  } else if (trip.id === 'nyc-rafa-2026') {
-    words = ['MONSTER', 'TRUCK', 'DAY']
-  } else {
-    const cleaned = (trip.title || '').toUpperCase().replace(/[^A-Z\s]/g, ' ').split(/\s+/).filter(Boolean)
-    words = cleaned.slice(0, 3)
-    while (words.length < 3) words.push('TRIP')
-  }
-  return (
-    <h1 className="f-arc text-6xl font-black leading-85 tt-tightest">
-      <span className="rafa-yellow">{words[0]}</span>
-      <br />
-      <span className="rafa-blue">{words[1]}</span>
-      <br />
-      <span style={{ color: 'var(--text)' }}>{words[2]}</span>
-    </h1>
-  )
+function emojiFor(stop) {
+  const t = `${stop.name} ${stop.kind || ''}`.toLowerCase()
+  if (/monster|truck|rocket|axiom|space/.test(t)) return '🚀'
+  if (/lion king|theater|show|broadway/.test(t)) return '🎭'
+  if (/airbnb|cabin|lodging|hotel/.test(t)) return '🛏️'
+  if (/pizza|brasserie|breakfast|brunch|lunch|dinner/.test(t)) return '🍕'
+  if (/empire|sights|skyline/.test(t)) return '🏙️'
+  if (/flight|airport|lga|lands/.test(t)) return '✈️'
+  return '🎯'
 }
 
-function CountStat({ n, label }) {
+function pickTitleWords(trip) {
+  if (trip.id === 'jackson-2026') return ['SPACE', 'SHIP', 'TRIP']
+  if (trip.id === 'nyc-rafa-2026') return ['MONSTER', 'TRUCK', 'DAY']
+  const cleaned = (trip.title || '')
+    .toUpperCase()
+    .replace(/[^A-Z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+  while (cleaned.length < 3) cleaned.push('TRIP')
+  return cleaned.slice(0, 3)
+}
+
+function Eyebrow({ children, color, style }) {
   return (
-    <div>
-      <p className="f-arc text-3xl font-black rafa-yellow leading-none">{n}</p>
-      <p className="f-arc text-[10px] opacity-60 uppercase tt-wide mt-1">{label}</p>
+    <div
+      style={{
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 11,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        color: color || 'currentColor',
+        ...style,
+      }}
+    >
+      {children}
     </div>
   )
 }

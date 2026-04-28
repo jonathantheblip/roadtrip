@@ -1,130 +1,412 @@
-import { Bookmark } from 'lucide-react'
+import { useState } from 'react'
+import { Mic, MapPin } from 'lucide-react'
 import { listMemoriesForStop } from '../lib/memoryStore'
-import { FlightStatus, findArrivalStop } from './FlightStatus'
-import { DayChips } from './DayChips'
-import { RoadSearch } from './RoadSearch'
-import { useHelenDark } from '../hooks/useHelenDark'
+import { Avatar, AvatarStack } from '../components/Avatar'
+import { findArrivalStop, FlightStatus } from './FlightStatus'
 
-// Helen's view — purely chronological per her ask. No featured hero;
-// every day flows top-to-bottom in trip order. Day chips at the top let
-// her jump between days; vertical scroll moves through the timeline.
-// Photo placeholders are left in for her later iCloud Shared Album link.
-export function HelenView({ trip, traveler, onOpenStop }) {
-  const [dark] = useHelenDark()
-  const rootClass = `min-h-screen helen-bone pb-32${dark ? ' helen-dark' : ''}`
+// Helen — Threaded Archive Timeline. Design-bundle authoritative
+// (prototype.jsx#HelenTimeline + screens-supporting.jsx#StopWithThread).
+// Linen-on-paper. Day-as-card chips at the top. Each day's stops render
+// in a vertical timeline with a memory-thread preview strip beneath
+// stops that have memories, or an "+ add a memory" pill when empty.
+
+export function HelenView({ trip, traveler, onOpenStop, onOpenSettings }) {
+  const [activeDay, setActiveDay] = useState(trip.days[0]?.n)
+  const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const arrival = findArrivalStop(trip)
 
   return (
-    <div className={rootClass}>
-      <header className="px-6 pt-12 pb-6">
-        <p className="f-mono text-[10px] tt-widest uppercase opacity-40 mb-2">
-          {trip.status === 'archived' ? 'An Archive' : 'A Weekend'}
-        </p>
-        <h1 className="f-news tt-tightest text-5xl leading-95">{trip.title}</h1>
-        <p className="f-news-i text-lg opacity-60 mt-3 max-w-sm">
-          {trip.dateRange} · {trip.startCity} → {trip.endCity}
-        </p>
-      </header>
-
-      <DayChips days={trip.days} />
-
-      {arrival && (
-        <section className="px-6 pt-2 pb-6">
-          <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
-        </section>
-      )}
-
-      {trip.days.map((day) => (
-        <section
-          key={day.n}
-          id={`trip-day-${day.n}`}
-          className="px-6 py-8"
-          style={{ borderTop: '1px solid #BFB29C' }}
+    <div
+      style={{
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        minHeight: '100vh',
+        paddingBottom: 120,
+        position: 'relative',
+      }}
+    >
+      <div
+        style={{
+          padding: '60px 18px 4px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <Eyebrow color="var(--muted)">{trip.title.toUpperCase()}</Eyebrow>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          aria-label="Map view"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 10,
+            letterSpacing: '0.14em',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
         >
-          <div className="flex items-baseline justify-between mb-4">
-            <p className="f-mono text-[10px] tt-widest uppercase opacity-50">
-              Day {day.n} · {day.date}
-            </p>
-            {day.drive?.miles > 0 && (
-              <p className="f-mono text-[10px] tt-wide opacity-40">
-                {day.drive.miles} mi · {day.drive.hours}
-              </p>
-            )}
-          </div>
-          <h2 className="f-news tt-tightest text-3xl leading-tight mb-6">{day.title}</h2>
+          <MapPin size={11} /> MAP
+        </button>
+      </div>
 
-          {day.drive?.miles > 50 && (
-            <div className="mb-8">
-              <RoadSearch traveler={traveler} />
-            </div>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-            {day.stops.map((s, i) => (
-              <article
-                key={s.id}
-                className={`fade-up d${Math.min(i + 1, 6)} tap`}
-                onClick={() => onOpenStop(day.n, s.id)}
+      <div style={{ padding: '6px 18px 4px', display: 'flex', gap: 6 }}>
+        {trip.days.map((d) => {
+          const isActive = d.n === activeDay
+          const dow = (d.date || '').split(' ')[0]
+          return (
+            <button
+              key={d.n}
+              type="button"
+              onClick={() => setActiveDay(d.n)}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                borderRadius: 10,
+                background: isActive ? 'var(--text)' : 'transparent',
+                color: isActive ? 'var(--bg)' : 'var(--muted)',
+                border: isActive ? 'none' : '1px solid var(--border)',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 9,
+                  letterSpacing: '0.1em',
+                  opacity: 0.7,
+                }}
               >
-                <div className="flex items-baseline justify-between mb-2">
-                  <p className="f-mono text-[10px] tt-widest uppercase opacity-50">
-                    {s.time}
-                  </p>
-                  <p className="f-mono text-[10px] tt-widest uppercase opacity-40">
-                    {s.kind}
-                    {s.tentative && ' · TBD'}
-                  </p>
-                </div>
-                <h3 className="f-news tt-tightest text-2xl leading-tight mb-2">
-                  {s.name}
-                </h3>
-                {/* Photo deckle only for stops that aren't pure logistics. */}
-                {!['logistics', 'drive', 'arrival', 'departure'].includes(s.kind) && (
-                  <div className="helen-photo aspect-3-2 mb-3 rounded-sm" />
-                )}
-                <p className="f-news text-base opacity-80 leading-relaxed" style={{ whiteSpace: 'pre-line' }}>
-                  {s.note}
-                </p>
-                <MemoryFootline stopId={s.id} traveler={traveler} />
-              </article>
-            ))}
-          </div>
-        </section>
-      ))}
+                DAY {d.n}
+              </div>
+              <div
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  marginTop: 2,
+                }}
+              >
+                {dow}
+              </div>
+            </button>
+          )
+        })}
+      </div>
 
-      {trip.sharedAlbumURL && (
-        <section className="px-6 py-8" style={{ borderTop: '1px solid #BFB29C' }}>
-          <p className="smallcaps f-dm text-[11px] opacity-60 mb-3">Shared album</p>
-          <a
-            className="link-quiet f-news text-lg"
-            href={trip.sharedAlbumURL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open in iCloud Photos →
-          </a>
-        </section>
+      <div style={{ padding: '12px 18px 0' }}>
+        <Eyebrow color="var(--muted)">
+          DAY {day.n} · {(day.date || '').toUpperCase()}
+        </Eyebrow>
+        <div
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 26,
+            fontWeight: 700,
+            lineHeight: 1.05,
+            marginTop: 4,
+            color: 'var(--text)',
+          }}
+        >
+          {day.title}
+        </div>
+      </div>
+
+      {arrival?.day?.n === day.n && (
+        <div style={{ padding: '14px 18px 0' }}>
+          <FlightStatus
+            stop={arrival.stop}
+            variant="panel"
+            framing="their"
+            traveler={traveler}
+          />
+        </div>
       )}
+
+      <div style={{ padding: '14px 0 0' }}>
+        {day.stops.map((s, i) => (
+          <StopWithThread
+            key={s.id}
+            stop={s}
+            traveler={traveler}
+            last={i === day.stops.length - 1}
+            onOpen={() => onOpenStop(day.n, s.id)}
+          />
+        ))}
+      </div>
+
+      <button
+        type="button"
+        aria-label="Capture memory"
+        onClick={() => {
+          const target = day.stops?.[0]
+          if (target) onOpenStop(day.n, target.id)
+        }}
+        style={{
+          position: 'fixed',
+          right: 16,
+          bottom: 92,
+          width: 52,
+          height: 52,
+          borderRadius: '50%',
+          border: 'none',
+          background: 'var(--accent)',
+          color: 'var(--accent-ink, #fff)',
+          cursor: 'pointer',
+          boxShadow: '0 8px 24px rgba(46, 93, 58, 0.4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 28,
+          fontWeight: 300,
+          zIndex: 20,
+        }}
+      >
+        +
+      </button>
     </div>
   )
 }
 
-function MemoryFootline({ stopId, traveler }) {
-  const memories = listMemoriesForStop(stopId, traveler)
-  const hasOwn = memories.some((m) => m.authorTraveler === traveler)
+function StopWithThread({ stop, traveler, last, onOpen }) {
+  const mems = listMemoriesForStop(stop.id, traveler)
+  const authors = Array.from(new Set(mems.map((m) => m.authorTraveler)))
+  return (
+    <div style={{ position: 'relative' }}>
+      <div
+        style={{
+          position: 'absolute',
+          left: 30,
+          top: 8,
+          bottom: last ? 30 : 0,
+          width: 1,
+          background: 'var(--border)',
+        }}
+      />
+      <div style={{ padding: '14px 18px 6px', position: 'relative' }}>
+        <button
+          type="button"
+          onClick={onOpen}
+          style={{
+            width: '100%',
+            background: 'transparent',
+            border: 0,
+            padding: 0,
+            cursor: 'pointer',
+            color: 'inherit',
+            textAlign: 'left',
+            display: 'flex',
+            gap: 14,
+            alignItems: 'flex-start',
+          }}
+        >
+          <div style={{ width: 24, paddingTop: 2 }}>
+            <div
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: 'var(--bg)',
+                border: '2px solid var(--accent)',
+                marginLeft: -1,
+              }}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+              }}
+            >
+              <Eyebrow color="var(--muted)">{stop.time}</Eyebrow>
+              <Eyebrow color="var(--faint)">{(stop.kind || '').toUpperCase()}</Eyebrow>
+            </div>
+            <div
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 17,
+                fontWeight: 600,
+                lineHeight: 1.2,
+                marginTop: 4,
+                letterSpacing: '-0.012em',
+              }}
+            >
+              {stop.name}
+            </div>
+            {stop.note && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: 'var(--muted)',
+                  marginTop: 4,
+                  lineHeight: 1.4,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {stop.note}
+              </div>
+            )}
+          </div>
+        </button>
+
+        {mems.length > 0 ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            style={{
+              marginLeft: 38,
+              marginTop: 12,
+              padding: '10px 12px',
+              background: 'var(--card)',
+              borderRadius: 12,
+              border: '1px solid var(--border)',
+              width: 'calc(100% - 56px)',
+              textAlign: 'left',
+              cursor: 'pointer',
+              color: 'inherit',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <Eyebrow color="var(--accent)" style={{ fontWeight: 600 }}>
+                {mems.length} {mems.length === 1 ? 'MEMORY' : 'MEMORIES'}
+              </Eyebrow>
+              <AvatarStack ids={authors} size={16} />
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              {mems.slice(0, 3).map((m) => (
+                <ThreadPreviewTile key={m.id} mem={m} />
+              ))}
+            </div>
+            <div
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 9,
+                color: 'var(--faint)',
+                letterSpacing: '0.1em',
+                textAlign: 'center',
+                borderTop: '1px dashed var(--border)',
+                paddingTop: 6,
+              }}
+            >
+              OPEN THREAD →
+            </div>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpen}
+            style={{
+              marginLeft: 38,
+              marginTop: 10,
+              padding: '6px 12px',
+              borderRadius: 16,
+              border: '1px dashed var(--border)',
+              background: 'transparent',
+              color: 'var(--muted)',
+              fontSize: 11,
+              fontFamily: 'Inter Tight, system-ui, sans-serif',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{ fontSize: 14 }}>+</span> add a memory
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ThreadPreviewTile({ mem }) {
+  const kind = mem.kind || (mem.text ? 'text' : 'photo')
+  return (
+    <div style={{ flex: 1, position: 'relative' }}>
+      {kind === 'photo' && (
+        <div
+          style={{
+            aspectRatio: 1,
+            background:
+              'repeating-linear-gradient(45deg, #d6c5a8, #d6c5a8 6px, #c5b497 6px, #c5b497 12px)',
+            borderRadius: 6,
+          }}
+        />
+      )}
+      {kind === 'voice' && (
+        <div
+          style={{
+            aspectRatio: 1,
+            background: 'var(--bg2)',
+            borderRadius: 6,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--accent)',
+          }}
+        >
+          <Mic size={18} />
+        </div>
+      )}
+      {kind === 'text' && (
+        <div
+          style={{
+            aspectRatio: 1,
+            background: 'var(--bg2)',
+            borderRadius: 6,
+            padding: 6,
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 9,
+            fontStyle: 'italic',
+            color: 'var(--muted)',
+            overflow: 'hidden',
+            lineHeight: 1.2,
+            display: '-webkit-box',
+            WebkitLineClamp: 5,
+            WebkitBoxOrient: 'vertical',
+          }}
+        >
+          “{(mem.text || mem.transcript || mem.caption || '').slice(0, 80)}”
+        </div>
+      )}
+      <div style={{ position: 'absolute', bottom: 3, left: 3 }}>
+        <Avatar id={mem.authorTraveler} size={14} ring />
+      </div>
+    </div>
+  )
+}
+
+function Eyebrow({ children, color, style }) {
   return (
     <div
-      className="flex items-center gap-2 mt-3 pt-3"
-      style={{ borderTop: '1px solid #E5DCC8' }}
+      style={{
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 11,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        color: color || 'currentColor',
+        ...style,
+      }}
     >
-      <Bookmark size={12} className="opacity-40" />
-      <span className="f-dm text-[11px] opacity-50 italic">
-        {memories.length === 0
-          ? 'Tap to add a memory'
-          : hasOwn
-            ? 'Your memory is saved · tap to edit'
-            : `${memories.length} memor${memories.length === 1 ? 'y' : 'ies'} on file`}
-      </span>
+      {children}
     </div>
   )
 }

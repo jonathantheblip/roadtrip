@@ -374,24 +374,111 @@ for all airlines.
 
 ---
 
-## §6 — Per-view dark mode
+## §6 — Per-view dark mode + per-traveler surfaces
 
-Already wired in `app/src/App.jsx` (`darkSurface`) and
-`app/src/hooks/useHelenDark.js`. Documented here so future work doesn't
-re-litigate.
+Updated 2026-04-28: the user reversed the earlier "polish, not
+redesign" instruction. The Design bundle is now authoritative for all
+four traveler views, surface palettes, typography, and per-view UX.
 
-| Traveler | Surface | Override |
-|---|---|---|
-| Jonathan | Permanent dark (charcoal/cream) | none |
-| Helen    | Light by default | toggle in her settings (`useHelenDark`) |
-| Aurelia  | Permanent light (pink) | none |
-| Rafa     | Unchanged from current build (deep blue mission-control) | none |
+| Traveler | Surface | Accent | Type |
+|---|---|---|---|
+| Jonathan | Kottke-dark `#0E0F11` | Oxblood `#A33A2E` | Fraunces serif + Inter Tight |
+| Helen    | Linen `#F2EFE7` | Forest `#2E5D3A` | Same |
+| Aurelia  | Rose `#FCE8EE` | Hot pink `#E8478C` | Same |
+| Rafa     | Near-black oxblood `#1A0A0B` | Ochre `#FFB833` | Same |
 
-The Design bundle proposes alternate per-traveler tokens (Helen sage
-`#2E5D3A`, Aurelia hot pink `#E8478C`, Rafa ochre on near-black). Those
-are explicitly **deferred** — the user's instruction was "polish, not
-redesign." Apply Design dot colors via `data/travelers.js` for memory
-attribution; keep shipped surface palettes intact.
+Helen retains a dark-mode toggle (`useHelenDark`) that swaps her
+surface to a Kottke-dark mirror.
+
+## §6.x — Per-traveler view layouts (Design-authoritative)
+
+Each `views/*View.jsx` is a direct port of the Design's
+`prototype.jsx` flow for that traveler. Where the Design's static
+fixture diverges from live data, the live data wins (e.g. memories
+come from `lib/memoryStore` not the prototype's MEMORIES constant).
+
+### Jonathan — Editorial Ops Console
+
+`views/JonathanView.jsx`. Newspaper masthead "FAMILY OPS · VOL · 1 ·
+NO · {issue} · {date}". Pull-quote serif headline split into upright +
+italic halves ("Day one, *converging on Murray Hill.*"). Italic deck.
+Three-column ticker: DRIVE / FLIGHT / ETA HOME. Hairline-rule sections:
+
+- **The plan** — stop entries (no cards): time gutter (with LIVE
+  indicator if the stop is happening within ±60 min of now),
+  bracketed `[KIND]`, "X ENTRIES ↗" memory count from
+  `listMemoriesForTrip`, serif title, italic deck, AvatarStack +
+  city.
+- **Open loops** — derived from `tentative: true` stops, capped at 3.
+- **The flight** — typographic flight table populated from the trip's
+  arrival stop (no card chrome).
+- **Queue** — Bathroom / Fast food / Outside / Emergency 2x2 grid.
+- **File a dispatch** — primary action, deep-links to today's first
+  stop where the threaded composer lives.
+
+### Helen — Threaded Archive Timeline
+
+`views/HelenView.jsx`. Top nav with `← TRIPS / TRIP NAME / 📍 MAP`.
+Day-as-card chips: `DAY 1 / Fri` (active inverts to ink-on-bg). Day
+eyebrow + serif day title. Vertical timeline with a hairline gutter
+line and circle markers. Each stop renders:
+
+- Eyebrow time + kind, serif title, italic deck.
+- If memories exist: a "X MEMORIES" preview card with up to 3 tile
+  thumbnails (photo placeholder / mic icon for voice / italic-quote
+  text snippet), AvatarStack of authors, and "OPEN THREAD →"
+  affordance.
+- If no memories: a dashed "+ add a memory" pill.
+
+Capture FAB pinned bottom-right above the FamilyDock.
+
+### Aurelia — Trip Book (Postcard Scrapbook)
+
+`views/AureliaView.jsx`. Eyebrow `A · SINCE 2012` + `HER STUFF`.
+Italic serif title "Aurelia's Trip Book". Italic deck "a place for
+what you actually cared about." Memories render as a stack of
+slightly-rotated polaroid cards:
+
+- Paper tape at the top.
+- Photo placeholder (Pass-2 wires actual CloudKit asset thumbnails;
+  current build uses a 45° hatched pattern in the memory's tint).
+- Italic quote of the memory text / caption / transcript.
+- Author chip + time + "felt {mood}" (mood inferred from a small
+  keyword bucket — chaos / beautiful / tender / triumphant / quiet —
+  swappable for a sentiment model later).
+- Footer: "WITH" + AvatarStack of the stop's `for` list, and a small
+  location tag.
+
+Tilts are stable per memory id (deterministic hash) so re-renders
+don't shuffle the stack. Hot-pink FAB.
+
+### Rafa — Mission Deck
+
+`views/RafaView.jsx`. Eyebrow `● MISSION INCOMING|ACTIVE|COMPLETE` +
+`DAY n / total`. Block-serif title in three uppercase words (per-trip
+override: NYC → MONSTER / TRUCK / DAY, Jackson → SPACE / SHIP / TRIP).
+Italic deck. Then:
+
+- **Anchor card** — ochre full-bleed card with time chip + emoji +
+  serif uppercase stop title + 2-line description, deep-links to
+  the stop.
+- **Two alt cards** — chunky 2-column grid in blue (#3D6FB8) and
+  forest (#2E5D3A), each with an emoji icon, uppercase stop title,
+  monospace time.
+- **TELL A STORY** — giant ochre mic button at the bottom.
+
+The per-stop emoji is keyword-derived (truck → 🚀, theater → 🎭,
+flight → ✈️, etc.).
+
+### Open data integrations across all four
+
+- **Memories** are read live from `lib/memoryStore`. The Design's
+  MEMORIES fixture is documentation only.
+- **Flight** stop is found via `views/FlightStatus#findArrivalStop`.
+  Jonathan and Helen both surface it inline; the rest open it via
+  `StopDetail`.
+- **LIVE indicator** uses system clock vs. the stop's parsed time
+  with a ±60 min window on the matching day.
 
 ---
 
