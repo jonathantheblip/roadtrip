@@ -74,13 +74,16 @@ export function RafaView({ trip, onOpenStop }) {
 
       {/* Day picker — chunky, finger-sized chips for a 5-year-old. Hide
           when there's only one day (no point) and when there's no day
-          info at all. */}
+          info at all. touch-action: manipulation makes taps fire on
+          first contact instead of waiting on the iOS double-tap-zoom
+          gesture; tap-highlight + :active scale give a visual ack so
+          a 5-year-old sees the chip respond. */}
       {trip.days.length > 1 && (
         <div
           style={{
             padding: '12px 14px 0',
             display: 'flex',
-            gap: 8,
+            gap: 10,
             overflowX: 'auto',
             WebkitOverflowScrolling: 'touch',
             scrollbarWidth: 'none',
@@ -96,16 +99,21 @@ export function RafaView({ trip, onOpenStop }) {
                 type="button"
                 onClick={() => setActiveDayN(d.n)}
                 aria-pressed={isActive}
+                className="rafa-day-chip"
                 style={{
                   flex: '0 0 auto',
-                  minWidth: 56,
-                  padding: '10px 12px',
+                  minWidth: 64,
+                  minHeight: 56,
+                  padding: '10px 14px',
                   background: isActive ? 'var(--accent)' : 'transparent',
                   color: isActive ? 'var(--accent-ink, #1A0A0B)' : 'var(--muted)',
                   border: isActive ? 'none' : '1.5px solid var(--border)',
                   borderRadius: 14,
                   cursor: 'pointer',
                   textAlign: 'center',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'rgba(255, 184, 51, 0.25)',
+                  transition: 'transform .12s ease',
                 }}
               >
                 <div

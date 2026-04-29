@@ -259,6 +259,14 @@ button { font: inherit; }
   opacity: 1;
 }
 
+/* Inline day-chips on Jonathan + Rafa views keep their custom visual
+   character but inherit the same tap polish — :active scale gives the
+   user feedback before React re-renders the new active day. */
+.jj-day-chip:active,
+.rafa-day-chip:active {
+  transform: scale(0.94);
+}
+
 /* ---- Theme: Jonathan (permanent dark) --------------------------------
    Per spec §6: dark editorial newsprint. Black/charcoal ground,
    paper-white text, oxblood accents preserved. No light variant.

@@ -155,13 +155,16 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
 
       {/* Day strip — taps swap which day the masthead, ticker, and
           plan section read from. Jackson is 8 days, NYC is 3, so we
-          let the row scroll horizontally if it overflows. */}
+          let the row scroll horizontally if it overflows.
+          touch-action: manipulation kills the iOS double-tap-zoom
+          delay so taps feel instant; -webkit-tap-highlight-color
+          plus a transform on :active gives visible feedback. */}
       {trip.days.length > 1 && (
         <div
           style={{
             margin: '10px 16px 0',
             display: 'flex',
-            gap: 6,
+            gap: 8,
             overflowX: 'auto',
             WebkitOverflowScrolling: 'touch',
             scrollbarWidth: 'none',
@@ -176,18 +179,23 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
                 type="button"
                 onClick={() => setActiveDayN(d.n)}
                 aria-pressed={isActive}
+                className="jj-day-chip"
                 style={{
                   flex: '0 0 auto',
-                  padding: '5px 10px',
+                  minHeight: 38,
+                  padding: '8px 14px',
                   background: isActive ? 'var(--text)' : 'transparent',
                   color: isActive ? 'var(--bg)' : 'var(--muted)',
                   border: isActive ? '1px solid var(--text)' : '1px solid var(--border)',
                   cursor: 'pointer',
                   fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-                  fontSize: 10,
+                  fontSize: 11,
                   letterSpacing: '0.08em',
                   textTransform: 'uppercase',
                   fontWeight: isActive ? 600 : 500,
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'rgba(255, 184, 51, 0.18)',
+                  transition: 'transform .12s ease',
                 }}
               >
                 D{d.n} · {(d.date || '').split(' ')[0] || ''}
