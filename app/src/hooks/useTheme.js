@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { THEMES, THEME_ORDER, THEME_COLORS } from '../data/themes'
-import {
-  appIconSvgDataUri,
-  appIconPngDataUri,
-  PERSON_APP_TITLE,
-} from '../utils/appIcon'
+import { appIconSvgDataUri, PERSON_APP_TITLE } from '../utils/appIcon'
 
 // Per-person manifest generation.
 // iOS Safari reads <link rel="manifest"> at Add-to-Home-Screen time, so
@@ -29,9 +25,9 @@ function buildPersonManifest(person) {
     icons: [
       {
         src: iconUri,
-        sizes: '512x512',
-        type: 'image/svg+xml',
-        purpose: 'any maskable',
+        sizes: '1024x1024',
+        type: 'image/png',
+        purpose: 'any',
       },
     ],
   }
@@ -144,24 +140,12 @@ export function useTheme() {
       appleStatusMeta.setAttribute('content', dark ? 'black-translucent' : 'default')
     }
 
-    // Tab favicon — SVG is fine for modern browsers and Safari tab.
-    const svgUri = appIconSvgDataUri(activePerson)
-    swapLinkIcons('icon', svgUri, 'image/svg+xml')
-
-    // Apple Touch Icon — iOS requires PNG for reliable home-screen
-    // capture. Rasterize the same SVG through a Canvas, then swap in.
-    // While the PNG is generating we set the SVG as an interim so
-    // there's always something valid in the DOM.
-    swapLinkIcons('apple-touch-icon', svgUri)
-    appIconPngDataUri(activePerson)
-      .then((pngUri) => {
-        if (pngUri && document.body.getAttribute('data-theme') === activePerson) {
-          swapLinkIcons('apple-touch-icon', pngUri, 'image/png')
-        }
-      })
-      .catch(() => {
-        /* keep the SVG fallback */
-      })
+    // Same suitcase icon for everyone — set both rel=icon (tab favicon)
+    // and rel=apple-touch-icon (iOS home-screen capture) to the static
+    // PNG bundled in /public.
+    const iconHref = appIconSvgDataUri(activePerson)
+    swapLinkIcons('icon', iconHref, 'image/png')
+    swapLinkIcons('apple-touch-icon', iconHref, 'image/png')
 
     // Titles that iOS uses for the home-screen label.
     const appTitle = PERSON_APP_TITLE[activePerson] || 'Road Trip'
