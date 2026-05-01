@@ -88,6 +88,15 @@ function readRequestedTripId() {
   }
 }
 
+// Default landing trip when the URL doesn't pin one: latest dateRangeStart
+// wins, so adding a future trip auto-rolls the cold-start view forward.
+function pickDefaultTrip(trips) {
+  if (!trips || trips.length === 0) return null
+  return trips.reduce((best, t) =>
+    (t.dateRangeStart || '') > (best.dateRangeStart || '') ? t : best
+  )
+}
+
 export default function App() {
   const [traveler, setTraveler] = useState(readTraveler)
   const [tripId, setTripId] = useState(readRequestedTripId)
@@ -144,7 +153,8 @@ export default function App() {
     }
   }, [tripId])
 
-  const trip = (tripId && allTrips.find((t) => t.id === tripId)) || allTrips[0]
+  const trip =
+    (tripId && allTrips.find((t) => t.id === tripId)) || pickDefaultTrip(allTrips)
   const day = view.name === 'stop' && trip ? findDay(trip, view.dayN) : null
   const stop = view.name === 'stop' && day ? findStop(day, view.stopId) : null
 
@@ -254,7 +264,7 @@ export default function App() {
             </span>
           </button>
           <select
-            value={tripId || ''}
+            value={trip?.id || ''}
             onChange={(e) => openTrip(e.target.value)}
             style={{
               background: 'transparent',
