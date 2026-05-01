@@ -241,7 +241,7 @@ function StopWithThread({ stop, traveler, last, onOpen }) {
             >
               {stop.name}
             </div>
-            {stop.note && (
+            {(stop.helenNote || stop.note) && (
               <div
                 style={{
                   fontSize: 12,
@@ -254,7 +254,7 @@ function StopWithThread({ stop, traveler, last, onOpen }) {
                   overflow: 'hidden',
                 }}
               >
-                {stop.note}
+                {stop.helenNote || stop.note}
               </div>
             )}
           </div>

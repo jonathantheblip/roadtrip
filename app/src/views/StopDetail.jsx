@@ -69,8 +69,24 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
         </div>
       </header>
 
+      {stop.image && (
+        <figure className="px-6 pt-6">
+          <img
+            src={stop.image}
+            alt={stop.name}
+            style={{
+              width: '100%',
+              borderRadius: 8,
+              display: 'block',
+            }}
+          />
+        </figure>
+      )}
+
       <section className="px-6 py-8 border-b surface-rule">
-        <p className="f-news text-lg leading-relaxed opacity-80 max-w-prose">{stop.note}</p>
+        <p className="f-news text-lg leading-relaxed opacity-80 max-w-prose">
+          {traveler === 'helen' && stop.helenNote ? stop.helenNote : stop.note}
+        </p>
       </section>
 
       {stop.flightNumber && (
