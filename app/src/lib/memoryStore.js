@@ -13,9 +13,12 @@
 //     text?, photoExternalURLs?, caption?,
 //     audioRef?, durationSeconds?, transcript?, transcriptLang?,
 //     transcriptionStatus?,
-//     photoRef?, mood?,
+//     photoRef?, photoRefs?, mood?,
 //     reactions?,
 //     createdAt, updatedAt }
+// photoRefs is the multi-photo album form (Helen's thread composer);
+// photoRef stays as a back-compat mirror of photoRefs[0] for any reader
+// that hasn't been updated to handle the array.
 //
 // Backward compatibility: pre-§4 records have no `kind`. Read paths
 // treat missing `kind` as 'text'. New writes always set `kind`.
@@ -78,6 +81,7 @@ export function saveMemory({
   transcriptLang,
   transcriptionStatus,
   photoRef,
+  photoRefs,
   mood,
   reactions,
 }) {
@@ -100,9 +104,15 @@ export function saveMemory({
 
   // Default kind for legacy callers that only pass text. New surfaces
   // always set kind explicitly.
+  const hasAnyPhoto =
+    photoRef || photoRefs?.length || photoExternalURLs?.length
   const resolvedKind =
-    kind ||
-    (audioRef ? 'voice' : photoRef || photoExternalURLs?.length ? 'photo' : 'text')
+    kind || (audioRef ? 'voice' : hasAnyPhoto ? 'photo' : 'text')
+
+  // Mirror photoRefs[0] into photoRef for any reader (e.g. Aurelia's
+  // PostcardComposer-saved memories) that still expects the single field.
+  const resolvedPhotoRef =
+    photoRef || (photoRefs && photoRefs.length > 0 ? photoRefs[0] : undefined)
 
   const record = {
     id: id || makeId(),
@@ -119,7 +129,8 @@ export function saveMemory({
     transcript,
     transcriptLang,
     transcriptionStatus,
-    photoRef,
+    photoRef: resolvedPhotoRef,
+    photoRefs: photoRefs && photoRefs.length > 0 ? photoRefs : undefined,
     mood,
     reactions: reactions || [],
     createdAt: existingShared?.createdAt || existingPriv?.createdAt || now,

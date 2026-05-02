@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Camera, Mic, Trash2, Lock, Unlock, Play } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Camera, Mic, Trash2, Lock, Unlock, Play, X } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import {
   listMemoriesForStop,
@@ -10,6 +10,8 @@ import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
 import { Avatar, AvatarStack } from './Avatar'
 import { VoiceRecorder } from './VoiceRecorder'
+
+const MAX_PHOTOS_PER_ALBUM = 6
 
 // Direction 02 — Threaded Memories. Per Design system.jsx /
 // variant-threaded.jsx, each stop carries a vertical thread of memories
@@ -27,6 +29,12 @@ export function ThreadedMemories({ trip, stop, traveler }) {
   const [recording, setRecording] = useState(false)
   const [visibility, setVisibility] = useState('shared')
   const [error, setError] = useState('')
+  // Pending photo album: files the user just picked but hasn't saved.
+  // Showing a tray above the composer keeps the picker → caption →
+  // save flow in one place rather than a full-screen modal.
+  const [pendingPhotos, setPendingPhotos] = useState([])
+  const [photoCaption, setPhotoCaption] = useState('')
+  const [savingPhotos, setSavingPhotos] = useState(false)
 
   function refresh() {
     setMemories(listMemoriesForStop(stop.id, traveler))
@@ -90,6 +98,80 @@ export function ThreadedMemories({ trip, stop, traveler }) {
     refresh()
   }
 
+  function addPhotoFiles(fileList) {
+    if (!fileList || fileList.length === 0) return
+    setError('')
+    const incoming = Array.from(fileList).filter((f) =>
+      (f.type || '').startsWith('image/')
+    )
+    if (incoming.length === 0) return
+    setPendingPhotos((prev) => {
+      const room = MAX_PHOTOS_PER_ALBUM - prev.length
+      if (room <= 0) return prev
+      const accepted = incoming.slice(0, room).map((file) => ({
+        id: `pp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        file,
+        url: URL.createObjectURL(file),
+      }))
+      return [...prev, ...accepted]
+    })
+  }
+
+  function removePendingPhoto(id) {
+    setPendingPhotos((prev) => {
+      const target = prev.find((p) => p.id === id)
+      if (target?.url) URL.revokeObjectURL(target.url)
+      return prev.filter((p) => p.id !== id)
+    })
+  }
+
+  function clearPendingPhotos() {
+    setPendingPhotos((prev) => {
+      prev.forEach((p) => p.url && URL.revokeObjectURL(p.url))
+      return []
+    })
+    setPhotoCaption('')
+  }
+
+  async function savePhotoAlbum() {
+    if (pendingPhotos.length === 0) return
+    setSavingPhotos(true)
+    setError('')
+    try {
+      const refs = []
+      for (const p of pendingPhotos) {
+        const key = makeAssetKey('photo')
+        await saveAsset('photo', key, p.file, p.file.type)
+        refs.push({ storage: 'idb', key })
+      }
+      saveMemory({
+        tripId: trip.id,
+        stopId: stop.id,
+        authorTraveler: traveler,
+        visibility,
+        kind: 'photo',
+        photoRefs: refs,
+        caption: photoCaption.trim() || undefined,
+        text: photoCaption.trim() || undefined,
+      })
+      clearPendingPhotos()
+      refresh()
+    } catch (err) {
+      console.error('photo save failed', err)
+      setError('Photos failed to save — your storage may be full.')
+    } finally {
+      setSavingPhotos(false)
+    }
+  }
+
+  // Release any pending preview URLs on unmount.
+  useEffect(() => {
+    return () => {
+      pendingPhotos.forEach((p) => p.url && URL.revokeObjectURL(p.url))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Memories are sorted ascending by createdAt; render newest at the
   // bottom so the thread reads top-down like iMessage.
   return (
@@ -119,6 +201,19 @@ export function ThreadedMemories({ trip, stop, traveler }) {
         ))}
       </div>
 
+      {pendingPhotos.length > 0 && (
+        <PhotoAlbumTray
+          photos={pendingPhotos}
+          caption={photoCaption}
+          onCaption={setPhotoCaption}
+          onRemove={removePendingPhoto}
+          onCancel={clearPendingPhotos}
+          onSave={savePhotoAlbum}
+          saving={savingPhotos}
+          maxPhotos={MAX_PHOTOS_PER_ALBUM}
+        />
+      )}
+
       <Composer
         traveler={traveler}
         text={text}
@@ -128,6 +223,8 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           setError('')
           setRecording(true)
         }}
+        onPickPhotos={addPhotoFiles}
+        canPickMore={pendingPhotos.length < MAX_PHOTOS_PER_ALBUM}
         visibility={visibility}
         onVisibility={() =>
           setVisibility(visibility === 'private' ? 'shared' : 'private')
@@ -252,19 +349,139 @@ function ThreadEntry({ mem, traveler, onDelete }) {
             </div>
           )}
           {kind === 'voice' && <VoiceBubble mem={mem} isMe={isMe} dot={dot} />}
-          {kind === 'photo' && (
-            <div
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10,
-                opacity: 0.7,
-              }}
-            >
-              [photo placeholder — wired in Pass 2]
-            </div>
-          )}
+          {kind === 'photo' && <PhotoBubble mem={mem} />}
         </div>
       </div>
+    </div>
+  )
+}
+
+function PhotoBubble({ mem }) {
+  // The schema supports a single photoRef (Aurelia's PostcardComposer)
+  // and a photoRefs[] album (Helen's thread composer). Coalesce both
+  // into one list so this component doesn't care which path saved it.
+  const refs = mem.photoRefs?.length
+    ? mem.photoRefs
+    : mem.photoRef
+      ? [mem.photoRef]
+      : []
+  const [urls, setUrls] = useState({})
+  useEffect(() => {
+    let cancelled = false
+    const created = []
+    Promise.all(
+      refs.map((r) =>
+        r?.key && r.storage === 'idb'
+          ? loadAsset('photo', r.key).then((blob) => {
+              if (!blob) return null
+              const u = URL.createObjectURL(blob)
+              created.push(u)
+              return [r.key, u]
+            })
+          : Promise.resolve(null)
+      )
+    ).then((pairs) => {
+      if (cancelled) {
+        created.forEach((u) => URL.revokeObjectURL(u))
+        return
+      }
+      const map = {}
+      for (const p of pairs) if (p) map[p[0]] = p[1]
+      setUrls(map)
+    })
+    return () => {
+      cancelled = true
+      created.forEach((u) => URL.revokeObjectURL(u))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mem.id])
+
+  if (refs.length === 0 && !mem.caption && !mem.text) {
+    return (
+      <div
+        style={{
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 10,
+          opacity: 0.7,
+        }}
+      >
+        [photo unavailable]
+      </div>
+    )
+  }
+
+  const isAlbum = refs.length > 1
+  const caption = mem.caption || mem.text
+  // Tile size kept tight so a 6-photo album still fits inside the
+  // bubble's 260px max width — albums wrap to a second row when they
+  // outrun the available space.
+  const tile = 56
+
+  return (
+    <div>
+      {isAlbum ? (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 4,
+            marginBottom: caption ? 8 : 0,
+          }}
+        >
+          {refs.map((r, i) => (
+            <div
+              key={r.key || i}
+              style={{
+                width: tile,
+                height: tile,
+                borderRadius: 6,
+                background: urls[r.key]
+                  ? `url(${urls[r.key]}) center/cover no-repeat`
+                  : 'var(--bg2)',
+                flexShrink: 0,
+              }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div
+          style={{
+            width: 168,
+            aspectRatio: '4 / 3',
+            borderRadius: 8,
+            background: urls[refs[0]?.key]
+              ? `url(${urls[refs[0].key]}) center/cover no-repeat`
+              : 'var(--bg2)',
+            marginBottom: caption ? 8 : 0,
+          }}
+        />
+      )}
+      {caption && (
+        <div
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 13,
+            fontStyle: 'italic',
+            lineHeight: 1.35,
+          }}
+        >
+          “{caption}”
+        </div>
+      )}
+      {isAlbum && (
+        <div
+          style={{
+            marginTop: 4,
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 9,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            opacity: 0.7,
+          }}
+        >
+          {refs.length} photos
+        </div>
+      )}
     </div>
   )
 }
@@ -398,9 +615,12 @@ function Composer({
   onText,
   onSend,
   onMic,
+  onPickPhotos,
+  canPickMore,
   visibility,
   onVisibility,
 }) {
+  const fileInputRef = useRef(null)
   return (
     <div
       style={{
@@ -446,23 +666,36 @@ function Composer({
         />
         <button
           type="button"
-          onClick={() => alert('Photo capture lands in Pass 2 (CloudKit assets).')}
-          aria-label="Attach photo"
+          onClick={() => canPickMore && fileInputRef.current?.click()}
+          aria-label="Attach photos"
+          disabled={!canPickMore}
           style={{
             width: 32,
             height: 32,
             borderRadius: '50%',
             border: 0,
             background: 'transparent',
-            color: 'var(--muted)',
-            cursor: 'pointer',
+            color: canPickMore ? 'var(--muted)' : 'var(--faint)',
+            cursor: canPickMore ? 'pointer' : 'default',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            opacity: canPickMore ? 1 : 0.4,
           }}
         >
           <Camera size={16} />
         </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            onPickPhotos?.(e.target.files)
+            e.target.value = ''
+          }}
+        />
         <button
           type="button"
           onClick={onMic}
@@ -528,4 +761,175 @@ function formatTime(iso) {
   } catch {
     return ''
   }
+}
+
+function PhotoAlbumTray({
+  photos,
+  caption,
+  onCaption,
+  onRemove,
+  onCancel,
+  onSave,
+  saving,
+  maxPhotos,
+}) {
+  const n = photos.length
+  return (
+    <div
+      style={{
+        marginTop: 18,
+        padding: 12,
+        border: '1px solid var(--border)',
+        borderRadius: 14,
+        background: 'var(--card)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 10,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 10,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'var(--muted)',
+          }}
+        >
+          {n} of {maxPhotos} photo{n === 1 ? '' : 's'}
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          style={{
+            background: 'transparent',
+            border: 0,
+            padding: 0,
+            cursor: saving ? 'default' : 'pointer',
+            color: 'var(--faint)',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 10,
+            letterSpacing: '0.14em',
+          }}
+        >
+          DISCARD
+        </button>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 6,
+          marginBottom: 10,
+        }}
+      >
+        {photos.map((p, i) => (
+          <div
+            key={p.id}
+            style={{
+              position: 'relative',
+              aspectRatio: 1,
+              borderRadius: 8,
+              overflow: 'hidden',
+              background: `url(${p.url}) center/cover no-repeat var(--bg2)`,
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: 4,
+                left: 4,
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: 'var(--accent)',
+                color: 'var(--accent-ink, #fff)',
+                fontFamily: 'Inter Tight, system-ui, sans-serif',
+                fontSize: 10,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {i + 1}
+            </span>
+            <button
+              type="button"
+              onClick={() => onRemove(p.id)}
+              aria-label={`Remove photo ${i + 1}`}
+              disabled={saving}
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                border: 0,
+                background: 'rgba(0,0,0,0.55)',
+                color: '#fff',
+                cursor: saving ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <textarea
+        value={caption}
+        onChange={(e) => onCaption(e.target.value)}
+        placeholder="caption (optional)…"
+        rows={2}
+        disabled={saving}
+        style={{
+          width: '100%',
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          padding: 10,
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 13,
+          fontStyle: 'italic',
+          lineHeight: 1.4,
+          color: 'var(--text)',
+          outline: 'none',
+          resize: 'vertical',
+          minHeight: 50,
+        }}
+      />
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving || n === 0}
+        style={{
+          marginTop: 10,
+          width: '100%',
+          padding: '10px 14px',
+          borderRadius: 10,
+          border: 'none',
+          background: 'var(--accent)',
+          color: 'var(--accent-ink, #fff)',
+          cursor: saving ? 'default' : 'pointer',
+          fontFamily: 'Inter Tight, system-ui, sans-serif',
+          fontSize: 13,
+          fontWeight: 600,
+          opacity: saving ? 0.6 : 1,
+        }}
+      >
+        {saving ? 'Saving…' : `Save ${n} to thread`}
+      </button>
+    </div>
+  )
 }

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Mic, MapPin } from 'lucide-react'
 import { listMemoriesForStop } from '../lib/memoryStore'
+import { loadAsset } from '../lib/memAssets'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
 
@@ -339,17 +340,59 @@ function StopWithThread({ stop, traveler, last, onOpen }) {
 
 function ThreadPreviewTile({ mem }) {
   const kind = mem.kind || (mem.text ? 'text' : 'photo')
+  const photoRefs = mem.photoRefs?.length
+    ? mem.photoRefs
+    : mem.photoRef
+      ? [mem.photoRef]
+      : []
+  const [photoUrl, setPhotoUrl] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    let created = null
+    const first = photoRefs[0]
+    if (kind === 'photo' && first?.key && first.storage === 'idb') {
+      loadAsset('photo', first.key).then((blob) => {
+        if (cancelled || !blob) return
+        created = URL.createObjectURL(blob)
+        setPhotoUrl(created)
+      })
+    }
+    return () => {
+      cancelled = true
+      if (created) URL.revokeObjectURL(created)
+    }
+  }, [kind, photoRefs[0]?.key])
   return (
     <div style={{ flex: 1, position: 'relative' }}>
       {kind === 'photo' && (
         <div
           style={{
             aspectRatio: 1,
-            background:
-              'repeating-linear-gradient(45deg, #d6c5a8, #d6c5a8 6px, #c5b497 6px, #c5b497 12px)',
+            background: photoUrl
+              ? `url(${photoUrl}) center/cover no-repeat`
+              : 'repeating-linear-gradient(45deg, #d6c5a8, #d6c5a8 6px, #c5b497 6px, #c5b497 12px)',
             borderRadius: 6,
           }}
         />
+      )}
+      {kind === 'photo' && photoRefs.length > 1 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 3,
+            right: 3,
+            background: 'rgba(0,0,0,0.65)',
+            color: '#fff',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 9,
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            padding: '1px 5px',
+            borderRadius: 8,
+          }}
+        >
+          {photoRefs.length}
+        </div>
       )}
       {kind === 'voice' && (
         <div
