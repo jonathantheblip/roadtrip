@@ -1,11 +1,12 @@
 import { Toilet, Beef, TreePine, Siren } from 'lucide-react'
 import { TRAVELERS } from '../data/travelers'
 
-// Quick "from the road" search panel. Shows on driving days for
-// Jonathan, Helen, and Aurelia (Rafa view doesn't surface it). Each
-// button opens the active traveler's preferred maps app with a
-// category query — Apple Maps and Waze both interpret these as
-// "near me" by default once the user has location permission.
+// Quick "near me" search panel — works the same on a driving day, a
+// flight layover, or a walk through Manhattan. Shows for Jonathan,
+// Helen, and Aurelia (Rafa view doesn't surface it). Each button opens
+// the active traveler's preferred maps app with a category query —
+// Apple Maps and Waze both interpret these as "near me" by default
+// once the user has location permission.
 //
 // Categories per spec:
 //   bathroom → public restrooms
@@ -35,7 +36,7 @@ export function RoadSearch({ traveler, dark = false }) {
         className="smallcaps f-dm text-[11px] opacity-70 mb-3"
         style={{ display: 'flex', alignItems: 'center', gap: 6 }}
       >
-        From the road
+        Near you
       </p>
       <div className="grid grid-cols-2 gap-3">
         {CATEGORIES.map(({ id, label, q, Icon }) => (

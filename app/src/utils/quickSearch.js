@@ -1,6 +1,6 @@
 // Quick-search URL builders for the persistent navigation bar.
 //
-// Jonathan drives, so his quick-search actions open Waze. Everyone else
+// Jonathan's actions open Waze (his preferred maps app). Everyone else
 // opens Apple Maps. These rely on the phone's GPS — we pass the query
 // through and let the nav app handle "near me".
 
@@ -28,8 +28,9 @@ export function quickSearchUrl(key, activePerson) {
   return `https://maps.apple.com/?q=${q}`
 }
 
-// Resolve a stop to a person-appropriate navigation URL.
-// Jonathan → Waze (lat/lng preferred). Everyone else → Apple Maps (address).
+// Resolve a stop to a per-person navigation URL based on their preferred
+// maps app. Jonathan → Waze (lat/lng preferred). Everyone else → Apple
+// Maps (address).
 export function personNavUrl(activePerson, stop) {
   if (!stop) return '#'
   if (activePerson === 'jonathan') {

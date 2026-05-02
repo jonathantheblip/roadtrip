@@ -71,7 +71,7 @@ function splitHeadline(day) {
   // case (e.g. "Murray Hill") but de-capitalise the first word so it
   // reads as a sentence with the upright opener.
   const raw = (day?.title || '').trim()
-  const cont = raw ? raw.charAt(0).toLowerCase() + raw.slice(1) + '.' : 'on the road.'
+  const cont = raw ? raw.charAt(0).toLowerCase() + raw.slice(1) + '.' : 'underway.'
   return { upright: ordinal + ',', italic: cont }
 }
 
@@ -503,7 +503,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
         </JSection>
       )}
 
-      {/* QUEUE — quick logs from the road */}
+      {/* QUEUE — quick logs from anywhere */}
       <JSection label="Queue" meta="LOG, BRIEFLY" style={{ marginTop: 6 }}>
         <div
           style={{

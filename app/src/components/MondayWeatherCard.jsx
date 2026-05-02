@@ -90,7 +90,7 @@ export function MondayWeatherCard({ activePerson }) {
 
       {activePerson === 'jonathan' && (
         <details className="mwx-flex">
-          <summary>Flexibility budget (driver-only)</summary>
+          <summary>Schedule slack</summary>
           <ul>
             <li>Vicksburg micro-stop is optional (saves 12 min).</li>
             <li>Downtown Ruston mural drive-through is optional (saves 5 min).</li>

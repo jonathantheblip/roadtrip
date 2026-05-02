@@ -1,6 +1,7 @@
 // Navigation link builders and the TikTok deep-link handoff.
-// Jonathan → Waze, Helen → Apple Maps, Aurelia → TikTok then Apple Maps,
-// Rafa → Apple Maps (parent is driving). Ported from the vanilla app.
+// Per-person preferred maps app: Jonathan → Waze, Helen → Apple Maps,
+// Aurelia → TikTok then Apple Maps, Rafa → Apple Maps. Ported from the
+// vanilla app.
 
 export function wazeUrl(stop) {
   if (stop.lat != null && stop.lng != null) {
