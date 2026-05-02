@@ -245,44 +245,78 @@ export default function App() {
             gap: 8,
           }}
         >
-          <button
-            type="button"
-            onClick={openIndex}
-            style={{ background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
-          >
-            <span
-              className="f-mono"
+          {/* Context-aware back: from a stop or settings, "back" should
+              return to the per-traveler trip home, not jump out to the
+              trip index. The trip-switcher dropdown to the right still
+              lets users hop trips without going through the index. */}
+          {(() => {
+            const inDeepView = view.name === 'stop' || view.name === 'settings'
+            const label = inDeepView && trip?.title ? `← ${trip.title}` : '← Trips'
+            const handler = inDeepView ? () => setView({ name: 'trip' }) : openIndex
+            return (
+              <button
+                type="button"
+                onClick={handler}
+                style={{
+                  background: 'transparent',
+                  border: 0,
+                  padding: 0,
+                  cursor: 'pointer',
+                  minWidth: 0,
+                  flex: '0 1 auto',
+                }}
+              >
+                <span
+                  className="f-mono"
+                  style={{
+                    display: 'inline-block',
+                    maxWidth: inDeepView ? '80vw' : '52vw',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: 10,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    opacity: topBar.opacity,
+                    color: topBar.text,
+                  }}
+                >
+                  {label}
+                </span>
+              </button>
+            )
+          })()}
+          {/* Trip switcher only on the trip home — on stop/settings the
+              back button already carries the trip title, and rendering
+              the title twice in a fixed-width bar overflows on phones. */}
+          {view.name === 'trip' && (
+            <select
+              value={trip?.id || ''}
+              onChange={(e) => openTrip(e.target.value)}
               style={{
+                background: 'transparent',
+                border: 0,
+                fontFamily: 'JetBrains Mono, monospace',
                 fontSize: 10,
                 letterSpacing: '0.18em',
                 textTransform: 'uppercase',
                 opacity: topBar.opacity,
                 color: topBar.text,
+                maxWidth: '60vw',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                flex: '1 1 auto',
+                minWidth: 0,
+                textAlign: 'right',
               }}
             >
-              ← Trips
-            </span>
-          </button>
-          <select
-            value={trip?.id || ''}
-            onChange={(e) => openTrip(e.target.value)}
-            style={{
-              background: 'transparent',
-              border: 0,
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 10,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              opacity: topBar.opacity,
-              color: topBar.text,
-            }}
-          >
-            {allTrips.map((t) => (
-              <option key={t.id} value={t.id} style={{ color: '#1A1614' }}>
-                {t.title}
-              </option>
-            ))}
-          </select>
+              {allTrips.map((t) => (
+                <option key={t.id} value={t.id} style={{ color: '#1A1614' }}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
             onClick={openSettings}
