@@ -110,18 +110,52 @@ export async function pullAll() {
 
   // Shared memories another family member owns — sharedCloudDatabase
   // Family zone (only present after accepting a share invitation).
+  // sharedCloudDatabase rejects performQuery with a bare zoneID
+  // ("SharedDB does not support Zone Wide queries"); fetchRecordZoneChanges
+  // is the supported way to enumerate everything in a shared zone.
   try {
     const shared = container.sharedCloudDatabase
-    const r = await shared.performQuery({
-      recordType: RECORD_TYPE,
-      zoneID: { zoneName: SHARED_ZONE },
-    })
-    if (r.records) for (const rec of r.records) out.push(fromCKRecord(rec, 'shared'))
+    const records = await fetchAllFromSharedZone(shared, RECORD_TYPE)
+    for (const rec of records) out.push(fromCKRecord(rec, 'shared'))
   } catch (err) {
     // Recipient hasn't accepted a share yet, or no share exists.
     console.warn('CloudKit pullAll(shared/family) failed', err)
   }
 
+  return out
+}
+
+// Walk every record in the shared Family zone via fetchRecordZoneChanges.
+// Filters to `recordType` client-side because the CloudKit JS API for this
+// call doesn't accept a record-type filter — the change feed includes all
+// types in the zone. Pages through `moreComing` if the response is large.
+async function fetchAllFromSharedZone(db, recordType) {
+  const out = []
+  let serverChangeToken = undefined
+  for (let page = 0; page < 20; page++) {
+    let resp
+    try {
+      resp = await db.fetchRecordZoneChanges({
+        zones: [
+          {
+            zoneID: { zoneName: SHARED_ZONE },
+            ...(serverChangeToken ? { serverChangeToken } : {}),
+          },
+        ],
+      })
+    } catch (err) {
+      if (page === 0) throw err
+      break
+    }
+    const zoneResp = resp?.zones?.[0]
+    const records = zoneResp?.records || []
+    for (const rec of records) {
+      if (!recordType || rec.recordType === recordType) out.push(rec)
+    }
+    serverChangeToken = zoneResp?.syncToken || zoneResp?.serverChangeToken
+    if (!resp?.moreComing && !zoneResp?.moreComing) break
+    if (!serverChangeToken) break
+  }
   return out
 }
 
@@ -334,14 +368,12 @@ export async function pullTrips() {
   } catch (err) {
     console.warn('CloudKit pullTrips(private) failed', err)
   }
-  // Recipient side — sharedCloudDatabase (only present after accepting a share)
+  // Recipient side — sharedCloudDatabase (only present after accepting a share).
+  // Same Zone-Wide-Query restriction as memories; use fetchRecordZoneChanges.
   try {
     const shared = container.sharedCloudDatabase
-    const r = await shared.performQuery({
-      recordType: TRIP_RECORD_TYPE,
-      zoneID: { zoneName: SHARED_ZONE },
-    })
-    if (r.records) for (const rec of r.records) {
+    const records = await fetchAllFromSharedZone(shared, TRIP_RECORD_TYPE)
+    for (const rec of records) {
       const t = tripFromCKRecord(rec)
       if (t) out.push(t)
     }
