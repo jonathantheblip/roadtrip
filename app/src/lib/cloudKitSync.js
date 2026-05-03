@@ -267,8 +267,18 @@ export async function pushMemory(memory) {
 // and retry the save with it; CloudKit then treats the call as an
 // update and overwrites server state with our local fields.
 async function saveOrUpdate(db, record) {
+  // CloudKit JS empirically ignores per-record `zoneID` when no call-level
+  // zoneID option is passed — records silently land in _defaultZone even
+  // when each record sets `zoneID: { zoneName: 'Family' }`. Pass the
+  // zoneID at the call level too to force routing into the Family zone.
+  // (Symptom that surfaced this 2026-05-03: Family zone showed empty in
+  // dashboard despite many "successful" pushes; pullAll's _defaultZone
+  // performQuery source happily returned the misrouted records, hiding
+  // the bug. Same root cause for "trip pull returns 0" and "invite popup
+  // hangs forever" — the popup was trying to share an empty zone.)
+  const callOpts = record.zoneID ? { zoneID: record.zoneID } : undefined
   try {
-    const r = await db.saveRecords([record])
+    const r = await db.saveRecords([record], callOpts)
     throwIfRecordErrors(r)
     return r
   } catch (err) {
@@ -280,7 +290,7 @@ async function saveOrUpdate(db, record) {
     const fetched = await db.fetchRecords([ref])
     const tag = fetched?.records?.[0]?.recordChangeTag
     if (!tag) throw err
-    const r2 = await db.saveRecords([{ ...record, recordChangeTag: tag }])
+    const r2 = await db.saveRecords([{ ...record, recordChangeTag: tag }], callOpts)
     throwIfRecordErrors(r2)
     return r2
   }
