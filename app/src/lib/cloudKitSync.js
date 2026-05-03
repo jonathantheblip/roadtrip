@@ -137,8 +137,13 @@ export async function pullAll() {
 // Filters to `recordType` client-side because the CloudKit JS API for this
 // call doesn't accept a record-type filter — the change feed includes all
 // types in the zone. Pages through `moreComing` if the response is large.
+//
+// Annotates the returned array with .zoneCounts (e.g. {Memory: 5, Trip: 2})
+// so callers can surface "the zone has these types" diagnostics when their
+// type-of-interest comes back empty.
 async function fetchAllFromSharedZone(db, recordType) {
   const out = []
+  const zoneCounts = {}
   let serverChangeToken = undefined
   for (let page = 0; page < 20; page++) {
     let resp
@@ -158,12 +163,15 @@ async function fetchAllFromSharedZone(db, recordType) {
     const zoneResp = resp?.zones?.[0]
     const records = zoneResp?.records || []
     for (const rec of records) {
+      const t = rec.recordType || '<no-type>'
+      zoneCounts[t] = (zoneCounts[t] || 0) + 1
       if (!recordType || rec.recordType === recordType) out.push(rec)
     }
     serverChangeToken = zoneResp?.syncToken || zoneResp?.serverChangeToken
     if (!resp?.moreComing && !zoneResp?.moreComing) break
     if (!serverChangeToken) break
   }
+  out.zoneCounts = zoneCounts
   return out
 }
 
@@ -464,6 +472,15 @@ export async function pullTrips() {
     }
     if (privateRawCount > 0 && privateParsedCount === 0) {
       errors.push(`private/family: got ${privateRawCount} raw record(s) but tripFromCKRecord returned null for all (probably missing dataJson field on server)`)
+    } else if (privateRawCount === 0) {
+      // Zero filtered records. Surface the full zone contents so we can
+      // see whether the records are present under a different recordType
+      // name vs not present at all.
+      const counts = records.zoneCounts || {}
+      const summary = Object.keys(counts).length
+        ? Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(', ')
+        : 'empty'
+      errors.push(`private/family: 0 ${TRIP_RECORD_TYPE} records · zone contains: ${summary}`)
     }
   } catch (err) {
     console.warn('CloudKit pullTrips(private) failed', err)
