@@ -221,13 +221,13 @@ export function mergeFromRemote(remoteRecords) {
       if (!author) continue
       const bucket = getPrivateBucket(author)
       const existing = bucket.get(r.id)
-      if (!existing || (r.updatedAt && r.updatedAt > existing.updatedAt)) {
+      if (shouldTakeRemote(r, existing)) {
         bucket.set(r.id, r)
         added += 1
       }
     } else {
       const existing = sharedMap.get(r.id)
-      if (!existing || (r.updatedAt && r.updatedAt > existing.updatedAt)) {
+      if (shouldTakeRemote(r, existing)) {
         sharedMap.set(r.id, r)
         added += 1
       }
@@ -238,6 +238,39 @@ export function mergeFromRemote(remoteRecords) {
     writeJson(PRIVATE_KEY(author), Array.from(bucket.values()))
   }
   return added
+}
+
+// Decide whether to overwrite a local record with the remote copy.
+// Last-write-wins by `updatedAt`, plus a "storage upgrade" exception:
+// when the remote has an R2-backed asset (renderable on any device via
+// URL) and the local copy still has CloudKit-era refs (`storage:'cloudkit'`
+// with an Apple-CDN URL we can no longer auth against), take the remote
+// regardless of timestamps. Without this, a device that synced from
+// CloudKit yesterday keeps the unrenderable refs forever after the
+// switch to the Worker, even though Pull says "0 merged."
+function shouldTakeRemote(remote, local) {
+  if (!local) return true
+  if (remote.updatedAt && remote.updatedAt > local.updatedAt) return true
+  if (hasR2Asset(remote) && !hasUsableLocalAsset(local)) return true
+  return false
+}
+
+function hasR2Asset(m) {
+  if (m.photoRef?.storage === 'r2') return true
+  if (m.audioRef?.storage === 'r2') return true
+  if (m.photoRefs?.some?.((p) => p?.storage === 'r2')) return true
+  return false
+}
+
+function hasUsableLocalAsset(m) {
+  // 'idb' and 'r2' are the two storage flavors the current renderers
+  // can actually display. 'cloudkit' was the legacy flavor; refs of
+  // that flavor are dead post-migration.
+  const usable = (s) => s === 'r2' || s === 'idb'
+  if (usable(m.photoRef?.storage)) return true
+  if (usable(m.audioRef?.storage)) return true
+  if (m.photoRefs?.some?.((p) => usable(p?.storage))) return true
+  return false
 }
 
 // Single-entry convenience: load the active traveler's memory for a stop

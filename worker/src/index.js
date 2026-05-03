@@ -25,20 +25,36 @@ export default {
       return new Response(null, { status: 204, headers: cors })
     }
 
-    // Auth
+    const path = url.pathname.replace(/\/+$/, '') || '/'
+
+    // GET /assets/:key bypasses bearer auth so <img src> + <audio src>
+    // tags can render directly on receiver devices. R2 keys are opaque
+    // random strings nested under <traveler>/<memoryId>/<kind>-<rand>;
+    // the only way to learn one is via authenticated GET /memories.
+    // Same posture as the legacy CloudKit CKAsset.downloadURL flow,
+    // which Apple also served unauthenticated.
+    if (request.method === 'GET' && /^\/assets\/.+$/.test(path)) {
+      try {
+        return await fetchAsset(env, path.replace(/^\/assets\//, ''), cors)
+      } catch (err) {
+        console.error('asset fetch error', err?.stack || err)
+        return json({ error: err?.message || String(err) }, 500, cors)
+      }
+    }
+
+    // Auth (everything else)
     const traveler = authenticate(request, env)
     if (!traveler) {
       return json({ error: 'unauthorized' }, 401, cors)
     }
 
     try {
-      const path = url.pathname.replace(/\/+$/, '') || '/'
 
       if (path === '/memories' && request.method === 'GET') {
         return await getMemories(env, traveler, url, cors)
       }
       if (path === '/memories' && request.method === 'POST') {
-        return await postMemory(env, traveler, request, cors)
+        return await postMemory(env, traveler, request, url, cors)
       }
       const memMatch = path.match(/^\/memories\/([^/]+)$/)
       if (memMatch && request.method === 'DELETE') {
@@ -62,11 +78,6 @@ export default {
           env, traveler, uploadMatch[1], uploadMatch[2], request, url, cors
         )
       }
-      const fetchMatch = path.match(/^\/assets\/(.+)$/)
-      if (fetchMatch && request.method === 'GET') {
-        return await fetchAsset(env, fetchMatch[1], cors)
-      }
-
       if (path === '/' && request.method === 'GET') {
         return json({ ok: true, traveler }, 200, cors)
       }
@@ -119,17 +130,21 @@ function corsHeaders(origin, env) {
 
 async function getMemories(env, traveler, url, cors) {
   const since = parseInt(url.searchParams.get('since') || '0', 10) || 0
+  const origin = workerOrigin(env, url)
   const { results } = await env.DB.prepare(
     `SELECT * FROM memories
      WHERE updated_at > ?
        AND (visibility = 'shared' OR author_traveler = ?)
      ORDER BY updated_at ASC`
   ).bind(since, traveler).all()
-  const out = results.map((r) => rowToMemory(r, env))
-  return json(out, 200, cors)
+  const out = results.map((r) => rowToMemory(r, origin))
+  // Tell intermediaries (browser cache, any future CDN) not to hold
+  // onto this — pulls must always be fresh, not the snapshot whoever
+  // fetched first happened to see.
+  return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
-async function postMemory(env, traveler, request, cors) {
+async function postMemory(env, traveler, request, url, cors) {
   const body = await request.json()
   if (!body?.id) return json({ error: 'missing id' }, 400, cors)
   // Server stamps updated_at to ensure monotonic incremental sync.
@@ -218,7 +233,7 @@ async function postMemory(env, traveler, request, cors) {
   const { results } = await env.DB.prepare(
     'SELECT * FROM memories WHERE id = ?'
   ).bind(body.id).all()
-  return json(rowToMemory(results[0], env), 200, cors)
+  return json(rowToMemory(results[0], workerOrigin(env, url)), 200, cors)
 }
 
 async function deleteMemory(env, traveler, id, cors) {
@@ -229,14 +244,13 @@ async function deleteMemory(env, traveler, id, cors) {
   return json({ ok: true, id }, 200, cors)
 }
 
-function rowToMemory(r, env) {
+function rowToMemory(r, origin) {
   if (!r) return null
-  const workerOrigin = env.WORKER_ORIGIN || ''
   const photoRef = r.photo_r2_key
     ? {
         storage: 'r2',
         key: r.photo_r2_key,
-        url: assetUrl(r.photo_r2_key, workerOrigin),
+        url: assetUrl(r.photo_r2_key, origin),
         mime: r.photo_mime || undefined,
       }
     : undefined
@@ -247,7 +261,7 @@ function rowToMemory(r, env) {
       photoRefs = arr.map((a) => ({
         storage: 'r2',
         key: a.key,
-        url: assetUrl(a.key, workerOrigin),
+        url: assetUrl(a.key, origin),
         mime: a.mime || undefined,
       }))
     } catch {}
@@ -256,7 +270,7 @@ function rowToMemory(r, env) {
     ? {
         storage: 'r2',
         key: r.audio_r2_key,
-        url: assetUrl(r.audio_r2_key, workerOrigin),
+        url: assetUrl(r.audio_r2_key, origin),
         mime: r.audio_mime || undefined,
       }
     : undefined
@@ -294,10 +308,20 @@ function rowToMemory(r, env) {
 }
 
 function assetUrl(key, origin) {
-  // Origin is empty in dev → relative URL still works because the client
-  // joins it with VITE_WORKER_URL itself.
   const enc = key.split('/').map(encodeURIComponent).join('/')
-  return `${origin}/assets/${enc}`
+  return `${origin || ''}/assets/${enc}`
+}
+
+// Resolve the absolute origin to embed in returned asset URLs. Prefers
+// an env override (so we can pin to a custom domain later), falling
+// back to the request URL the Worker just received. Without this,
+// rowToMemory used to emit relative URLs ("/assets/...") which the
+// client tried to resolve against its own origin (jonathantheblip.github.io)
+// and 404'd on every photo render from a non-author device.
+function workerOrigin(env, url) {
+  if (env.WORKER_ORIGIN) return env.WORKER_ORIGIN.replace(/\/+$/, '')
+  if (url) return `${url.protocol}//${url.host}`
+  return ''
 }
 
 function toEpochMs(v) {
@@ -329,7 +353,7 @@ async function getTrips(env, url, cors) {
       return null
     }
   }).filter(Boolean)
-  return json(out, 200, cors)
+  return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
 async function postTrip(env, request, cors) {
@@ -375,10 +399,9 @@ async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
   await env.ASSETS.put(key, request.body, {
     httpMetadata: { contentType },
   })
-  const origin = env.WORKER_ORIGIN || `${url.protocol}//${url.host}`
   return json({
     key,
-    url: `${origin}/assets/${key.split('/').map(encodeURIComponent).join('/')}`,
+    url: assetUrl(key, workerOrigin(env, url)),
     mime: contentType,
   }, 200, cors)
 }
