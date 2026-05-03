@@ -4,7 +4,7 @@ import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import { useCloudKitAuth } from '../hooks/useCloudKitAuth'
 import { CLOUDKIT_META } from '../lib/cloudkit'
-import { pullAll, shareFamilyZoneWithUI, pushMemory } from '../lib/cloudKitSync'
+import { pullAll, shareFamilyZoneWithUI, pushMemory, isStandalonePWA } from '../lib/cloudKitSync'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 
 // Per-trip settings panel: calendar export, shared album link, identity reset.
@@ -460,39 +460,65 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
             <Users size={14} />
             <p className="smallcaps f-dm text-[11px] opacity-70">Family sharing</p>
           </div>
-          <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
-            One-time setup. Tap to open Apple's invite panel and pick the
-            family iCloud accounts you want to share trips and memories
-            with. They'll get a link in Mail or Messages — one tap to
-            accept and they see everything you've shared from then on.
-          </p>
-          <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn-pill"
-              onClick={runInvite}
-              disabled={inviteState.status === 'opening'}
-            >
-              <Users size={12} />
-              {inviteState.status === 'opening' ? 'Opening…' : 'Invite family'}
-            </button>
-          </div>
-          {inviteState.message && (
-            <p
-              className="f-dm text-[12px] mt-3 italic"
-              style={{
-                opacity: 0.8,
-                color:
-                  inviteState.status === 'error' ? 'var(--accent)' : 'inherit',
-              }}
-            >
-              {inviteState.message}
-            </p>
+          {isStandalonePWA() ? (
+            <>
+              <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
+                Inviting family has to be done from regular Safari, not the
+                home-screen app. Apple's invite panel opens in a popup, and
+                iOS blocks popups inside installed PWAs. (Once you've sent
+                the invitations, you can come back here for everything else.)
+              </p>
+              <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
+                Open <span className="f-mono text-[12px]">{window.location.origin + window.location.pathname}</span>{' '}
+                in Safari, sign in to iCloud, and you'll see the
+                <strong> Invite family</strong> button here.
+              </p>
+              <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
+                Once an invitation is accepted by a family member, it stays
+                accepted. The home-screen app then shows everyone's shared
+                trips and memories without any further setup.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
+                One-time setup. Tap to open Apple's invite panel and pick
+                the family iCloud accounts you want to share trips and
+                memories with. They'll get a link in Mail or Messages —
+                they accept on Apple's hosted page, then see everything
+                you've shared the next time they open the app.
+              </p>
+              <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn-pill"
+                  onClick={runInvite}
+                  disabled={inviteState.status === 'opening'}
+                >
+                  <Users size={12} />
+                  {inviteState.status === 'opening' ? 'Opening…' : 'Invite family'}
+                </button>
+              </div>
+              {inviteState.message && (
+                <p
+                  className="f-dm text-[12px] mt-3 italic"
+                  style={{
+                    opacity: 0.8,
+                    color:
+                      inviteState.status === 'error'
+                        ? 'var(--accent)'
+                        : 'inherit',
+                  }}
+                >
+                  {inviteState.message}
+                </p>
+              )}
+              <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
+                You only need to do this once. Adding a new family member
+                later re-opens the same panel.
+              </p>
+            </>
           )}
-          <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
-            You only need to do this once. Adding a new family member later
-            re-opens the same panel.
-          </p>
         </section>
       )}
     </div>

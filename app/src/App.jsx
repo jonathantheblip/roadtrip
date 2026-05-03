@@ -12,8 +12,6 @@ import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
-import { acceptFamilyShare, pullAll } from './lib/cloudKitSync'
-import { mergeFromRemote } from './lib/memoryStore'
 import './styles/platform.css'
 
 // Per-traveler palette tokens for the fixed top bar. Spec §6 dark/light:
@@ -155,41 +153,6 @@ export default function App() {
     }
   }, [tripId])
 
-  // Family share acceptance. When a recipient taps the share URL the
-  // owner sent them, they land here with `?ck_shareurl=…`. We accept
-  // the share, pull every record we can now see, merge into the local
-  // cache, and strip the query param so a refresh doesn't re-accept.
-  useEffect(() => {
-    let cancelled = false
-    const params = new URLSearchParams(window.location.search)
-    const shareUrl = params.get('ck_shareurl')
-    if (!shareUrl) return
-    ;(async () => {
-      try {
-        await acceptFamilyShare(shareUrl)
-        if (cancelled) return
-        const remote = await pullAll()
-        if (cancelled) return
-        mergeFromRemote(remote)
-        await tripsApi.refresh?.()
-      } catch (err) {
-        console.warn('share accept failed', err)
-      } finally {
-        if (cancelled) return
-        try {
-          const url = new URL(window.location.href)
-          url.searchParams.delete('ck_shareurl')
-          window.history.replaceState(null, '', url.toString())
-        } catch {
-          /* ignore */
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const trip =
     (tripId && allTrips.find((t) => t.id === tripId)) || pickDefaultTrip(allTrips)

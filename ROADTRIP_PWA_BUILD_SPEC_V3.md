@@ -29,11 +29,22 @@ why. Audited and authoritative as of 2026-05-02 (see
 
 Sharing is established by the owner via Settings → "Invite family,"
 which opens Apple's hosted `shareWithUI` for the Family zone in
-`privateCloudDatabase`. Recipients accept by tapping the invite URL —
-the PWA detects `?ck_shareurl=…` on cold load and calls
-`container.acceptShares([{shareURL}])`. Once accepted the recipient
-queries `sharedCloudDatabase` / `Family` zone alongside their own
-`privateCloudDatabase`.
+`privateCloudDatabase`. **Constraint: this must run in regular Safari,
+not the home-screen-installed PWA.** `shareWithUI` opens a popup window
+which iOS standalone mode blocks (the SDK reports `share_ui_timeout`).
+Settings detects standalone mode via
+`window.matchMedia('(display-mode: standalone)')` (and the legacy
+`navigator.standalone`) and hides the Invite button there, replacing it
+with a note that tells the owner to run the invite from Safari.
+
+Recipients accept by tapping the iCloud share URL
+(`https://www.icloud.com/share/…`) Apple sends via Mail/Messages.
+Apple's hosted accept page on icloud.com handles acceptance — there is
+no app-side code path required. Once the recipient has accepted and
+signs into iCloud in the PWA, `pullAll` surfaces the shared records
+via their `sharedCloudDatabase`. (An earlier draft of this spec
+referenced a `?ck_shareurl=…` PWA handler; that flow was incorrect and
+has been removed.)
 
 `publicCloudDatabase` is **not used** anywhere in this app. Every
 record requires either an iCloud-authenticated owner (private DB) or

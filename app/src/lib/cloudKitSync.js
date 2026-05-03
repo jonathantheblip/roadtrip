@@ -429,12 +429,22 @@ function tripFromCKRecord(rec) {
 // ─── Sharing flow ───────────────────────────────────────────────────
 //
 // Owner: opens Apple's hosted "share with people" UI for the Family
-// zone. Apple handles invitations (Mail / Messages / public link) and
-// returns the share URL. Owner sees who's accepted in CloudKit's UI.
+// zone via shareWithUI. Apple handles the invitations (Mail / Messages
+// / public link) and the share URL is generated and stored on Apple's
+// servers. The owner can re-open the same UI later to add or remove
+// participants.
 //
-// Recipient: opens the share URL on their device → it lands them in
-// the PWA with `?ck_shareurl=…` → we call acceptShares to bind their
-// account to the zone.
+// Recipient: taps the iCloud share URL (https://www.icloud.com/share/…)
+// in Mail/Messages → Apple's hosted accept page on icloud.com handles
+// acceptance. After accepting, the recipient just opens the PWA, signs
+// into iCloud, and pullAll surfaces the shared records via
+// sharedCloudDatabase. We do not need a programmatic acceptShares call
+// in the web flow — Apple's hosted page does the work.
+//
+// Caveat: shareWithUI opens a popup window. iOS standalone PWAs (apps
+// launched from the Home Screen) block these popups, so the owner must
+// run shareWithUI in regular Safari, not the home-screen PWA. The
+// Settings UI gates the Invite button on standalone-mode detection.
 
 export async function shareFamilyZoneWithUI() {
   if (!isCloudKitConfigured()) {
@@ -454,26 +464,22 @@ export async function shareFamilyZoneWithUI() {
   })
 }
 
-export async function acceptFamilyShare(shareUrl) {
-  if (!isCloudKitConfigured()) {
-    throw new Error('CloudKit not configured')
-  }
-  if (!shareUrl) throw new Error('share URL required')
-  const container = await getContainer()
-  if (typeof container.acceptShares !== 'function') {
-    throw new Error('CloudKit JS in this browser does not expose acceptShares')
-  }
-  // CloudKit JS's acceptShares takes share metadata, but the simple
-  // path is to pass the URL and let the SDK fetch the metadata.
-  // Different SDK versions accept either { shareURL } objects or raw
-  // strings — try both.
+// True when the page is running as an installed PWA (home-screen launch
+// in iOS standalone mode, or the equivalent on other platforms). We use
+// this to hide the Invite button — shareWithUI opens a popup which iOS
+// standalone mode blocks, leaving the user with a "share_ui_timeout"
+// error. The owner must run the invite flow in regular Safari.
+export function isStandalonePWA() {
+  if (typeof window === 'undefined') return false
   try {
-    return await container.acceptShares([{ shareURL: shareUrl }])
-  } catch (err1) {
-    try {
-      return await container.acceptShares([shareUrl])
-    } catch (err2) {
-      throw err2 || err1
-    }
+    if (window.matchMedia?.('(display-mode: standalone)').matches) return true
+  } catch {
+    /* older browsers without matchMedia support */
   }
+  // Safari iOS exposes a non-standard navigator.standalone for legacy
+  // home-screen PWAs.
+  if (typeof navigator !== 'undefined' && navigator.standalone === true) {
+    return true
+  }
+  return false
 }
