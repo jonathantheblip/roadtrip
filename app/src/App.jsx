@@ -12,7 +12,7 @@ import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
-import { pullAll } from './lib/cloudKitSync'
+import { pullAll } from './lib/workerSync'
 import { mergeFromRemote } from './lib/memoryStore'
 import './styles/platform.css'
 
@@ -155,7 +155,7 @@ export default function App() {
     }
   }, [tripId])
 
-  // Auto-sync from CloudKit on cold load and whenever the tab returns
+  // Auto-sync from the Worker on cold load and whenever the tab returns
   // to the foreground, so the family thread updates without anyone
   // having to remember to hit Pull. Throttled so quickly toggling
   // back-and-forth doesn't spam the API. Silent — failures don't
@@ -176,8 +176,7 @@ export default function App() {
         if (remote.length > 0) mergeFromRemote(remote)
         await tripsApi.refresh?.()
       } catch (err) {
-        // CloudKit unconfigured / signed out / offline — fine, stay
-        // on the local cache.
+        // Worker unconfigured / offline — fine, stay on local cache.
         console.warn('autoSync failed', err)
       }
     }

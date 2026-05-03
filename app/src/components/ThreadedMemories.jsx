@@ -21,7 +21,7 @@ const MAX_PHOTOS_PER_ALBUM = 6
 //
 // The photo path is real: tapping the camera icon opens a multi-photo
 // tray (up to 6) → IDB store via lib/memAssets → photoRefs[] on the
-// Memory record → CKAsset upload via cloudKitSync.pushMemory.
+// Memory record → R2 upload via workerSync.pushMemory.
 export function ThreadedMemories({ trip, stop, traveler }) {
   const [memories, setMemories] = useState(() =>
     listMemoriesForStop(stop.id, traveler)
@@ -371,16 +371,20 @@ function PhotoBubble({ mem }) {
     let cancelled = false
     const created = []
     Promise.all(
-      refs.map((r) =>
-        r?.key && r.storage === 'idb'
-          ? loadAsset('photo', r.key).then((blob) => {
-              if (!blob) return null
-              const u = URL.createObjectURL(blob)
-              created.push(u)
-              return [r.key, u]
-            })
-          : Promise.resolve(null)
-      )
+      refs.map((r) => {
+        // Remote-hosted (R2 / legacy CloudKit) — render the URL directly,
+        // no IDB load required. Lets non-author devices see the photo.
+        if (r?.url) return Promise.resolve([r.key || r.url, r.url])
+        if (r?.key && r.storage === 'idb') {
+          return loadAsset('photo', r.key).then((blob) => {
+            if (!blob) return null
+            const u = URL.createObjectURL(blob)
+            created.push(u)
+            return [r.key, u]
+          })
+        }
+        return Promise.resolve(null)
+      })
     ).then((pairs) => {
       if (cancelled) {
         created.forEach((u) => URL.revokeObjectURL(u))
@@ -491,19 +495,25 @@ function VoiceBubble({ mem, isMe, dot }) {
   const [url, setUrl] = useState(null)
   useEffect(() => {
     let active = true
-    if (mem.audioRef?.key) {
+    let createdObjectUrl = null
+    // Prefer remote URL (R2) so non-author devices can play back. Fall
+    // back to IDB blob for the author's own newly-created memories that
+    // haven't synced yet.
+    if (mem.audioRef?.url) {
+      setUrl(mem.audioRef.url)
+    } else if (mem.audioRef?.key) {
       loadAsset('audio', mem.audioRef.key).then((blob) => {
         if (!active || !blob) return
-        const u = URL.createObjectURL(blob)
-        setUrl(u)
+        createdObjectUrl = URL.createObjectURL(blob)
+        setUrl(createdObjectUrl)
       })
     }
     return () => {
       active = false
-      if (url) URL.revokeObjectURL(url)
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mem.audioRef?.key])
+  }, [mem.audioRef?.key, mem.audioRef?.url])
 
   function play() {
     if (!url) return

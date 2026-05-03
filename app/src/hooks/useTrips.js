@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { TRIPS as SEED_TRIPS } from '../data/trips'
-import { pullTrips, pushTrip, deleteTrip } from '../lib/cloudKitSync'
-import { isCloudKitConfigured } from '../lib/cloudkit'
+import { pullTrips, pushTrip, deleteTrip, isWorkerConfigured } from '../lib/workerSync'
 
 // useTrips — single source of truth for the trip list.
 //
-// CloudKit is canonical when reachable; trips.js (`SEED_TRIPS`) is
-// the fallback for cold-start, offline, signed-out, or unconfigured
-// CloudKit. Local cache in localStorage bridges launches before sign-in
+// The sync Worker is canonical when reachable; trips.js (`SEED_TRIPS`)
+// is the fallback for cold-start / offline / unconfigured Worker.
+// Local cache in localStorage bridges launches before the first pull
 // completes so the app boots instantly.
 //
 // Reads:
 //   1. Hydrate from localStorage cache (instant, possibly stale).
 //   2. If empty, fall back to SEED_TRIPS.
-//   3. Once mounted, pullTrips() from CloudKit (best-effort) and
-//      replace the cache + state.
+//   3. Once mounted, pullTrips() from the Worker and replace the cache.
 //
 // Writes:
-//   • addTrip(trip) — push to CloudKit, then update local cache.
+//   • addTrip(trip) — push to Worker, then update local cache.
 //   • saveTrip(trip) — same path, used for in-place edits (e.g. setting
 //     sharedAlbumURL).
 //   • removeTrip(id), seed() helper for the Settings button.
@@ -52,7 +50,7 @@ export function useTrips() {
   const [error, setError] = useState(null)
 
   const refresh = useCallback(async () => {
-    if (!isCloudKitConfigured()) {
+    if (!isWorkerConfigured()) {
       // Stays on cache/seed — no network attempt.
       return
     }
@@ -63,11 +61,11 @@ export function useTrips() {
       if (remote.length) {
         writeCache(remote)
         setTrips(remote)
-        setSource('cloudkit')
+        setSource('worker')
       } else {
-        // CloudKit returned zero — keep showing whatever we had so a
-        // signed-out or pre-seed state doesn't blank the app. The
-        // Settings panel exposes a Seed button for the first-run case.
+        // Worker returned zero — keep showing whatever we had so a
+        // pre-seed state doesn't blank the app. The Settings panel
+        // exposes a Seed button for the first-run case.
       }
       // Surface per-source pull diagnostics even when remote.length is 0
       // so Settings can show why a pull came back empty.
@@ -88,16 +86,16 @@ export function useTrips() {
 
   const addTrip = useCallback(async (trip) => {
     // Local update is synchronous so the UI flips immediately;
-    // CloudKit push is fire-and-forget. If the push fails the trip
+    // Worker push is fire-and-forget. If the push fails the trip
     // still lives in the cache and will retry on next refresh.
     setTrips((prev) => {
       const next = [trip, ...prev.filter((t) => t.id !== trip.id)]
       writeCache(next)
       return next
     })
-    if (isCloudKitConfigured()) {
+    if (isWorkerConfigured()) {
       const ok = await pushTrip(trip)
-      if (!ok) console.warn('useTrips addTrip: CloudKit push failed; kept locally')
+      if (!ok) console.warn('useTrips addTrip: Worker push failed; kept locally')
     }
   }, [])
 
@@ -107,7 +105,7 @@ export function useTrips() {
       writeCache(next)
       return next
     })
-    if (isCloudKitConfigured()) {
+    if (isWorkerConfigured()) {
       await pushTrip(trip)
     }
   }, [])
@@ -118,7 +116,7 @@ export function useTrips() {
       writeCache(next)
       return next
     })
-    if (isCloudKitConfigured()) {
+    if (isWorkerConfigured()) {
       await deleteTrip(id)
     }
   }, [])
@@ -126,7 +124,7 @@ export function useTrips() {
   // One-shot seeder for the Settings button. Pushes any SEED_TRIPS the
   // remote doesn't already have. Idempotent — re-running is safe.
   const seed = useCallback(async () => {
-    if (!isCloudKitConfigured()) return { pushed: 0, reason: 'unconfigured' }
+    if (!isWorkerConfigured()) return { pushed: 0, reason: 'unconfigured' }
     const remote = await pullTrips()
     const existing = new Set(remote.map((t) => t.id))
     let pushed = 0

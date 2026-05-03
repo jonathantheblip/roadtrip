@@ -350,7 +350,10 @@ function ThreadPreviewTile({ mem }) {
     let cancelled = false
     let created = null
     const first = photoRefs[0]
-    if (kind === 'photo' && first?.key && first.storage === 'idb') {
+    if (kind === 'photo' && first?.url) {
+      // R2 / legacy remote — use the URL directly.
+      setPhotoUrl(first.url)
+    } else if (kind === 'photo' && first?.key && first.storage === 'idb') {
       loadAsset('photo', first.key).then((blob) => {
         if (cancelled || !blob) return
         created = URL.createObjectURL(blob)
@@ -361,7 +364,7 @@ function ThreadPreviewTile({ mem }) {
       cancelled = true
       if (created) URL.revokeObjectURL(created)
     }
-  }, [kind, photoRefs[0]?.key])
+  }, [kind, photoRefs[0]?.key, photoRefs[0]?.url])
   return (
     <div style={{ flex: 1, position: 'relative' }}>
       {kind === 'photo' && (

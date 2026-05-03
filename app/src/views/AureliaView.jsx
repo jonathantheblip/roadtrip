@@ -308,19 +308,22 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
   const [photoUrl, setPhotoUrl] = useState(null)
   useEffect(() => {
     let active = true
-    if (mem.photoRef?.key) {
+    let created = null
+    if (mem.photoRef?.url) {
+      setPhotoUrl(mem.photoRef.url)
+    } else if (mem.photoRef?.key) {
       loadAsset('photo', mem.photoRef.key).then((blob) => {
         if (!active || !blob) return
-        const u = URL.createObjectURL(blob)
-        setPhotoUrl(u)
+        created = URL.createObjectURL(blob)
+        setPhotoUrl(created)
       })
     }
     return () => {
       active = false
-      if (photoUrl) URL.revokeObjectURL(photoUrl)
+      if (created) URL.revokeObjectURL(created)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mem.photoRef?.key])
+  }, [mem.photoRef?.key, mem.photoRef?.url])
 
   return (
     <button

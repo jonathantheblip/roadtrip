@@ -1,6 +1,6 @@
-// Memory store. localStorage is the canonical local cache; CloudKit
-// (when configured + signed in) acts as a write-through mirror via
-// lib/cloudKitSync. Local writes are synchronous and offline-tolerant;
+// Memory store. localStorage is the canonical local cache; the sync
+// Worker (when configured) acts as a write-through mirror via
+// lib/workerSync. Local writes are synchronous and offline-tolerant;
 // remote pushes fire-and-forget after the local write returns.
 //
 // Visibility:
@@ -52,7 +52,7 @@ function makeId() {
 
 // Every memory in local storage (shared zone + the requested traveler's
 // private zone). Used by the Settings backfill action to re-push every
-// local record to CloudKit after a sync layer change.
+// local record to the Worker after a sync layer change.
 export function listAllLocalMemories(traveler) {
   const shared = readJson(SHARED_KEY)
   const own = traveler ? readJson(PRIVATE_KEY(traveler)) : []
@@ -152,9 +152,9 @@ export function saveMemory({
   if (idx >= 0) target[idx] = record
   else target.push(record)
   writeJson(key, target)
-  // Mirror to CloudKit (fire-and-forget). Bails fast if not configured
-  // / not signed in / network down. Imported lazily so the cloudKitSync
-  // module's CloudKit JS dependency only loads after a real sync need.
+  // Mirror to the sync Worker (fire-and-forget). Bails fast if not
+  // configured / network down. Imported lazily so the sync module only
+  // loads after the first real sync need.
   scheduleMirror({ type: 'save', record })
   return record
 }
@@ -168,39 +168,58 @@ export function deleteMemory(record) {
 }
 
 // Tiny serial queue so a fast burst of saves doesn't fan out to N
-// parallel CloudKit calls. We don't await — UI stays instant.
+// parallel Worker calls. We don't await — UI stays instant.
 let mirrorChain = Promise.resolve()
 function scheduleMirror(op) {
   mirrorChain = mirrorChain
     .then(async () => {
       try {
-        const sync = await import('./cloudKitSync.js')
+        const sync = await import('./workerSync.js')
         if (op.type === 'save') await sync.pushMemory(op.record)
         else if (op.type === 'delete') await sync.deleteRemote(op.record)
       } catch {
-        /* offline / unconfigured / schema mismatch — local stays canonical */
+        /* offline / unconfigured / Worker error — local stays canonical */
       }
     })
     .catch(() => {})
 }
 
 // Merge a batch of remote memories into the local store. Last-write-
-// wins by updatedAt. Used by Settings after a successful sign-in pull.
+// wins by updatedAt. Records with `deletedAt` set are tombstones — the
+// Worker soft-deletes so cross-device pulls can learn about deletions;
+// we honor the tombstone by removing the record from local instead of
+// upserting it.
 export function mergeFromRemote(remoteRecords) {
   if (!Array.isArray(remoteRecords) || !remoteRecords.length) return 0
   const sharedList = readJson(SHARED_KEY)
   const sharedMap = new Map(sharedList.map((m) => [m.id, m]))
   const privateBuckets = new Map()
+  function getPrivateBucket(author) {
+    if (!privateBuckets.has(author)) {
+      privateBuckets.set(author, new Map(readJson(PRIVATE_KEY(author)).map((m) => [m.id, m])))
+    }
+    return privateBuckets.get(author)
+  }
   let added = 0
   for (const r of remoteRecords) {
     if (!r?.id) continue
+    if (r.deletedAt) {
+      // Tombstone — drop from whichever zone it lived in. We don't know
+      // for certain whether the local copy was shared or private (the
+      // server-side visibility could have changed since the local copy
+      // was written), so check both.
+      if (sharedMap.delete(r.id)) added += 1
+      const author = r.authorTraveler
+      if (author) {
+        const bucket = getPrivateBucket(author)
+        if (bucket.delete(r.id)) added += 1
+      }
+      continue
+    }
     if (r.visibility === 'private') {
       const author = r.authorTraveler
       if (!author) continue
-      if (!privateBuckets.has(author)) {
-        privateBuckets.set(author, new Map(readJson(PRIVATE_KEY(author)).map((m) => [m.id, m])))
-      }
-      const bucket = privateBuckets.get(author)
+      const bucket = getPrivateBucket(author)
       const existing = bucket.get(r.id)
       if (!existing || (r.updatedAt && r.updatedAt > existing.updatedAt)) {
         bucket.set(r.id, r)

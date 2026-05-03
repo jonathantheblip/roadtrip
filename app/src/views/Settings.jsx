@@ -1,28 +1,31 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload, Users } from 'lucide-react'
+import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
-import { useCloudKitAuth } from '../hooks/useCloudKitAuth'
-import { CLOUDKIT_META } from '../lib/cloudkit'
 import {
   pullAll,
-  prewarmFamilyShare,
-  shareFamilyZoneSync,
   pushMemory,
-  isStandalonePWA,
-  takeRecentSaves,
-} from '../lib/cloudKitSync'
+  pingWorker,
+  isWorkerConfigured,
+  WORKER_META,
+} from '../lib/workerSync'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 
-// Per-trip settings panel: calendar export, shared album link, identity reset.
-// CloudKit sync, screenshot ingestion, and Gmail wiring will live here too.
+// Per-trip settings panel: calendar export, shared album link, appearance,
+// traveler-picker, sync status. Sync now goes to a Cloudflare Worker
+// (D1 + R2) authenticated by a per-traveler family token; the panel only
+// surfaces synced / syncing / offline + Pull / Push / Seed actions.
 //
 // helenDark / onToggleHelenDark come from App so the toggle here and the
 // surface theming there share a single source of truth — calling
 // useHelenDark() locally gave each consumer its own state, so flipping
 // it inside Settings didn't update the surface class App computes.
 export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, tripsApi, onBack, onChangeTraveler }) {
-  const ck = useCloudKitAuth()
+  const [workerStatus, setWorkerStatus] = useState({
+    status: isWorkerConfigured() ? 'syncing' : 'unconfigured',
+    traveler: null,
+    message: null,
+  })
   const [syncMsg, setSyncMsg] = useState(null)
   const [syncing, setSyncing] = useState(false)
   const [seedMsg, setSeedMsg] = useState(null)
@@ -30,26 +33,29 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [albumDraft, setAlbumDraft] = useState(trip?.sharedAlbumURL || '')
   const [albumSaving, setAlbumSaving] = useState(false)
   const [albumSavedTick, setAlbumSavedTick] = useState(0)
-  const [inviteState, setInviteState] = useState({ status: 'idle', message: null })
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
-  // Pre-warm so the click handler can call shareWithUI synchronously
-  // and not blow past the user-gesture window. Mobile Safari otherwise
-  // blocks the popup → SDK returns SHARE_UI_TIMEOUT.
-  const [shareDb, setShareDb] = useState(null)
+
+  // Ping the Worker on mount and whenever the active traveler changes
+  // (the bearer token swaps with traveler).
   useEffect(() => {
-    if (ck.state !== 'signedIn') return
+    if (!isWorkerConfigured()) {
+      setWorkerStatus({ status: 'unconfigured', traveler: null, message: null })
+      return
+    }
     let cancelled = false
-    prewarmFamilyShare()
-      .then((db) => {
-        if (!cancelled) setShareDb(db)
-      })
-      .catch(() => {
-        /* leave shareDb null; runInvite shows a friendly error */
-      })
+    setWorkerStatus((s) => ({ ...s, status: 'syncing' }))
+    pingWorker().then((r) => {
+      if (cancelled) return
+      if (r.ok) {
+        setWorkerStatus({ status: 'synced', traveler: r.traveler, message: null })
+      } else {
+        setWorkerStatus({ status: 'offline', traveler: null, message: r.reason })
+      }
+    })
     return () => {
       cancelled = true
     }
-  }, [ck.state])
+  }, [traveler])
 
   async function runPull() {
     setSyncing(true)
@@ -73,32 +79,20 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     if (!tripsApi?.seed) return
     setSeeding(true)
     setSeedMsg(null)
-    takeRecentSaves() // drain any leftover diagnostic so the count is fresh
     try {
       const result = await tripsApi.seed()
-      const saves = takeRecentSaves()
-      const zoneSummary = summarizeSavesByZone(saves)
       if (result.reason === 'unconfigured') {
-        setSeedMsg('CloudKit not configured — nothing to seed.')
+        setSeedMsg('Worker not configured — nothing to seed.')
+      } else if (result.pushed === 0) {
+        setSeedMsg('Worker already has every seed trip — nothing to do.')
       } else {
-        const base =
-          result.pushed === 0
-            ? 'iCloud already has every seed trip — nothing to do.'
-            : `Pushed ${result.pushed} trip${result.pushed === 1 ? '' : 's'} to iCloud.`
-        setSeedMsg(zoneSummary ? `${base} · landed in: ${zoneSummary}` : base)
+        setSeedMsg(`Pushed ${result.pushed} trip${result.pushed === 1 ? '' : 's'} to the Worker.`)
       }
     } catch (err) {
       setSeedMsg(`Seed failed: ${err?.message || String(err)}`)
     } finally {
       setSeeding(false)
     }
-  }
-
-  function summarizeSavesByZone(saves) {
-    if (!saves?.length) return null
-    const byZone = {}
-    for (const s of saves) byZone[s.zone] = (byZone[s.zone] || 0) + 1
-    return Object.entries(byZone).map(([z, n]) => `${z}:${n}`).join(', ')
   }
 
   async function saveAlbumUrl() {
@@ -115,7 +109,6 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
 
   async function runPushAll() {
     setPushAllState({ status: 'running', message: null })
-    takeRecentSaves() // drain any leftover diagnostic so the count is fresh
     try {
       const records = listAllLocalMemories(traveler)
       let ok = 0
@@ -134,49 +127,13 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
           if (!firstError) firstError = err?.message || String(err)
         }
       }
-      const zoneSummary = summarizeSavesByZone(takeRecentSaves())
       setPushAllState({
         status: 'done',
-        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}${firstError ? ` · first error: ${firstError}` : ''}${zoneSummary ? ` · landed in: ${zoneSummary}` : ''}.`,
+        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}${firstError ? ` · first error: ${firstError}` : ''}.`,
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })
     }
-  }
-
-  // Synchronous click handler: zero awaits before shareWithUI is
-  // called. The pre-warm above leaves `shareDb` populated so we can
-  // hit the SDK in the same frame as the tap. Promise resolution
-  // (success / failure) happens after, which is fine — by then the
-  // popup is already open.
-  function runInvite() {
-    if (!shareDb) {
-      setInviteState({
-        status: 'error',
-        message:
-          'iCloud is still warming up. Wait a moment and tap Invite family again.',
-      })
-      return
-    }
-    setInviteState({ status: 'opening', message: null })
-    let result
-    try {
-      result = shareFamilyZoneSync(shareDb)
-    } catch (err) {
-      setInviteState({ status: 'error', message: err?.message || String(err) })
-      return
-    }
-    Promise.resolve(result)
-      .then(() => {
-        setInviteState({
-          status: 'done',
-          message:
-            'Invitation sent. Family members tap the link in Mail or Messages to accept on icloud.com.',
-        })
-      })
-      .catch((err) => {
-        setInviteState({ status: 'error', message: err?.message || String(err) })
-      })
   }
 
   async function clearAlbumUrl() {
@@ -382,73 +339,38 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
 
       <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">
-          {ck.state === 'signedIn' ? <Cloud size={14} /> : <CloudOff size={14} />}
-          <p className="smallcaps f-dm text-[11px] opacity-70">iCloud sync</p>
+          {workerStatus.status === 'synced' ? <Cloud size={14} /> : <CloudOff size={14} />}
+          <p className="smallcaps f-dm text-[11px] opacity-70">Sync</p>
         </div>
         <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
-          Memories save locally first, then mirror to CloudKit so the four
-          family Apple IDs see the same thread. Container{' '}
-          <span className="f-mono text-[11px]">{CLOUDKIT_META.container || '—'}</span>,{' '}
-          environment{' '}
-          <span className="f-mono text-[11px]">{CLOUDKIT_META.environment}</span>.
+          Memories save locally first, then mirror to a Cloudflare Worker so all
+          four family devices see the same thread. Worker{' '}
+          <span className="f-mono text-[11px]">{WORKER_META.url || '—'}</span>.
         </p>
-        {/*
-          Apple's SDK looks for the element whose id matches the
-          `signInButton.id` we passed to CK.configure (see lib/cloudkit.js)
-          and mounts its own button into it. The mount happens once, soon
-          after setUpAuth() resolves — so the element has to be in the DOM
-          before the hook runs, not behind a state-dependent conditional.
-          We render it unconditionally and just hide it when the user is
-          signed in or CloudKit isn't reachable.
-        */}
-        <div
-          id="apple-sign-in"
-          style={{
-            display: ck.state === 'signedOut' ? 'block' : 'none',
-            marginBottom: 8,
-          }}
-        />
-        {ck.state === 'unconfigured' && (
-          <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
-            CloudKit env vars not present in the bundle.
-          </p>
-        )}
-        {ck.state === 'loading' && (
-          <p className="f-dm text-sm opacity-70">Connecting to iCloud…</p>
-        )}
-        {ck.state === 'error' && (
+        <p className="f-dm text-sm mb-3" style={{ opacity: 0.85 }}>
+          Status:{' '}
+          <span
+            className="f-mono text-[11px]"
+            style={{
+              color:
+                workerStatus.status === 'synced'
+                  ? 'inherit'
+                  : workerStatus.status === 'syncing'
+                    ? 'inherit'
+                    : 'var(--accent)',
+            }}
+          >
+            {workerStatus.status === 'synced'
+              ? `synced as ${workerStatus.traveler || traveler}`
+              : workerStatus.status === 'syncing'
+                ? 'syncing…'
+                : workerStatus.status === 'unconfigured'
+                  ? 'unconfigured'
+                  : `offline${workerStatus.message ? ' · ' + workerStatus.message : ''}`}
+          </span>
+        </p>
+        {workerStatus.status === 'synced' && (
           <>
-            <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
-              CloudKit error: {ck.error || 'unknown'}.
-            </p>
-            <p className="f-dm text-[12px] opacity-60 mt-2 max-w-prose">
-              Most often this means the dev origin isn't whitelisted in the CloudKit dashboard,
-              or Safari is blocking the iCloud auth cookie. Check the console for the raw error.
-            </p>
-            <button
-              type="button"
-              className="btn-pill mt-3"
-              onClick={ck.refresh}
-            >
-              <RefreshCw size={12} /> Retry
-            </button>
-          </>
-        )}
-        {ck.state === 'signedOut' && (
-          <p className="f-dm text-[12px] opacity-60 mt-1 max-w-prose">
-            Uses your iCloud account. Sign-in opens an Apple popup and
-            never sees your password.
-          </p>
-        )}
-        {ck.state === 'signedIn' && (
-          <>
-            <p className="f-dm text-sm opacity-70 mb-3">
-              Signed in as{' '}
-              <span className="f-mono text-[11px]">
-                {ck.user?.userRecordName || 'iCloud user'}
-              </span>
-              .
-            </p>
             <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
@@ -463,7 +385,7 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
                 className="btn-pill"
                 onClick={runPushAll}
                 disabled={pushAllState.status === 'running'}
-                title="Re-push every local memory to iCloud. Safe to run; idempotent by record id."
+                title="Re-push every local memory to the Worker. Idempotent by record id."
               >
                 <Upload size={12} />
                 {pushAllState.status === 'running' ? 'Pushing…' : 'Push memories'}
@@ -473,16 +395,9 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
                 className="btn-pill"
                 onClick={runSeed}
                 disabled={seeding}
-                title="Push the bundled Jackson + NYC trips to iCloud. Idempotent — re-running only adds anything that's missing."
+                title="Push the bundled Jackson + NYC trips to the Worker. Idempotent."
               >
-                <Upload size={12} /> {seeding ? 'Seeding…' : 'Seed trips to iCloud'}
-              </button>
-              <button
-                type="button"
-                className="btn-pill"
-                onClick={ck.signOut}
-              >
-                Sign out
+                <Upload size={12} /> {seeding ? 'Seeding…' : 'Seed trips'}
               </button>
             </div>
             {syncMsg && (
@@ -519,75 +434,12 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
             )}
           </>
         )}
+        {workerStatus.status === 'unconfigured' && (
+          <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
+            Worker URL or family token missing from the bundle.
+          </p>
+        )}
       </section>
-
-      {ck.state === 'signedIn' && (
-        <section className="px-6 py-8 border-b surface-rule">
-          <div className="flex items-center gap-2 mb-3">
-            <Users size={14} />
-            <p className="smallcaps f-dm text-[11px] opacity-70">Family sharing</p>
-          </div>
-          {isStandalonePWA() ? (
-            <>
-              <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
-                Inviting family has to be done from regular Safari, not the
-                home-screen app. Apple's invite panel opens in a popup, and
-                iOS blocks popups inside installed PWAs. (Once you've sent
-                the invitations, you can come back here for everything else.)
-              </p>
-              <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
-                Open <span className="f-mono text-[12px]">{window.location.origin + window.location.pathname}</span>{' '}
-                in Safari, sign in to iCloud, and you'll see the
-                <strong> Invite family</strong> button here.
-              </p>
-              <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
-                Once an invitation is accepted by a family member, it stays
-                accepted. The home-screen app then shows everyone's shared
-                trips and memories without any further setup.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
-                One-time setup. Tap to open Apple's invite panel and pick
-                the family iCloud accounts you want to share trips and
-                memories with. They'll get a link in Mail or Messages —
-                they accept on Apple's hosted page, then see everything
-                you've shared the next time they open the app.
-              </p>
-              <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn-pill"
-                  onClick={runInvite}
-                  disabled={inviteState.status === 'opening'}
-                >
-                  <Users size={12} />
-                  {inviteState.status === 'opening' ? 'Opening…' : 'Invite family'}
-                </button>
-              </div>
-              {inviteState.message && (
-                <p
-                  className="f-dm text-[12px] mt-3 italic"
-                  style={{
-                    opacity: 0.8,
-                    color:
-                      inviteState.status === 'error'
-                        ? 'var(--accent)'
-                        : 'inherit',
-                  }}
-                >
-                  {inviteState.message}
-                </p>
-              )}
-              <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
-                You only need to do this once. Adding a new family member
-                later re-opens the same panel.
-              </p>
-            </>
-          )}
-        </section>
-      )}
     </div>
   )
 }

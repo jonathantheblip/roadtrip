@@ -9,7 +9,7 @@
 //                    in Mississippi, Virginia mountains, etc.)
 //
 // Cache name is versioned so the activate handler wipes stale generations.
-const CACHE_NAME = 'jackson-trip-react-v10';
+const CACHE_NAME = 'jackson-trip-react-v11';
 const TILE_CACHE = 'jackson-trip-tiles-v1';
 const MAX_TILES = 500;
 const CORE = ['./', './index.html', './manifest.json'];

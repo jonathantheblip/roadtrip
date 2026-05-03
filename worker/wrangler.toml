@@ -1,0 +1,19 @@
+name = "roadtrip-sync"
+main = "src/index.js"
+compatibility_date = "2026-04-01"
+
+# D1: roadtrip-db (uuid set after `wrangler d1 create` or via MCP).
+[[d1_databases]]
+binding = "DB"
+database_name = "roadtrip-db"
+database_id = "33bb806c-1c1d-4268-830f-7bad3e49711f"
+
+# R2: roadtrip-assets (created after enabling R2 on the account).
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "roadtrip-assets"
+
+# Non-secret config. The 4 FAMILY_TOKEN_* values are stored as secrets
+# (via `wrangler secret put`) and are NOT listed here.
+[vars]
+ALLOWED_ORIGINS = "https://jonathandj.github.io,http://localhost:5173,http://localhost:4173"
