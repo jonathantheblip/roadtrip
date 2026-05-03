@@ -324,8 +324,11 @@ function toCKFields(m, { audioAsset, photoAsset } = {}) {
   put(f, 'transcriptionStatus', m.transcriptionStatus)
   put(f, 'durationSeconds', m.durationSeconds)
   put(f, 'mood', m.mood)
-  put(f, 'createdAt', m.createdAt)
-  put(f, 'updatedAt', m.updatedAt)
+  // Schema declares createdAt / updatedAt as Int64 (ms since epoch).
+  // The local Memory shape uses ISO strings; convert at the wire
+  // boundary so the schema doesn't have to change.
+  put(f, 'createdAt', toEpochMs(m.createdAt))
+  put(f, 'updatedAt', toEpochMs(m.updatedAt))
   // CloudKit can't natively store arrays of records; reactions ride
   // along as a JSON blob.
   if (m.reactions?.length) {
@@ -339,6 +342,23 @@ function toCKFields(m, { audioAsset, photoAsset } = {}) {
 function put(fields, key, value) {
   if (value === undefined || value === null || value === '') return
   fields[key] = { value }
+}
+
+// ISO string → ms since epoch. Numbers pass through. Returns undefined
+// for unparseable input so `put` skips the field instead of saving NaN.
+function toEpochMs(v) {
+  if (v == null) return undefined
+  if (typeof v === 'number') return v
+  const ms = Date.parse(v)
+  return Number.isFinite(ms) ? ms : undefined
+}
+
+// ms since epoch → ISO string. Strings pass through (already ISO).
+function fromEpochMs(v) {
+  if (v == null) return undefined
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' && Number.isFinite(v)) return new Date(v).toISOString()
+  return undefined
 }
 
 function fromCKRecord(rec, visibilityHint) {
@@ -371,8 +391,8 @@ function fromCKRecord(rec, visibilityHint) {
       ? { storage: 'cloudkit', url: f.photoAsset.value?.downloadURL }
       : undefined,
     reactions,
-    createdAt: v('createdAt'),
-    updatedAt: v('updatedAt'),
+    createdAt: fromEpochMs(v('createdAt')),
+    updatedAt: fromEpochMs(v('updatedAt')),
   }
 }
 
