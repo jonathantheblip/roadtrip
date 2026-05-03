@@ -516,21 +516,33 @@ export async function pushTrip(trip) {
     zoneID: { zoneName: SHARED_ZONE },
     fields,
   }
-  // Owner-first, fall through to recipient side (sharedCloudDatabase)
-  // for participants who write back into the share. saveOrUpdate
-  // handles the CONFLICT-on-re-push case by fetching the existing
-  // recordChangeTag and retrying as an update.
+  // Owner-first; only fall through to recipient side (sharedCloudDatabase)
+  // when the privateDB error is the legitimate "you're a recipient, not
+  // the owner" case (typically ZONE_NOT_FOUND). For any other error
+  // (schema mismatch, validation, auth) re-throw the real reason instead
+  // of layering a confusing sharedDB error on top.
+  let privErr = null
   try {
     await saveOrUpdate(container.privateCloudDatabase, record)
     return true
-  } catch {
-    try {
-      await saveOrUpdate(container.sharedCloudDatabase, record)
-      return true
-    } catch (err) {
-      console.warn('CloudKit pushTrip failed', err)
-      return false
-    }
+  } catch (err) {
+    privErr = err
+  }
+  const looksLikeRecipient = /zone[_ ]not[_ ]found|zonenotfound/i.test(
+    privErr?.message || ''
+  )
+  if (!looksLikeRecipient) {
+    console.warn('CloudKit pushTrip(private) failed', privErr)
+    throw privErr
+  }
+  try {
+    await saveOrUpdate(container.sharedCloudDatabase, record)
+    return true
+  } catch (err2) {
+    console.warn('CloudKit pushTrip(shared) failed', err2 || privErr)
+    throw new Error(
+      `priv: ${privErr?.message || 'unknown'} · shared: ${err2?.message || 'unknown'}`
+    )
   }
 }
 
