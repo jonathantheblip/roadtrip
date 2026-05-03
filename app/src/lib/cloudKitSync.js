@@ -273,8 +273,17 @@ export async function pushMemory(memory) {
 // UI after a Push / Seed run.
 let recentSaves = []
 function recordSave(savedRec) {
+  // CloudKit JS exposes zoneID under different paths in different versions.
+  // Try the obvious ones, fall back to dumping the record's top-level keys
+  // so we can see what properties saveRecords actually returns.
+  const zone =
+    savedRec?.zoneID?.zoneName ||
+    savedRec?.recordID?.zoneID?.zoneName ||
+    savedRec?.zoneName ||
+    null
+  const keys = Object.keys(savedRec || {})
   recentSaves.push({
-    zone: savedRec?.zoneID?.zoneName || '<unknown>',
+    zone: zone || `<unknown:keys=${keys.join('|')}>`,
     type: savedRec?.recordType || '<no-type>',
     name: savedRec?.recordName || '<no-name>',
   })
@@ -524,6 +533,21 @@ export async function pullTrips() {
   } catch (err) {
     console.warn('CloudKit pullTrips(private) failed', err)
     errors.push(`private/family: ${err?.message || String(err)}`)
+  }
+  // Diagnostic: also peek at _defaultZone in case trips are silently
+  // landing there instead of Family (CloudKit JS has been ignoring our
+  // zoneID hints — see saveOrUpdate comments). performQuery on the
+  // default zone is queryable by default, so this is a safe lookup.
+  try {
+    const r = await container.privateCloudDatabase.performQuery({
+      recordType: TRIP_RECORD_TYPE,
+    })
+    const defaultCount = r?.records?.length || 0
+    if (defaultCount > 0) {
+      errors.push(`private/_defaultZone: found ${defaultCount} ${TRIP_RECORD_TYPE} record(s)! Trips are landing in the wrong zone — saveRecords is ignoring our zoneID hints.`)
+    }
+  } catch {
+    /* expected to throw if Trip type isn't registered in _defaultZone */
   }
   // Recipient side — sharedCloudDatabase (only present after accepting a share).
   // Same Zone-Wide-Query restriction as memories; use fetchRecordZoneChanges.
