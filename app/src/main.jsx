@@ -18,6 +18,14 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker
       .register('./sw.js')
       .then((reg) => {
+        // iOS Safari throttles its implicit sw.js update check to as much
+        // as 24h, which strands installed PWAs on whatever bundle they
+        // first installed. Force an explicit check on every cold launch,
+        // and again every 30 minutes while the app stays open, so a push
+        // reaches every family member's phone within the next session.
+        reg.update().catch(() => {})
+        setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000)
+
         // If an update is found while we're running, force it to activate
         // immediately so the user doesn't have to close and reopen twice.
         reg.addEventListener('updatefound', () => {
