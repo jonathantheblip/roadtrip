@@ -499,6 +499,11 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
               {tripsApi?.trips?.length || 0} trip
               {(tripsApi?.trips?.length || 0) === 1 ? '' : 's'} loaded.
             </p>
+            {tripsApi?.error && (
+              <p className="f-dm text-[11px] mt-1 max-w-prose" style={{ color: 'var(--accent)' }}>
+                Trip pull error: {tripsApi.error}
+              </p>
+            )}
           </>
         )}
       </section>

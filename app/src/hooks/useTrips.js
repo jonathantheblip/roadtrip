@@ -69,6 +69,11 @@ export function useTrips() {
         // signed-out or pre-seed state doesn't blank the app. The
         // Settings panel exposes a Seed button for the first-run case.
       }
+      // Surface per-source pull diagnostics even when remote.length is 0
+      // so Settings can show why a pull came back empty.
+      if (remote.errors?.length) {
+        setError(remote.errors.join(' · '))
+      }
     } catch (err) {
       console.warn('useTrips refresh failed', err)
       setError(err?.message || String(err))

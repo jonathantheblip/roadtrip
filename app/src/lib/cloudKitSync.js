@@ -444,6 +444,9 @@ export async function pullTrips() {
   if (!isCloudKitConfigured()) return []
   const container = await getContainer()
   const out = []
+  const errors = []
+  let privateRawCount = 0
+  let privateParsedCount = 0
   // Owner side — privateCloudDatabase Family zone. Same queryable-index
   // caveat as pullAll: performQuery against a custom zone returns empty
   // without an explicit recordName index in the schema. Walk the change
@@ -451,12 +454,20 @@ export async function pullTrips() {
   try {
     const priv = container.privateCloudDatabase
     const records = await fetchAllFromSharedZone(priv, TRIP_RECORD_TYPE)
+    privateRawCount = records.length
     for (const rec of records) {
       const t = tripFromCKRecord(rec)
-      if (t) out.push(t)
+      if (t) {
+        out.push(t)
+        privateParsedCount += 1
+      }
+    }
+    if (privateRawCount > 0 && privateParsedCount === 0) {
+      errors.push(`private/family: got ${privateRawCount} raw record(s) but tripFromCKRecord returned null for all (probably missing dataJson field on server)`)
     }
   } catch (err) {
     console.warn('CloudKit pullTrips(private) failed', err)
+    errors.push(`private/family: ${err?.message || String(err)}`)
   }
   // Recipient side — sharedCloudDatabase (only present after accepting a share).
   // Same Zone-Wide-Query restriction as memories; use fetchRecordZoneChanges.
@@ -469,13 +480,16 @@ export async function pullTrips() {
     }
   } catch (err) {
     console.warn('CloudKit pullTrips(shared) failed', err)
+    errors.push(`shared/family: ${err?.message || String(err)}`)
   }
   // De-duplicate by trip id — owner + recipient might both surface
   // the same trip if the user has accepted their own share (rare but
   // possible in dev).
   const byId = new Map()
   for (const t of out) byId.set(t.id, t)
-  return Array.from(byId.values())
+  const result = Array.from(byId.values())
+  if (errors.length) result.errors = errors
+  return result
 }
 
 export async function pushTrip(trip) {
@@ -484,8 +498,12 @@ export async function pushTrip(trip) {
   await ensureFamilyZone()
 
   const fields = {}
-  // tripID, not tripId — see toCKFields comment.
-  put(fields, 'tripID', trip.id)
+  // The dashboard auto-capped Memory's tripId → tripID but kept Trip's
+  // as tripId (verified in the dashboard schema — inconsistent because
+  // the user created Memory and Trip in different sessions). Match
+  // each schema as it actually exists on the server, not as we'd
+  // prefer it to be.
+  put(fields, 'tripId', trip.id)
   put(fields, 'title', trip.title)
   put(fields, 'endCity', trip.endCity)
   put(fields, 'dateRangeStart', trip.dateRangeStart)
