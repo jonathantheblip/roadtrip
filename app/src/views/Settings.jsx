@@ -108,18 +108,23 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
       const records = listAllLocalMemories(traveler)
       let ok = 0
       let failed = 0
+      let firstError = null
       for (const m of records) {
         try {
           const r = await pushMemory(m)
-          if (r === false) failed += 1
-          else ok += 1
-        } catch {
+          if (r === false) {
+            failed += 1
+          } else {
+            ok += 1
+          }
+        } catch (err) {
           failed += 1
+          if (!firstError) firstError = err?.message || String(err)
         }
       }
       setPushAllState({
         status: 'done',
-        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}.`,
+        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}${firstError ? ` · first error: ${firstError}` : ''}.`,
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })

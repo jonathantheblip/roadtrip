@@ -214,27 +214,49 @@ export async function pushMemory(memory) {
   // Family zone (recipient writes go via sharedCloudDatabase).
   if (isShared) {
     try {
-      await container.privateCloudDatabase.saveRecords([record])
+      const r = await container.privateCloudDatabase.saveRecords([record])
+      throwIfRecordErrors(r)
       return true
     } catch (err) {
       // Recipients can't write to their own privateCloudDatabase under
       // someone else's zoneID — they get a server error. Try shared.
       try {
-        await container.sharedCloudDatabase.saveRecords([record])
+        const r2 = await container.sharedCloudDatabase.saveRecords([record])
+        throwIfRecordErrors(r2)
         return true
       } catch (err2) {
         console.warn('CloudKit pushMemory(shared) failed', err2 || err)
-        return false
+        throw err2 || err
       }
     }
   }
 
   try {
-    await container.privateCloudDatabase.saveRecords([record])
+    const r = await container.privateCloudDatabase.saveRecords([record])
+    throwIfRecordErrors(r)
     return true
   } catch (err) {
     console.warn('CloudKit pushMemory(private) failed', err)
-    return false
+    throw err
+  }
+}
+
+// CloudKit JS saveRecords resolves the promise even when individual
+// records fail server-side — the per-record error is on the response,
+// not thrown. Without this check, callers see "success" while the
+// record never actually landed.
+function throwIfRecordErrors(resp) {
+  const records = resp?.records || []
+  for (const r of records) {
+    const code = r?.serverErrorCode || r?.errorCode
+    const reason = r?.reason || r?.errorReason
+    if (code || reason) {
+      throw new Error(`${code || 'CK_SAVE_FAILED'}${reason ? ': ' + reason : ''}`)
+    }
+  }
+  if (resp?.errors?.length) {
+    const e = resp.errors[0]
+    throw new Error(`${e?.serverErrorCode || 'CK_SAVE_FAILED'}: ${e?.reason || JSON.stringify(e)}`)
   }
 }
 
