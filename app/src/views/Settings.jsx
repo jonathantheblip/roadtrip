@@ -10,6 +10,7 @@ import {
   shareFamilyZoneSync,
   pushMemory,
   isStandalonePWA,
+  takeRecentSaves,
 } from '../lib/cloudKitSync'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 
@@ -72,22 +73,32 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     if (!tripsApi?.seed) return
     setSeeding(true)
     setSeedMsg(null)
+    takeRecentSaves() // drain any leftover diagnostic so the count is fresh
     try {
       const result = await tripsApi.seed()
+      const saves = takeRecentSaves()
+      const zoneSummary = summarizeSavesByZone(saves)
       if (result.reason === 'unconfigured') {
         setSeedMsg('CloudKit not configured — nothing to seed.')
       } else {
-        setSeedMsg(
+        const base =
           result.pushed === 0
             ? 'iCloud already has every seed trip — nothing to do.'
             : `Pushed ${result.pushed} trip${result.pushed === 1 ? '' : 's'} to iCloud.`
-        )
+        setSeedMsg(zoneSummary ? `${base} · landed in: ${zoneSummary}` : base)
       }
     } catch (err) {
       setSeedMsg(`Seed failed: ${err?.message || String(err)}`)
     } finally {
       setSeeding(false)
     }
+  }
+
+  function summarizeSavesByZone(saves) {
+    if (!saves?.length) return null
+    const byZone = {}
+    for (const s of saves) byZone[s.zone] = (byZone[s.zone] || 0) + 1
+    return Object.entries(byZone).map(([z, n]) => `${z}:${n}`).join(', ')
   }
 
   async function saveAlbumUrl() {
@@ -104,6 +115,7 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
 
   async function runPushAll() {
     setPushAllState({ status: 'running', message: null })
+    takeRecentSaves() // drain any leftover diagnostic so the count is fresh
     try {
       const records = listAllLocalMemories(traveler)
       let ok = 0
@@ -122,9 +134,10 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
           if (!firstError) firstError = err?.message || String(err)
         }
       }
+      const zoneSummary = summarizeSavesByZone(takeRecentSaves())
       setPushAllState({
         status: 'done',
-        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}${firstError ? ` · first error: ${firstError}` : ''}.`,
+        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}${firstError ? ` · first error: ${firstError}` : ''}${zoneSummary ? ` · landed in: ${zoneSummary}` : ''}.`,
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })

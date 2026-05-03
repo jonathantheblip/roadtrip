@@ -266,6 +266,26 @@ export async function pushMemory(memory) {
 // this. On CONFLICT we fetch the existing record's recordChangeTag
 // and retry the save with it; CloudKit then treats the call as an
 // update and overwrites server state with our local fields.
+// Diagnostic: capture the actual zone each save lands in. CloudKit JS
+// has been ignoring our zoneID hints in some configurations — knowing
+// where saves actually go is the only way to confirm whether a fix is
+// working. Settings can call takeRecentSaves() to surface this in the
+// UI after a Push / Seed run.
+let recentSaves = []
+function recordSave(savedRec) {
+  recentSaves.push({
+    zone: savedRec?.zoneID?.zoneName || '<unknown>',
+    type: savedRec?.recordType || '<no-type>',
+    name: savedRec?.recordName || '<no-name>',
+  })
+  if (recentSaves.length > 50) recentSaves = recentSaves.slice(-50)
+}
+export function takeRecentSaves() {
+  const r = recentSaves
+  recentSaves = []
+  return r
+}
+
 async function saveOrUpdate(db, record) {
   // CloudKit JS empirically ignores per-record `zoneID` when no call-level
   // zoneID option is passed — records silently land in _defaultZone even
@@ -280,6 +300,7 @@ async function saveOrUpdate(db, record) {
   try {
     const r = await db.saveRecords([record], callOpts)
     throwIfRecordErrors(r)
+    for (const saved of r.records || []) recordSave(saved)
     return r
   } catch (err) {
     if (!/CONFLICT|record to insert already exists/i.test(err?.message || '')) {
@@ -292,6 +313,7 @@ async function saveOrUpdate(db, record) {
     if (!tag) throw err
     const r2 = await db.saveRecords([{ ...record, recordChangeTag: tag }], callOpts)
     throwIfRecordErrors(r2)
+    for (const saved of r2.records || []) recordSave(saved)
     return r2
   }
 }
