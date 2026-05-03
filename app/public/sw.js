@@ -9,10 +9,17 @@
 //                    in Mississippi, Virginia mountains, etc.)
 //
 // Cache name is versioned so the activate handler wipes stale generations.
-const CACHE_NAME = 'jackson-trip-react-v11';
+const CACHE_NAME = 'jackson-trip-react-v12';
 const TILE_CACHE = 'jackson-trip-tiles-v1';
 const MAX_TILES = 500;
 const CORE = ['./', './index.html', './manifest.json'];
+
+// Sync Worker — handles its own caching via Cache-Control. Never
+// intercept these in the SW: GET /memories and /trips MUST stay fresh
+// (they were getting stuck on the first cached response, returning a
+// stale record list forever after). R2 asset URLs come back immutable
+// so the browser cache handles them correctly without our help.
+const WORKER_HOST = 'roadtrip-sync.jonathan-d-jackson.workers.dev';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -66,6 +73,14 @@ self.addEventListener('fetch', (e) => {
 
   // Only handle http(s) requests — skip chrome-extension://, data:, etc.
   if (!req.url.startsWith('http')) return;
+
+  // Bypass the SW for Cloudflare Worker requests entirely. Returning
+  // without calling respondWith() lets the browser do its default fetch,
+  // honoring the Worker's Cache-Control headers (no-cache for /memories
+  // and /trips, immutable for /assets).
+  try {
+    if (new URL(req.url).hostname === WORKER_HOST) return;
+  } catch (_) {}
 
   // Map tiles: cache-first in a dedicated tile cache with LRU eviction.
   if (req.url.includes('basemaps.cartocdn.com') || req.url.includes('tile.openstreetmap.org')) {
