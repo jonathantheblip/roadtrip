@@ -50,6 +50,16 @@ has been removed.)
 record requires either an iCloud-authenticated owner (private DB) or
 an accepted CKShare (shared DB). Nothing is world-readable.
 
+### Auto-sync
+
+App.jsx runs `pullAll` on cold load and whenever the tab becomes
+visible (`visibilitychange` → `visible`). Throttled to once per 5
+seconds to avoid spamming the API on quick tab toggles. Silent — only
+the explicit **Pull memories** button in Settings surfaces sync
+state. The intent is that family members never have to remember to
+hit Pull; opening or returning to the app is enough to surface
+anyone else's recent memories.
+
 > **Naming note (2026-04-27):** code comments and earlier drafts refer to
 > `TripPlatform_BuildSpec_v2.md`. That file does not exist — the canonical
 > spec is this document (`ROADTRIP_PWA_BUILD_SPEC_V3.md`) plus its V2

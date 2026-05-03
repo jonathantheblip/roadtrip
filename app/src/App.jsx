@@ -12,6 +12,8 @@ import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
+import { pullAll } from './lib/cloudKitSync'
+import { mergeFromRemote } from './lib/memoryStore'
 import './styles/platform.css'
 
 // Per-traveler palette tokens for the fixed top bar. Spec §6 dark/light:
@@ -152,6 +154,47 @@ export default function App() {
       /* ignore */
     }
   }, [tripId])
+
+  // Auto-sync from CloudKit on cold load and whenever the tab returns
+  // to the foreground, so the family thread updates without anyone
+  // having to remember to hit Pull. Throttled so quickly toggling
+  // back-and-forth doesn't spam the API. Silent — failures don't
+  // surface (the explicit Pull button in Settings still gives users a
+  // way to see real status when they want it).
+  useEffect(() => {
+    let lastRun = 0
+    let cancelled = false
+    const THROTTLE_MS = 5000
+
+    async function runSync() {
+      const now = Date.now()
+      if (now - lastRun < THROTTLE_MS) return
+      lastRun = now
+      try {
+        const remote = await pullAll()
+        if (cancelled) return
+        if (remote.length > 0) mergeFromRemote(remote)
+        await tripsApi.refresh?.()
+      } catch (err) {
+        // CloudKit unconfigured / signed out / offline — fine, stay
+        // on the local cache.
+        console.warn('autoSync failed', err)
+      }
+    }
+
+    runSync() // initial pull on cold load
+
+    function onVisibility() {
+      if (document.visibilityState === 'visible') runSync()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
 
   const trip =
