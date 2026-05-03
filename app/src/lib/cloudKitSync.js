@@ -85,6 +85,7 @@ export async function pullAll() {
   if (!isCloudKitConfigured()) return []
   const container = await getContainer()
   const out = []
+  const errors = []
 
   // Own private memories — privateCloudDatabase _defaultZone
   try {
@@ -93,6 +94,7 @@ export async function pullAll() {
     if (r.records) for (const rec of r.records) out.push(fromCKRecord(rec, 'private'))
   } catch (err) {
     console.warn('CloudKit pullAll(private/default) failed', err)
+    errors.push(`private/default: ${err?.message || String(err)}`)
   }
 
   // Shared memories the user owns — privateCloudDatabase Family zone.
@@ -109,6 +111,7 @@ export async function pullAll() {
   } catch (err) {
     // Family zone not yet created — normal for first-time owner.
     console.warn('CloudKit pullAll(private/family) failed', err)
+    errors.push(`private/family: ${err?.message || String(err)}`)
   }
 
   // Shared memories another family member owns — sharedCloudDatabase
@@ -123,8 +126,10 @@ export async function pullAll() {
   } catch (err) {
     // Recipient hasn't accepted a share yet, or no share exists.
     console.warn('CloudKit pullAll(shared/family) failed', err)
+    errors.push(`shared/family: ${err?.message || String(err)}`)
   }
 
+  if (errors.length) out.errors = errors
   return out
 }
 

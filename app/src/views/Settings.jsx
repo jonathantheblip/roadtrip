@@ -56,7 +56,11 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     try {
       const remote = await pullAll()
       const merged = mergeFromRemote(remote)
-      setSyncMsg(`Pulled ${remote.length} record${remote.length === 1 ? '' : 's'}; ${merged} merged into local cache.`)
+      let msg = `Pulled ${remote.length} record${remote.length === 1 ? '' : 's'}; ${merged} merged into local cache.`
+      if (remote.errors?.length) {
+        msg += ` · errors: ${remote.errors.join(' · ')}`
+      }
+      setSyncMsg(msg)
     } catch (err) {
       setSyncMsg(`Pull failed: ${err?.message || String(err)}`)
     } finally {
