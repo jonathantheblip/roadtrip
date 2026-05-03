@@ -50,6 +50,15 @@ function makeId() {
   return `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 }
 
+// Every memory in local storage (shared zone + the requested traveler's
+// private zone). Used by the Settings backfill action to re-push every
+// local record to CloudKit after a sync layer change.
+export function listAllLocalMemories(traveler) {
+  const shared = readJson(SHARED_KEY)
+  const own = traveler ? readJson(PRIVATE_KEY(traveler)) : []
+  return [...shared, ...own]
+}
+
 // Read every memory the active traveler is allowed to see for a trip.
 // Includes: all shared memories + that traveler's own private ones.
 export function listMemoriesForTrip(tripId, traveler) {

@@ -4,6 +4,41 @@
 **Target implementer:** Claude Code
 **Scope:** Three additions to Spec v2. Same non-negotiables apply (offline-capable, one-handed iPhone use, per-persona theming preserved).
 
+## Principles
+
+> **No UI affordance without working plumbing behind it.** No toggle,
+> label, status indicator, or affordance ships unless the code path
+> behind it actually does what the surface promises. If a feature can't
+> be wired now, it doesn't get a UI placeholder — it stays out of the
+> app entirely until the plumbing exists. Roadmap copy and "Pass 2"
+> stubs belong in this spec, not in the user's screen.
+
+### Database scope per write op (CloudKit) — declared, not inferred
+
+Every CloudKit write must declare which `databaseScope` it targets and
+why. Audited and authoritative as of 2026-05-02 (see
+`AUDIT_RESULTS_2026-05-02.md`):
+
+| Record | Visibility | Database | Zone | Notes |
+|---|---|---|---|---|
+| `Memory` | `private` | `privateCloudDatabase` | `_defaultZone` | Author-only. Never shared, never visible to other family iCloud accounts. |
+| `Memory` | `shared` | `privateCloudDatabase` | `Family` (custom) | Owner-side write. Recipients read the same record from `sharedCloudDatabase` / `Family` after accepting the CKShare. Owner is whoever created the Family zone (the family iCloud account holder in this app). |
+| `Memory` | `shared` (recipient writeback) | `sharedCloudDatabase` | `Family` (custom) | Fall-through path when the local user is a participant of someone else's Family zone, not the owner. |
+| `Trip` | always shared | `privateCloudDatabase` | `Family` (custom) | Trips are by definition family-visible in this app — no per-Trip private/shared toggle. |
+| `Trip` (recipient writeback) | n/a | `sharedCloudDatabase` | `Family` (custom) | Recipient-side write fallback, mirrors Memory. |
+
+Sharing is established by the owner via Settings → "Invite family,"
+which opens Apple's hosted `shareWithUI` for the Family zone in
+`privateCloudDatabase`. Recipients accept by tapping the invite URL —
+the PWA detects `?ck_shareurl=…` on cold load and calls
+`container.acceptShares([{shareURL}])`. Once accepted the recipient
+queries `sharedCloudDatabase` / `Family` zone alongside their own
+`privateCloudDatabase`.
+
+`publicCloudDatabase` is **not used** anywhere in this app. Every
+record requires either an iCloud-authenticated owner (private DB) or
+an accepted CKShare (shared DB). Nothing is world-readable.
+
 > **Naming note (2026-04-27):** code comments and earlier drafts refer to
 > `TripPlatform_BuildSpec_v2.md`. That file does not exist — the canonical
 > spec is this document (`ROADTRIP_PWA_BUILD_SPEC_V3.md`) plus its V2
@@ -270,8 +305,10 @@ Memory {
   // text-kind
   text?: string
 
-  // photo-kind
-  photoExternalURLs?: string[]   // CloudKit asset URLs (Pass 2)
+  // photo-kind — multi-photo album (camera composer)
+  photoRefs?: Array<{ storage: 'idb', key: string }>  // local IDB blobs
+  photoRef?: { storage: 'idb', key: string }          // back-compat: mirror of photoRefs[0]
+  photoExternalURLs?: string[]                        // legacy field; not written by current composers
   caption?: string
 
   // voice-kind (Whisper-transcribed; see §7)
@@ -301,46 +338,53 @@ The Pass-1 store (`app/src/lib/memoryStore.js`) writes records with no
 always set `kind`. Migration is lazy — records get the field on next
 update; no batch rewrite.
 
-### CloudKit mapping
-
-When CloudKit JS lands (container approval received 2026-04-27, schema
-provisioning still pending Apple Dev console clicks):
+### CloudKit mapping (live as of 2026-05-02)
 
 - Record type: `Memory`
-- Zones: `_defaultZone` (private) + `Family` custom zone (shared)
-- Fields: 1:1 with the shape above. `audioRef` becomes `audio: CKAsset`;
-  `photoExternalURLs` becomes `photos: [CKAsset]`. `reactions` is
-  serialised as a JSON string in `reactionsJson` (CloudKit doesn't have
-  arrays of records natively).
+- Database scope per visibility — see "Database scope per write op" in
+  the Principles section above.
+- Zones: `_defaultZone` (own private memories) + `Family` custom zone
+  (every shared memory; same zone for Trips).
+- Field mapping:
+  - `audioRef` → `audioAsset` (single `CKAsset`)
+  - `photoRef` → `photoAsset` (single `CKAsset`); when a memory has a
+    `photoRefs[]` album, only `photoRefs[0]` is currently uploaded —
+    multi-photo CKAsset arrays per record are a known follow-up.
+  - `reactions` → `reactionsJson` (JSON string; CloudKit doesn't have
+    native arrays of records).
 
-### UI (per Design bundle)
+### UI (per Design bundle, current state)
 
-Four directions exist as artboards; Direction 02 (Threaded Memories) is
-the recommended primary surface, with Direction 04 (Voice-First Field
-Recorder) folded in as the in-thread compose mode. Build order:
+Four directions exist as artboards. Live surfaces:
+- **Direction 02 (Threaded Memories):** primary per-stop surface.
+  Composer takes text, multi-photo album (up to 6), and voice memo.
+- **Direction 03 (Postcard):** Aurelia's authoring flow — guided 4-step
+  (photo → caption → tag → mood) saving as a `kind: 'photo'` memory
+  with a `mood` field.
+- **Direction 04 (Voice-First Field Recorder):** invoked from the
+  thread's mic button; records, IDB-stores audio, and (when
+  `VITE_WHISPER_PROXY` is set) transcribes via Whisper.
 
-1. Pass 1 (now): single-author per-stop textarea + voice memo button
-   that records, transcribes, and saves the transcript as the memory
-   text. (Already shipped before this push; this section retro-documents
-   the schema.)
-2. Pass 2 (CloudKit live): threaded view, multiple memories per stop,
-   reactions, photo attachments via CloudKit assets.
-3. Pass 3: Direction 03 "postcard" finishing-move on a memory you love.
+### Known follow-ups
 
-### Open questions
-
-- Reaction emoji set: free-form vs. curated (the Design uses heart /
-  pizza / camera / etc. — defer to Pass 2).
-- Per-traveler memory feeds ("Aurelia's only thread"): mentioned as
-  "next" in the Design cover note. Defer to Pass 3.
+- Multi-photo CKAsset upload (today only `photoRefs[0]` syncs to
+  CloudKit; the rest stay device-local until the per-album upload is
+  built).
+- Per-traveler memory feeds ("Aurelia's only thread") from the Design
+  cover note — not yet built. Don't ship UI for it until the filter
+  exists.
 
 ---
 
 ## §5b — Flight tracking schema (FlightAware AeroAPI v4)
 
-Lives in `app/src/lib/flightStatus.js`. Already implemented; the
-AeroAPI key is pending and will be wired via a Cloudflare Worker proxy
-(set `VITE_FLIGHT_API` to the proxy URL). The browser never sees the key.
+Lives in `app/src/lib/flightStatus.js`. The fetch path is implemented
+and wired to read `VITE_FLIGHT_API` (Cloudflare Worker proxy URL). The
+proxy itself is not currently deployed — the widget therefore degrades
+honestly to `"no live feed yet"` plus a working external link to
+`flightaware.com/live/flight/<ident>`. When the proxy gets deployed and
+`VITE_FLIGHT_API` is set, the widget upgrades to live status with no
+code changes.
 
 ### Per-stop fields (in `data/trips.js`)
 

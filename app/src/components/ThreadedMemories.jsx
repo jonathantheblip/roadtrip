@@ -19,8 +19,9 @@ const MAX_PHOTOS_PER_ALBUM = 6
 // ("me") and left-align for everyone else. A bottom composer takes
 // text + photo + voice; voice opens the full-screen VoiceRecorder.
 //
-// Photo composer is a Pass-2 stub — saves a placeholder Memory record
-// today, gets wired to CloudKit assets when the JS adapter lands.
+// The photo path is real: tapping the camera icon opens a multi-photo
+// tray (up to 6) → IDB store via lib/memAssets → photoRefs[] on the
+// Memory record → CKAsset upload via cloudKitSync.pushMemory.
 export function ThreadedMemories({ trip, stop, traveler }) {
   const [memories, setMemories] = useState(() =>
     listMemoriesForStop(stop.id, traveler)

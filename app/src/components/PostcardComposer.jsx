@@ -306,7 +306,7 @@ const STEP_TITLES = [
 const STEP_HINTS = [
   'pick a photo from your roll, or skip — words alone are fine.',
   'one or two sentences in your own voice. no pressure.',
-  'tap to credit. they get a notification.',
+  'tap to credit. their avatar shows on the postcard in the family thread.',
   'choose one. you can change it later.',
 ]
 

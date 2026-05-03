@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload } from 'lucide-react'
+import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload, Users } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import { useCloudKitAuth } from '../hooks/useCloudKitAuth'
 import { CLOUDKIT_META } from '../lib/cloudkit'
-import { pullAll } from '../lib/cloudKitSync'
-import { mergeFromRemote } from '../lib/memoryStore'
+import { pullAll, shareFamilyZoneWithUI, pushMemory } from '../lib/cloudKitSync'
+import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 
 // Per-trip settings panel: calendar export, shared album link, identity reset.
 // CloudKit sync, screenshot ingestion, and Gmail wiring will live here too.
@@ -23,6 +23,8 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [albumDraft, setAlbumDraft] = useState(trip?.sharedAlbumURL || '')
   const [albumSaving, setAlbumSaving] = useState(false)
   const [albumSavedTick, setAlbumSavedTick] = useState(0)
+  const [inviteState, setInviteState] = useState({ status: 'idle', message: null })
+  const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
 
   async function runPull() {
     setSyncing(true)
@@ -69,6 +71,49 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
       setAlbumSavedTick((t) => t + 1)
     } finally {
       setAlbumSaving(false)
+    }
+  }
+
+  async function runPushAll() {
+    setPushAllState({ status: 'running', message: null })
+    try {
+      const records = listAllLocalMemories(traveler)
+      let ok = 0
+      let failed = 0
+      for (const m of records) {
+        try {
+          const r = await pushMemory(m)
+          if (r === false) failed += 1
+          else ok += 1
+        } catch {
+          failed += 1
+        }
+      }
+      setPushAllState({
+        status: 'done',
+        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}.`,
+      })
+    } catch (err) {
+      setPushAllState({ status: 'error', message: err?.message || String(err) })
+    }
+  }
+
+  async function runInvite() {
+    setInviteState({ status: 'opening', message: null })
+    try {
+      const result = await shareFamilyZoneWithUI()
+      // shareWithUI returns when the user dismisses the panel; result
+      // shape varies across CloudKit JS versions but we just confirm it
+      // didn't throw. The actual invitations were sent by Apple's UI.
+      setInviteState({
+        status: 'done',
+        message: 'Share invitation sent. Family members tap the link in Mail/Messages to accept.',
+      })
+    } catch (err) {
+      setInviteState({
+        status: 'error',
+        message: err?.message || String(err),
+      })
     }
   }
 
@@ -354,6 +399,16 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
               <button
                 type="button"
                 className="btn-pill"
+                onClick={runPushAll}
+                disabled={pushAllState.status === 'running'}
+                title="Re-push every local memory to iCloud. Safe to run; idempotent by record id."
+              >
+                <Upload size={12} />
+                {pushAllState.status === 'running' ? 'Pushing…' : 'Push memories'}
+              </button>
+              <button
+                type="button"
+                className="btn-pill"
                 onClick={runSeed}
                 disabled={seeding}
                 title="Push the bundled Jackson + NYC trips to iCloud. Idempotent — re-running only adds anything that's missing."
@@ -374,6 +429,20 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
             {seedMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{seedMsg}</p>
             )}
+            {pushAllState.message && (
+              <p
+                className="f-dm text-[12px] mt-3 italic"
+                style={{
+                  opacity: 0.8,
+                  color:
+                    pushAllState.status === 'error'
+                      ? 'var(--accent)'
+                      : 'inherit',
+                }}
+              >
+                {pushAllState.message}
+              </p>
+            )}
             <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
               Trips currently sourced from{' '}
               <span className="f-mono text-[10px]">{tripsApi?.source || 'unknown'}</span>
@@ -385,14 +454,47 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
         )}
       </section>
 
-      <section className="px-6 py-8">
-        <p className="smallcaps f-dm text-[11px] opacity-70 mb-3">Coming next</p>
-        <ul className="f-news text-base leading-relaxed opacity-80" style={{ paddingLeft: 18 }}>
-          <li>Screenshot ingestion via Claude API (needs API key + Worker proxy).</li>
-          <li>Gmail ingestion (Pass 2, OAuth client already provisioned).</li>
-          <li>FlightAware AeroAPI live data (needs Cloudflare Worker proxy).</li>
-        </ul>
-      </section>
+      {ck.state === 'signedIn' && (
+        <section className="px-6 py-8 border-b surface-rule">
+          <div className="flex items-center gap-2 mb-3">
+            <Users size={14} />
+            <p className="smallcaps f-dm text-[11px] opacity-70">Family sharing</p>
+          </div>
+          <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
+            One-time setup. Tap to open Apple's invite panel and pick the
+            family iCloud accounts you want to share trips and memories
+            with. They'll get a link in Mail or Messages — one tap to
+            accept and they see everything you've shared from then on.
+          </p>
+          <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-pill"
+              onClick={runInvite}
+              disabled={inviteState.status === 'opening'}
+            >
+              <Users size={12} />
+              {inviteState.status === 'opening' ? 'Opening…' : 'Invite family'}
+            </button>
+          </div>
+          {inviteState.message && (
+            <p
+              className="f-dm text-[12px] mt-3 italic"
+              style={{
+                opacity: 0.8,
+                color:
+                  inviteState.status === 'error' ? 'var(--accent)' : 'inherit',
+              }}
+            >
+              {inviteState.message}
+            </p>
+          )}
+          <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
+            You only need to do this once. Adding a new family member later
+            re-opens the same panel.
+          </p>
+        </section>
+      )}
     </div>
   )
 }

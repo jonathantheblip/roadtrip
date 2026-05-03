@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
-import { listMemoriesForTrip, listMemoriesForStop } from '../lib/memoryStore'
+import { listMemoriesForTrip, listMemoriesForStop, saveMemory } from '../lib/memoryStore'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop } from './FlightStatus'
 
@@ -93,13 +93,15 @@ function deriveOpenLoops(trip) {
   return loops.slice(0, 3)
 }
 
-// Quick-glance flight stat for the top strip: scheduled-arrival delta
-// off "now" gives a friendly "+/- m" string. Without live AeroAPI we
-// just show "ON TIME" as a placeholder.
+// Quick-glance flight stat for the top strip. We only show what we
+// know for sure — the flight number and its scheduled arrival time.
+// Live status (delays, gate, etc.) is a separate panel below; lying
+// here with a fake "ON TIME" sticker would be worse than restraint.
 function flightHeadline(arrival) {
   if (!arrival?.stop) return null
   const s = arrival.stop
-  return `${s.flightNumber} · ON TIME`
+  const sched = s.scheduledArrivalLocal || s.time
+  return sched ? `${s.flightNumber} · ${sched}` : s.flightNumber
 }
 
 export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
@@ -110,6 +112,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
     const onToday = trip.days.find((d) => d.isoDate === today)
     return onToday?.n || trip.days[0]?.n || 1
   })
+  const [quickLogged, setQuickLogged] = useState(null)
   const day = trip.days.find((d) => d.n === activeDayN) || trip.days[0]
   const arrival = findArrivalStop(trip)
   const headline = splitHeadline(day)
@@ -503,63 +506,17 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
         </JSection>
       )}
 
-      {/* QUEUE — quick logs from anywhere */}
+      {/* QUEUE — quick logs. Each tap saves a one-line Memory against
+          the day's first stop so the family thread reflects what just
+          happened on the road without needing the full composer. */}
       <JSection label="Queue" meta="LOG, BRIEFLY" style={{ marginTop: 6 }}>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            columnGap: 16,
-            rowGap: 0,
-          }}
-        >
-          {[
-            ['Bathroom', '— stopped'],
-            ['Fast food', '— in & out'],
-            ['Outside', '— stretch'],
-            ['Emergency', '— flag'],
-          ].map(([label, hint]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={onOpenSettings}
-              style={{
-                padding: '10px 0',
-                textAlign: 'left',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: '1px solid var(--border)',
-                cursor: 'pointer',
-                color: 'var(--text)',
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 6,
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: 'Fraunces, Georgia, serif',
-                  fontSize: 14,
-                  textDecoration: 'underline',
-                  textDecorationColor: 'var(--accent)',
-                  textUnderlineOffset: 4,
-                }}
-              >
-                {label}
-              </span>
-              <span
-                style={{
-                  fontFamily: 'Fraunces, Georgia, serif',
-                  fontSize: 12,
-                  fontStyle: 'italic',
-                  color: 'var(--faint)',
-                }}
-              >
-                {hint}
-              </span>
-            </button>
-          ))}
-        </div>
+        <QueueButtons
+          trip={trip}
+          day={day}
+          traveler={traveler}
+          quickLogged={quickLogged}
+          setQuickLogged={setQuickLogged}
+        />
       </JSection>
 
       {/* FILE A DISPATCH */}
@@ -637,4 +594,97 @@ function isLiveStop(stop, day) {
   const stopMs = new Date(`${day.isoDate}T${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}:00`).getTime()
   const delta = Math.abs(now.getTime() - stopMs)
   return delta <= 60 * 60 * 1000
+}
+
+const QUEUE_OPTIONS = [
+  ['Bathroom', 'stopped'],
+  ['Fast food', 'in & out'],
+  ['Outside', 'stretch'],
+  ['Emergency', 'flag'],
+]
+
+function QueueButtons({ trip, day, traveler, quickLogged, setQuickLogged }) {
+  function logIt(label, hint) {
+    const target = day?.stops?.[0]
+    if (!target) return
+    saveMemory({
+      tripId: trip.id,
+      stopId: target.id,
+      authorTraveler: traveler,
+      visibility: 'shared',
+      kind: 'text',
+      text: `${label} — ${hint}`,
+    })
+    setQuickLogged({ label, at: Date.now() })
+  }
+  return (
+    <>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          columnGap: 16,
+          rowGap: 0,
+        }}
+      >
+        {QUEUE_OPTIONS.map(([label, hint]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => logIt(label, hint)}
+            disabled={!day?.stops?.[0]}
+            style={{
+              padding: '10px 0',
+              textAlign: 'left',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: '1px solid var(--border)',
+              cursor: day?.stops?.[0] ? 'pointer' : 'default',
+              color: 'var(--text)',
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 6,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 14,
+                textDecoration: 'underline',
+                textDecorationColor: 'var(--accent)',
+                textUnderlineOffset: 4,
+              }}
+            >
+              {label}
+            </span>
+            <span
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 12,
+                fontStyle: 'italic',
+                color: 'var(--faint)',
+              }}
+            >
+              — {hint}
+            </span>
+          </button>
+        ))}
+      </div>
+      {quickLogged && (
+        <div
+          style={{
+            marginTop: 8,
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 9,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'var(--accent)',
+            opacity: 0.85,
+          }}
+        >
+          ✓ {quickLogged.label} logged to thread
+        </div>
+      )}
+    </>
+  )
 }
