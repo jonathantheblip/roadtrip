@@ -210,24 +210,37 @@ export async function pushMemory(memory) {
   if (isShared) record.zoneID = { zoneName: SHARED_ZONE }
 
   // Try owner-side first (privateCloudDatabase). Falls through to
-  // sharedCloudDatabase if this user is a recipient of someone else's
-  // Family zone (recipient writes go via sharedCloudDatabase).
+  // sharedCloudDatabase ONLY if the privateDB error looks like
+  // "you're a recipient, not the owner" — typically ZONE_NOT_FOUND
+  // because the recipient's own privateCloudDatabase doesn't have
+  // someone else's Family zone. For any other privateDB error
+  // (schema, validation, auth) we surface the real reason instead
+  // of layering a confusing sharedDB error on top.
   if (isShared) {
+    let privErr = null
     try {
       const r = await container.privateCloudDatabase.saveRecords([record])
       throwIfRecordErrors(r)
       return true
     } catch (err) {
-      // Recipients can't write to their own privateCloudDatabase under
-      // someone else's zoneID — they get a server error. Try shared.
-      try {
-        const r2 = await container.sharedCloudDatabase.saveRecords([record])
-        throwIfRecordErrors(r2)
-        return true
-      } catch (err2) {
-        console.warn('CloudKit pushMemory(shared) failed', err2 || err)
-        throw err2 || err
-      }
+      privErr = err
+    }
+    const looksLikeRecipient = /zone[_ ]not[_ ]found|zonenotfound/i.test(
+      privErr?.message || ''
+    )
+    if (!looksLikeRecipient) {
+      console.warn('CloudKit pushMemory(private/family) failed', privErr)
+      throw privErr
+    }
+    try {
+      const r2 = await container.sharedCloudDatabase.saveRecords([record])
+      throwIfRecordErrors(r2)
+      return true
+    } catch (err2) {
+      console.warn('CloudKit pushMemory(shared) failed', err2 || privErr)
+      throw new Error(
+        `priv: ${privErr?.message || 'unknown'} · shared: ${err2?.message || 'unknown'}`
+      )
     }
   }
 
