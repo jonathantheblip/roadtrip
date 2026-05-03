@@ -219,8 +219,7 @@ export async function pushMemory(memory) {
   if (isShared) {
     let privErr = null
     try {
-      const r = await container.privateCloudDatabase.saveRecords([record])
-      throwIfRecordErrors(r)
+      await saveOrUpdate(container.privateCloudDatabase, record)
       return true
     } catch (err) {
       privErr = err
@@ -233,8 +232,7 @@ export async function pushMemory(memory) {
       throw privErr
     }
     try {
-      const r2 = await container.sharedCloudDatabase.saveRecords([record])
-      throwIfRecordErrors(r2)
+      await saveOrUpdate(container.sharedCloudDatabase, record)
       return true
     } catch (err2) {
       console.warn('CloudKit pushMemory(shared) failed', err2 || privErr)
@@ -245,12 +243,38 @@ export async function pushMemory(memory) {
   }
 
   try {
-    const r = await container.privateCloudDatabase.saveRecords([record])
-    throwIfRecordErrors(r)
+    await saveOrUpdate(container.privateCloudDatabase, record)
     return true
   } catch (err) {
     console.warn('CloudKit pushMemory(private) failed', err)
     throw err
+  }
+}
+
+// Wrap saveRecords with conflict-aware upsert. CloudKit treats a save
+// without a recordChangeTag as create-only and rejects with CONFLICT
+// when the recordName already exists server-side. Re-pushing the same
+// record (Settings → "Push memories") and edits-then-mirror both hit
+// this. On CONFLICT we fetch the existing record's recordChangeTag
+// and retry the save with it; CloudKit then treats the call as an
+// update and overwrites server state with our local fields.
+async function saveOrUpdate(db, record) {
+  try {
+    const r = await db.saveRecords([record])
+    throwIfRecordErrors(r)
+    return r
+  } catch (err) {
+    if (!/CONFLICT|record to insert already exists/i.test(err?.message || '')) {
+      throw err
+    }
+    const ref = { recordName: record.recordName }
+    if (record.zoneID) ref.zoneID = record.zoneID
+    const fetched = await db.fetchRecords([ref])
+    const tag = fetched?.records?.[0]?.recordChangeTag
+    if (!tag) throw err
+    const r2 = await db.saveRecords([{ ...record, recordChangeTag: tag }])
+    throwIfRecordErrors(r2)
+    return r2
   }
 }
 
@@ -475,13 +499,15 @@ export async function pushTrip(trip) {
     fields,
   }
   // Owner-first, fall through to recipient side (sharedCloudDatabase)
-  // for participants who write back into the share.
+  // for participants who write back into the share. saveOrUpdate
+  // handles the CONFLICT-on-re-push case by fetching the existing
+  // recordChangeTag and retrying as an update.
   try {
-    await container.privateCloudDatabase.saveRecords([record])
+    await saveOrUpdate(container.privateCloudDatabase, record)
     return true
   } catch {
     try {
-      await container.sharedCloudDatabase.saveRecords([record])
+      await saveOrUpdate(container.sharedCloudDatabase, record)
       return true
     } catch (err) {
       console.warn('CloudKit pushTrip failed', err)
