@@ -33,7 +33,7 @@
 // reference under `audioAsset` / `photoAsset`. Local cache keeps the
 // IDB key alive so playback stays instant.
 
-import { getContainer, isCloudKitConfigured } from './cloudkit'
+import { getContainer, getCurrentUser, isCloudKitConfigured } from './cloudkit'
 import { loadAsset } from './memAssets'
 
 const RECORD_TYPE = 'Memory'
@@ -145,13 +145,22 @@ async function fetchAllFromSharedZone(db, recordType) {
   const out = []
   const zoneCounts = {}
   let serverChangeToken = undefined
+  // Same routing quirk as saveRecords — for the privateCloudDatabase
+  // path we need ownerRecordName on the zoneID so CK JS targets the
+  // actual Family zone instead of falling back to _defaultZone. For
+  // sharedCloudDatabase the recipient must include ownerRecordName as
+  // the original sharer's user record name; if we can't resolve it
+  // (we're the owner viewing our own private DB), use our own.
+  const zoneID = (await resolveZoneID({ zoneName: SHARED_ZONE })) || {
+    zoneName: SHARED_ZONE,
+  }
   for (let page = 0; page < 20; page++) {
     let resp
     try {
       resp = await db.fetchRecordZoneChanges({
         zones: [
           {
-            zoneID: { zoneName: SHARED_ZONE },
+            zoneID,
             ...(serverChangeToken ? { serverChangeToken } : {}),
           },
         ],
@@ -295,19 +304,46 @@ export function takeRecentSaves() {
   return r
 }
 
-async function saveOrUpdate(db, record) {
-  // CloudKit JS empirically ignores per-record `zoneID` when no call-level
-  // zoneID option is passed — records silently land in _defaultZone even
-  // when each record sets `zoneID: { zoneName: 'Family' }`. Pass the
-  // zoneID at the call level too to force routing into the Family zone.
-  // (Symptom that surfaced this 2026-05-03: Family zone showed empty in
-  // dashboard despite many "successful" pushes; pullAll's _defaultZone
-  // performQuery source happily returned the misrouted records, hiding
-  // the bug. Same root cause for "trip pull returns 0" and "invite popup
-  // hangs forever" — the popup was trying to share an empty zone.)
-  const callOpts = record.zoneID ? { zoneID: record.zoneID } : undefined
+// CloudKit JS requires the zoneID's `ownerRecordName` to be set
+// explicitly for non-default zones — otherwise saveRecords/fetchRecords
+// silently fall back to _defaultZone regardless of zoneName. Cached
+// because every save would otherwise call setUpAuth round-trip.
+let cachedOwnerRecordName = null
+async function getOwnerRecordName() {
+  if (cachedOwnerRecordName) return cachedOwnerRecordName
   try {
-    const r = await db.saveRecords([record], callOpts)
+    const user = await getCurrentUser()
+    if (user.signedIn) cachedOwnerRecordName = user.userRecordName
+  } catch {
+    /* not signed in — leave null */
+  }
+  return cachedOwnerRecordName
+}
+
+// Resolve a per-record zoneID into one CloudKit JS will actually honour.
+// Adds ownerRecordName for non-default zones so saveRecords routes to
+// the named custom zone instead of falling back to _defaultZone.
+async function resolveZoneID(zoneID) {
+  if (!zoneID) return null
+  if (zoneID.ownerRecordName) return zoneID
+  const owner = await getOwnerRecordName()
+  if (!owner) return zoneID
+  return { ...zoneID, ownerRecordName: owner }
+}
+
+async function saveOrUpdate(db, record) {
+  // CloudKit JS routing quirk #1: per-record zoneID is ignored unless
+  // we also pass it as the call-level option.
+  // Quirk #2: zoneID must include ownerRecordName for non-default zones,
+  // otherwise CK JS silently falls back to _defaultZone.
+  // (Both surfaced 2026-05-03: trips and memories landed in _defaultZone
+  // despite zoneID hints. Verified via "private/_defaultZone: found 4
+  // Trip record(s)!" diagnostic in pullTrips.)
+  const zoneID = await resolveZoneID(record.zoneID)
+  const recordToSave = zoneID ? { ...record, zoneID } : record
+  const callOpts = zoneID ? { zoneID } : undefined
+  try {
+    const r = await db.saveRecords([recordToSave], callOpts)
     throwIfRecordErrors(r)
     for (const saved of r.records || []) recordSave(saved)
     return r
@@ -316,18 +352,11 @@ async function saveOrUpdate(db, record) {
       throw err
     }
     const ref = { recordName: record.recordName }
-    if (record.zoneID) ref.zoneID = record.zoneID
-    // Same call-level zoneID quirk as saveRecords: per-record zoneID is
-    // ignored unless we also pass it as the call-level option. Without
-    // this, fetchRecords pulls the existing record from _defaultZone
-    // even when we ask for Family — and we end up retrying the save
-    // with _defaultZone's recordChangeTag, which CloudKit then rejects
-    // with "CONFLICT: client oplock error updating record" because the
-    // tag doesn't match the actual Family-zone record.
+    if (zoneID) ref.zoneID = zoneID
     const fetched = await db.fetchRecords([ref], callOpts)
     const tag = fetched?.records?.[0]?.recordChangeTag
     if (!tag) throw err
-    const r2 = await db.saveRecords([{ ...record, recordChangeTag: tag }], callOpts)
+    const r2 = await db.saveRecords([{ ...recordToSave, recordChangeTag: tag }], callOpts)
     throwIfRecordErrors(r2)
     for (const saved of r2.records || []) recordSave(saved)
     return r2
