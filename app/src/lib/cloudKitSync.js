@@ -308,7 +308,14 @@ async function saveOrUpdate(db, record) {
     }
     const ref = { recordName: record.recordName }
     if (record.zoneID) ref.zoneID = record.zoneID
-    const fetched = await db.fetchRecords([ref])
+    // Same call-level zoneID quirk as saveRecords: per-record zoneID is
+    // ignored unless we also pass it as the call-level option. Without
+    // this, fetchRecords pulls the existing record from _defaultZone
+    // even when we ask for Family — and we end up retrying the save
+    // with _defaultZone's recordChangeTag, which CloudKit then rejects
+    // with "CONFLICT: client oplock error updating record" because the
+    // tag doesn't match the actual Family-zone record.
+    const fetched = await db.fetchRecords([ref], callOpts)
     const tag = fetched?.records?.[0]?.recordChangeTag
     if (!tag) throw err
     const r2 = await db.saveRecords([{ ...record, recordChangeTag: tag }], callOpts)
