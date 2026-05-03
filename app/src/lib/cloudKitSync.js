@@ -95,14 +95,17 @@ export async function pullAll() {
     console.warn('CloudKit pullAll(private/default) failed', err)
   }
 
-  // Shared memories the user owns — privateCloudDatabase Family zone
+  // Shared memories the user owns — privateCloudDatabase Family zone.
+  // Same caveat as the sharedCloudDatabase path below: performQuery
+  // against a custom zone needs a queryable recordName index in the
+  // container schema, which dev-auto-create and Promote-to-Production
+  // both miss by default — the query silently returns empty even after
+  // a successful saveRecords. fetchRecordZoneChanges walks the zone's
+  // change feed and works without any indexes.
   try {
     const priv = container.privateCloudDatabase
-    const r = await priv.performQuery({
-      recordType: RECORD_TYPE,
-      zoneID: { zoneName: SHARED_ZONE },
-    })
-    if (r.records) for (const rec of r.records) out.push(fromCKRecord(rec, 'shared'))
+    const records = await fetchAllFromSharedZone(priv, RECORD_TYPE)
+    for (const rec of records) out.push(fromCKRecord(rec, 'shared'))
   } catch (err) {
     // Family zone not yet created — normal for first-time owner.
     console.warn('CloudKit pullAll(private/family) failed', err)
@@ -354,14 +357,14 @@ export async function pullTrips() {
   if (!isCloudKitConfigured()) return []
   const container = await getContainer()
   const out = []
-  // Owner side — privateCloudDatabase
+  // Owner side — privateCloudDatabase Family zone. Same queryable-index
+  // caveat as pullAll: performQuery against a custom zone returns empty
+  // without an explicit recordName index in the schema. Walk the change
+  // feed instead.
   try {
     const priv = container.privateCloudDatabase
-    const r = await priv.performQuery({
-      recordType: TRIP_RECORD_TYPE,
-      zoneID: { zoneName: SHARED_ZONE },
-    })
-    if (r.records) for (const rec of r.records) {
+    const records = await fetchAllFromSharedZone(priv, TRIP_RECORD_TYPE)
+    for (const rec of records) {
       const t = tripFromCKRecord(rec)
       if (t) out.push(t)
     }
