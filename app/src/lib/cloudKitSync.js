@@ -446,22 +446,50 @@ function tripFromCKRecord(rec) {
 // run shareWithUI in regular Safari, not the home-screen PWA. The
 // Settings UI gates the Invite button on standalone-mode detection.
 
-export async function shareFamilyZoneWithUI() {
-  if (!isCloudKitConfigured()) {
-    throw new Error('CloudKit not configured')
+// Pre-warm the container and Family zone so the Invite button can call
+// shareWithUI synchronously inside the click handler. Mobile Safari
+// (and to a lesser extent desktop Safari) treats any code past an
+// `await` as no longer a user gesture and refuses to open popups —
+// shareWithUI then sits waiting and eventually returns
+// `SHARE_UI_TIMEOUT`. Settings calls this on sign-in; the click
+// handler reads the resolved value and calls shareWithUI in the same
+// frame as the tap.
+let warmedDbP = null
+export function prewarmFamilyShare() {
+  if (warmedDbP) return warmedDbP
+  warmedDbP = (async () => {
+    if (!isCloudKitConfigured()) return null
+    const container = await getContainer()
+    await ensureFamilyZone()
+    return container.privateCloudDatabase
+  })()
+  warmedDbP.catch(() => {
+    warmedDbP = null
+  })
+  return warmedDbP
+}
+
+// Synchronous shareWithUI call. Caller must have already awaited
+// prewarmFamilyShare() and pass the resolved database in. Throws if
+// the SDK doesn't expose shareWithUI in this browser.
+export function shareFamilyZoneSync(db) {
+  if (!db || typeof db.shareWithUI !== 'function') {
+    throw new Error('shareWithUI is not available in this browser')
   }
-  const container = await getContainer()
-  await ensureFamilyZone()
-  const db = container.privateCloudDatabase
-  if (typeof db.shareWithUI !== 'function') {
-    throw new Error('CloudKit JS in this browser does not expose shareWithUI')
-  }
-  // Sharing the zone (vs a specific record) makes every Trip + Memory
-  // in the Family zone visible to participants who accept the share.
   return db.shareWithUI({
     zoneID: { zoneName: SHARED_ZONE },
     publicPermission: 'NONE',
   })
+}
+
+// Async convenience: full pre-warm + share in one call. Kept for
+// non-Safari callers (e.g. desktop Chrome which is more lenient about
+// the gesture context). Settings deliberately doesn't use this on
+// the click path because of the gesture issue described above.
+export async function shareFamilyZoneWithUI() {
+  const db = await prewarmFamilyShare()
+  if (!db) throw new Error('CloudKit not configured')
+  return shareFamilyZoneSync(db)
 }
 
 // True when the page is running as an installed PWA (home-screen launch

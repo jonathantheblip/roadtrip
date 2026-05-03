@@ -1,10 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload, Users } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import { useCloudKitAuth } from '../hooks/useCloudKitAuth'
 import { CLOUDKIT_META } from '../lib/cloudkit'
-import { pullAll, shareFamilyZoneWithUI, pushMemory, isStandalonePWA } from '../lib/cloudKitSync'
+import {
+  pullAll,
+  prewarmFamilyShare,
+  shareFamilyZoneSync,
+  pushMemory,
+  isStandalonePWA,
+} from '../lib/cloudKitSync'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 
 // Per-trip settings panel: calendar export, shared album link, identity reset.
@@ -25,6 +31,24 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [albumSavedTick, setAlbumSavedTick] = useState(0)
   const [inviteState, setInviteState] = useState({ status: 'idle', message: null })
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
+  // Pre-warm so the click handler can call shareWithUI synchronously
+  // and not blow past the user-gesture window. Mobile Safari otherwise
+  // blocks the popup → SDK returns SHARE_UI_TIMEOUT.
+  const [shareDb, setShareDb] = useState(null)
+  useEffect(() => {
+    if (ck.state !== 'signedIn') return
+    let cancelled = false
+    prewarmFamilyShare()
+      .then((db) => {
+        if (!cancelled) setShareDb(db)
+      })
+      .catch(() => {
+        /* leave shareDb null; runInvite shows a friendly error */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ck.state])
 
   async function runPull() {
     setSyncing(true)
@@ -98,23 +122,39 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     }
   }
 
-  async function runInvite() {
-    setInviteState({ status: 'opening', message: null })
-    try {
-      const result = await shareFamilyZoneWithUI()
-      // shareWithUI returns when the user dismisses the panel; result
-      // shape varies across CloudKit JS versions but we just confirm it
-      // didn't throw. The actual invitations were sent by Apple's UI.
-      setInviteState({
-        status: 'done',
-        message: 'Share invitation sent. Family members tap the link in Mail/Messages to accept.',
-      })
-    } catch (err) {
+  // Synchronous click handler: zero awaits before shareWithUI is
+  // called. The pre-warm above leaves `shareDb` populated so we can
+  // hit the SDK in the same frame as the tap. Promise resolution
+  // (success / failure) happens after, which is fine — by then the
+  // popup is already open.
+  function runInvite() {
+    if (!shareDb) {
       setInviteState({
         status: 'error',
-        message: err?.message || String(err),
+        message:
+          'iCloud is still warming up. Wait a moment and tap Invite family again.',
       })
+      return
     }
+    setInviteState({ status: 'opening', message: null })
+    let result
+    try {
+      result = shareFamilyZoneSync(shareDb)
+    } catch (err) {
+      setInviteState({ status: 'error', message: err?.message || String(err) })
+      return
+    }
+    Promise.resolve(result)
+      .then(() => {
+        setInviteState({
+          status: 'done',
+          message:
+            'Invitation sent. Family members tap the link in Mail or Messages to accept on icloud.com.',
+        })
+      })
+      .catch((err) => {
+        setInviteState({ status: 'error', message: err?.message || String(err) })
+      })
   }
 
   async function clearAlbumUrl() {
