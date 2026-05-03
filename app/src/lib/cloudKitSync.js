@@ -309,8 +309,11 @@ export async function deleteRemote(memory) {
 
 function toCKFields(m, { audioAsset, photoAsset } = {}) {
   const f = {}
-  put(f, 'tripId', m.tripId)
-  put(f, 'stopId', m.stopId)
+  // CloudKit auto-capitalizes `Id` → `ID` (Cocoa acronym convention) when
+  // a record type is defined via the dashboard, so the wire-format keys
+  // are tripID/stopID even though the local Memory shape stays tripId/stopId.
+  put(f, 'tripID', m.tripId)
+  put(f, 'stopID', m.stopId)
   put(f, 'authorTraveler', m.authorTraveler)
   put(f, 'visibility', m.visibility)
   put(f, 'kind', m.kind)
@@ -349,8 +352,8 @@ function fromCKRecord(rec, visibilityHint) {
   }
   return {
     id: rec.recordName,
-    tripId: v('tripId'),
-    stopId: v('stopId'),
+    tripId: v('tripID'),
+    stopId: v('stopID'),
     authorTraveler: v('authorTraveler'),
     visibility: v('visibility') || visibilityHint || 'shared',
     kind: v('kind') || 'text',
@@ -437,7 +440,8 @@ export async function pushTrip(trip) {
   await ensureFamilyZone()
 
   const fields = {}
-  put(fields, 'tripId', trip.id)
+  // tripID, not tripId — see toCKFields comment.
+  put(fields, 'tripID', trip.id)
   put(fields, 'title', trip.title)
   put(fields, 'endCity', trip.endCity)
   put(fields, 'dateRangeStart', trip.dateRangeStart)
