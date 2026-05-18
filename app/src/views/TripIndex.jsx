@@ -18,7 +18,23 @@ import { AvatarStack } from '../components/Avatar'
 //   • live memory count read from listMemoriesForTrip
 
 export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTrip }) {
-  const ordered = [...trips].sort((a, b) => priority(a) - priority(b))
+  // Order by where each trip sits relative to *now*, not by the static
+  // `status` seed field — a trip whose dates have passed is not "in
+  // planning" no matter what its stored status says. What's next leads
+  // (the surface is "a planning surface for what comes next"), the
+  // archive follows, most-recent first.
+  const today = todayISO()
+  const ordered = [...trips].sort((a, b) => {
+    const pa = phase(a, today)
+    const pb = phase(b, today)
+    if (pa.rank !== pb.rank) return pa.rank - pb.rank
+    if (pa.kind === 'past') {
+      return (b.dateRangeEnd || b.dateRangeStart || '').localeCompare(
+        a.dateRangeEnd || a.dateRangeStart || ''
+      )
+    }
+    return (a.dateRangeStart || '').localeCompare(b.dateRangeStart || '')
+  })
   const liveCounts = useMemo(() => {
     const map = new Map()
     for (const t of ordered) {
@@ -104,6 +120,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
               {!isFirst && <Hairline color="var(--text)" style={{ margin: '14px 0' }} />}
               <TripCard
                 trip={trip}
+                today={today}
                 memoryCount={liveCounts.get(trip.id) || 0}
                 onOpen={() => onOpenTrip(trip.id)}
                 isFirst={isFirst}
@@ -117,17 +134,15 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
   )
 }
 
-function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
-  const status = (trip.status || '').toLowerCase()
+function TripCard({ trip, today, memoryCount, onOpen, isFirst, animDelay }) {
+  const ph = phase(trip, today)
   const statusLabel =
-    status === 'planning'
-      ? '● IN PLANNING'
-      : status === 'archived'
+    ph.kind === 'current'
+      ? '● LIVE'
+      : ph.kind === 'past'
         ? 'ARCHIVED'
-        : status === 'live'
-          ? '● LIVE'
-          : status.toUpperCase()
-  const statusColor = status === 'archived' ? 'var(--muted)' : 'var(--accent)'
+        : '● IN PLANNING'
+  const statusColor = ph.kind === 'past' ? 'var(--muted)' : 'var(--accent)'
   const startCity = (trip.startCity || '').toUpperCase()
   const endCity = (trip.endCity || '').toUpperCase()
   const dayCount = trip.days?.length || 0
@@ -241,10 +256,26 @@ function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
   )
 }
 
-function priority(t) {
-  if (t.status === 'live') return 0
-  if (t.status === 'planning') return 1
-  return 2
+function todayISO() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+// Temporal phase from the trip's own dates. rank drives ordering
+// (current → upcoming → past); kind drives the status label. Explicit
+// `archived` always means past; a stored `planning`/`live` status only
+// applies when the trip has no dates to judge by.
+function phase(t, today) {
+  const start = t.dateRangeStart || ''
+  const end = t.dateRangeEnd || start
+  if (t.status === 'archived') return { rank: 2, kind: 'past' }
+  if (start && end) {
+    if (end < today) return { rank: 2, kind: 'past' }
+    if (start > today) return { rank: 1, kind: 'upcoming' }
+    return { rank: 0, kind: 'current' }
+  }
+  if (t.status === 'live') return { rank: 0, kind: 'current' }
+  if (t.status === 'planning') return { rank: 1, kind: 'upcoming' }
+  return { rank: 2, kind: 'past' }
 }
 
 function Eyebrow({ children, color, weight = 500, style }) {
