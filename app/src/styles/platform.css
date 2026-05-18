@@ -140,6 +140,8 @@ button { font: inherit; }
 .tap:active { transform: scale(.97); }
 .pulse-dot { animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+.rt-spin { animation: rt-spin 0.9s linear infinite; }
+@keyframes rt-spin { to { transform: rotate(360deg); } }
 
 /* ---- Theme classes ----------------------------------------------------
    `.helen-bone` / `.helen-paper` / `.jj-paper` etc. exist for

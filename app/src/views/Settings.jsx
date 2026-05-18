@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload } from 'lucide-react'
+import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload, FileText, Pencil, Trash2 } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import {
@@ -20,7 +20,7 @@ import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 // surface theming there share a single source of truth — calling
 // useHelenDark() locally gave each consumer its own state, so flipping
 // it inside Settings didn't update the surface class App computes.
-export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, tripsApi, onBack, onChangeTraveler }) {
+export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, tripsApi, onBack, onChangeTraveler, onOpenEditor }) {
   const [workerStatus, setWorkerStatus] = useState({
     status: isWorkerConfigured() ? 'syncing' : 'unconfigured',
     traveler: null,
@@ -34,6 +34,9 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [albumSaving, setAlbumSaving] = useState(false)
   const [albumSavedTick, setAlbumSavedTick] = useState(0)
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+
+  const drafts = (tripsApi?.trips || []).filter((t) => t.draft)
 
   // Ping the Worker on mount and whenever the active traveler changes
   // (the bearer token swaps with traveler).
@@ -162,6 +165,88 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
         <h1 className="f-news tt-tightest text-4xl leading-95">Trip Settings</h1>
         <p className="f-news-i text-base opacity-60 mt-2">{trip.title}</p>
       </header>
+
+      {drafts.length > 0 && (
+        <section className="px-6 py-8 border-b surface-rule">
+          <div className="flex items-center gap-2 mb-3">
+            <FileText size={14} />
+            <p className="smallcaps f-dm text-[11px] opacity-70">
+              Drafts ({drafts.length})
+            </p>
+          </div>
+          <p className="f-dm text-sm opacity-70 mb-4 max-w-prose">
+            Trips you started but haven't published. They don't appear in
+            the trip list or anyone's view until you publish them from the
+            editor. Duplicates can be deleted here.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {drafts.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between"
+                style={{
+                  gap: 10,
+                  padding: '10px 12px',
+                  border: '1px solid var(--border, #DDD3C2)',
+                  borderRadius: 10,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <p className="f-news text-base leading-tight" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {d.title || 'Untitled trip'}
+                  </p>
+                  <p className="f-mono text-[10px] opacity-50 mt-1" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {d.dateRange || 'dates TBD'} · {d.id}
+                  </p>
+                </div>
+                <div className="flex" style={{ gap: 6, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    className="btn-pill"
+                    onClick={() => onOpenEditor?.(d.id)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 }}
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
+                  {confirmDeleteId === d.id ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-pill"
+                        onClick={async () => {
+                          setConfirmDeleteId(null)
+                          await tripsApi.removeTrip(d.id)
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: '#8B2B1F', borderColor: '#8B2B1F' }}
+                      >
+                        <Trash2 size={12} /> Confirm
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-pill"
+                        onClick={() => setConfirmDeleteId(null)}
+                        style={{ fontSize: 12 }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-pill"
+                      onClick={() => setConfirmDeleteId(d.id)}
+                      aria-label={`Delete draft ${d.title || d.id}`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#8B2B1F' }}
+                    >
+                      <Trash2 size={12} /> Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">

@@ -1,4 +1,4 @@
-import { ChevronLeft, MapPin, ExternalLink, Bed, Key } from 'lucide-react'
+import { ChevronLeft, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { mapsLink } from '../lib/mapsLink'
 import { FlightStatus } from './FlightStatus'
@@ -88,6 +88,37 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
           {traveler === 'helen' && stop.helenNote ? stop.helenNote : stop.note}
         </p>
       </section>
+
+      {(stop.reservation || stop.confirmation || stop.phone) && (
+        <section className="px-6 py-6 border-b surface-rule">
+          <p className="smallcaps f-dm text-[11px] opacity-60 mb-3">Logistics</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {stop.reservation && (
+              <div className="flex items-start gap-2">
+                <Ticket size={14} className="opacity-60" style={{ marginTop: 2, flexShrink: 0 }} />
+                <p className="f-news text-base leading-snug">{stop.reservation}</p>
+              </div>
+            )}
+            {stop.confirmation && (
+              <div className="flex items-start gap-2">
+                <Hash size={14} className="opacity-60" style={{ marginTop: 2, flexShrink: 0 }} />
+                <p className="f-mono text-sm leading-snug" style={{ letterSpacing: '0.04em' }}>
+                  {stop.confirmation}
+                </p>
+              </div>
+            )}
+            {stop.phone && (
+              <a
+                className="link-quiet flex items-center gap-2 f-news text-base"
+                href={`tel:${String(stop.phone).replace(/[^\d+]/g, '')}`}
+              >
+                <Phone size={14} className="opacity-60" style={{ flexShrink: 0 }} />
+                {stop.phone}
+              </a>
+            )}
+          </div>
+        </section>
+      )}
 
       {stop.flightNumber && (
         <section className="px-6 py-6 border-b surface-rule">

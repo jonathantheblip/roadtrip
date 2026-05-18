@@ -10,6 +10,7 @@ import { TripIndex } from './views/TripIndex'
 import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
+import { TripEditor } from './views/TripEditor'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll } from './lib/workerSync'
@@ -106,6 +107,11 @@ export default function App() {
   const [helenDark, toggleHelenDark] = useHelenDark()
   const tripsApi = useTrips()
   const allTrips = tripsApi.trips
+  // Drafts (manual-add, not yet published) never appear in the polished
+  // surfaces — not the index, not the trip switcher, not the cold-start
+  // pick. They live only in the editor and the Settings → Drafts list.
+  // This is what stops a sparse trip from ever rendering in a view.
+  const visibleTrips = allTrips.filter((t) => !t.draft)
   const topBar = topBarTokens(traveler, helenDark)
   // Spec §6: Jonathan + Rafa permanent dark; Helen dark when toggled on.
   // Aurelia stays light. This drives the StopDetail / Settings surface.
@@ -196,8 +202,20 @@ export default function App() {
   }, [])
 
 
+  // Editor/Drafts can target a draft by id, so resolve against the full
+  // list; cold-start default only ever picks from the visible (non-draft)
+  // set so a draft can never become the landing trip.
   const trip =
-    (tripId && allTrips.find((t) => t.id === tripId)) || pickDefaultTrip(allTrips)
+    (tripId && allTrips.find((t) => t.id === tripId)) || pickDefaultTrip(visibleTrips)
+
+  // A draft has no polished view — if something points the trip surface
+  // at one (e.g. a stale ?trip=<draft> URL), send it to the editor.
+  useEffect(() => {
+    if (view.name === 'trip' && trip?.draft) {
+      setView({ name: 'edit' })
+    }
+  }, [view.name, trip?.draft])
+
   const day = view.name === 'stop' && trip ? findDay(trip, view.dayN) : null
   const stop = view.name === 'stop' && day ? findStop(day, view.stopId) : null
 
@@ -233,10 +251,23 @@ export default function App() {
     setView({ name: 'new' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  function openEditor(id) {
+    if (id) setTripId(id)
+    setView({ name: 'edit' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
+  // Returns the upsert result so NewTrip can show an inline error and
+  // stay put on failure (no navigation), per change order §3.4. On
+  // success we go straight into the editor — Helen continues adding
+  // detail without leaving the flow and never re-enters the trip.
   async function handleCreateTrip(newTrip) {
-    await tripsApi.addTrip(newTrip)
-    setTripId(newTrip.id)
-    setView({ name: 'trip' })
+    const res = await tripsApi.upsertTrip(newTrip)
+    if (res?.ok) {
+      setTripId(newTrip.id)
+      setView({ name: 'edit' })
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    }
+    return res
   }
   function handleTravelerSwitch(id) {
     setTraveler(id)
@@ -353,7 +384,7 @@ export default function App() {
                 textAlign: 'right',
               }}
             >
-              {allTrips.map((t) => (
+              {visibleTrips.map((t) => (
                 <option key={t.id} value={t.id} style={{ color: '#1A1614' }}>
                   {t.title}
                 </option>
@@ -386,13 +417,22 @@ export default function App() {
         {view.name === 'index' && (
           <TripIndex
             traveler={traveler}
-            trips={allTrips}
+            trips={visibleTrips}
             onOpenTrip={openTrip}
             onNewTrip={openNewTrip}
           />
         )}
         {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} />}
-        {view.name === 'trip' && trip && renderTripView()}
+        {view.name === 'edit' && trip && (
+          <TripEditor
+            trip={trip}
+            traveler={traveler}
+            tripsApi={tripsApi}
+            onBack={openIndex}
+            onOpenTrip={openTrip}
+          />
+        )}
+        {view.name === 'trip' && trip && !trip.draft && renderTripView()}
         {view.name === 'stop' && trip && day && stop && (
           <StopDetail
             trip={trip}
@@ -414,6 +454,7 @@ export default function App() {
             tripsApi={tripsApi}
             onBack={() => setView({ name: 'trip' })}
             onChangeTraveler={handleTravelerSwitch}
+            onOpenEditor={openEditor}
           />
         )}
       </div>

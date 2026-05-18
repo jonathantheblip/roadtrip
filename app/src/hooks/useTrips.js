@@ -84,31 +84,41 @@ export function useTrips() {
     refresh()
   }, [refresh])
 
-  const addTrip = useCallback(async (trip) => {
-    // Local update is synchronous so the UI flips immediately;
-    // Worker push is fire-and-forget. If the push fails the trip
-    // still lives in the cache and will retry on next refresh.
+  // The single create/update path. Both the manual-add form and the
+  // trip editor go through this — one function, one schema, one set of
+  // fields (change order 2026-05-17 §3.5). Local cache is written
+  // synchronously so the UI is instant and offline-tolerant; the Worker
+  // push is awaited so the caller can surface a sync failure instead of
+  // silently dropping it. Upsert by id: replace in place if the id is
+  // already known, else prepend. Idempotent — re-saving the same record
+  // (same client-stable id) updates the one row, never duplicates.
+  const upsertTrip = useCallback(async (trip) => {
     setTrips((prev) => {
-      const next = [trip, ...prev.filter((t) => t.id !== trip.id)]
+      const exists = prev.some((t) => t.id === trip.id)
+      const next = exists
+        ? prev.map((t) => (t.id === trip.id ? trip : t))
+        : [trip, ...prev]
       writeCache(next)
       return next
     })
-    if (isWorkerConfigured()) {
-      const ok = await pushTrip(trip)
-      if (!ok) console.warn('useTrips addTrip: Worker push failed; kept locally')
+    if (!isWorkerConfigured()) {
+      return { ok: true, synced: false, reason: 'unconfigured' }
+    }
+    try {
+      await pushTrip(trip)
+      return { ok: true, synced: true }
+    } catch (err) {
+      // Kept locally; caller decides whether to block (create flow) or
+      // proceed (incremental editor autosave). Never silently swallowed.
+      console.warn('useTrips upsertTrip: Worker push failed; kept locally', err)
+      return { ok: false, synced: false, error: err?.message || String(err) }
     }
   }, [])
 
-  const saveTrip = useCallback(async (trip) => {
-    setTrips((prev) => {
-      const next = prev.map((t) => (t.id === trip.id ? trip : t))
-      writeCache(next)
-      return next
-    })
-    if (isWorkerConfigured()) {
-      await pushTrip(trip)
-    }
-  }, [])
+  // Back-compat aliases — existing callers (Settings album URL, App
+  // create handler) keep working without learning a new name.
+  const addTrip = upsertTrip
+  const saveTrip = upsertTrip
 
   const removeTrip = useCallback(async (id) => {
     setTrips((prev) => {
@@ -137,5 +147,5 @@ export function useTrips() {
     return { pushed }
   }, [refresh])
 
-  return { trips, source, loading, error, refresh, addTrip, saveTrip, removeTrip, seed }
+  return { trips, source, loading, error, refresh, upsertTrip, addTrip, saveTrip, removeTrip, seed }
 }
