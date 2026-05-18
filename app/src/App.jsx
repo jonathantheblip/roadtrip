@@ -427,6 +427,7 @@ export default function App() {
           <TripEditor
             trip={trip}
             traveler={traveler}
+            dark={darkSurface}
             tripsApi={tripsApi}
             onBack={openIndex}
             onOpenTrip={openTrip}

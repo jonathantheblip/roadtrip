@@ -74,7 +74,7 @@ function completeness(trip) {
   return { ok: missing.length === 0, missing }
 }
 
-export function TripEditor({ trip: incoming, traveler, tripsApi, onBack, onOpenTrip }) {
+export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, onOpenTrip }) {
   const [trip, setTrip] = useState(() => clone(incoming))
   const tripRef = useRef(trip)
   tripRef.current = trip
@@ -243,8 +243,8 @@ export function TripEditor({ trip: incoming, traveler, tripsApi, onBack, onOpenT
   }
 
   return (
-    <div className="min-h-screen helen-paper pb-32" style={{ color: '#1A1614' }}>
-      <header className="px-6 pt-6 pb-5" style={{ borderBottom: '1px solid #DDD3C2' }}>
+    <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
+      <header className="px-6 pt-6 pb-5 border-b surface-rule">
         <button
           onClick={onBack}
           className="link-quiet flex items-center gap-1 f-dm text-xs opacity-70"
@@ -271,7 +271,7 @@ export function TripEditor({ trip: incoming, traveler, tripsApi, onBack, onOpenT
             className="f-dm text-xs mt-4"
             style={{
               background: 'rgba(139,43,31,0.08)', border: '1px solid #C9342A',
-              color: '#8B2B1F', padding: '8px 10px', borderRadius: 8,
+              color: '#C9342A', padding: '8px 10px', borderRadius: 8,
               display: 'flex', gap: 8, alignItems: 'center',
             }}
           >
@@ -342,7 +342,7 @@ export function TripEditor({ trip: incoming, traveler, tripsApi, onBack, onOpenT
       </Section>
 
       {/* ── Publish gate ───────────────────────────────────────────── */}
-      <div className="px-6 py-8" style={{ borderTop: '1px solid #DDD3C2' }}>
+      <div className="px-6 py-8 border-t surface-rule">
         {trip.draft ? (
           <>
             <button
@@ -359,7 +359,7 @@ export function TripEditor({ trip: incoming, traveler, tripsApi, onBack, onOpenT
             </button>
             {!comp.ok && (
               <div className="f-dm text-xs opacity-70 mt-4">
-                <p className="smallcaps mb-2" style={{ color: '#8B2B1F' }}>
+                <p className="smallcaps mb-2" style={{ color: '#C9342A' }}>
                   Still needed before publishing
                 </p>
                 <ul style={{ listStyle: 'disc', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -396,7 +396,7 @@ function SaveBadge({ state, err }) {
     idle: { t: 'No unsaved changes', c: 'inherit', i: null },
     saving: { t: 'Saving…', c: 'inherit', i: <Loader size={12} className="rt-spin" /> },
     saved: { t: 'Saved · synced', c: '#2E5D3A', i: <Check size={12} /> },
-    error: { t: err || 'Saved locally · sync failed', c: '#8B2B1F', i: <AlertTriangle size={12} /> },
+    error: { t: err || 'Saved locally · sync failed', c: '#C9342A', i: <AlertTriangle size={12} /> },
   }
   const m = map[state] || map.idle
   return (
@@ -413,7 +413,7 @@ function DayBlock(props) {
     onUpdate, onMove, onRemove, onAddStop, onUpdateStop, onMoveStop, onRemoveStop,
   } = props
   return (
-    <div style={{ border: '1px solid #DDD3C2', borderRadius: 12, padding: 14, marginBottom: 14 }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <p className="smallcaps f-dm text-[11px] opacity-70">Day {index + 1}</p>
         <div className="flex" style={{ gap: 4 }}>
@@ -438,7 +438,7 @@ function DayBlock(props) {
         <Text label="Lodging (this day)" value={day.lodging} onChange={(v) => onUpdate({ lodging: v })} placeholder="Cabin name" />
       </Row>
 
-      <div style={{ marginTop: 12, borderTop: '1px dashed #DDD3C2', paddingTop: 12 }}>
+      <div style={{ marginTop: 12, borderTop: '1px dashed var(--border)', paddingTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <p className="smallcaps f-dm text-[11px] opacity-70">Stops</p>
           <IconBtn onClick={onAddStop} label="Add stop"><Plus size={13} /> Add stop</IconBtn>
@@ -526,7 +526,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
   }
 
   return (
-    <div style={{ border: '1px solid #E4DAC8', borderRadius: 10, padding: 12, marginBottom: 10, background: 'rgba(255,255,255,0.4)' }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 10, background: 'var(--card)' }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <p className="f-mono text-[10px] opacity-50">STOP {index + 1}</p>
         <div className="flex" style={{ gap: 4 }}>
@@ -555,7 +555,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
 
       <div style={{ marginTop: 8 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span className="smallcaps f-dm text-[11px] opacity-70">The pitch <span style={{ color: '#8B2B1F' }}>*</span></span>
+          <span className="smallcaps f-dm text-[11px] opacity-70">The pitch <span style={{ color: '#C9342A' }}>*</span></span>
           <div className="flex" style={{ gap: 6 }}>
             {isWhisperConfigured() && (
               <IconBtn onClick={() => setRecording(true)} label="Dictate the pitch"><Mic size={12} /></IconBtn>
@@ -574,14 +574,14 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
           style={{ width: '100%', padding: 10, fontSize: 14, minHeight: 80 }}
           placeholder="A sentence or two in the family's voice. Tap “Help me write” for a draft."
         />
-        {aiErr && <p className="f-dm text-[11px] mt-1" style={{ color: '#8B2B1F' }}>{aiErr}</p>}
+        {aiErr && <p className="f-dm text-[11px] mt-1" style={{ color: '#C9342A' }}>{aiErr}</p>}
       </div>
 
       <Area label="Helen's note (optional override)" value={stop.helenNote} onChange={(v) => onUpdate({ helenNote: v })} placeholder="Shown only in Helen's view, in place of the pitch." />
 
       <Text label="Link (tickets / menu / info)" value={stop.url} onChange={(v) => onUpdate({ url: v })} placeholder="https://…" />
 
-      <div style={{ marginTop: 8, borderTop: '1px dashed #E4DAC8', paddingTop: 8 }}>
+      <div style={{ marginTop: 8, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
         <p className="smallcaps f-dm text-[11px] opacity-60 mb-2">Logistics</p>
         <Row>
           <Text label="Reservation" value={stop.reservation} onChange={(v) => onUpdate({ reservation: v })} placeholder="Resy 7:30 PM, 4 guests" />
@@ -605,7 +605,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
 // ── Field primitives ──────────────────────────────────────────────────
 function Section({ title, action, children }) {
   return (
-    <section className="px-6 py-7" style={{ borderBottom: '1px solid #DDD3C2' }}>
+    <section className="px-6 py-7 border-b surface-rule">
       <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
         <h2 className="f-news text-2xl tt-tightest">{title}</h2>
         {action}
@@ -620,7 +620,7 @@ function Row({ children }) {
 function Lbl({ label, required }) {
   return (
     <span className="smallcaps f-dm text-[11px] opacity-70">
-      {label}{required && <span style={{ color: '#8B2B1F', marginLeft: 4 }}>*</span>}
+      {label}{required && <span style={{ color: '#C9342A', marginLeft: 4 }}>*</span>}
     </span>
   )
 }
@@ -697,8 +697,9 @@ function Travelers({ label = 'Travelers', value, onChange, pool = TRAVELER_ORDER
             className="btn-pill"
             onClick={() => toggle(id)}
             style={{
-              background: value.includes(id) ? '#1A1614' : 'transparent',
-              color: value.includes(id) ? '#FBF8F2' : 'inherit',
+              background: value.includes(id) ? 'var(--accent)' : 'transparent',
+              color: value.includes(id) ? 'var(--accent-ink, #fff)' : 'inherit',
+              borderColor: value.includes(id) ? 'var(--accent)' : 'currentColor',
               fontSize: compact ? 11 : 13,
             }}
           >
@@ -759,7 +760,7 @@ function IconBtn({ children, onClick, label, danger, disabled }) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
         padding: '5px 10px',
-        color: danger ? '#8B2B1F' : 'inherit',
+        color: danger ? '#C9342A' : 'inherit',
         opacity: disabled ? 0.4 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}
