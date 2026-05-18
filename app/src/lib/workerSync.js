@@ -171,6 +171,16 @@ async function uploadBlob(kind, memoryId, blob) {
   return r.json() // { key, url, mime }
 }
 
+// Trip cover photo. Reuses the exact Worker /assets route + R2 bucket
+// the memory photos use (the :memoryId path segment is opaque — we pass
+// the tripId). GET /assets/:key serves it unauthenticated so a plain
+// <img src> renders on every device, same as memory photos. Returns
+// { key, url, mime } or throws (caller surfaces it).
+export async function uploadTripCover(tripId, blob) {
+  if (!isWorkerConfigured()) throw new Error('worker not configured')
+  return uploadBlob('photo', `trip-${tripId}`, blob)
+}
+
 // ─── Trips ────────────────────────────────────────────────────────────
 
 export async function pullTrips() {

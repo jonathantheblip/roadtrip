@@ -1,11 +1,25 @@
-import { useState } from 'react'
-import { ChevronLeft } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { ChevronLeft, Check, Loader } from 'lucide-react'
+import { newTripId } from '../utils/ids'
 
-// Manual trip entry form. This shapes a Trip object with no Days yet —
-// Days/Stops are added inside Trip Detail (next pass) or via screenshot
-// ingestion (needs Claude API). The form just gives Jonathan a fast path
-// to get a planning trip on the page tonight.
+// Manual trip entry. Creates a renderer-safe *draft* trip and hands off
+// to the editor so Days/Stops/pitches get filled in incrementally —
+// Helen never re-enters a trip because a tap didn't take.
+//
+// Duplicate-bug fix (change order 2026-05-17 §3):
+//  - The trip id is minted ONCE per form instance (useRef), not per
+//    submit. Re-submitting the same form upserts the one row instead of
+//    inserting a new one each tap.
+//  - Submit is guarded in-flight and the button is disabled + shows a
+//    loading state until the Worker save resolves.
+//  - Success → brief confirmation → straight into the editor.
+//  - Failure → inline error, no navigation, retry is safe (same id).
+//  - Missing required field → inline error, nothing written.
 export function NewTrip({ onBack, onCreate }) {
+  // Minted once. Stable for the lifetime of this form — the linchpin of
+  // idempotency. Do NOT move this into handleSubmit.
+  const idRef = useRef(newTripId())
+
   const [title, setTitle] = useState('')
   const [subtitle, setSubtitle] = useState('')
   const [dateRange, setDateRange] = useState('')
@@ -13,18 +27,37 @@ export function NewTrip({ onBack, onCreate }) {
   const [endCity, setEndCity] = useState('')
   const [travelers, setTravelers] = useState(['jonathan', 'helen', 'aurelia', 'rafa'])
 
+  const [phase, setPhase] = useState('idle') // idle | saving | done
+  const [error, setError] = useState('')
+  const [titleError, setTitleError] = useState('')
+
   function toggleTraveler(id) {
     setTravelers((cur) => (cur.includes(id) ? cur.filter((c) => c !== id) : [...cur, id]))
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    if (!title.trim()) return
-    const id = `trip-${Date.now().toString(36)}`
-    onCreate({
-      id,
+    // In-flight guard: ignore taps while a save is pending or already
+    // done. This is the primary defense against the triple-submit.
+    if (phase !== 'idle') return
+
+    const trimmedTitle = title.trim()
+    if (!trimmedTitle) {
+      setTitleError('Give the trip a title before creating it.')
+      return
+    }
+    setTitleError('')
+    setError('')
+    setPhase('saving')
+
+    // Renderer-safe shape: every field the themed views read exists,
+    // with safe empties. `draft: true` keeps it out of the polished
+    // views (and the cold-start picker) until it's published.
+    const trip = {
+      id: idRef.current,
+      draft: true,
       status: 'planning',
-      title: title.trim(),
+      title: trimmedTitle,
       subtitle: subtitle.trim(),
       epigraph: '',
       dateRange: dateRange.trim() || 'TBD',
@@ -37,8 +70,30 @@ export function NewTrip({ onBack, onCreate }) {
       overview: '',
       sharedAlbumURL: '',
       days: [],
-    })
+    }
+
+    let res
+    try {
+      res = await onCreate(trip)
+    } catch (err) {
+      res = { ok: false, error: err?.message || String(err) }
+    }
+
+    if (res && res.ok) {
+      setPhase('done')
+      // Brief confirmation, then the editor opens (App handles the
+      // actual navigation once it sees ok).
+    } else {
+      setError(
+        (res && res.error) ||
+          'Could not save the trip. It is kept on this device — tap Create to retry.'
+      )
+      setPhase('idle') // retry is safe: same stable id, upsert not insert
+    }
   }
+
+  const busy = phase === 'saving'
+  const done = phase === 'done'
 
   return (
     <div className="min-h-screen helen-paper pb-32" style={{ color: '#1A1614' }}>
@@ -51,23 +106,30 @@ export function NewTrip({ onBack, onCreate }) {
           className="link-quiet flex items-center gap-1 f-dm text-xs opacity-70"
           style={{ background: 'transparent', border: 0, cursor: 'pointer', padding: 0, marginBottom: 24 }}
           type="button"
+          disabled={busy}
         >
           <ChevronLeft size={14} /> Trips
         </button>
         <h1 className="f-news tt-tightest text-5xl leading-95">New Trip</h1>
         <p className="f-news-i text-base opacity-60 mt-2 max-w-md">
-          A starting frame. Days and stops get added once the dates firm up.
+          A starting frame. You'll add days, stops, and the rest in the
+          editor next — nothing here is final.
         </p>
       </header>
 
       <form onSubmit={handleSubmit} className="px-6 py-8" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <Field label="Title" required>
+        <Field label="Title" required error={titleError}>
           <input
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value)
+              if (titleError) setTitleError('')
+            }}
             placeholder="Rafa's Birthday Weekend"
             className="memory-textarea"
             style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+            disabled={busy || done}
+            aria-invalid={!!titleError}
           />
         </Field>
 
@@ -78,6 +140,7 @@ export function NewTrip({ onBack, onCreate }) {
             placeholder="A long weekend in New York"
             className="memory-textarea"
             style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+            disabled={busy || done}
           />
         </Field>
 
@@ -85,9 +148,10 @@ export function NewTrip({ onBack, onCreate }) {
           <input
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
-            placeholder="May 8 – 10, 2026"
+            placeholder="June 19 – 21, 2026"
             className="memory-textarea"
             style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+            disabled={busy || done}
           />
         </Field>
 
@@ -99,6 +163,7 @@ export function NewTrip({ onBack, onCreate }) {
               placeholder="Belmont, MA"
               className="memory-textarea"
               style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+              disabled={busy || done}
             />
           </Field>
           <Field label="End city">
@@ -108,6 +173,7 @@ export function NewTrip({ onBack, onCreate }) {
               placeholder="New York, NY"
               className="memory-textarea"
               style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+              disabled={busy || done}
             />
           </Field>
         </div>
@@ -119,10 +185,12 @@ export function NewTrip({ onBack, onCreate }) {
                 key={id}
                 type="button"
                 className="btn-pill"
+                disabled={busy || done}
                 style={{
                   background: travelers.includes(id) ? '#1A1614' : 'transparent',
                   color: travelers.includes(id) ? '#FBF8F2' : 'inherit',
                   textTransform: 'capitalize',
+                  opacity: busy || done ? 0.5 : 1,
                 }}
                 onClick={() => toggleTraveler(id)}
               >
@@ -132,12 +200,37 @@ export function NewTrip({ onBack, onCreate }) {
           </div>
         </Field>
 
+        {error && (
+          <p
+            role="alert"
+            className="f-dm text-sm"
+            style={{ color: '#8B2B1F', lineHeight: 1.4 }}
+          >
+            {error}
+          </p>
+        )}
+
         <div className="flex items-center justify-between" style={{ marginTop: 24 }}>
           <p className="f-dm text-[11px] opacity-50 italic max-w-sm">
-            Syncs to iCloud once you're signed in; cached locally either way.
+            Saved as a draft and synced to the family. You finish it in the
+            editor — it won't show in the trip list until you publish.
           </p>
-          <button type="submit" className="btn-solid">
-            Create trip
+          <button
+            type="submit"
+            className="btn-solid"
+            disabled={busy || done}
+            aria-busy={busy}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              opacity: busy || done ? 0.75 : 1,
+              cursor: busy || done ? 'default' : 'pointer',
+            }}
+          >
+            {busy && <Loader size={14} className="rt-spin" />}
+            {done && <Check size={14} />}
+            {busy ? 'Creating…' : done ? 'Created' : 'Create trip'}
           </button>
         </div>
       </form>
@@ -145,7 +238,7 @@ export function NewTrip({ onBack, onCreate }) {
   )
 }
 
-function Field({ label, required, children }) {
+function Field({ label, required, error, children }) {
   return (
     <label className="flex flex-col" style={{ gap: 6 }}>
       <span className="smallcaps f-dm text-[11px] opacity-70">
@@ -153,6 +246,11 @@ function Field({ label, required, children }) {
         {required && <span style={{ color: '#8B2B1F', marginLeft: 4 }}>*</span>}
       </span>
       {children}
+      {error && (
+        <span role="alert" className="f-dm text-xs" style={{ color: '#8B2B1F' }}>
+          {error}
+        </span>
+      )}
     </label>
   )
 }

@@ -34,7 +34,7 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings }) {
           alignItems: 'center',
         }}
       >
-        <Eyebrow color="var(--muted)">{trip.title.toUpperCase()}</Eyebrow>
+        <Eyebrow color="var(--muted)">{(trip.title || '').toUpperCase()}</Eyebrow>
         <button
           type="button"
           onClick={onOpenSettings}
@@ -55,6 +55,22 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings }) {
           <MapPin size={11} /> MAP
         </button>
       </div>
+
+      {trip.coverPhotoUrl && (
+        <div style={{ padding: '8px 18px 2px' }}>
+          <img
+            src={trip.coverPhotoUrl}
+            alt={trip.title || 'Trip cover'}
+            style={{
+              width: '100%',
+              height: 168,
+              objectFit: 'cover',
+              borderRadius: 12,
+              display: 'block',
+            }}
+          />
+        </div>
+      )}
 
       <div style={{ padding: '6px 18px 4px', display: 'flex', gap: 6 }}>
         {trip.days.map((d) => {
