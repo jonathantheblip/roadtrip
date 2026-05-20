@@ -755,9 +755,10 @@ export const VOLLEYBALL_TRIP = {
       'About 15 minutes from Mohegan Sun and walking distance to Ocean Beach. Keypad code and Wi-Fi password drop into this card on Thursday — until then the fields show "Coming Thursday."',
     image: './images/bungalow.avif',
     url: 'https://www.airbnb.com/rooms/54130995?source_impression_id=p3_1779276775_P3yx1UxJ9geaoPks',
-    // Filled in once the host sends them — both surface a one-tap copy
-    // button in the lodging panel so everyone in the family can grab them.
-    keypadCode: '',
+    // 4-digit door code chosen by us; activates 1 PM Fri May 22,
+    // deactivates 1 PM Mon May 25. Confirmed with co-host Mary on
+    // 2026-05-20 (Airbnb messages).
+    keypadCode: '0803',
     wifiSsid: '',
     wifiPassword: '',
     checkoutChecklist: [

@@ -147,5 +147,29 @@ export function useTrips() {
     return { pushed }
   }, [refresh])
 
-  return { trips, source, loading, error, refresh, upsertTrip, addTrip, saveTrip, removeTrip, seed }
+  // Force-push every SEED_TRIP to the Worker, overwriting whatever is
+  // already in D1. Used when the seed file picks up an update (a new
+  // keypad code, a corrected stop time) and the family needs the
+  // change pushed to their phones without waiting for one-by-one edits
+  // through the TripEditor. WARNING: this stomps in-app edits to any
+  // trip whose id is present in SEED_TRIPS — only use when you know the
+  // seed is canonical (the usual case: Claude updated trips.js and just
+  // shipped a new build, no one has edited that trip in the app).
+  const forcePushSeed = useCallback(async () => {
+    if (!isWorkerConfigured()) return { pushed: 0, reason: 'unconfigured' }
+    let pushed = 0
+    const errors = []
+    for (const t of SEED_TRIPS) {
+      try {
+        await pushTrip(t)
+        pushed += 1
+      } catch (err) {
+        errors.push(`${t.id}: ${err?.message || String(err)}`)
+      }
+    }
+    await refresh()
+    return { pushed, errors }
+  }, [refresh])
+
+  return { trips, source, loading, error, refresh, upsertTrip, addTrip, saveTrip, removeTrip, seed, forcePushSeed }
 }

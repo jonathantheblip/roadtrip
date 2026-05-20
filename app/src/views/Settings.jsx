@@ -29,6 +29,8 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [syncMsg, setSyncMsg] = useState(null)
   const [syncing, setSyncing] = useState(false)
   const [seedMsg, setSeedMsg] = useState(null)
+  const [forcePushing, setForcePushing] = useState(false)
+  const [forcePushMsg, setForcePushMsg] = useState(null)
   const [seeding, setSeeding] = useState(false)
   const [albumDraft, setAlbumDraft] = useState(trip?.sharedAlbumURL || '')
   const [albumSaving, setAlbumSaving] = useState(false)
@@ -95,6 +97,30 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
       setSeedMsg(`Seed failed: ${err?.message || String(err)}`)
     } finally {
       setSeeding(false)
+    }
+  }
+
+  async function runForcePushSeed() {
+    if (!tripsApi?.forcePushSeed) return
+    const confirmed = window.confirm(
+      'This overwrites every trip on the Worker with the bundled seed. Use when the seed file picked up an update (a keypad code, a corrected stop time) and you want it on everyone\'s phones. Any in-app edits to those trips are lost. Continue?'
+    )
+    if (!confirmed) return
+    setForcePushing(true)
+    setForcePushMsg(null)
+    try {
+      const result = await tripsApi.forcePushSeed()
+      if (result.reason === 'unconfigured') {
+        setForcePushMsg('Worker not configured — nothing pushed.')
+      } else if (result.errors?.length) {
+        setForcePushMsg(`Pushed ${result.pushed}, but had errors: ${result.errors.join(' · ')}`)
+      } else {
+        setForcePushMsg(`Overwrote ${result.pushed} trip${result.pushed === 1 ? '' : 's'} on the Worker with the bundled seed.`)
+      }
+    } catch (err) {
+      setForcePushMsg(`Push failed: ${err?.message || String(err)}`)
+    } finally {
+      setForcePushing(false)
     }
   }
 
@@ -484,12 +510,25 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
               >
                 <Upload size={12} /> {seeding ? 'Seeding…' : 'Seed trips'}
               </button>
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={runForcePushSeed}
+                disabled={forcePushing}
+                title="Overwrite every trip on the Worker with the bundled seed. Use after the seed picks up an update (keypad code, schedule change). Confirms first."
+                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+              >
+                <Upload size={12} /> {forcePushing ? 'Pushing…' : 'Push seed updates'}
+              </button>
             </div>
             {syncMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{syncMsg}</p>
             )}
             {seedMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{seedMsg}</p>
+            )}
+            {forcePushMsg && (
+              <p className="f-dm text-[12px] opacity-70 mt-3 italic">{forcePushMsg}</p>
             )}
             {pushAllState.message && (
               <p
