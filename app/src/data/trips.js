@@ -730,6 +730,22 @@ export const VOLLEYBALL_TRIP = {
   resultsUrl: '',
   sharedAlbumURL: '',
   heroStopId: 'vb1-3', // Beach Bungalow — the lodging anchor for the weekend
+  // Personal notes from one traveler to another, rendered inside the
+  // recipient's themed view. Keyed by recipient id so each traveler only
+  // ever sees notes addressed to them. The structure leaves room for
+  // multiple letters per trip (different senders, different occasions).
+  travelerNotes: {
+    aurelia: {
+      from: 'Dad',
+      salutation: 'Dear Aurelia,',
+      body: [
+        "taking you to volleyball practices and tournaments has been one of my favorite activities of my entire life. Watching you grow as a player and teammate, seeing how much you care with the big wins and the tough losses, has started to show me what kind of adult you're hoping to be.",
+        "I can't wait to learn more, but for now, good luck. As usual I have snacks, hair products, leg tape, and anything else you could possibly need. So just focus on the game, your teammates, and your own wonderful self.",
+      ],
+      closing: 'Love,',
+      signature: 'Dad',
+    },
+  },
   lodging: {
     name: 'Beach Bungalow',
     address: '41 Lower Boulevard, New London, CT',

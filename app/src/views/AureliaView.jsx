@@ -83,6 +83,16 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
         </div>
       </div>
 
+      {/* Personal letter from another traveler, if the trip carries
+          one addressed to Aurelia. Renders right under the masthead so
+          it's the first content she sees on this trip — for the May
+          2026 volleyball tournament, a note from Dad. */}
+      {trip.travelerNotes?.aurelia && (
+        <div style={{ padding: '14px 14px 6px' }}>
+          <PersonalLetter note={trip.travelerNotes.aurelia} />
+        </div>
+      )}
+
       {/* Day picker — Helen-style cards in Aurelia's pink palette so
           she can navigate the itinerary alongside the scrapbook. */}
       <div style={{ padding: '4px 18px 0', display: 'flex', gap: 6 }}>
@@ -294,6 +304,129 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
         />
       )}
     </div>
+  )
+}
+
+// A trip-level letter from one traveler to another, surfaced inside
+// the recipient's themed view. Visual treatment leans into the
+// scrapbook feel of Aurelia's view — cream paper card slipped under
+// pink tape, deep brown ink in italic serif, signature in a larger
+// flourish so it reads as personal hand-written closing rather than
+// another typed line. Long enough to feel like a real letter, quiet
+// enough not to fight her own postcards below.
+function PersonalLetter({ note }) {
+  const paragraphs = Array.isArray(note?.body) ? note.body : [note?.body || '']
+  return (
+    <article
+      style={{
+        position: 'relative',
+        background: '#FBF5EC',
+        color: '#3D2424',
+        borderRadius: 4,
+        padding: '34px 24px 26px',
+        boxShadow:
+          '0 14px 32px rgba(61, 14, 34, 0.18), 0 1px 3px rgba(61, 14, 34, 0.08)',
+        transform: 'rotate(-1.2deg)',
+        border: '1px solid rgba(150, 100, 80, 0.10)',
+        marginTop: 8,
+      }}
+    >
+      {/* Pink paper tape across the top — picks up Aurelia's accent
+          so the card visually belongs to her surface even though the
+          paper itself is the warmer cream of a real letter. */}
+      <div
+        style={{
+          position: 'absolute',
+          top: -10,
+          left: '50%',
+          transform: 'translateX(-50%) rotate(2.2deg)',
+          width: 96,
+          height: 22,
+          background: 'rgba(232, 71, 140, 0.22)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        }}
+      />
+
+      <div
+        style={{
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 9,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          color: '#C03671',
+          fontWeight: 700,
+          marginBottom: 14,
+        }}
+      >
+        ✉ A note from {note.from}
+      </div>
+
+      {note.salutation && (
+        <div
+          style={{
+            fontFamily: 'Fraunces, "Iowan Old Style", Georgia, serif',
+            fontSize: 19,
+            fontStyle: 'italic',
+            fontWeight: 500,
+            marginBottom: 14,
+            color: '#2A1818',
+          }}
+        >
+          {note.salutation}
+        </div>
+      )}
+
+      <div
+        style={{
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 15,
+          lineHeight: 1.62,
+          fontStyle: 'italic',
+          color: '#3D2424',
+        }}
+      >
+        {paragraphs.map((p, i) => (
+          <p
+            key={i}
+            style={{ margin: i === 0 ? 0 : '14px 0 0', padding: 0 }}
+          >
+            {p}
+          </p>
+        ))}
+      </div>
+
+      {(note.closing || note.signature) && (
+        <div style={{ marginTop: 22, paddingLeft: 4 }}>
+          {note.closing && (
+            <div
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 15,
+                fontStyle: 'italic',
+                color: '#3D2424',
+              }}
+            >
+              {note.closing}
+            </div>
+          )}
+          {note.signature && (
+            <div
+              style={{
+                fontFamily: 'Fraunces, "Iowan Old Style", Georgia, serif',
+                fontSize: 30,
+                fontStyle: 'italic',
+                fontWeight: 700,
+                color: '#2A1818',
+                marginTop: 4,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {note.signature}
+            </div>
+          )}
+        </div>
+      )}
+    </article>
   )
 }
 
