@@ -112,7 +112,6 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
               {!isFirst && <Hairline color="var(--text)" style={{ margin: '14px 0' }} />}
               <TripCard
                 trip={trip}
-                today={today}
                 memoryCount={liveCounts.get(trip.id) || 0}
                 onOpen={() => onOpenTrip(trip.id)}
                 isFirst={isFirst}
