@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Plus } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { effectiveStatus } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { AvatarStack } from '../components/Avatar'
 
@@ -18,31 +19,22 @@ import { AvatarStack } from '../components/Avatar'
 //   • live memory count read from listMemoriesForTrip
 
 export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTrip }) {
-  // Order by where each trip sits relative to *now*, not by the static
-  // `status` seed field — a trip whose dates have passed is not "in
-  // planning" no matter what its stored status says. What's next leads
-  // (the surface is "a planning surface for what comes next"), the
-  // archive follows, most-recent first.
-  const today = todayISO()
-  const ordered = [...trips].sort((a, b) => {
-    const pa = phase(a, today)
-    const pb = phase(b, today)
-    if (pa.rank !== pb.rank) return pa.rank - pb.rank
-    if (pa.kind === 'past') {
-      return (b.dateRangeEnd || b.dateRangeStart || '').localeCompare(
-        a.dateRangeEnd || a.dateRangeStart || ''
-      )
-    }
-    return (a.dateRangeStart || '').localeCompare(b.dateRangeStart || '')
-  })
+  // Order by where each trip sits relative to today, then bucket prior
+  // years into a separate archive. effectiveStatus(trip) (in trips.js)
+  // is the single source of truth for the status chip — a stored
+  // 'planning' that's already past now reads ARCHIVED. groupTrips()
+  // applies the same date logic to the layout: current-year trips
+  // (upcoming first, then most-recent past) up top, prior years in
+  // ARCHIVE · YYYY sections below.
+  const { current, archives, archiveYears } = useMemo(() => groupTrips(trips), [trips])
   const liveCounts = useMemo(() => {
     const map = new Map()
-    for (const t of ordered) {
+    for (const t of trips) {
       map.set(t.id, listMemoriesForTrip(t.id, traveler).length)
     }
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [traveler, ordered.length])
+  }, [traveler, trips.length])
 
   return (
     <div
@@ -113,7 +105,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
       <Hairline color="var(--text)" style={{ margin: '0 18px' }} />
 
       <div style={{ padding: '0 18px' }}>
-        {ordered.map((trip, i) => {
+        {current.map((trip, i) => {
           const isFirst = i === 0
           return (
             <div key={trip.id}>
@@ -129,20 +121,110 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
             </div>
           )
         })}
+
+        {archiveYears.map((year) => (
+          <div key={year} style={{ marginTop: 36 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                padding: '4px 0 10px',
+              }}
+            >
+              <Eyebrow color="var(--muted)" weight={700}>
+                ARCHIVE · {year}
+              </Eyebrow>
+              <Eyebrow color="var(--faint, var(--muted))">
+                {archives.get(year).length} TRIP
+                {archives.get(year).length === 1 ? '' : 'S'}
+              </Eyebrow>
+            </div>
+            <Hairline color="var(--text)" />
+            {archives.get(year).map((trip, i) => (
+              <div key={trip.id}>
+                {i > 0 && <Hairline color="var(--text)" style={{ margin: '14px 0' }} />}
+                <TripCard
+                  trip={trip}
+                  memoryCount={liveCounts.get(trip.id) || 0}
+                  onOpen={() => onOpenTrip(trip.id)}
+                  isFirst={false}
+                  animDelay={current.length + i}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
-function TripCard({ trip, today, memoryCount, onOpen, isFirst, animDelay }) {
-  const ph = phase(trip, today)
+// Today + current year are read once when the module loads, which is
+// fine for a PWA that lives weeks at a time — the list re-groups itself
+// whenever the trip array changes anyway.
+const TODAY_ISO = new Date().toISOString().slice(0, 10)
+const CURRENT_YEAR = new Date().getFullYear()
+
+function tripYear(t) {
+  // Prefer the end date when both are present so multi-day trips that
+  // straddle a year boundary archive into the year they ended.
+  const startYear = parseInt((t.dateRangeStart || '').slice(0, 4), 10)
+  const endYear = parseInt((t.dateRangeEnd || '').slice(0, 4), 10)
+  return endYear || startYear || CURRENT_YEAR
+}
+
+function isUpcomingOrActive(t) {
+  // No end date → treat as upcoming so freshly-created planning trips
+  // sit at the top until dates firm up.
+  if (!t.dateRangeEnd) return true
+  return t.dateRangeEnd >= TODAY_ISO
+}
+
+function groupTrips(trips) {
+  const current = []
+  const archives = new Map()
+  for (const t of trips) {
+    const y = tripYear(t)
+    if (y === CURRENT_YEAR) {
+      current.push(t)
+    } else {
+      if (!archives.has(y)) archives.set(y, [])
+      archives.get(y).push(t)
+    }
+  }
+  // Current year: upcoming/active first (soonest start), then past
+  // (most recent end first). Beats the old status-based sort which
+  // pinned every "planning" trip above every "archived" one regardless
+  // of date, leaving last month's trip on top of next week's.
+  current.sort((a, b) => {
+    const aUp = isUpcomingOrActive(a)
+    const bUp = isUpcomingOrActive(b)
+    if (aUp && !bUp) return -1
+    if (!aUp && bUp) return 1
+    if (aUp) return (a.dateRangeStart || '').localeCompare(b.dateRangeStart || '')
+    return (b.dateRangeEnd || '').localeCompare(a.dateRangeEnd || '')
+  })
+  for (const arr of archives.values()) {
+    arr.sort((a, b) => (b.dateRangeEnd || '').localeCompare(a.dateRangeEnd || ''))
+  }
+  const archiveYears = Array.from(archives.keys()).sort((a, b) => b - a)
+  return { current, archives, archiveYears }
+}
+
+function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
+  // Date-derived status so a 'planning' trip auto-flips to 'live' on
+  // its start date and 'archived' after its end date — no need to
+  // edit trips.js when the calendar moves. Single source of truth in
+  // data/trips.js#effectiveStatus, shared with RafaView.
+  const status = effectiveStatus(trip)
   const statusLabel =
-    ph.kind === 'current'
+    status === 'live'
       ? '● LIVE'
-      : ph.kind === 'past'
+      : status === 'archived'
         ? 'ARCHIVED'
         : '● IN PLANNING'
-  const statusColor = ph.kind === 'past' ? 'var(--muted)' : 'var(--accent)'
+  const statusColor = status === 'archived' ? 'var(--muted)' : 'var(--accent)'
   const startCity = (trip.startCity || '').toUpperCase()
   const endCity = (trip.endCity || '').toUpperCase()
   const dayCount = trip.days?.length || 0
@@ -212,7 +294,20 @@ function TripCard({ trip, today, memoryCount, onOpen, isFirst, animDelay }) {
         </div>
       )}
 
-      {isFirst && (
+      {trip.heroImage ? (
+        <img
+          src={trip.heroImage}
+          alt={trip.title}
+          style={{
+            width: '100%',
+            aspectRatio: '16 / 9',
+            borderRadius: 10,
+            marginTop: 12,
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      ) : isFirst ? (
         <div
           style={{
             width: '100%',
@@ -223,7 +318,7 @@ function TripCard({ trip, today, memoryCount, onOpen, isFirst, animDelay }) {
             marginTop: 12,
           }}
         />
-      )}
+      ) : null}
 
       <div
         style={{
@@ -254,28 +349,6 @@ function TripCard({ trip, today, memoryCount, onOpen, isFirst, animDelay }) {
       </div>
     </button>
   )
-}
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-// Temporal phase from the trip's own dates. rank drives ordering
-// (current → upcoming → past); kind drives the status label. Explicit
-// `archived` always means past; a stored `planning`/`live` status only
-// applies when the trip has no dates to judge by.
-function phase(t, today) {
-  const start = t.dateRangeStart || ''
-  const end = t.dateRangeEnd || start
-  if (t.status === 'archived') return { rank: 2, kind: 'past' }
-  if (start && end) {
-    if (end < today) return { rank: 2, kind: 'past' }
-    if (start > today) return { rank: 1, kind: 'upcoming' }
-    return { rank: 0, kind: 'current' }
-  }
-  if (t.status === 'live') return { rank: 0, kind: 'current' }
-  if (t.status === 'planning') return { rank: 1, kind: 'upcoming' }
-  return { rank: 2, kind: 'past' }
 }
 
 function Eyebrow({ children, color, weight = 500, style }) {

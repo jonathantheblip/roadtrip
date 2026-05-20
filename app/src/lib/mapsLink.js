@@ -47,3 +47,27 @@ export function mapsLink(stop, travelerId) {
   }
   return `https://maps.apple.com/?daddr=${encodeURIComponent(address || stop?.name || '')}`
 }
+
+// Multi-stop route link. Waze accepts at most one intermediate waypoint
+// and Apple Maps doesn't support waypoint chaining at all from a URL —
+// so a scenic detour with two-or-more drive-by stops always routes
+// through Google Maps. Returns null when the stop has no waypoints, so
+// the caller can omit the button entirely.
+export function scenicMapsLink(stop) {
+  const waypoints = stop?.waypoints
+  if (!Array.isArray(waypoints) || waypoints.length === 0) return null
+  const destination = (stop?.address || '').trim() || (stop?.name || '')
+  if (!destination) return null
+  const wpStr = waypoints
+    .map((w) => (w?.address || w?.name || '').trim())
+    .filter(Boolean)
+    .join('|')
+  if (!wpStr) return null
+  const params = new URLSearchParams({
+    api: '1',
+    destination,
+    waypoints: wpStr,
+    travelmode: 'driving',
+  })
+  return `https://www.google.com/maps/dir/?${params.toString()}`
+}

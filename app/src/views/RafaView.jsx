@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Mic } from 'lucide-react'
+import { effectiveStatus } from '../data/trips'
 
 // Rafa — Mission. Design-bundle authoritative
 // (prototype.jsx#RafaMission). Near-black ground with ochre warning
@@ -35,11 +36,13 @@ export function RafaView({ trip, onOpenStop }) {
   const others = rafaStopsToday.filter((s) => s.id !== featured?.id).slice(0, 2)
 
   // Status string drives the eyebrow: planning → INCOMING, archived →
-  // COMPLETE, anything else → ACTIVE.
+  // COMPLETE, live → ACTIVE. Derived from dates via effectiveStatus so
+  // the mission badge flips itself as the calendar moves.
+  const lifecycle = effectiveStatus(trip)
   const status =
-    trip.status === 'archived'
+    lifecycle === 'archived'
       ? 'COMPLETE'
-      : trip.status === 'planning'
+      : lifecycle === 'planning'
         ? 'INCOMING'
         : 'ACTIVE'
 

@@ -1,6 +1,7 @@
-import { ChevronLeft, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash, Copy, Wifi, ClipboardCheck, Route } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
-import { mapsLink } from '../lib/mapsLink'
+import { mapsLink, scenicMapsLink } from '../lib/mapsLink'
 import { FlightStatus } from './FlightStatus'
 import { DayChips } from './DayChips'
 import { ThreadedMemories } from '../components/ThreadedMemories'
@@ -60,6 +61,22 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
               {TRAVELERS[traveler]?.maps === 'waze' ? 'Open in Waze' : 'Open in Maps'}
             </a>
           )}
+          {(() => {
+            // Multi-stop scenic routes always go through Google Maps —
+            // Waze can't chain two intermediate waypoints from a URL, and
+            // Apple Maps can't chain any at all. Surfaces alongside the
+            // direct-route button so anyone in a hurry can still go straight
+            // there.
+            const scenic = scenicMapsLink(stop)
+            if (!scenic) return null
+            const count = stop.waypoints?.length || 0
+            return (
+              <a className="btn-pill" href={scenic} target="_blank" rel="noreferrer">
+                <Route size={12} />
+                Scenic route · {count} stop{count === 1 ? '' : 's'}
+              </a>
+            )
+          })()}
           {stop.url && (
             <a className="btn-pill" href={stop.url} target="_blank" rel="noreferrer">
               <ExternalLink size={12} />
@@ -71,21 +88,45 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
 
       {stop.image && (
         <figure className="px-6 pt-6">
-          <img
-            src={stop.image}
-            alt={stop.name}
-            style={{
-              width: '100%',
-              borderRadius: 8,
-              display: 'block',
-            }}
-          />
+          {stop.imageUrl ? (
+            <a
+              href={stop.imageUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open ${stop.name} listing`}
+            >
+              <img
+                src={stop.image}
+                alt={stop.name}
+                style={{
+                  width: '100%',
+                  borderRadius: 8,
+                  display: 'block',
+                }}
+              />
+            </a>
+          ) : (
+            <img
+              src={stop.image}
+              alt={stop.name}
+              style={{
+                width: '100%',
+                borderRadius: 8,
+                display: 'block',
+              }}
+            />
+          )}
         </figure>
       )}
 
       <section className="px-6 py-8 border-b surface-rule">
-        <p className="f-news text-lg leading-relaxed opacity-80 max-w-prose">
-          {traveler === 'helen' && stop.helenNote ? stop.helenNote : stop.note}
+        <p
+          className="f-news text-lg leading-relaxed opacity-80 max-w-prose"
+          style={{ whiteSpace: 'pre-line' }}
+        >
+          {renderNoteWithLinks(
+            traveler === 'helen' && stop.helenNote ? stop.helenNote : stop.note
+          )}
         </p>
       </section>
 
@@ -177,6 +218,25 @@ function LodgingPanel({ lodging }) {
       {lodging.notes && (
         <p className="f-dm text-sm opacity-70 leading-relaxed mb-3">{lodging.notes}</p>
       )}
+      {(lodging.keypadCode || lodging.keypadCode === '') && (
+        <CopyField
+          icon={<Key size={12} />}
+          label="Keypad code"
+          value={lodging.keypadCode}
+          placeholder="Coming Thursday"
+        />
+      )}
+      {(lodging.wifiSsid || lodging.wifiPassword || lodging.wifiPassword === '') && (
+        <CopyField
+          icon={<Wifi size={12} />}
+          label={lodging.wifiSsid ? `Wi-Fi · ${lodging.wifiSsid}` : 'Wi-Fi password'}
+          value={lodging.wifiPassword}
+          placeholder="Coming Thursday"
+        />
+      )}
+      {lodging.checkoutChecklist?.length > 0 && (
+        <CheckoutChecklist items={lodging.checkoutChecklist} />
+      )}
       {lodging.portalUrl && (
         <a
           className="btn-pill"
@@ -188,6 +248,203 @@ function LodgingPanel({ lodging }) {
           Buzzmein guest portal
         </a>
       )}
+    </div>
+  )
+}
+
+// One-tap copy of a short string (Wi-Fi password, keypad code). The
+// label sits to the left, the value to the right; tapping the whole row
+// copies and flashes a tiny "copied" confirmation in the corner. When
+// the value is empty, the row renders as a quiet placeholder so the
+// surface is ready for the host to drop the value in later.
+function CopyField({ icon, label, value, placeholder }) {
+  const [copied, setCopied] = useState(false)
+  const trimmed = (value || '').trim()
+  const hasValue = trimmed.length > 0
+
+  async function handleCopy() {
+    if (!hasValue) return
+    try {
+      await navigator.clipboard.writeText(trimmed)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1400)
+    } catch {
+      // Older Safari fallbacks via a hidden input. Rare on modern iOS,
+      // but harmless if it never runs.
+      try {
+        const el = document.createElement('input')
+        el.value = trimmed
+        document.body.appendChild(el)
+        el.select()
+        document.execCommand('copy')
+        document.body.removeChild(el)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1400)
+      } catch {
+        /* swallow */
+      }
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      disabled={!hasValue}
+      style={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        padding: '10px 12px',
+        marginBottom: 8,
+        borderRadius: 10,
+        border: '1px solid var(--border)',
+        background: 'var(--card, transparent)',
+        color: 'inherit',
+        cursor: hasValue ? 'pointer' : 'default',
+        textAlign: 'left',
+      }}
+      aria-label={`Copy ${label}`}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span style={{ display: 'inline-flex', opacity: 0.7 }}>{icon}</span>
+        <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <span
+            className="f-mono"
+            style={{
+              fontSize: 9,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              opacity: 0.55,
+            }}
+          >
+            {label}
+          </span>
+          <span
+            className="f-news"
+            style={{
+              fontSize: 16,
+              lineHeight: 1.15,
+              marginTop: 2,
+              opacity: hasValue ? 1 : 0.5,
+              fontStyle: hasValue ? 'normal' : 'italic',
+              userSelect: 'all',
+              wordBreak: 'break-all',
+            }}
+          >
+            {hasValue ? trimmed : placeholder}
+          </span>
+        </span>
+      </span>
+      <span
+        className="f-mono"
+        style={{
+          flexShrink: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          opacity: hasValue ? 0.8 : 0.35,
+          color: copied ? 'var(--accent)' : 'inherit',
+        }}
+      >
+        {copied ? <ClipboardCheck size={12} /> : <Copy size={12} />}
+        {copied ? 'COPIED' : 'COPY'}
+      </span>
+    </button>
+  )
+}
+
+// Parse a small subset of markdown — just inline `[text](url)` links —
+// out of a stop note so we can write the listing URL into the prose
+// without a bespoke field per stop. Newlines are handled by the
+// `whiteSpace: pre-line` style on the surrounding paragraph, so the
+// data stays readable as a string.
+function renderNoteWithLinks(note) {
+  if (!note) return null
+  const tokens = []
+  const re = /\[([^\]]+)\]\(([^)]+)\)/g
+  let i = 0
+  let m
+  while ((m = re.exec(note)) !== null) {
+    if (m.index > i) tokens.push({ kind: 'text', value: note.slice(i, m.index) })
+    tokens.push({ kind: 'link', text: m[1], url: m[2] })
+    i = m.index + m[0].length
+  }
+  if (i < note.length) tokens.push({ kind: 'text', value: note.slice(i) })
+  return tokens.map((t, idx) =>
+    t.kind === 'link' ? (
+      <a
+        key={idx}
+        href={t.url}
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          color: 'inherit',
+          textDecoration: 'underline',
+          textDecorationStyle: 'dotted',
+          textDecorationThickness: '1px',
+          textUnderlineOffset: 3,
+        }}
+      >
+        {t.text}
+      </a>
+    ) : (
+      <span key={idx}>{t.value}</span>
+    )
+  )
+}
+
+function CheckoutChecklist({ items }) {
+  return (
+    <div style={{ marginTop: 4, marginBottom: 8 }}>
+      <p
+        className="f-mono"
+        style={{
+          fontSize: 9,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          opacity: 0.55,
+          marginBottom: 6,
+        }}
+      >
+        Checkout
+      </p>
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {items.map((item, i) => (
+          <li
+            key={i}
+            className="f-news"
+            style={{
+              fontSize: 13.5,
+              lineHeight: 1.4,
+              padding: '6px 0',
+              borderBottom: i < items.length - 1 ? '1px dashed var(--border)' : 'none',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-start',
+              opacity: 0.85,
+            }}
+          >
+            <span
+              className="f-mono"
+              style={{
+                fontSize: 10,
+                opacity: 0.5,
+                paddingTop: 2,
+                flexShrink: 0,
+              }}
+            >
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

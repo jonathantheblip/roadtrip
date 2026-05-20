@@ -299,7 +299,7 @@ export default function App() {
   return (
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus */}
-      {view.name !== 'index' && view.name !== 'new' && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && (
         <div
           className="px-6"
           style={{
@@ -461,7 +461,7 @@ export default function App() {
       </div>
 
       {/* Bottom switcher visible everywhere except the index */}
-      {view.name !== 'index' && view.name !== 'new' && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && (
         <Switcher active={traveler} onSwitch={handleTravelerSwitch} />
       )}
     </>

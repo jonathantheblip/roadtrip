@@ -419,7 +419,7 @@ export const JACKSON_TRIP = {
 
 export const NYC_TRIP = {
   id: 'nyc-rafa-2026',
-  status: 'planning',
+  status: 'archived',
   title: "Rafa's 5th Birthday Weekend",
   subtitle: 'A long weekend in New York',
   epigraph: 'For the boy turning five.',
@@ -702,8 +702,254 @@ export const NYC_TRIP = {
   ],
 }
 
+// Aurelia's final volleyball tournament of the season — "Fun @ the Sun"
+// at Mohegan Sun, Uncasville CT, with the family staying 15 minutes
+// south at a beach bungalow in New London so Rafa gets sand-and-water
+// time when his sister isn't on the court. PM wave both days; the
+// bracket goes live the night before, so the day-by-day match schedule
+// is filled in once it's posted. The tickets URL and (when live) the
+// results URL are surfaced as Tournament links.
+export const VOLLEYBALL_TRIP = {
+  id: 'volleyball-2026',
+  status: 'planning',
+  title: 'Fun @ the Sun',
+  subtitle: "Aurelia's final tournament of the season",
+  epigraph: 'One last weekend in the gym.',
+  dateRange: 'May 22 – 25, 2026',
+  dateRangeStart: '2026-05-22',
+  dateRangeEnd: '2026-05-25',
+  startCity: 'Belmont, MA',
+  endCity: 'Belmont, MA',
+  miles: 220,
+  travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+  heroImage: './images/volleyball.png',
+  overview:
+    "Aurelia's final tournament of the season at Mohegan Sun. PM wave Saturday and Sunday, with bracket play likely Monday morning. The family stays fifteen minutes south at a beach bungalow in New London so Rafa can do beach things — sand, water, games — when his sister isn't on the court.",
+  ticketsUrl: 'https://tickets.sportwrench.com/buy/?event=494897836',
+  // Results URL populates once the bracket goes live the night before.
+  resultsUrl: '',
+  sharedAlbumURL: '',
+  heroStopId: 'vb1-3', // Beach Bungalow — the lodging anchor for the weekend
+  lodging: {
+    name: 'Beach Bungalow',
+    address: '41 Lower Boulevard, New London, CT',
+    checkIn: 'Fri May 22, 1:00 PM',
+    checkOut: 'Mon May 25, 1:00 PM',
+    notes:
+      'About 15 minutes from Mohegan Sun and walking distance to Ocean Beach. Keypad code and Wi-Fi password drop into this card on Thursday — until then the fields show "Coming Thursday."',
+    image: './images/bungalow.avif',
+    url: 'https://www.airbnb.com/rooms/54130995?source_impression_id=p3_1779276775_P3yx1UxJ9geaoPks',
+    // Filled in once the host sends them — both surface a one-tap copy
+    // button in the lodging panel so everyone in the family can grab them.
+    keypadCode: '',
+    wifiSsid: '',
+    wifiPassword: '',
+    checkoutChecklist: [
+      'Place dirty towels in the washing machine, leave the machine door open',
+      'Turn off the A/C',
+      'Turn off the lights',
+      'Lock all doors',
+      'Message the host when we depart',
+    ],
+  },
+  days: [
+    {
+      n: 1,
+      date: 'Fri May 22',
+      isoDate: '2026-05-22',
+      title: 'Pickups and the drive down',
+      drive: { from: 'Cambridge, MA', to: 'New London, CT', hours: '2h', miles: 110 },
+      lodging: 'Beach Bungalow',
+      stops: [
+        {
+          id: 'vb1-1',
+          time: '4:00 PM',
+          name: 'Aurelia pickup — Rindge Avenue Upper Campus',
+          kind: 'logistics',
+          for: ['aurelia'],
+          note: 'After school. Aim to be wheels up by 4:15.',
+          address: 'Rindge Avenue Upper Campus, Cambridge, MA',
+          lat: 42.3925,
+          lng: -71.1262,
+        },
+        {
+          id: 'vb1-2',
+          time: '4:30 PM',
+          name: 'Rafa pickup — POTA Cambridgeport',
+          kind: 'logistics',
+          for: ['rafa'],
+          note: 'Magazine Ave pickup, then point the car south.',
+          address: 'POTA Cambridgeport, Magazine Ave, Cambridge, MA',
+          lat: 42.3604,
+          lng: -71.1064,
+        },
+        {
+          id: 'vb1-3',
+          time: 'Evening',
+          name: 'Beach Bungalow — check-in',
+          kind: 'lodging',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: '[Airbnb in New London](https://www.airbnb.com/rooms/54130995?source_impression_id=p3_1779276775_P3yx1UxJ9geaoPks), a short walk from Ocean Beach. Check-in opens at 1 PM but we arrive after the pickups. Keypad code on the lodging card. Tap the photo for the full listing.\n\nHost Justin: if you want the shoreline route on the way in, the Scenic route link below drives past On The Waterfront Restaurant and the Harbor Light House. Don\'t stop — the ocean view is the whole point.',
+          address: '41 Lower Boulevard, New London, CT',
+          lat: 41.3052,
+          lng: -72.1072,
+          image: './images/bungalow.avif',
+          imageUrl:
+            'https://www.airbnb.com/rooms/54130995?source_impression_id=p3_1779276775_P3yx1UxJ9geaoPks',
+          // Drive-by waypoints from the host. Waze can chain at most one
+          // intermediate stop from a URL and Apple Maps can chain none —
+          // the StopDetail "Scenic route" button falls through to Google
+          // Maps whenever waypoints are set, regardless of the active
+          // traveler's preferred maps app.
+          waypoints: [
+            { name: 'On The Waterfront Restaurant', address: 'On The Waterfront Restaurant, Connecticut' },
+            { name: 'Harbor Light House', address: 'Harbor Light House, Connecticut' },
+          ],
+        },
+      ],
+    },
+    {
+      n: 2,
+      date: 'Sat May 23',
+      isoDate: '2026-05-23',
+      title: 'Day one on the court',
+      drive: { from: 'New London, CT', to: 'Uncasville, CT', hours: '30m round trip', miles: 30 },
+      lodging: 'Beach Bungalow',
+      stops: [
+        {
+          id: 'vb2-1',
+          time: 'AM',
+          name: 'Beach + breakfast',
+          kind: 'beach',
+          for: ['rafa', 'helen', 'jonathan'],
+          note: 'Ocean Beach is a short walk from the bungalow. Slow morning — PM wave doesn\'t start until afternoon.',
+          address: 'Ocean Beach Park, 1225 Ocean Ave, New London, CT',
+          lat: 41.3140,
+          lng: -72.1093,
+        },
+        {
+          id: 'vb2-2',
+          time: 'PM wave',
+          name: 'Fun @ the Sun — Day 1 matches',
+          kind: 'tournament',
+          for: ['jonathan', 'helen', 'aurelia'],
+          note: 'PM wave at Mohegan Sun. Exact match times drop the night before once the bracket is posted — check the Tournament link on this stop for the schedule and live results.',
+          address: 'Mohegan Sun, 1 Mohegan Sun Blvd, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+          url: 'https://tickets.sportwrench.com/buy/?event=494897836',
+          tentative: true,
+        },
+        {
+          id: 'vb2-3',
+          time: 'Evening',
+          name: 'Back to the bungalow',
+          kind: 'lodging',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: 'Dinner near the beach, then home for an early night ahead of Day 2.',
+          address: '41 Lower Boulevard, New London, CT',
+          lat: 41.3052,
+          lng: -72.1072,
+          image: './images/bungalow.avif',
+        },
+      ],
+    },
+    {
+      n: 3,
+      date: 'Sun May 24',
+      isoDate: '2026-05-24',
+      title: 'Day two on the court',
+      drive: { from: 'New London, CT', to: 'Uncasville, CT', hours: '30m round trip', miles: 30 },
+      lodging: 'Beach Bungalow',
+      stops: [
+        {
+          id: 'vb3-1',
+          time: 'AM',
+          name: 'Beach morning',
+          kind: 'beach',
+          for: ['rafa', 'helen'],
+          note: 'Rafa-led. Sand, water, whatever games end up in the bag.',
+          address: 'Ocean Beach Park, 1225 Ocean Ave, New London, CT',
+          lat: 41.3140,
+          lng: -72.1093,
+        },
+        {
+          id: 'vb3-2',
+          time: 'PM wave',
+          name: 'Fun @ the Sun — Day 2 matches',
+          kind: 'tournament',
+          for: ['jonathan', 'helen', 'aurelia'],
+          note: 'PM wave at Mohegan Sun. Match times via the Tournament link once the Day 2 schedule is posted.',
+          address: 'Mohegan Sun, 1 Mohegan Sun Blvd, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+          url: 'https://tickets.sportwrench.com/buy/?event=494897836',
+          tentative: true,
+        },
+        {
+          id: 'vb3-3',
+          time: 'Evening',
+          name: 'Back to the bungalow',
+          kind: 'lodging',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: 'Pack what we can tonight to make the Monday morning easier.',
+          address: '41 Lower Boulevard, New London, CT',
+          lat: 41.3052,
+          lng: -72.1072,
+          image: './images/bungalow.avif',
+        },
+      ],
+    },
+    {
+      n: 4,
+      date: 'Mon May 25',
+      isoDate: '2026-05-25',
+      title: 'Bracket play, then home',
+      drive: { from: 'New London, CT', to: 'Belmont, MA', hours: '2h', miles: 110 },
+      lodging: '— (home)',
+      stops: [
+        {
+          id: 'vb4-1',
+          time: 'Morning',
+          name: 'Fun @ the Sun — bracket play',
+          kind: 'tournament',
+          for: ['jonathan', 'helen', 'aurelia'],
+          note: 'Monday bracket play at Mohegan Sun — times depend on Sunday seeding. Watch the Tournament link for the bracket.',
+          address: 'Mohegan Sun, 1 Mohegan Sun Blvd, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+          url: 'https://tickets.sportwrench.com/buy/?event=494897836',
+          tentative: true,
+        },
+        {
+          id: 'vb4-2',
+          time: '1:00 PM',
+          name: 'Beach Bungalow — checkout',
+          kind: 'logistics',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: 'Checkout chores are on the lodging card: towels in the washer (door open), AC off, lights off, lock the doors, message the host on the way out.',
+          address: '41 Lower Boulevard, New London, CT',
+          lat: 41.3052,
+          lng: -72.1072,
+        },
+        {
+          id: 'vb4-3',
+          time: 'Afternoon',
+          name: 'Drive home to Belmont',
+          kind: 'drive',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: '~2 hours back up I-95 / I-90. ETA depends on how late bracket play runs.',
+          address: 'Belmont, MA',
+          lat: 42.3959,
+          lng: -71.1787,
+        },
+      ],
+    },
+  ],
+}
+
 // Single source of truth. All views/utilities import this.
-export const TRIPS = [JACKSON_TRIP, NYC_TRIP]
+export const TRIPS = [JACKSON_TRIP, NYC_TRIP, VOLLEYBALL_TRIP]
 
 export function findTrip(id) {
   return TRIPS.find((t) => t.id === id)
@@ -715,6 +961,30 @@ export function findDay(trip, n) {
 
 export function findStop(day, stopId) {
   return day?.stops.find((s) => s.id === stopId)
+}
+
+// Derive a trip's lifecycle status from its dates instead of relying
+// on a manually-maintained `status` field. As the calendar moves
+// forward a planning trip becomes live on its start date and archived
+// after its end date — without anyone having to remember to edit
+// trips.js. The stored `trip.status` is preserved as a fallback for
+// trips that don't yet have dates pinned down (cf. the planning form
+// in NewTrip which submits `dateRangeStart: null`).
+//
+// Returns one of: 'planning' (future), 'live' (start ≤ today ≤ end),
+// 'archived' (past), or the stored value when dates are missing.
+export function effectiveStatus(trip, today = todayIso()) {
+  const start = trip?.dateRangeStart
+  const end = trip?.dateRangeEnd
+  if (!start && !end) return trip?.status || 'planning'
+  if (end && end < today) return 'archived'
+  if (start && start > today) return 'planning'
+  // Today falls inside (or touches) the trip window.
+  return 'live'
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 // Flatten with day metadata. Used by views that don't think in days.
