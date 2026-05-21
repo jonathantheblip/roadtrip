@@ -226,6 +226,13 @@ function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
   const statusColor = status === 'archived' ? 'var(--muted)' : 'var(--accent)'
   const startCity = (trip.startCity || '').toUpperCase()
   const endCity = (trip.endCity || '').toUpperCase()
+  // For genuine A→B road trips, render the route. For trips that
+  // anchor at one place (a weekend in NYC, a volleyball tournament at
+  // Mohegan Sun) the route notation reads as road-trip energy when the
+  // trip isn't really one — so a per-trip locationLabel override wins.
+  const locationLabel = trip.locationLabel
+    ? trip.locationLabel.toUpperCase()
+    : `${startCity} → ${endCity}`
   const dayCount = trip.days?.length || 0
   const titleLines = (trip.title || '').split(/[—:]/).map((s) => s.trim())
 
@@ -338,7 +345,7 @@ function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
         >
           <AvatarStack ids={trip.travelers || []} size={isFirst ? 20 : 18} />
           <Eyebrow color="var(--muted)">
-            {startCity} → {endCity}
+            {locationLabel}
           </Eyebrow>
         </div>
         <Eyebrow color="var(--accent)" weight={600}>

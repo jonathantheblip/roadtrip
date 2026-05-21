@@ -428,6 +428,7 @@ export const NYC_TRIP = {
   dateRangeEnd: '2026-05-03',
   startCity: 'Belmont, MA',
   endCity: 'New York, NY',
+  locationLabel: 'New York, NY',
   miles: 220,
   travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
   overview:
@@ -720,6 +721,7 @@ export const VOLLEYBALL_TRIP = {
   dateRangeEnd: '2026-05-25',
   startCity: 'Belmont, MA',
   endCity: 'Belmont, MA',
+  locationLabel: 'New London, CT · Mohegan Sun',
   miles: 220,
   travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
   heroImage: './images/volleyball.png',
