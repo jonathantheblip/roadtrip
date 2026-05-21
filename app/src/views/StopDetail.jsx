@@ -9,6 +9,7 @@ import { ThreadedMemories } from '../components/ThreadedMemories'
 function urlLabel(stop) {
   const ticketKinds = new Set(['theater', 'show', 'concert', 'tour', 'arrival', 'departure'])
   if (ticketKinds.has(stop.kind)) return 'Tickets'
+  if (stop.kind === 'tournament' || stop.kind === 'duty') return 'Schedule'
   if (/^breakfast|lunch|dinner|brunch|snack$/i.test(stop.kind)) return 'Menu'
   return 'Open link'
 }
