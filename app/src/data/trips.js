@@ -763,8 +763,9 @@ export const VOLLEYBALL_TRIP = {
     // deactivates 1 PM Mon May 25. Confirmed with co-host Mary on
     // 2026-05-20 (Airbnb messages).
     keypadCode: '0803',
-    wifiSsid: '',
-    wifiPassword: '',
+    // From the printed Wi-Fi card at the bungalow.
+    wifiSsid: 'BungalowGuest',
+    wifiPassword: 'BBNL22!!',
     checkoutChecklist: [
       'Place dirty towels in the washing machine, leave the machine door open',
       'Turn off the A/C',
