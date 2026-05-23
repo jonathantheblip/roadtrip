@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "set-secret": "node scripts/setSecret.mjs",
-    "fetch-heroes": "node scripts/fetchHeroImages.mjs"
+    "fetch-heroes": "node scripts/fetchHeroImages.mjs",
+    "test": "node --test scripts/__tests__/*.test.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
