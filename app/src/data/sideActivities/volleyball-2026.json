@@ -140,7 +140,7 @@
       "rafa": "Climb on real tall ships. Watch ships getting rebuilt in the shipyard."
     },
     "notes": "Tickets ~$30 adult / $25 youth / $22 child. Two-day pass +$10.",
-    "heroImage": null
+    "heroImage": "./activities/mystic-seaport-museum.webp"
   },
   {
     "id": "lyman-allyn-art-museum",
@@ -211,7 +211,7 @@
       "aurelia": "40+ independent shops, no chains. Pet-friendly walking village. Actually shoppable, not a mall.",
       "rafa": "Wide pedestrian paths, duck pond, room to run between stores."
     },
-    "heroImage": null
+    "heroImage": "./activities/olde-mistick-village.webp"
   },
   {
     "id": "downtown-new-london",

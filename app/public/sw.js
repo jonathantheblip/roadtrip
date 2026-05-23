@@ -7,9 +7,12 @@
 //                    network fetch so a single online visit is enough to
 //                    make the PWA fully offline-capable (rural cell gaps
 //                    in Mississippi, Virginia mountains, etc.)
+// - /activities/*:   covered implicitly by the "everything else" branch
+//                    below (cache-first + write-through). Side Activities
+//                    v1.5 hero images are offline after first view.
 //
 // Cache name is versioned so the activate handler wipes stale generations.
-const CACHE_NAME = 'jackson-trip-react-v24';
+const CACHE_NAME = 'jackson-trip-react-v25';
 const TILE_CACHE = 'jackson-trip-tiles-v1';
 const MAX_TILES = 500;
 const CORE = ['./', './index.html', './manifest.json'];
