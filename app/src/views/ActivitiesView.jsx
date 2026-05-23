@@ -1,0 +1,619 @@
+import { useMemo, useState } from 'react'
+import { ChevronLeft, MapPin, Phone, Clock, AlertCircle, Sparkles } from 'lucide-react'
+import { TRAVELERS } from '../data/travelers'
+import {
+  getActivitiesForTrip,
+  filterActivities,
+  descriptionFor,
+  groupByCategory,
+  CATEGORY_LABEL,
+  isClosedToday,
+} from '../data/sideActivities'
+
+// Things to do — trip-scoped activity menu. Filter chips at the top
+// (4 family members + Everyone, strict intersection); category-grouped
+// card list below. Picks up whichever themed surface is active via
+// CSS vars (linen for Helen, near-black for Rafa, etc.), so the same
+// component reads correctly across all four traveler views.
+//
+// View vs filter (spec §5): the active `traveler` decides which
+// description text renders inside each card; the chip selection
+// decides which cards appear at all. They're independent — switching
+// themed surfaces does not reset filter state within a session.
+export function ActivitiesView({ trip, traveler, onBack }) {
+  const activities = useMemo(
+    () => getActivitiesForTrip(trip?.id),
+    [trip?.id]
+  )
+
+  // Default: Everyone on. Gives an immediate full view; chip
+  // toggling narrows the list. State is local to this mount —
+  // closing/reopening the view starts fresh, matching the spec's
+  // "not persisted across sessions" rule.
+  const [selected, setSelected] = useState(
+    () => new Set(['jonathan', 'helen', 'aurelia', 'rafa'])
+  )
+
+  function toggleMember(id) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleEveryone() {
+    setSelected((prev) => {
+      const allOn =
+        prev.has('jonathan') &&
+        prev.has('helen') &&
+        prev.has('aurelia') &&
+        prev.has('rafa')
+      return allOn ? new Set() : new Set(['jonathan', 'helen', 'aurelia', 'rafa'])
+    })
+  }
+
+  const filtered = useMemo(
+    () => filterActivities(activities, selected),
+    [activities, selected]
+  )
+  const sections = useMemo(() => groupByCategory(filtered), [filtered])
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        minHeight: '100vh',
+        paddingBottom: 120,
+      }}
+    >
+      <header style={{ padding: '60px 18px 6px' }}>
+        <button
+          onClick={onBack}
+          type="button"
+          style={{
+            background: 'transparent',
+            border: 0,
+            padding: 0,
+            cursor: 'pointer',
+            color: 'var(--muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+            fontSize: 10,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            opacity: 0.7,
+            marginBottom: 18,
+          }}
+        >
+          <ChevronLeft size={12} /> {trip?.title || 'Trip'}
+        </button>
+        <div
+          style={{
+            fontFamily: 'Fraunces, "Iowan Old Style", Georgia, serif',
+            fontSize: 38,
+            fontWeight: 700,
+            lineHeight: 0.95,
+            letterSpacing: '-0.02em',
+            color: 'var(--text)',
+          }}
+        >
+          Things to do
+        </div>
+        <div
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 14,
+            fontStyle: 'italic',
+            color: 'var(--muted)',
+            marginTop: 6,
+          }}
+        >
+          {activities.length === 0
+            ? 'No activities seeded for this trip yet.'
+            : 'Around the tournament — filter by who needs what.'}
+        </div>
+      </header>
+
+      {activities.length > 0 && (
+        <FilterChips
+          selected={selected}
+          onToggle={toggleMember}
+          onToggleEveryone={toggleEveryone}
+        />
+      )}
+
+      <div style={{ padding: '8px 14px 0' }}>
+        {activities.length === 0 ? null : selected.size === 0 ? (
+          <EmptyState />
+        ) : sections.length === 0 ? (
+          <NoMatches />
+        ) : (
+          sections.map((section) => (
+            <Section key={section.category} label={section.label}>
+              {section.items.map((activity) => (
+                <ActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  traveler={traveler}
+                />
+              ))}
+            </Section>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function FilterChips({ selected, onToggle, onToggleEveryone }) {
+  const everyoneOn =
+    selected.has('jonathan') &&
+    selected.has('helen') &&
+    selected.has('aurelia') &&
+    selected.has('rafa')
+  const ids = ['jonathan', 'helen', 'aurelia', 'rafa']
+  return (
+    <div style={{ padding: '14px 14px 6px' }}>
+      <div
+        style={{
+          fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+          fontSize: 9,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          opacity: 0.55,
+          marginBottom: 8,
+          paddingLeft: 4,
+        }}
+      >
+        Filter who
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: 'wrap',
+        }}
+      >
+        {ids.map((id) => {
+          const on = selected.has(id)
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onToggle(id)}
+              aria-pressed={on}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 14,
+                border: '1px solid',
+                borderColor: on ? TRAVELERS[id]?.color || 'var(--accent)' : 'var(--border)',
+                background: on ? TRAVELERS[id]?.color || 'var(--accent)' : 'transparent',
+                color: on ? '#FBF8F2' : 'inherit',
+                cursor: 'pointer',
+                fontFamily: 'Inter Tight, system-ui, sans-serif',
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: '0.01em',
+              }}
+            >
+              {TRAVELERS[id]?.name || id}
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          onClick={onToggleEveryone}
+          aria-pressed={everyoneOn}
+          style={{
+            padding: '6px 12px',
+            borderRadius: 14,
+            border: '1px solid',
+            borderColor: everyoneOn ? 'var(--text)' : 'var(--border)',
+            background: everyoneOn ? 'var(--text)' : 'transparent',
+            color: everyoneOn ? 'var(--bg)' : 'inherit',
+            cursor: 'pointer',
+            fontFamily: 'Inter Tight, system-ui, sans-serif',
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.01em',
+          }}
+        >
+          Everyone
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <div
+      style={{
+        padding: '40px 18px',
+        textAlign: 'center',
+        fontFamily: 'Fraunces, Georgia, serif',
+        fontStyle: 'italic',
+        color: 'var(--muted)',
+        fontSize: 16,
+        lineHeight: 1.5,
+      }}
+    >
+      Pick who's going to see what works for them.
+    </div>
+  )
+}
+
+function NoMatches() {
+  return (
+    <div
+      style={{
+        padding: '32px 18px',
+        textAlign: 'center',
+        fontFamily: 'Fraunces, Georgia, serif',
+        fontStyle: 'italic',
+        color: 'var(--muted)',
+        fontSize: 15,
+        lineHeight: 1.5,
+      }}
+    >
+      Nothing on this list works for everyone you picked. Try fewer chips.
+    </div>
+  )
+}
+
+function Section({ label, children }) {
+  return (
+    <section style={{ marginTop: 18 }}>
+      <div
+        style={{
+          fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+          fontSize: 10,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          opacity: 0.65,
+          padding: '0 4px 8px',
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 12,
+          color: 'var(--text)',
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function ActivityCard({ activity, traveler }) {
+  const [notesOpen, setNotesOpen] = useState(false)
+  const description = descriptionFor(activity, traveler)
+  const closed = isClosedToday(activity)
+  const isShareIn = activity.source === 'share_in'
+  const mapsUrl = mapsLinkForActivity(activity, traveler)
+  const telHref = activity.phone ? `tel:${String(activity.phone).replace(/[^\d+]/g, '')}` : null
+
+  function openMaps() {
+    if (mapsUrl) window.open(mapsUrl, '_blank')
+  }
+
+  return (
+    <article
+      style={{
+        borderRadius: 10,
+        border: '1px solid var(--border)',
+        background: 'var(--card, transparent)',
+        overflow: 'hidden',
+      }}
+    >
+      {activity.heroImage ? (
+        <img
+          src={activity.heroImage}
+          alt={activity.name}
+          style={{
+            width: '100%',
+            aspectRatio: '16 / 9',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      ) : (
+        <TypographicHeader activity={activity} />
+      )}
+
+      <div style={{ padding: '14px 14px 16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 9,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              opacity: 0.55,
+            }}
+          >
+            [{CATEGORY_LABEL[activity.category] || activity.category}]
+          </span>
+          <span
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 9,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              opacity: 0.6,
+            }}
+          >
+            {activity.drivingMinutes != null ? `${activity.drivingMinutes} MIN` : ''}
+          </span>
+        </div>
+
+        <h3
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 19,
+            fontWeight: 700,
+            lineHeight: 1.18,
+            margin: 0,
+            color: 'var(--text)',
+          }}
+        >
+          {activity.name}
+        </h3>
+
+        {isShareIn && (
+          <div
+            style={{
+              marginTop: 6,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 9,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: 'var(--accent)',
+              opacity: 0.85,
+            }}
+          >
+            <Sparkles size={10} /> Added via share
+          </div>
+        )}
+
+        {closed && <ClosedBanner />}
+
+        <p
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 14.5,
+            fontStyle: description ? 'italic' : 'normal',
+            lineHeight: 1.5,
+            color: description ? 'var(--text)' : 'var(--muted)',
+            margin: '10px 0 0',
+            opacity: description ? 0.95 : 0.7,
+          }}
+        >
+          {description ||
+            structuralFallback(activity)}
+        </p>
+
+        <HoursLine activity={activity} />
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            marginTop: 12,
+          }}
+        >
+          {mapsUrl && (
+            <button
+              type="button"
+              onClick={openMaps}
+              className="btn-pill"
+              style={{ cursor: 'pointer' }}
+            >
+              <MapPin size={12} />
+              {TRAVELERS[traveler]?.maps === 'waze' ? 'Open in Waze' : 'Open in Maps'}
+            </button>
+          )}
+          {telHref && (
+            <a className="btn-pill" href={telHref}>
+              <Phone size={12} />
+              Call
+            </a>
+          )}
+        </div>
+
+        {activity.notes && (
+          <NotesBlock
+            notes={activity.notes}
+            open={notesOpen}
+            onToggle={() => setNotesOpen((o) => !o)}
+          />
+        )}
+      </div>
+    </article>
+  )
+}
+
+function TypographicHeader({ activity }) {
+  // No hero image — render the activity name as the visual anchor in
+  // the active theme's accent color so the card still has presence.
+  return (
+    <div
+      style={{
+        padding: '24px 16px 18px',
+        background:
+          'linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent)',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 9,
+          letterSpacing: '0.22em',
+          textTransform: 'uppercase',
+          color: 'var(--accent)',
+          fontWeight: 600,
+          marginBottom: 8,
+        }}
+      >
+        {CATEGORY_LABEL[activity.category] || activity.category}
+      </div>
+      <div
+        style={{
+          fontFamily: 'Fraunces, "Iowan Old Style", Georgia, serif',
+          fontSize: 26,
+          lineHeight: 1.05,
+          fontWeight: 700,
+          color: 'var(--text)',
+          letterSpacing: '-0.015em',
+        }}
+      >
+        {activity.name}
+      </div>
+    </div>
+  )
+}
+
+function HoursLine({ activity }) {
+  if (!activity.hours) return null
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 6,
+        marginTop: 10,
+        fontSize: 12.5,
+        lineHeight: 1.4,
+        color: 'var(--muted)',
+      }}
+    >
+      <Clock size={12} style={{ marginTop: 3, flexShrink: 0, opacity: 0.7 }} />
+      <span style={{ flex: 1 }}>{activity.hours}</span>
+      {activity.hoursVerified === false && (
+        <span
+          title="Call to confirm — hours not verified for the trip dates"
+          style={{
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 9,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'var(--accent)',
+            fontWeight: 600,
+          }}
+        >
+          <AlertCircle size={10} /> Call to confirm
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ClosedBanner() {
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: '8px 10px',
+        borderRadius: 6,
+        background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
+        fontFamily: 'Fraunces, Georgia, serif',
+        fontSize: 13.5,
+        fontStyle: 'italic',
+        color: 'var(--text)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <AlertCircle size={14} />
+      Closed today
+    </div>
+  )
+}
+
+function NotesBlock({ notes, open, onToggle }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{
+          background: 'transparent',
+          border: 0,
+          padding: 0,
+          cursor: 'pointer',
+          color: 'var(--muted)',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          fontWeight: 600,
+          opacity: 0.8,
+        }}
+      >
+        {open ? '— Notes ↑' : '+ Notes ↓'}
+      </button>
+      {open && (
+        <p
+          style={{
+            marginTop: 6,
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: 'var(--muted)',
+            opacity: 0.9,
+          }}
+        >
+          {notes}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function structuralFallback(activity) {
+  // Reader has no description — render a neutral one-liner from the
+  // structural fields so the card still says something useful.
+  const parts = []
+  if (activity.drivingMinutes != null) {
+    parts.push(`${activity.drivingMinutes} min drive`)
+  }
+  parts.push(CATEGORY_LABEL[activity.category] || activity.category)
+  return parts.join(' · ')
+}
+
+function mapsLinkForActivity(activity, travelerId) {
+  if (activity?.lat == null || activity?.lng == null) return null
+  if (TRAVELERS[travelerId]?.maps === 'waze') {
+    return `https://waze.com/ul?ll=${activity.lat},${activity.lng}&navigate=yes`
+  }
+  return `https://maps.apple.com/?q=${encodeURIComponent(
+    activity.name || ''
+  )}&ll=${activity.lat},${activity.lng}`
+}

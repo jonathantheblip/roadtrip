@@ -3,6 +3,7 @@ import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip, listMemoriesForStop, saveMemory } from '../lib/memoryStore'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop } from './FlightStatus'
+import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 
 // Jonathan — Editorial Ops Console. Design-bundle authoritative
 // (prototype.jsx#JonathanDashboard). Newspaper masthead, pull-quote
@@ -104,7 +105,7 @@ function flightHeadline(arrival) {
   return sched ? `${s.flightNumber} · ${sched}` : s.flightNumber
 }
 
-export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
+export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities }) {
   // Default to today if it falls within the trip — Jonathan opens the
   // app mid-trip and expects the current day. Otherwise day 1.
   const [activeDayN, setActiveDayN] = useState(() => {
@@ -518,6 +519,51 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings }) {
           setQuickLogged={setQuickLogged}
         />
       </JSection>
+
+      {/* THINGS TO DO — entry point to the trip-scoped activities menu */}
+      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
+        <JSection
+          label="Things to do"
+          meta={`${getActivitiesForTrip(trip.id).length} OPTIONS`}
+          style={{ marginTop: 6 }}
+        >
+          <button
+            type="button"
+            onClick={onOpenActivities}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              padding: '12px 14px',
+              cursor: 'pointer',
+              color: 'inherit',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 14,
+                fontStyle: 'italic',
+              }}
+            >
+              Around the tournament — filter by who.
+            </span>
+            <span
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 11,
+                color: 'var(--accent)',
+              }}
+            >
+              →
+            </span>
+          </button>
+        </JSection>
+      )}
 
       {/* FILE A DISPATCH */}
       <div style={{ padding: '22px 16px 4px' }}>

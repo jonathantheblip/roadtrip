@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Mic, MapPin } from 'lucide-react'
+import { Mic, MapPin, Sparkles } from 'lucide-react'
 import { listMemoriesForStop } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
+import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 
 // Helen — Threaded Archive Timeline. Design-bundle authoritative
 // (prototype.jsx#HelenTimeline + screens-supporting.jsx#StopWithThread).
@@ -11,7 +12,7 @@ import { findArrivalStop, FlightStatus } from './FlightStatus'
 // in a vertical timeline with a memory-thread preview strip beneath
 // stops that have memories, or an "+ add a memory" pill when empty.
 
-export function HelenView({ trip, traveler, onOpenStop, onOpenSettings }) {
+export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities }) {
   const [activeDay, setActiveDay] = useState(trip.days[0]?.n)
   const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const arrival = findArrivalStop(trip)
@@ -157,6 +158,55 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings }) {
           />
         ))}
       </div>
+
+      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
+        <button
+          type="button"
+          onClick={onOpenActivities}
+          style={{
+            margin: '24px 18px 0',
+            padding: '14px 16px',
+            width: 'calc(100% - 36px)',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            cursor: 'pointer',
+            textAlign: 'left',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            color: 'inherit',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Sparkles size={14} style={{ color: 'var(--accent)' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 10,
+                  letterSpacing: '0.16em',
+                  textTransform: 'uppercase',
+                  color: 'var(--muted)',
+                }}
+              >
+                {getActivitiesForTrip(trip.id).length} options
+              </span>
+              <span
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 16,
+                  fontStyle: 'italic',
+                  color: 'var(--text)',
+                }}
+              >
+                Things to do
+              </span>
+            </div>
+          </div>
+          <span style={{ color: 'var(--accent)', fontSize: 18 }}>→</span>
+        </button>
+      )}
 
       <button
         type="button"

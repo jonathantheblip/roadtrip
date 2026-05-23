@@ -5,6 +5,7 @@ import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { PostcardComposer } from '../components/PostcardComposer'
 import { allStops } from '../data/trips'
+import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 
 // Aurelia — Postcard Scrapbook ("Trip Book"). Design-bundle authoritative
 // (prototype.jsx#AureliaBook). Italic serif title on rose paper, a stack
@@ -12,7 +13,7 @@ import { allStops } from '../data/trips'
 // placeholder, an italic quote, author + time + felt-mood, WITH
 // avatars, location). Hot-pink FAB at the bottom-right.
 
-export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
+export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -90,6 +91,42 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings }) {
       {trip.travelerNotes?.aurelia && (
         <div style={{ padding: '14px 14px 6px' }}>
           <PersonalLetter note={trip.travelerNotes.aurelia} />
+        </div>
+      )}
+
+      {/* Things to do — pink pill into the trip-scoped activities list */}
+      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
+        <div style={{ padding: '12px 18px 0' }}>
+          <button
+            type="button"
+            onClick={onOpenActivities}
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              borderRadius: 20,
+              border: 'none',
+              background: 'var(--accent)',
+              color: 'var(--accent-ink, #fff)',
+              cursor: 'pointer',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              boxShadow: '0 6px 18px rgba(232, 71, 140, 0.30)',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 15,
+                fontStyle: 'italic',
+                fontWeight: 600,
+              }}
+            >
+              ✨ {getActivitiesForTrip(trip.id).length} things to do
+            </span>
+            <span style={{ fontSize: 18 }}>→</span>
+          </button>
         </div>
       )}
 

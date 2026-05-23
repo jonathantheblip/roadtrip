@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Mic } from 'lucide-react'
 import { effectiveStatus } from '../data/trips'
+import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 
 // Rafa — Mission. Design-bundle authoritative
 // (prototype.jsx#RafaMission). Near-black ground with ochre warning
@@ -9,7 +10,7 @@ import { effectiveStatus } from '../data/trips'
 // and emoji, two chunky alt cards (blue + green) with emoji + uppercase
 // title + time, then a giant "TELL A STORY" mic button at the bottom.
 
-export function RafaView({ trip, onOpenStop }) {
+export function RafaView({ trip, onOpenStop, onOpenActivities }) {
   // Which day's mission is on screen. Default to today-if-in-trip,
   // else day 1. Lets a 3-day weekend show three different missions
   // instead of one summary card that doesn't change.
@@ -318,6 +319,54 @@ export function RafaView({ trip, onOpenStop }) {
               </button>
             )
           })}
+        </div>
+      )}
+
+      {/* Things to do — chunky blue button matching the alt-card palette */}
+      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
+        <div style={{ padding: '14px 14px 0' }}>
+          <button
+            type="button"
+            onClick={onOpenActivities}
+            style={{
+              width: '100%',
+              padding: '16px 18px',
+              borderRadius: 16,
+              border: 0,
+              background: '#3D6FB8',
+              color: '#fff',
+              cursor: 'pointer',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              boxShadow: '0 8px 20px rgba(61, 111, 184, 0.35)',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 10,
+                  letterSpacing: '0.14em',
+                  opacity: 0.85,
+                }}
+              >
+                {getActivitiesForTrip(trip.id).length} OPTIONS
+              </span>
+              <span
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 22,
+                  fontWeight: 800,
+                  lineHeight: 1,
+                }}
+              >
+                STUFF TO DO
+              </span>
+            </div>
+            <span style={{ fontSize: 26, fontWeight: 700 }}>→</span>
+          </button>
         </div>
       )}
 

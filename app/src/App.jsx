@@ -11,6 +11,7 @@ import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
 import { TripEditor } from './views/TripEditor'
+import { ActivitiesView } from './views/ActivitiesView'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll } from './lib/workerSync'
@@ -256,6 +257,10 @@ export default function App() {
     setView({ name: 'edit' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  function openActivities() {
+    setView({ name: 'activities' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   // Returns the upsert result so NewTrip can show an inline error and
   // stay put on failure (no navigation), per change order §3.4. On
   // success we go straight into the editor — Helen continues adding
@@ -282,6 +287,7 @@ export default function App() {
       traveler,
       onOpenStop: openStop,
       onOpenSettings: openSettings,
+      onOpenActivities: openActivities,
     }
     switch (traveler) {
       case 'helen':
@@ -324,7 +330,10 @@ export default function App() {
               trip index. The trip-switcher dropdown to the right still
               lets users hop trips without going through the index. */}
           {(() => {
-            const inDeepView = view.name === 'stop' || view.name === 'settings'
+            const inDeepView =
+              view.name === 'stop' ||
+              view.name === 'settings' ||
+              view.name === 'activities'
             const label = inDeepView && trip?.title ? `← ${trip.title}` : '← Trips'
             const handler = inDeepView ? () => setView({ name: 'trip' }) : openIndex
             return (
@@ -443,6 +452,13 @@ export default function App() {
             dark={darkSurface}
             onBack={() => setView({ name: 'trip' })}
             onOpenDay={openDayFirstStop}
+          />
+        )}
+        {view.name === 'activities' && trip && (
+          <ActivitiesView
+            trip={trip}
+            traveler={traveler}
+            onBack={() => setView({ name: 'trip' })}
           />
         )}
         {view.name === 'settings' && trip && (
