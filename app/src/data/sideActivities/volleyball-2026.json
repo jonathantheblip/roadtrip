@@ -333,8 +333,11 @@
       "helen": "Coach, Tiffany, Tory Burch, Sephora, Lush. Browse during the long stretch.",
       "aurelia": "Sephora floor, Tory Burch, the makeup. Window-shop the upscale block."
     },
-    "noAutoHours": true,
-    "heroImage": null
+    "placeIdOverride": "ChIJpSVOf6xz5okRXp9jiEU20ik",
+    "hoursStructured": {"weekday":["Monday: Open 24 hours","Tuesday: Open 24 hours","Wednesday: Open 24 hours","Thursday: Open 24 hours","Friday: Open 24 hours","Saturday: Open 24 hours","Sunday: Open 24 hours"],"periods":[{"open":{"day":0,"hour":0,"minute":0}}]},
+    "heroImage": "./activities/shops-mohegan-sun.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Danny Ngo"
   },
   {
     "id": "krispy-kreme-mohegan-sun",

@@ -25,11 +25,12 @@
 //     resolving to a 24/7 retailer inside the complex).
 //
 //   placeIdOverride?: string | null
-//     Reserved. Not wired today. Lets a future enrichment pass bypass
-//     the text-search disambiguation step and resolve a venue directly
-//     by Google Place ID — useful when the address-driven search lands
-//     on the wrong place (e.g. "The Shops at Mohegan Sun" resolving
-//     to a specific store within the complex).
+//     When set, the fetcher bypasses the text-search disambiguation
+//     step and resolves the venue directly via Place Details. Use this
+//     when the address-driven search lands on the wrong place (e.g.
+//     "The Shops at Mohegan Sun" resolving to a single store within
+//     the resort rather than the resort itself). The seed author is
+//     asserting the Place ID is correct — no validation runs.
 
 const ACTIVITY_MODULES = import.meta.glob('./*.json', { eager: true })
 

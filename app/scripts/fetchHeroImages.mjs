@@ -153,8 +153,49 @@ function extractHoursStructured(place) {
   }
 }
 
+function metadataFromPlace(place) {
+  return {
+    place,
+    placeName: place.displayName?.text || null,
+    businessStatus: place.businessStatus || null,
+    hoursStructured: extractHoursStructured(place),
+    openNow: place.regularOpeningHours?.openNow ?? null,
+  }
+}
+
+// Direct-by-id resolver. Bypasses text search so the seed author can
+// pin a venue exactly — useful for districts/collectives where the
+// address-driven search lands on the wrong point (e.g. "The Shops at
+// Mohegan Sun" resolving to a single store rather than the resort).
+async function fetchPlaceDetails(placeId) {
+  if (!PLACES_KEY) return { skip: 'no API key' }
+  let place
+  try {
+    place = await fetchJson(
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+      {
+        headers: {
+          'x-goog-api-key': PLACES_KEY,
+          'x-goog-fieldmask':
+            'id,displayName,photos,businessStatus,regularOpeningHours',
+        },
+      }
+    )
+  } catch (e) {
+    return { skip: `place details: ${e.message}` }
+  }
+  return metadataFromPlace(place)
+}
+
 async function fetchPlacesMetadata(activity) {
   if (!PLACES_KEY) return { skip: 'no API key' }
+
+  // Short-circuit: a seed-supplied Place ID skips text search and goes
+  // straight to Place Details. Authoritative by definition — the seed
+  // author is asserting this is the right venue.
+  if (activity.placeIdOverride) {
+    return fetchPlaceDetails(activity.placeIdOverride)
+  }
 
   const textQuery = [activity.name, activity.address].filter(Boolean).join(', ')
   const body = { textQuery, maxResultCount: 1 }
@@ -185,14 +226,7 @@ async function fetchPlacesMetadata(activity) {
 
   const places = searchRes.places || []
   if (places.length === 0) return { skip: 'no places result' }
-  const place = places[0]
-  return {
-    place,
-    placeName: place.displayName?.text || null,
-    businessStatus: place.businessStatus || null,
-    hoursStructured: extractHoursStructured(place),
-    openNow: place.regularOpeningHours?.openNow ?? null,
-  }
+  return metadataFromPlace(places[0])
 }
 
 async function fetchPlacesPhoto(place) {
