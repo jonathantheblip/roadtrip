@@ -17,6 +17,13 @@
 //     photos are marketing banners with text overlays (Mohegan Sun's
 //     Kids/Cyber Quest are the original cases).
 //
+//   noAutoHours?: boolean
+//     When true, the fetcher skips writing hoursStructured for this
+//     activity (businessStatus and photo fetch still run). Set this
+//     when text search resolves to the wrong venue and the resulting
+//     hours would mislead the user (e.g. "Shops at Mohegan Sun"
+//     resolving to a 24/7 retailer inside the complex).
+//
 //   placeIdOverride?: string | null
 //     Reserved. Not wired today. Lets a future enrichment pass bypass
 //     the text-search disambiguation step and resolve a venue directly

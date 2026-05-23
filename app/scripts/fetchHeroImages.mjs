@@ -260,7 +260,12 @@ async function processActivity(activity, mutationsForFile, closures) {
   // the photo, because we want businessStatus (closure detection) and
   // regularOpeningHours (structured hours for the card).
   const meta = await fetchPlacesMetadata(activity)
-  const hoursStructured = meta.skip ? null : meta.hoursStructured
+  // `noAutoHours` lets the seed opt out of writing hoursStructured (used
+  // when text search resolves to the wrong venue and the resulting 24/7
+  // hours would mislead the user). businessStatus + image fetch still run.
+  const hoursStructured = meta.skip || activity.noAutoHours
+    ? null
+    : meta.hoursStructured
 
   // Closure detection — caller will remove the activity entirely.
   if (
