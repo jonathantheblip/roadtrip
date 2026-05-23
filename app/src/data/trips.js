@@ -728,6 +728,15 @@ export const VOLLEYBALL_TRIP = {
   overview:
     "Aurelia's final tournament of the season at Mohegan Sun, playing for SLAM 13 Power Red. Pool play Saturday afternoon and evening, playoff matches Sunday with the time depending on Saturday's seeding. The family stays fifteen minutes south at a beach bungalow in New London so Rafa can do beach things — sand, water, games — when his sister isn't on the court.",
   team: 'SLAM 13 Power Red',
+  // Trip-scoped origin for driving-time estimates against side activities
+  // (consumed by app/scripts/fetchHeroImages.mjs). The bungalow is the
+  // family's base for the weekend; ETAs are measured outward from here.
+  // Coords from Places API geocode of the address.
+  homeBase: {
+    label: '41 Lower Boulevard, New London, CT',
+    lat: 41.3225,
+    lng: -72.0943,
+  },
   ticketsUrl: 'https://tickets.sportwrench.com/buy/?event=494897836',
   // Live team page: schedule + scores + bracket updates.
   resultsUrl:

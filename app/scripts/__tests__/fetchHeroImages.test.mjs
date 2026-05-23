@@ -16,6 +16,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  applyDrivingMinutesComputed,
   applyHeroBlock,
   applyHoursStructured,
 } from '../fetchHeroImages.mjs'
@@ -24,11 +25,12 @@ import {
 // byte-precise string replacement and re-indent against the
 // surrounding newline, so we keep this fixture shaped like a real
 // seed file.
-function twoActivityFixture({ hoursA, hoursB, heroA, heroB }) {
+function twoActivityFixture({ hoursA, hoursB, heroA, heroB, drivingA, drivingB }) {
   const aBlock = [
     '  {',
     '    "id": "alpha",',
     '    "name": "Alpha",',
+    drivingA == null ? null : `    "drivingMinutesComputed": ${drivingA},`,
     hoursA == null ? null : `    "hoursStructured": ${JSON.stringify(hoursA)},`,
     `    "heroImage": ${JSON.stringify(heroA)}`,
     '  }',
@@ -37,6 +39,7 @@ function twoActivityFixture({ hoursA, hoursB, heroA, heroB }) {
     '  {',
     '    "id": "beta",',
     '    "name": "Beta",',
+    drivingB == null ? null : `    "drivingMinutesComputed": ${drivingB},`,
     hoursB == null ? null : `    "hoursStructured": ${JSON.stringify(hoursB)},`,
     `    "heroImage": ${JSON.stringify(heroB)}`,
     '  }',
@@ -197,5 +200,45 @@ test('applyHoursStructured: anchor has hours, neighbor has hours, value=null →
   assert.equal(r.applied, true)
   const alphaAfter = sliceActivityTail(r.raw, 'alpha')
   assert.doesNotMatch(alphaAfter, /hoursStructured/)
+  assert.equal(sliceActivityTail(r.raw, 'beta'), betaBefore)
+})
+
+// --- applyDrivingMinutesComputed -------------------------------------
+
+test('applyDrivingMinutesComputed: insert when only neighbor has field → neighbor untouched', () => {
+  // alpha has no drivingMinutesComputed; beta has 25. Inserting 18 on
+  // alpha must NOT modify beta's value.
+  const raw = twoActivityFixture({
+    hoursA: null, hoursB: null,
+    heroA: null,
+    heroB: './activities/beta.webp',
+    drivingA: null,
+    drivingB: 25,
+  })
+  const betaBefore = sliceActivityTail(raw, 'beta')
+
+  const r = applyDrivingMinutesComputed(raw, 'alpha', 18)
+
+  assert.equal(r.applied, true)
+  const alphaAfter = sliceActivityTail(r.raw, 'alpha')
+  assert.match(alphaAfter, /"drivingMinutesComputed": 18/)
+  assert.equal(sliceActivityTail(r.raw, 'beta'), betaBefore)
+})
+
+test('applyDrivingMinutesComputed: replace existing when neighbor also has field → only anchor changes', () => {
+  const raw = twoActivityFixture({
+    hoursA: null, hoursB: null,
+    heroA: null, heroB: null,
+    drivingA: 10,
+    drivingB: 25,
+  })
+  const betaBefore = sliceActivityTail(raw, 'beta')
+
+  const r = applyDrivingMinutesComputed(raw, 'alpha', 11)
+
+  assert.equal(r.applied, true)
+  const alphaAfter = sliceActivityTail(r.raw, 'alpha')
+  assert.match(alphaAfter, /"drivingMinutesComputed": 11/)
+  assert.doesNotMatch(alphaAfter, /"drivingMinutesComputed": 10/)
   assert.equal(sliceActivityTail(r.raw, 'beta'), betaBefore)
 })

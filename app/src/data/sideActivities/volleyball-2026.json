@@ -23,6 +23,7 @@
     },
     "notes": "Parking weekends $40 incl. admission. Walk-in $10. Opening weekend will be busy.",
     "hoursStructured": {"weekday":["Monday: 8:00 AM – 10:00 PM","Tuesday: 8:00 AM – 10:00 PM","Wednesday: 8:00 AM – 10:00 PM","Thursday: 8:00 AM – 10:00 PM","Friday: 8:00 AM – 10:00 PM","Saturday: 8:00 AM – 10:00 PM","Sunday: 8:00 AM – 10:00 PM"],"periods":[{"open":{"day":0,"hour":8,"minute":0},"close":{"day":0,"hour":22,"minute":0}},{"open":{"day":1,"hour":8,"minute":0},"close":{"day":1,"hour":22,"minute":0}},{"open":{"day":2,"hour":8,"minute":0},"close":{"day":2,"hour":22,"minute":0}},{"open":{"day":3,"hour":8,"minute":0},"close":{"day":3,"hour":22,"minute":0}},{"open":{"day":4,"hour":8,"minute":0},"close":{"day":4,"hour":22,"minute":0}},{"open":{"day":5,"hour":8,"minute":0},"close":{"day":5,"hour":22,"minute":0}},{"open":{"day":6,"hour":8,"minute":0},"close":{"day":6,"hour":22,"minute":0}}]},
+    "drivingMinutesComputed": 4,
     "heroImage": "./activities/ocean-beach-park.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Preston Doc Toliver"
@@ -48,6 +49,7 @@
       "rafa": "Beach access points along the way. Easy to detour into the sand."
     },
     "hoursStructured": {"weekday":["Monday: 7:00 AM – 8:00 PM","Tuesday: 7:00 AM – 8:00 PM","Wednesday: 7:00 AM – 8:00 PM","Thursday: 7:00 AM – 8:00 PM","Friday: 7:00 AM – 8:00 PM","Saturday: 7:00 AM – 8:00 PM","Sunday: 7:00 AM – 8:00 PM"],"periods":[{"open":{"day":0,"hour":7,"minute":0},"close":{"day":0,"hour":20,"minute":0}},{"open":{"day":1,"hour":7,"minute":0},"close":{"day":1,"hour":20,"minute":0}},{"open":{"day":2,"hour":7,"minute":0},"close":{"day":2,"hour":20,"minute":0}},{"open":{"day":3,"hour":7,"minute":0},"close":{"day":3,"hour":20,"minute":0}},{"open":{"day":4,"hour":7,"minute":0},"close":{"day":4,"hour":20,"minute":0}},{"open":{"day":5,"hour":7,"minute":0},"close":{"day":5,"hour":20,"minute":0}},{"open":{"day":6,"hour":7,"minute":0},"close":{"day":6,"hour":20,"minute":0}}]},
+    "drivingMinutesComputed": 16,
     "heroImage": "./activities/niantic-bay-boardwalk.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Jeffrey Dorwart"
@@ -72,6 +74,7 @@
       "rafa": "Smaller, more manageable than Ocean Beach."
     },
     "notes": "Groton residents free with sticker; non-residents pay parking.",
+    "drivingMinutesComputed": 19,
     "heroImage": "./activities/eastern-point-beach.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Victoria Pogonets"
@@ -100,6 +103,7 @@
     },
     "notes": "Tickets cheaper purchased in advance online.",
     "hoursStructured": {"weekday":["Monday: 9:00 AM – 5:00 PM","Tuesday: 9:00 AM – 5:00 PM","Wednesday: 9:00 AM – 5:00 PM","Thursday: 9:00 AM – 5:00 PM","Friday: 9:00 AM – 5:00 PM","Saturday: 9:00 AM – 5:00 PM","Sunday: 9:00 AM – 5:00 PM"],"periods":[{"open":{"day":0,"hour":9,"minute":0},"close":{"day":0,"hour":17,"minute":0}},{"open":{"day":1,"hour":9,"minute":0},"close":{"day":1,"hour":17,"minute":0}},{"open":{"day":2,"hour":9,"minute":0},"close":{"day":2,"hour":17,"minute":0}},{"open":{"day":3,"hour":9,"minute":0},"close":{"day":3,"hour":17,"minute":0}},{"open":{"day":4,"hour":9,"minute":0},"close":{"day":4,"hour":17,"minute":0}},{"open":{"day":5,"hour":9,"minute":0},"close":{"day":5,"hour":17,"minute":0}},{"open":{"day":6,"hour":9,"minute":0},"close":{"day":6,"hour":17,"minute":0}}]},
+    "drivingMinutesComputed": 18,
     "heroImage": "./activities/mystic-aquarium.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Brian E. Flynn"
@@ -127,6 +131,7 @@
     },
     "notes": "Navy-run site. Federal holiday closures common — call (860) 694-3174 before driving over Monday.",
     "hoursStructured": {"weekday":["Monday: 9:00 AM – 5:00 PM","Tuesday: Closed","Wednesday: 9:00 AM – 5:00 PM","Thursday: 9:00 AM – 5:00 PM","Friday: 9:00 AM – 5:00 PM","Saturday: 9:00 AM – 5:00 PM","Sunday: 9:00 AM – 5:00 PM"],"periods":[{"open":{"day":0,"hour":9,"minute":0},"close":{"day":0,"hour":17,"minute":0}},{"open":{"day":1,"hour":9,"minute":0},"close":{"day":1,"hour":17,"minute":0}},{"open":{"day":3,"hour":9,"minute":0},"close":{"day":3,"hour":17,"minute":0}},{"open":{"day":4,"hour":9,"minute":0},"close":{"day":4,"hour":17,"minute":0}},{"open":{"day":5,"hour":9,"minute":0},"close":{"day":5,"hour":17,"minute":0}},{"open":{"day":6,"hour":9,"minute":0},"close":{"day":6,"hour":17,"minute":0}}]},
+    "drivingMinutesComputed": 20,
     "heroImage": "./activities/submarine-force-museum.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Luis Santiago"
@@ -155,6 +160,7 @@
     },
     "notes": "Tickets ~$30 adult / $25 youth / $22 child. Two-day pass +$10.",
     "hoursStructured": {"weekday":["Monday: 10:00 AM – 5:00 PM","Tuesday: 10:00 AM – 5:00 PM","Wednesday: 10:00 AM – 5:00 PM","Thursday: 10:00 AM – 5:00 PM","Friday: 10:00 AM – 5:00 PM","Saturday: 10:00 AM – 5:00 PM","Sunday: 10:00 AM – 5:00 PM"],"periods":[{"open":{"day":0,"hour":10,"minute":0},"close":{"day":0,"hour":17,"minute":0}},{"open":{"day":1,"hour":10,"minute":0},"close":{"day":1,"hour":17,"minute":0}},{"open":{"day":2,"hour":10,"minute":0},"close":{"day":2,"hour":17,"minute":0}},{"open":{"day":3,"hour":10,"minute":0},"close":{"day":3,"hour":17,"minute":0}},{"open":{"day":4,"hour":10,"minute":0},"close":{"day":4,"hour":17,"minute":0}},{"open":{"day":5,"hour":10,"minute":0},"close":{"day":5,"hour":17,"minute":0}},{"open":{"day":6,"hour":10,"minute":0},"close":{"day":6,"hour":17,"minute":0}}]},
+    "drivingMinutesComputed": 19,
     "heroImage": "./activities/mystic-seaport-museum.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Mystic Seaport Museum"
@@ -184,6 +190,7 @@
     },
     "notes": "New London residents free. Blue Star Museum program starts Memorial Day weekend (free for active military families).",
     "hoursStructured": {"weekday":["Monday: Closed","Tuesday: 10:00 AM – 5:00 PM","Wednesday: 10:00 AM – 5:00 PM","Thursday: 10:00 AM – 5:00 PM","Friday: 10:00 AM – 5:00 PM","Saturday: 10:00 AM – 5:00 PM","Sunday: 1:00 – 5:00 PM"],"periods":[{"open":{"day":0,"hour":13,"minute":0},"close":{"day":0,"hour":17,"minute":0}},{"open":{"day":2,"hour":10,"minute":0},"close":{"day":2,"hour":17,"minute":0}},{"open":{"day":3,"hour":10,"minute":0},"close":{"day":3,"hour":17,"minute":0}},{"open":{"day":4,"hour":10,"minute":0},"close":{"day":4,"hour":17,"minute":0}},{"open":{"day":5,"hour":10,"minute":0},"close":{"day":5,"hour":17,"minute":0}},{"open":{"day":6,"hour":10,"minute":0},"close":{"day":6,"hour":17,"minute":0}}]},
+    "drivingMinutesComputed": 9,
     "heroImage": "./activities/lyman-allyn-art-museum.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Jerry Brown"
@@ -208,6 +215,7 @@
       "aurelia": "Pastel storefronts. Mystic Drawbridge Ice Cream. Bank Square Books. The bridge that opens for boats — the visually viral block.",
       "rafa": "Watch the drawbridge actually lift up."
     },
+    "drivingMinutesComputed": 21,
     "heroImage": "./activities/downtown-mystic.webp",
     "heroImageSource": "places",
     "heroImageCredit": "JEFFREY HEIM"
@@ -234,6 +242,7 @@
       "rafa": "Wide pedestrian paths, duck pond, room to run between stores."
     },
     "hoursStructured": {"weekday":["Monday: 10:00 AM – 6:00 PM","Tuesday: 10:00 AM – 6:00 PM","Wednesday: 10:00 AM – 6:00 PM","Thursday: 10:00 AM – 6:00 PM","Friday: 10:00 AM – 6:00 PM","Saturday: 10:00 AM – 6:00 PM","Sunday: 11:00 AM – 5:00 PM"],"periods":[{"open":{"day":0,"hour":11,"minute":0},"close":{"day":0,"hour":17,"minute":0}},{"open":{"day":1,"hour":10,"minute":0},"close":{"day":1,"hour":18,"minute":0}},{"open":{"day":2,"hour":10,"minute":0},"close":{"day":2,"hour":18,"minute":0}},{"open":{"day":3,"hour":10,"minute":0},"close":{"day":3,"hour":18,"minute":0}},{"open":{"day":4,"hour":10,"minute":0},"close":{"day":4,"hour":18,"minute":0}},{"open":{"day":5,"hour":10,"minute":0},"close":{"day":5,"hour":18,"minute":0}},{"open":{"day":6,"hour":10,"minute":0},"close":{"day":6,"hour":18,"minute":0}}]},
+    "drivingMinutesComputed": 18,
     "heroImage": "./activities/olde-mistick-village.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Olde Mistick Village"
@@ -258,6 +267,7 @@
       "aurelia": "Bank Street indie shops, Hygienic Art Park, easy walk-around block."
     },
     "hoursStructured": {"weekday":["Monday: Open 24 hours","Tuesday: Open 24 hours","Wednesday: Open 24 hours","Thursday: Open 24 hours","Friday: Open 24 hours","Saturday: Open 24 hours","Sunday: Open 24 hours"],"periods":[{"open":{"day":0,"hour":0,"minute":0}}]},
+    "drivingMinutesComputed": 10,
     "heroImage": "./activities/downtown-new-london.webp",
     "heroImageSource": "places",
     "heroImageCredit": "CHAD STEWART"
@@ -284,6 +294,7 @@
     "notes": "$16.50/hour (30 months–12 years). First-come, first-served — pre-register online to speed check-in. Parent must remain on Mohegan Sun property while Rafa is in care.",
     "hoursStructured": {"weekday":["Monday: 11:00 AM – 11:00 PM","Tuesday: 11:00 AM – 11:00 PM","Wednesday: 11:00 AM – 11:00 PM","Thursday: 11:00 AM – 11:00 PM","Friday: 11:00 AM – 1:00 AM","Saturday: 10:00 AM – 1:00 AM","Sunday: 10:00 AM – 11:00 PM"],"periods":[{"open":{"day":0,"hour":10,"minute":0},"close":{"day":0,"hour":23,"minute":0}},{"open":{"day":1,"hour":11,"minute":0},"close":{"day":1,"hour":23,"minute":0}},{"open":{"day":2,"hour":11,"minute":0},"close":{"day":2,"hour":23,"minute":0}},{"open":{"day":3,"hour":11,"minute":0},"close":{"day":3,"hour":23,"minute":0}},{"open":{"day":4,"hour":11,"minute":0},"close":{"day":4,"hour":23,"minute":0}},{"open":{"day":5,"hour":11,"minute":0},"close":{"day":6,"hour":1,"minute":0}},{"open":{"day":6,"hour":10,"minute":0},"close":{"day":0,"hour":1,"minute":0}}]},
     "noAutoHero": true,
+    "drivingMinutesComputed": 25,
     "heroImage": null,
     "heroImageSource": null,
     "heroImageCredit": null
@@ -310,6 +321,7 @@
     },
     "hoursStructured": {"weekday":["Monday: 11:00 AM – 11:00 PM","Tuesday: 11:00 AM – 11:00 PM","Wednesday: 11:00 AM – 11:00 PM","Thursday: 11:00 AM – 11:00 PM","Friday: 11:00 AM – 1:00 AM","Saturday: 10:00 AM – 1:00 AM","Sunday: 10:00 AM – 11:00 PM"],"periods":[{"open":{"day":0,"hour":10,"minute":0},"close":{"day":0,"hour":23,"minute":0}},{"open":{"day":1,"hour":11,"minute":0},"close":{"day":1,"hour":23,"minute":0}},{"open":{"day":2,"hour":11,"minute":0},"close":{"day":2,"hour":23,"minute":0}},{"open":{"day":3,"hour":11,"minute":0},"close":{"day":3,"hour":23,"minute":0}},{"open":{"day":4,"hour":11,"minute":0},"close":{"day":4,"hour":23,"minute":0}},{"open":{"day":5,"hour":11,"minute":0},"close":{"day":6,"hour":1,"minute":0}},{"open":{"day":6,"hour":10,"minute":0},"close":{"day":0,"hour":1,"minute":0}}]},
     "noAutoHero": true,
+    "drivingMinutesComputed": 25,
     "heroImage": null,
     "heroImageSource": null,
     "heroImageCredit": null
@@ -335,6 +347,7 @@
     },
     "placeIdOverride": "ChIJpSVOf6xz5okRXp9jiEU20ik",
     "hoursStructured": {"weekday":["Monday: Open 24 hours","Tuesday: Open 24 hours","Wednesday: Open 24 hours","Thursday: Open 24 hours","Friday: Open 24 hours","Saturday: Open 24 hours","Sunday: Open 24 hours"],"periods":[{"open":{"day":0,"hour":0,"minute":0}}]},
+    "drivingMinutesComputed": 25,
     "heroImage": "./activities/shops-mohegan-sun.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Danny Ngo"
@@ -358,6 +371,7 @@
       "rafa": "Original glazed. Done."
     },
     "hoursStructured": {"weekday":["Monday: Open 24 hours","Tuesday: Open 24 hours","Wednesday: Open 24 hours","Thursday: Open 24 hours","Friday: Open 24 hours","Saturday: Open 24 hours","Sunday: Open 24 hours"],"periods":[{"open":{"day":0,"hour":0,"minute":0}}]},
+    "drivingMinutesComputed": 25,
     "heroImage": "./activities/krispy-kreme-mohegan-sun.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Jim Fox"
@@ -386,6 +400,7 @@
     },
     "notes": "Reservations via OpenTable or 860-862-3236. Sat/Sun Bottomless Brunch is the move if arriving before tournament.",
     "hoursStructured": {"weekday":["Monday: 11:30 AM – 3:00 PM, 5:00 – 10:00 PM","Tuesday: 11:30 AM – 3:00 PM, 5:00 – 10:00 PM","Wednesday: 11:30 AM – 3:00 PM, 5:00 – 10:00 PM","Thursday: 11:30 AM – 3:00 PM, 5:00 – 10:00 PM","Friday: 11:30 AM – 3:00 PM, 5:00 – 11:00 PM","Saturday: 10:00 AM – 2:30 PM, 5:00 – 11:00 PM","Sunday: 10:00 AM – 2:30 PM, 5:00 – 10:00 PM"],"periods":[{"open":{"day":0,"hour":10,"minute":0},"close":{"day":0,"hour":14,"minute":30}},{"open":{"day":0,"hour":17,"minute":0},"close":{"day":0,"hour":22,"minute":0}},{"open":{"day":1,"hour":11,"minute":30},"close":{"day":1,"hour":15,"minute":0}},{"open":{"day":1,"hour":17,"minute":0},"close":{"day":1,"hour":22,"minute":0}},{"open":{"day":2,"hour":11,"minute":30},"close":{"day":2,"hour":15,"minute":0}},{"open":{"day":2,"hour":17,"minute":0},"close":{"day":2,"hour":22,"minute":0}},{"open":{"day":3,"hour":11,"minute":30},"close":{"day":3,"hour":15,"minute":0}},{"open":{"day":3,"hour":17,"minute":0},"close":{"day":3,"hour":22,"minute":0}},{"open":{"day":4,"hour":11,"minute":30},"close":{"day":4,"hour":15,"minute":0}},{"open":{"day":4,"hour":17,"minute":0},"close":{"day":4,"hour":22,"minute":0}},{"open":{"day":5,"hour":11,"minute":30},"close":{"day":5,"hour":15,"minute":0}},{"open":{"day":5,"hour":17,"minute":0},"close":{"day":5,"hour":23,"minute":0}},{"open":{"day":6,"hour":10,"minute":0},"close":{"day":6,"hour":14,"minute":30}},{"open":{"day":6,"hour":17,"minute":0},"close":{"day":6,"hour":23,"minute":0}}]},
+    "drivingMinutesComputed": 25,
     "heroImage": "./activities/tuscany-mohegan-sun.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Todd English's Tuscany"
@@ -412,6 +427,7 @@
       "rafa": "Bacon, egg, and cheese on a bagel. Done."
     },
     "hoursStructured": {"weekday":["Monday: 7:00 AM – 3:00 PM","Tuesday: 7:00 AM – 3:00 PM","Wednesday: 7:00 AM – 3:00 PM","Thursday: 7:00 AM – 3:00 PM","Friday: 7:00 AM – 3:00 PM","Saturday: 7:00 AM – 3:00 PM","Sunday: 8:00 AM – 1:00 PM"],"periods":[{"open":{"day":0,"hour":8,"minute":0},"close":{"day":0,"hour":13,"minute":0}},{"open":{"day":1,"hour":7,"minute":0},"close":{"day":1,"hour":15,"minute":0}},{"open":{"day":2,"hour":7,"minute":0},"close":{"day":2,"hour":15,"minute":0}},{"open":{"day":3,"hour":7,"minute":0},"close":{"day":3,"hour":15,"minute":0}},{"open":{"day":4,"hour":7,"minute":0},"close":{"day":4,"hour":15,"minute":0}},{"open":{"day":5,"hour":7,"minute":0},"close":{"day":5,"hour":15,"minute":0}},{"open":{"day":6,"hour":7,"minute":0},"close":{"day":6,"hour":15,"minute":0}}]},
+    "drivingMinutesComputed": 10,
     "heroImage": "./activities/muddy-waters-cafe.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Ralph Cherubin"
@@ -435,6 +451,7 @@
       "helen": "Coffee house with space to read. Lower-energy morning."
     },
     "hoursStructured": {"weekday":["Monday: 7:00 AM – 3:00 PM","Tuesday: 7:00 AM – 3:00 PM","Wednesday: 7:00 AM – 3:00 PM","Thursday: 7:00 AM – 3:00 PM","Friday: 7:00 AM – 3:00 PM","Saturday: 7:00 AM – 3:00 PM","Sunday: 7:00 AM – 3:00 PM"],"periods":[{"open":{"day":0,"hour":7,"minute":0},"close":{"day":0,"hour":15,"minute":0}},{"open":{"day":1,"hour":7,"minute":0},"close":{"day":1,"hour":15,"minute":0}},{"open":{"day":2,"hour":7,"minute":0},"close":{"day":2,"hour":15,"minute":0}},{"open":{"day":3,"hour":7,"minute":0},"close":{"day":3,"hour":15,"minute":0}},{"open":{"day":4,"hour":7,"minute":0},"close":{"day":4,"hour":15,"minute":0}},{"open":{"day":5,"hour":7,"minute":0},"close":{"day":5,"hour":15,"minute":0}},{"open":{"day":6,"hour":7,"minute":0},"close":{"day":6,"hour":15,"minute":0}}]},
+    "drivingMinutesComputed": 8,
     "heroImage": "./activities/washington-street-coffee.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Matt Guthrie"
@@ -459,6 +476,7 @@
       "rafa": "Croissants and cookies the size of his face."
     },
     "hoursStructured": {"weekday":["Monday: 7:00 AM – 7:00 PM","Tuesday: 7:00 AM – 7:00 PM","Wednesday: 7:00 AM – 7:00 PM","Thursday: 7:00 AM – 7:00 PM","Friday: 7:00 AM – 7:00 PM","Saturday: 7:00 AM – 7:00 PM","Sunday: 7:00 AM – 7:00 PM"],"periods":[{"open":{"day":0,"hour":7,"minute":0},"close":{"day":0,"hour":19,"minute":0}},{"open":{"day":1,"hour":7,"minute":0},"close":{"day":1,"hour":19,"minute":0}},{"open":{"day":2,"hour":7,"minute":0},"close":{"day":2,"hour":19,"minute":0}},{"open":{"day":3,"hour":7,"minute":0},"close":{"day":3,"hour":19,"minute":0}},{"open":{"day":4,"hour":7,"minute":0},"close":{"day":4,"hour":19,"minute":0}},{"open":{"day":5,"hour":7,"minute":0},"close":{"day":5,"hour":19,"minute":0}},{"open":{"day":6,"hour":7,"minute":0},"close":{"day":6,"hour":19,"minute":0}}]},
+    "drivingMinutesComputed": 21,
     "heroImage": "./activities/sift-bake-shop.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Sindi Mannochi"
@@ -485,6 +503,7 @@
       "rafa": "Pizza."
     },
     "hoursStructured": {"weekday":["Monday: 10:00 AM – 11:00 PM","Tuesday: 10:00 AM – 11:00 PM","Wednesday: 10:00 AM – 11:00 PM","Thursday: 10:00 AM – 11:00 PM","Friday: 10:00 AM – 11:00 PM","Saturday: 10:00 AM – 11:00 PM","Sunday: 10:00 AM – 11:00 PM"],"periods":[{"open":{"day":0,"hour":10,"minute":0},"close":{"day":0,"hour":23,"minute":0}},{"open":{"day":1,"hour":10,"minute":0},"close":{"day":1,"hour":23,"minute":0}},{"open":{"day":2,"hour":10,"minute":0},"close":{"day":2,"hour":23,"minute":0}},{"open":{"day":3,"hour":10,"minute":0},"close":{"day":3,"hour":23,"minute":0}},{"open":{"day":4,"hour":10,"minute":0},"close":{"day":4,"hour":23,"minute":0}},{"open":{"day":5,"hour":10,"minute":0},"close":{"day":5,"hour":23,"minute":0}},{"open":{"day":6,"hour":10,"minute":0},"close":{"day":6,"hour":23,"minute":0}}]},
+    "drivingMinutesComputed": 21,
     "heroImage": "./activities/mystic-pizza.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Brian Bledsoe"
@@ -511,6 +530,7 @@
       "rafa": "Burgers and fries."
     },
     "hoursStructured": {"weekday":["Monday: 11:00 AM – 10:00 PM","Tuesday: 11:00 AM – 10:00 PM","Wednesday: 11:00 AM – 10:00 PM","Thursday: 11:00 AM – 10:00 PM","Friday: 11:00 AM – 10:00 PM","Saturday: 11:00 AM – 10:00 PM","Sunday: 10:00 AM – 10:00 PM"],"periods":[{"open":{"day":0,"hour":10,"minute":0},"close":{"day":0,"hour":22,"minute":0}},{"open":{"day":1,"hour":11,"minute":0},"close":{"day":1,"hour":22,"minute":0}},{"open":{"day":2,"hour":11,"minute":0},"close":{"day":2,"hour":22,"minute":0}},{"open":{"day":3,"hour":11,"minute":0},"close":{"day":3,"hour":22,"minute":0}},{"open":{"day":4,"hour":11,"minute":0},"close":{"day":4,"hour":22,"minute":0}},{"open":{"day":5,"hour":11,"minute":0},"close":{"day":5,"hour":22,"minute":0}},{"open":{"day":6,"hour":11,"minute":0},"close":{"day":6,"hour":22,"minute":0}}]},
+    "drivingMinutesComputed": 22,
     "heroImage": "./activities/engine-room.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Engine Room"
@@ -536,6 +556,7 @@
       "rafa": "Fish & chips and a soda."
     },
     "hoursStructured": {"weekday":["Monday: 10:00 AM – 9:00 PM","Tuesday: 10:00 AM – 9:00 PM","Wednesday: 10:00 AM – 9:00 PM","Thursday: 10:00 AM – 9:00 PM","Friday: 10:00 AM – 10:00 PM","Saturday: 9:00 AM – 10:00 PM","Sunday: 9:00 AM – 9:00 PM"],"periods":[{"open":{"day":0,"hour":9,"minute":0},"close":{"day":0,"hour":21,"minute":0}},{"open":{"day":1,"hour":10,"minute":0},"close":{"day":1,"hour":21,"minute":0}},{"open":{"day":2,"hour":10,"minute":0},"close":{"day":2,"hour":21,"minute":0}},{"open":{"day":3,"hour":10,"minute":0},"close":{"day":3,"hour":21,"minute":0}},{"open":{"day":4,"hour":10,"minute":0},"close":{"day":4,"hour":21,"minute":0}},{"open":{"day":5,"hour":10,"minute":0},"close":{"day":5,"hour":22,"minute":0}},{"open":{"day":6,"hour":9,"minute":0},"close":{"day":6,"hour":22,"minute":0}}]},
+    "drivingMinutesComputed": 19,
     "heroImage": "./activities/flanders-fish-market.webp",
     "heroImageSource": "places",
     "heroImageCredit": "Flanders Fish Market & Restaurant"
@@ -561,6 +582,7 @@
       "aurelia": "Nice dinner — sit-down, real menu, not a chain."
     },
     "hoursStructured": {"weekday":["Monday: 8:00 – 10:00 AM, 5:00 – 9:00 PM","Tuesday: 8:00 – 10:00 AM, 5:00 – 9:00 PM","Wednesday: 8:00 – 10:00 AM, 5:00 – 9:00 PM","Thursday: 8:00 – 10:00 AM, 5:00 – 9:00 PM","Friday: 8:00 – 10:00 AM, 5:00 – 10:00 PM","Saturday: 8:00 AM – 10:00 PM","Sunday: 8:00 AM – 9:00 PM"],"periods":[{"open":{"day":0,"hour":8,"minute":0},"close":{"day":0,"hour":21,"minute":0}},{"open":{"day":1,"hour":8,"minute":0},"close":{"day":1,"hour":10,"minute":0}},{"open":{"day":1,"hour":17,"minute":0},"close":{"day":1,"hour":21,"minute":0}},{"open":{"day":2,"hour":8,"minute":0},"close":{"day":2,"hour":10,"minute":0}},{"open":{"day":2,"hour":17,"minute":0},"close":{"day":2,"hour":21,"minute":0}},{"open":{"day":3,"hour":8,"minute":0},"close":{"day":3,"hour":10,"minute":0}},{"open":{"day":3,"hour":17,"minute":0},"close":{"day":3,"hour":21,"minute":0}},{"open":{"day":4,"hour":8,"minute":0},"close":{"day":4,"hour":10,"minute":0}},{"open":{"day":4,"hour":17,"minute":0},"close":{"day":4,"hour":21,"minute":0}},{"open":{"day":5,"hour":8,"minute":0},"close":{"day":5,"hour":10,"minute":0}},{"open":{"day":5,"hour":17,"minute":0},"close":{"day":5,"hour":22,"minute":0}},{"open":{"day":6,"hour":8,"minute":0},"close":{"day":6,"hour":22,"minute":0}}]},
+    "drivingMinutesComputed": 22,
     "heroImage": "./activities/shipwrights-daughter.webp",
     "heroImageSource": "places",
     "heroImageCredit": "The Shipwright's Daughter"

@@ -25,10 +25,11 @@
 //   node app/scripts/fetchHeroImages.mjs --tripId=X --force --dry-run
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
-import { resolve, dirname, join } from 'node:path'
+import { resolve, dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import { extractOgImage } from '../src/lib/ogImage.js'
+import { findTrip } from '../src/data/trips.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const APP_ROOT = resolve(__dirname, '..')
@@ -259,6 +260,70 @@ async function fetchPlacesPhoto(place) {
   return { ok: { bytes, imageUrl: photoUri, source: 'places', credit } }
 }
 
+// --- source: Routes API (traffic-aware driving minutes) ------------
+//
+// Routes API docs:
+//   https://developers.google.com/maps/documentation/routes/compute_route_directions
+//
+// One call per activity (origin = trip.homeBase, destination = activity
+// lat/lng). At $5/1000 elements, a 22-activity --force run is ~$0.11.
+//
+// `departureTime` must be in the future for traffic-aware routing. We
+// use tomorrow at midday ET as a generic "weekend-ish daytime" proxy
+// rather than tying to the trip's actual Saturday — that way we don't
+// have to deal with the trip-already-started case, and ETAs stay
+// stable across re-runs within the same calendar day.
+
+function midDayProxyIso() {
+  // Tomorrow 16:00 UTC = noon ET during EDT. Close enough to
+  // representative weekend traffic; Routes API only needs a future time.
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() + 1)
+  d.setUTCHours(16, 0, 0, 0)
+  return d.toISOString()
+}
+
+async function fetchDrivingMinutes(originLat, originLng, destLat, destLng) {
+  if (!PLACES_KEY) return { skip: 'no API key' }
+
+  const body = {
+    origin: {
+      location: { latLng: { latitude: originLat, longitude: originLng } },
+    },
+    destination: {
+      location: { latLng: { latitude: destLat, longitude: destLng } },
+    },
+    travelMode: 'DRIVE',
+    routingPreference: 'TRAFFIC_AWARE',
+    departureTime: midDayProxyIso(),
+  }
+
+  let res
+  try {
+    res = await fetchJson(
+      'https://routes.googleapis.com/directions/v2:computeRoutes',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': PLACES_KEY,
+          'x-goog-fieldmask': 'routes.duration',
+        },
+        body: JSON.stringify(body),
+      }
+    )
+  } catch (e) {
+    return { skip: `routes: ${e.message}` }
+  }
+
+  const dur = res.routes?.[0]?.duration
+  if (!dur || typeof dur !== 'string') return { skip: 'no duration in response' }
+  // Format is e.g. "1234s" — strip the trailing 's' and convert.
+  const seconds = parseFloat(dur)
+  if (!Number.isFinite(seconds)) return { skip: `unparseable duration: ${dur}` }
+  return { minutes: Math.round(seconds / 60) }
+}
+
 // --- source: og:image (fallback) -----------------------------------
 async function tryOgImage(activity) {
   if (!activity.officialUrl) return { skip: 'no officialUrl' }
@@ -286,7 +351,7 @@ async function tryOgImage(activity) {
 }
 
 // --- per-activity pipeline -----------------------------------------
-async function processActivity(activity, mutationsForFile, closures) {
+async function processActivity(activity, mutationsForFile, closures, drivingMutations, homeBase) {
   const id = activity.id
   if (activity.heroImage && !force) return { skip: 'already has heroImage' }
 
@@ -312,6 +377,24 @@ async function processActivity(activity, mutationsForFile, closures) {
       placeName: meta.placeName,
     })
     return { closed: meta.businessStatus, placeName: meta.placeName }
+  }
+
+  // Phase 1.25: driving minutes (independent of image/hours). Runs once
+  // per activity per --force; ~$0.005/call. Opt out per activity with
+  // `noAutoDriving: true`.
+  if (
+    homeBase &&
+    !activity.noAutoDriving &&
+    activity.lat != null &&
+    activity.lng != null
+  ) {
+    const r = await fetchDrivingMinutes(
+      homeBase.lat,
+      homeBase.lng,
+      activity.lat,
+      activity.lng
+    )
+    if (r.minutes != null) drivingMutations.set(id, r.minutes)
   }
 
   // Phase 1.5: opt-out. Activities flagged `noAutoHero` keep their
@@ -545,6 +628,49 @@ function applyHoursStructured(raw, id, value) {
   return { raw: raw.slice(0, insertAt) + newLine + raw.slice(insertAt), applied: true }
 }
 
+// Insert or replace the activity's `drivingMinutesComputed` field. Same
+// brace-scoping pattern as applyHoursStructured. Inserted directly
+// before `heroImage` so the on-disk shape stays predictable.
+function applyDrivingMinutesComputed(raw, id, value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return { raw, applied: false, reason: 'value must be a finite number' }
+  }
+  const range = findActivityObjectRange(raw, id)
+  if (!range) return { raw, applied: false, reason: 'activity object not found' }
+  const { objOpen, objClose } = range
+  const objText = raw.slice(objOpen, objClose + 1)
+
+  const KEY = '"drivingMinutesComputed":'
+  const keyIdx = objText.indexOf(KEY)
+  if (keyIdx !== -1) {
+    // Replace the existing numeric value. Walk past colon + whitespace,
+    // then scan an optional minus + digits.
+    let i = keyIdx + KEY.length
+    while (i < objText.length && (objText[i] === ' ' || objText[i] === '\t')) i++
+    let j = i
+    if (objText[j] === '-') j++
+    while (j < objText.length && objText.charCodeAt(j) >= 48 && objText.charCodeAt(j) <= 57) j++
+    const existing = objText.slice(i, j)
+    if (existing === String(value)) return { raw, applied: false, reason: 'no change' }
+    const absStart = objOpen + i
+    const absEnd = objOpen + j
+    return {
+      raw: raw.slice(0, absStart) + String(value) + raw.slice(absEnd),
+      applied: true,
+    }
+  }
+
+  const heroIdx = objText.indexOf('"heroImage":')
+  if (heroIdx === -1) {
+    return { raw, applied: false, reason: 'heroImage anchor not found for insert' }
+  }
+  const lineStart = objText.lastIndexOf('\n', heroIdx) + 1
+  const indent = objText.slice(lineStart, heroIdx)
+  const newLine = `${indent}"drivingMinutesComputed": ${value},\n`
+  const insertAt = objOpen + lineStart
+  return { raw: raw.slice(0, insertAt) + newLine + raw.slice(insertAt), applied: true }
+}
+
 // Remove an entire activity object from the JSON array, including its
 // trailing comma + newline. Uses brace matching so nested object
 // braces (descriptions, hoursStructured) don't confuse the scan.
@@ -630,10 +756,23 @@ async function processFile(filePath) {
 
   const mutations = new Map() // id → { heroImage, heroImageSource, heroImageCredit, hoursStructured }
   const closures = new Map() // id → { businessStatus, placeName }
+  const drivingMutations = new Map() // id → minutes
+
+  // Each seed file maps 1:1 to a trip id via its filename. The trip's
+  // structured `homeBase` is the origin for all driving-time estimates.
+  // Falls back to null if the trip isn't found in trips.js (e.g. a
+  // brand-new seed file without trip metadata yet) — the Routes pass
+  // simply no-ops in that case.
+  const tripId = basename(filePath, '.json')
+  const trip = findTrip(tripId)
+  const homeBase = trip?.homeBase || null
+  if (!homeBase) {
+    console.log(`  (no homeBase on trip "${tripId}" — driving minutes skipped)`)
+  }
 
   for (const a of activities) {
     if (onlyTripId && a.tripId !== onlyTripId) continue
-    const result = await processActivity(a, mutations, closures)
+    const result = await processActivity(a, mutations, closures, drivingMutations, homeBase)
     if (result.skip) {
       console.log(`  - ${a.id}: skip (${result.skip})`)
     } else if (result.closed) {
@@ -662,14 +801,14 @@ async function processFile(filePath) {
     }
   }
 
-  if (mutations.size === 0 && closures.size === 0) {
+  if (mutations.size === 0 && closures.size === 0 && drivingMutations.size === 0) {
     console.log(`  (no JSON changes for ${filePath})`)
     return
   }
 
-  // Apply mutations first (hero block + hoursStructured), then removals.
-  // Doing removals last means in-flight mutations don't have to track
-  // which activities just vanished.
+  // Apply mutations first (hero block + hoursStructured + driving), then
+  // removals. Doing removals last means in-flight mutations don't have
+  // to track which activities just vanished.
   let nextRaw = raw0
   let heroApplied = 0
   let hoursApplied = 0
@@ -687,6 +826,21 @@ async function processFile(filePath) {
       hoursApplied += 1
     } else if (r2.reason !== 'no change' && r2.reason !== 'nothing to insert') {
       console.warn(`  ! ${id} hours: ${r2.reason}`)
+    }
+  }
+
+  // Driving-minutes pass — independent of hero/hours, so closed
+  // activities still get filtered later. Skipping ones that ended up
+  // in `closures` since they're about to be deleted.
+  let drivingApplied = 0
+  for (const [id, minutes] of drivingMutations) {
+    if (closures.has(id)) continue
+    const r = applyDrivingMinutesComputed(nextRaw, id, minutes)
+    if (r.applied) {
+      nextRaw = r.raw
+      drivingApplied += 1
+    } else if (r.reason !== 'no change') {
+      console.warn(`  ! ${id} driving: ${r.reason}`)
     }
   }
 
@@ -713,11 +867,11 @@ async function processFile(filePath) {
   if (!dryRun) {
     writeFileSync(filePath, nextRaw)
     console.log(
-      `  wrote ${heroApplied} hero updates, ${hoursApplied} hours updates, ${removed} removals to ${filePath}`
+      `  wrote ${heroApplied} hero, ${hoursApplied} hours, ${drivingApplied} driving, ${removed} removals to ${filePath}`
     )
   } else {
     console.log(
-      `  [dry-run] would apply ${heroApplied} hero, ${hoursApplied} hours, ${removed} removals to ${filePath}`
+      `  [dry-run] would apply ${heroApplied} hero, ${hoursApplied} hours, ${drivingApplied} driving, ${removed} removals to ${filePath}`
     )
   }
 }
@@ -735,6 +889,7 @@ async function main() {
 
 // Export hooks for unit testing.
 export {
+  applyDrivingMinutesComputed,
   applyHeroBlock,
   applyHoursStructured,
   findMatchingCloseBrace,

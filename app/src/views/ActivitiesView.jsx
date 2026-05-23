@@ -5,6 +5,7 @@ import {
   getActivitiesForTrip,
   filterActivities,
   descriptionFor,
+  drivingMinutesFor,
   groupByCategory,
   CATEGORY_LABEL,
   isClosedToday,
@@ -364,7 +365,10 @@ function ActivityCard({ activity, traveler }) {
               opacity: 0.6,
             }}
           >
-            {activity.drivingMinutes != null ? `${activity.drivingMinutes} MIN` : ''}
+            {(() => {
+              const m = drivingMinutesFor(activity)
+              return m != null ? `${m} MIN` : ''
+            })()}
           </span>
         </div>
 
@@ -641,9 +645,8 @@ function structuralFallback(activity) {
   // Reader has no description — render a neutral one-liner from the
   // structural fields so the card still says something useful.
   const parts = []
-  if (activity.drivingMinutes != null) {
-    parts.push(`${activity.drivingMinutes} min drive`)
-  }
+  const m = drivingMinutesFor(activity)
+  if (m != null) parts.push(`${m} min drive`)
   parts.push(CATEGORY_LABEL[activity.category] || activity.category)
   return parts.join(' · ')
 }

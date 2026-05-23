@@ -31,6 +31,18 @@
 //     "The Shops at Mohegan Sun" resolving to a single store within
 //     the resort rather than the resort itself). The seed author is
 //     asserting the Place ID is correct — no validation runs.
+//
+//   drivingMinutesComputed?: number
+//     Written by the fetcher per --force run via Google Routes API,
+//     measured from the trip's `homeBase` to the activity lat/lng with
+//     a traffic-aware ETA at a future midday slot. UI prefers this
+//     over the hand-entered `drivingMinutes`.
+//
+//   noAutoDriving?: boolean
+//     When true, the fetcher skips the Routes API call for this
+//     activity. Use when the route is non-driving (ferry-only, on the
+//     property the family is staying at, etc.) or the hand-entered
+//     value is more accurate than what Routes returns.
 
 const ACTIVITY_MODULES = import.meta.glob('./*.json', { eager: true })
 
@@ -158,6 +170,12 @@ export const CATEGORY_LABEL = {
   meal_dinner: 'Dinner',
 }
 
+// The effective driving-time value for an activity. Routes API-computed
+// value takes precedence; falls back to the hand-entered seed value.
+export function drivingMinutesFor(activity) {
+  return activity?.drivingMinutesComputed ?? activity?.drivingMinutes ?? null
+}
+
 export function groupByCategory(activities) {
   const buckets = new Map()
   for (const a of activities) {
@@ -167,7 +185,7 @@ export function groupByCategory(activities) {
   // Sort within each category by driving time ascending, then name.
   for (const arr of buckets.values()) {
     arr.sort((x, y) => {
-      const d = (x.drivingMinutes || 0) - (y.drivingMinutes || 0)
+      const d = (drivingMinutesFor(x) ?? 0) - (drivingMinutesFor(y) ?? 0)
       if (d !== 0) return d
       return (x.name || '').localeCompare(y.name || '')
     })
