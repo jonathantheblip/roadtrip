@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, MapPin, Phone, Clock, AlertCircle, Sparkles } from 'lucide-react'
-import { TRAVELERS } from '../data/travelers'
+import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import {
   getActivitiesForTrip,
   filterActivities,
@@ -192,8 +192,13 @@ function FilterChips({ selected, onToggle, onToggleEveryone }) {
                 padding: '6px 12px',
                 borderRadius: 14,
                 border: '1px solid',
-                borderColor: on ? TRAVELERS[id]?.color || 'var(--accent)' : 'var(--border)',
-                background: on ? TRAVELERS[id]?.color || 'var(--accent)' : 'transparent',
+                // Use TRAVELER_DOT (Jonathan cobalt, Helen forest, Aurelia
+                // pink, Rafa oxblood) to match the person-tag chips used in
+                // StopDetail / ThreadedMemories / PostcardComposer.
+                // TRAVELERS[id].color is a legacy integration-attribution
+                // color, not the chip color.
+                borderColor: on ? TRAVELER_DOT[id] || 'var(--accent)' : 'var(--border)',
+                background: on ? TRAVELER_DOT[id] || 'var(--accent)' : 'transparent',
                 color: on ? '#FBF8F2' : 'inherit',
                 cursor: 'pointer',
                 fontFamily: 'Inter Tight, system-ui, sans-serif',
