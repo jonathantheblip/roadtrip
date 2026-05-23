@@ -22,7 +22,9 @@
       "rafa": "Waterslides, splash pad, mini golf, carousel, arcade. Every kid lever in one park."
     },
     "notes": "Parking weekends $40 incl. admission. Walk-in $10. Opening weekend will be busy.",
-    "heroImage": null
+    "heroImage": "./activities/ocean-beach-park.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Preston Doc Toliver"
   },
   {
     "id": "niantic-bay-boardwalk",
@@ -44,7 +46,9 @@
       "aurelia": "Long flat walk for content. Ice cream at the end in town.",
       "rafa": "Beach access points along the way. Easy to detour into the sand."
     },
-    "heroImage": null
+    "heroImage": "./activities/niantic-bay-boardwalk.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Jeffrey Dorwart"
   },
   {
     "id": "eastern-point-beach",
@@ -66,7 +70,9 @@
       "rafa": "Smaller, more manageable than Ocean Beach."
     },
     "notes": "Groton residents free with sticker; non-residents pay parking.",
-    "heroImage": null
+    "heroImage": "./activities/eastern-point-beach.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Victoria Pogonets"
   },
   {
     "id": "mystic-aquarium",
@@ -91,7 +97,9 @@
       "rafa": "Beluga whales, African penguins, sea lion show, plus a Jurassic Giants exhibit with dinosaurs that move and roar."
     },
     "notes": "Tickets cheaper purchased in advance online.",
-    "heroImage": null
+    "heroImage": "./activities/mystic-aquarium.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Brian E. Flynn"
   },
   {
     "id": "submarine-force-museum",
@@ -115,7 +123,9 @@
       "rafa": "You walk inside an actual nuclear submarine. The whole thing."
     },
     "notes": "Navy-run site. Federal holiday closures common — call (860) 694-3174 before driving over Monday.",
-    "heroImage": null
+    "heroImage": "./activities/submarine-force-museum.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Luis Santiago"
   },
   {
     "id": "mystic-seaport-museum",
@@ -140,7 +150,9 @@
       "rafa": "Climb on real tall ships. Watch ships getting rebuilt in the shipyard."
     },
     "notes": "Tickets ~$30 adult / $25 youth / $22 child. Two-day pass +$10.",
-    "heroImage": "./activities/mystic-seaport-museum.webp"
+    "heroImage": "./activities/mystic-seaport-museum.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Mystic Seaport Museum"
   },
   {
     "id": "lyman-allyn-art-museum",
@@ -166,7 +178,9 @@
       "rafa": "Victorian toys and dollhouse collection on the second floor."
     },
     "notes": "New London residents free. Blue Star Museum program starts Memorial Day weekend (free for active military families).",
-    "heroImage": null
+    "heroImage": "./activities/lyman-allyn-art-museum.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Jerry Brown"
   },
   {
     "id": "downtown-mystic",
@@ -188,7 +202,9 @@
       "aurelia": "Pastel storefronts. Mystic Drawbridge Ice Cream. Bank Square Books. The bridge that opens for boats — the visually viral block.",
       "rafa": "Watch the drawbridge actually lift up."
     },
-    "heroImage": null
+    "heroImage": "./activities/downtown-mystic.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "JEFFREY HEIM"
   },
   {
     "id": "olde-mistick-village",
@@ -211,7 +227,9 @@
       "aurelia": "40+ independent shops, no chains. Pet-friendly walking village. Actually shoppable, not a mall.",
       "rafa": "Wide pedestrian paths, duck pond, room to run between stores."
     },
-    "heroImage": "./activities/olde-mistick-village.webp"
+    "heroImage": "./activities/olde-mistick-village.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Olde Mistick Village"
   },
   {
     "id": "downtown-new-london",
@@ -232,7 +250,9 @@
       "helen": "Garde Arts Center, Custom House Maritime, ferry terminal. Small but real downtown.",
       "aurelia": "Bank Street indie shops, Hygienic Art Park, easy walk-around block."
     },
-    "heroImage": null
+    "heroImage": "./activities/downtown-new-london.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "CHAD STEWART"
   },
   {
     "id": "kids-quest-mohegan-sun",
@@ -317,7 +337,9 @@
       "aurelia": "Hot Now light is the only timing that matters.",
       "rafa": "Original glazed. Done."
     },
-    "heroImage": null
+    "heroImage": "./activities/krispy-kreme-mohegan-sun.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Jim Fox"
   },
   {
     "id": "tuscany-mohegan-sun",
@@ -342,7 +364,9 @@
       "rafa": "Pasta. Chicken parm. Big space."
     },
     "notes": "Reservations via OpenTable or 860-862-3236. Sat/Sun Bottomless Brunch is the move if arriving before tournament.",
-    "heroImage": null
+    "heroImage": "./activities/tuscany-mohegan-sun.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Todd English's Tuscany"
   },
   {
     "id": "muddy-waters-cafe",
@@ -365,7 +389,9 @@
       "aurelia": "Nutella latte, peanut butter latte, breakfast bagels.",
       "rafa": "Bacon, egg, and cheese on a bagel. Done."
     },
-    "heroImage": null
+    "heroImage": "./activities/muddy-waters-cafe.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Ralph Cherubin"
   },
   {
     "id": "washington-street-coffee",
@@ -385,7 +411,9 @@
       "jonathan": "Quieter, room to sit, pastries.",
       "helen": "Coffee house with space to read. Lower-energy morning."
     },
-    "heroImage": null
+    "heroImage": "./activities/washington-street-coffee.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Matt Guthrie"
   },
   {
     "id": "sift-bake-shop",
@@ -406,7 +434,9 @@
       "aurelia": "The Mystic pastry case. Photogenic.",
       "rafa": "Croissants and cookies the size of his face."
     },
-    "heroImage": null
+    "heroImage": "./activities/sift-bake-shop.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Sindi Mannochi"
   },
   {
     "id": "mystic-pizza",
@@ -429,7 +459,9 @@
       "aurelia": "The movie pizza place. Obvious.",
       "rafa": "Pizza."
     },
-    "heroImage": null
+    "heroImage": "./activities/mystic-pizza.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Brian Bledsoe"
   },
   {
     "id": "engine-room",
@@ -452,7 +484,9 @@
       "aurelia": "Milkshakes and burgers, indoor/outdoor seating.",
       "rafa": "Burgers and fries."
     },
-    "heroImage": null
+    "heroImage": "./activities/engine-room.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Engine Room"
   },
   {
     "id": "flanders-fish-market",
@@ -474,28 +508,9 @@
       "helen": "Cod fish & chips, fresh whitefish, retail counter if you want to take it home.",
       "rafa": "Fish & chips and a soda."
     },
-    "heroImage": null
-  },
-  {
-    "id": "bartlebys-cafe",
-    "tripId": "volleyball-2026",
-    "name": "Bartleby's Café",
-    "address": "134 State St, New London, CT 06320",
-    "lat": 41.3553,
-    "lng": -72.0961,
-    "category": "meal_lunch",
-    "venue": "new_london_area",
-    "source": "seed",
-    "hours": "Confirm — typically lunch hours weekdays + Sat",
-    "hoursVerified": false,
-    "drivingMinutes": 3,
-    "tags": ["jonathan", "helen", "aurelia"],
-    "descriptions": {
-      "jonathan": "Walking distance from the house. Quick.",
-      "helen": "Sandwiches, soups, strong vegetarian selection. Indie bookstore vibe.",
-      "aurelia": "Cozy café with a book section."
-    },
-    "heroImage": null
+    "heroImage": "./activities/flanders-fish-market.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "Flanders Fish Market & Restaurant"
   },
   {
     "id": "shipwrights-daughter",
@@ -517,6 +532,8 @@
       "helen": "Local farm-driven, real vegetarian menu, whitefish in the rotation.",
       "aurelia": "Nice dinner — sit-down, real menu, not a chain."
     },
-    "heroImage": null
+    "heroImage": "./activities/shipwrights-daughter.webp",
+    "heroImageSource": "places",
+    "heroImageCredit": "The Shipwright's Daughter"
   }
 ]
