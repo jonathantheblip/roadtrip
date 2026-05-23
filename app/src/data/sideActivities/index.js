@@ -6,6 +6,23 @@
 // surface, not in a D1 table. v2 will migrate to a dedicated
 // `activities` table when Share-In needs runtime writes from
 // non-owners. See SIDE_ACTIVITIES_BUILD.md for the phasing.
+//
+// Seed schema notes (JSON itself can't carry comments — schema docs
+// live here instead):
+//
+//   noAutoHero?: boolean
+//     When true, app/scripts/fetchHeroImages.mjs skips the photo fetch
+//     for this activity but still captures businessStatus +
+//     hoursStructured. Set this for venues where the only Places
+//     photos are marketing banners with text overlays (Mohegan Sun's
+//     Kids/Cyber Quest are the original cases).
+//
+//   placeIdOverride?: string | null
+//     Reserved. Not wired today. Lets a future enrichment pass bypass
+//     the text-search disambiguation step and resolve a venue directly
+//     by Google Place ID — useful when the address-driven search lands
+//     on the wrong place (e.g. "The Shops at Mohegan Sun" resolving
+//     to a specific store within the complex).
 
 const ACTIVITY_MODULES = import.meta.glob('./*.json', { eager: true })
 

@@ -9,6 +9,7 @@ import {
   CATEGORY_LABEL,
   isClosedToday,
 } from '../data/sideActivities'
+import { computeOpenState, openStateColor } from '../lib/openState'
 
 // Things to do — trip-scoped activity menu. Filter chips at the top
 // (4 family members + Everyone, strict intersection); category-grouped
@@ -494,7 +495,25 @@ function TypographicHeader({ activity }) {
 }
 
 function HoursLine({ activity }) {
-  if (!activity.hours) return null
+  // Prefer the live computed state when Places gave us structured
+  // periods. Falls back to the human-curated `activity.hours` string
+  // when no structured data is available.
+  const hasStructured = Array.isArray(activity?.hoursStructured?.periods)
+    && activity.hoursStructured.periods.length > 0
+  const state = computeOpenState(activity)
+
+  // Nothing to render at all if there's neither structured data nor a
+  // free-text hours string.
+  if (!hasStructured && !activity.hours) return null
+
+  // "Call to confirm" still fires when hours haven't been verified —
+  // but only if we don't have structured Places data. If Places gave
+  // us periods, we trust them and skip the confirm prompt.
+  const showConfirm = activity.hoursVerified === false && !hasStructured
+
+  const dotColor = openStateColor(state.status)
+  const labelText = hasStructured ? state.label : (activity.hours || state.label)
+
   return (
     <div
       style={{
@@ -507,9 +526,25 @@ function HoursLine({ activity }) {
         color: 'var(--muted)',
       }}
     >
-      <Clock size={12} style={{ marginTop: 3, flexShrink: 0, opacity: 0.7 }} />
-      <span style={{ flex: 1 }}>{activity.hours}</span>
-      {activity.hoursVerified === false && (
+      {hasStructured ? (
+        <span
+          aria-hidden="true"
+          title={`Status: ${state.status}`}
+          style={{
+            display: 'inline-block',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: dotColor,
+            marginTop: 5,
+            flexShrink: 0,
+          }}
+        />
+      ) : (
+        <Clock size={12} style={{ marginTop: 3, flexShrink: 0, opacity: 0.7 }} />
+      )}
+      <span style={{ flex: 1 }}>{labelText}</span>
+      {showConfirm && (
         <span
           title="Call to confirm — hours not verified for the trip dates"
           style={{

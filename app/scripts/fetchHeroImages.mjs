@@ -24,7 +24,7 @@
 // Or directly (from repo root):
 //   node app/scripts/fetchHeroImages.mjs --tripId=X --force --dry-run
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
@@ -72,7 +72,11 @@ if (!PLACES_KEY) {
 }
 
 // --- fetch helpers --------------------------------------------------
-const TIMEOUT_MS = 6000
+// 8s per call — Places search calls occasionally exceed 6s in practice
+// (the previous Eastern Point Beach run aborted at 6s). Photo media
+// fetches share the same budget; signed lh3.googleusercontent.com URLs
+// usually return in well under a second.
+const TIMEOUT_MS = 8000
 const UA =
   'Mozilla/5.0 (compatible; RoadtripHeroFetch/1.0; +https://jonathantheblip.github.io/roadtrip/)'
 
@@ -130,20 +134,28 @@ const OG_URL_REJECT = /logo|favicon|icon-\d|apple-touch/i
 //   https://developers.google.com/maps/documentation/places/web-service/text-search
 //   https://developers.google.com/maps/documentation/places/web-service/place-photos
 //
-// Two-step flow:
-//   1. POST /v1/places:searchText with locationBias around activity
-//      lat/lng so a generic query ("Ocean Beach Park") doesn't return
-//      the San Francisco one. Field mask requests only the photo
-//      metadata we need.
-//   2. GET  /v1/{photo.name}/media?skipHttpRedirect=true returns JSON
-//      with a signed photoUri pointing at lh3.googleusercontent.com.
-//      Fetching that URL gets the bytes without a redirect chain that
-//      could leak the API key onward.
+// Two-phase flow per activity:
+//   1. fetchPlacesMetadata: POST /v1/places:searchText with locationBias
+//      around activity lat/lng. Field mask requests photos +
+//      businessStatus + regularOpeningHours so we can act on closures
+//      and persist structured hours.
+//   2. fetchPlacesPhoto: GET /v1/{photo.name}/media?skipHttpRedirect=true
+//      returns JSON with a signed photoUri pointing at
+//      lh3.googleusercontent.com. Fetching that URL gets the bytes
+//      without a redirect chain that could leak the API key onward.
 
-async function tryPlacesImage(activity) {
+function extractHoursStructured(place) {
+  const oh = place?.regularOpeningHours
+  if (!oh) return null
+  return {
+    weekday: oh.weekdayDescriptions || [],
+    periods: oh.periods || [],
+  }
+}
+
+async function fetchPlacesMetadata(activity) {
   if (!PLACES_KEY) return { skip: 'no API key' }
 
-  // 1. Text Search
   const textQuery = [activity.name, activity.address].filter(Boolean).join(', ')
   const body = { textQuery, maxResultCount: 1 }
   if (activity.lat != null && activity.lng != null) {
@@ -162,7 +174,8 @@ async function tryPlacesImage(activity) {
       headers: {
         'content-type': 'application/json',
         'x-goog-api-key': PLACES_KEY,
-        'x-goog-fieldmask': 'places.id,places.displayName,places.photos',
+        'x-goog-fieldmask':
+          'places.id,places.displayName,places.photos,places.businessStatus,places.regularOpeningHours',
       },
       body: JSON.stringify(body),
     })
@@ -173,13 +186,22 @@ async function tryPlacesImage(activity) {
   const places = searchRes.places || []
   if (places.length === 0) return { skip: 'no places result' }
   const place = places[0]
+  return {
+    place,
+    placeName: place.displayName?.text || null,
+    businessStatus: place.businessStatus || null,
+    hoursStructured: extractHoursStructured(place),
+    openNow: place.regularOpeningHours?.openNow ?? null,
+  }
+}
+
+async function fetchPlacesPhoto(place) {
   const photos = place.photos || []
   if (photos.length === 0) return { skip: 'place has no photos' }
 
   const photo = photos[0]
   const credit = photo.authorAttributions?.[0]?.displayName || null
 
-  // 2. Resolve photo media URL
   let mediaInfo
   try {
     mediaInfo = await fetchJson(
@@ -193,8 +215,6 @@ async function tryPlacesImage(activity) {
   const photoUri = mediaInfo.photoUri
   if (!photoUri) return { skip: 'places media: no photoUri in response' }
 
-  // 3. Fetch the actual bytes from the signed URL (no auth header
-  // needed here — the signed URL embeds its own auth).
   let bytes
   try {
     bytes = await fetchBytes(photoUri)
@@ -202,15 +222,7 @@ async function tryPlacesImage(activity) {
     return { skip: `photo fetch: ${e.message}` }
   }
 
-  return {
-    ok: {
-      bytes,
-      imageUrl: photoUri,
-      source: 'places',
-      credit,
-      placeName: place.displayName?.text || null,
-    },
-  }
+  return { ok: { bytes, imageUrl: photoUri, source: 'places', credit } }
 }
 
 // --- source: og:image (fallback) -----------------------------------
@@ -240,22 +252,92 @@ async function tryOgImage(activity) {
 }
 
 // --- per-activity pipeline -----------------------------------------
-async function processActivity(activity, mutationsForFile) {
+async function processActivity(activity, mutationsForFile, closures) {
   const id = activity.id
   if (activity.heroImage && !force) return { skip: 'already has heroImage' }
 
-  // Source chain: Places primary, og fallback.
-  const places = await tryPlacesImage(activity)
-  let bytes, imageUrl, source, credit, placeName
-  if (places.ok) {
-    ({ bytes, imageUrl, source, credit, placeName } = places.ok)
+  // Phase 1: Places metadata. We hit Places even when og could resolve
+  // the photo, because we want businessStatus (closure detection) and
+  // regularOpeningHours (structured hours for the card).
+  const meta = await fetchPlacesMetadata(activity)
+  const hoursStructured = meta.skip ? null : meta.hoursStructured
+
+  // Closure detection — caller will remove the activity entirely.
+  if (
+    !meta.skip &&
+    meta.businessStatus &&
+    meta.businessStatus !== 'OPERATIONAL'
+  ) {
+    closures.set(id, {
+      businessStatus: meta.businessStatus,
+      placeName: meta.placeName,
+    })
+    return { closed: meta.businessStatus, placeName: meta.placeName }
+  }
+
+  // Phase 1.5: opt-out. Activities flagged `noAutoHero` keep their
+  // photo state untouched (typically because the only Places photos
+  // are marketing banners with text overlays). We still want
+  // hoursStructured + closure detection on these, so the metadata
+  // pass above ran — only the image fetch is skipped.
+  if (activity.noAutoHero) {
+    if (hoursStructured) {
+      mutationsForFile.set(id, {
+        heroImage: null,
+        heroImageSource: null,
+        heroImageCredit: null,
+        hoursStructured,
+      })
+      return {
+        partial: 'noAutoHero — hours only',
+        hoursStructured,
+        placeName: meta.placeName,
+      }
+    }
+    return { skip: 'noAutoHero (no hours from Places)' }
+  }
+
+  // Phase 2: image. Try Places photo first, then og fallback.
+  let bytes, imageUrl, source, credit
+  let placeFailReason = null
+  let ogFailReason = null
+
+  if (!meta.skip) {
+    const ph = await fetchPlacesPhoto(meta.place)
+    if (ph.ok) {
+      ({ bytes, imageUrl, source, credit } = ph.ok)
+    } else {
+      placeFailReason = ph.skip
+    }
   } else {
+    placeFailReason = meta.skip
+  }
+
+  if (!bytes) {
     const og = await tryOgImage(activity)
     if (og.ok) {
       ({ bytes, imageUrl, source, credit } = og.ok)
     } else {
-      return { error: `places: ${places.skip} | og: ${og.skip}` }
+      ogFailReason = og.skip
     }
+  }
+
+  // No image found. Still persist hoursStructured if Places gave us any.
+  if (!bytes) {
+    if (hoursStructured) {
+      mutationsForFile.set(id, {
+        heroImage: null,
+        heroImageSource: null,
+        heroImageCredit: null,
+        hoursStructured,
+      })
+      return {
+        partial: `no image (places: ${placeFailReason} | og: ${ogFailReason})`,
+        hoursStructured,
+        placeName: meta.placeName,
+      }
+    }
+    return { error: `places: ${placeFailReason} | og: ${ogFailReason}` }
   }
 
   // sharp → webp (max 1200w, never upscale). Width gate catches the
@@ -263,9 +345,9 @@ async function processActivity(activity, mutationsForFile) {
   let webp
   try {
     const input = sharp(bytes)
-    const meta = await input.metadata()
-    if ((meta.width || 0) < 600) {
-      return { error: `${source} source too small (${meta.width}px wide)` }
+    const m = await input.metadata()
+    if ((m.width || 0) < 600) {
+      return { error: `${source} source too small (${m.width}px wide)` }
     }
     webp = await input
       .resize({ width: 1200, withoutEnlargement: true })
@@ -286,8 +368,20 @@ async function processActivity(activity, mutationsForFile) {
     heroImage: heroPath,
     heroImageSource: source,
     heroImageCredit: credit,
+    hoursStructured,
   })
-  return { ok: { imageUrl, bytes: webp.length, heroPath, source, credit, placeName } }
+  return {
+    ok: {
+      imageUrl,
+      bytes: webp.length,
+      heroPath,
+      source,
+      credit,
+      placeName: meta.placeName,
+      hoursStructured,
+      openNow: meta.openNow,
+    },
+  }
 }
 
 // --- file mutation -------------------------------------------------
@@ -305,14 +399,163 @@ function formatVal(v) {
   return v == null ? 'null' : JSON.stringify(v)
 }
 
-function applyHeroBlock(raw, id, fields) {
+// JSON-aware brace matcher: given the position of an opening `{`,
+// return the position of the matching `}`. Tracks string state so
+// braces inside strings don't count.
+function findMatchingCloseBrace(text, openBraceIdx) {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = openBraceIdx; i < text.length; i++) {
+    const c = text[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (c === '\\') {
+      escaped = true
+      continue
+    }
+    if (c === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+    if (c === '{') depth++
+    else if (c === '}') {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+// Resolve the absolute range of the activity object that contains
+// `"id": "<id>"`. Returns null if the id can't be found or its
+// surrounding braces don't balance.
+function findActivityObjectRange(raw, id) {
+  const idAnchor = raw.indexOf(`"id": ${JSON.stringify(id)}`)
+  if (idAnchor === -1) return null
+  const objOpen = raw.lastIndexOf('{', idAnchor)
+  if (objOpen === -1) return null
+  const objClose = findMatchingCloseBrace(raw, objOpen)
+  if (objClose === -1) return null
+  return { objOpen, objClose }
+}
+
+// Insert or replace the activity's `hoursStructured` field, placed
+// immediately before its `heroImage` line. Compact single-line JSON
+// keeps the diff manageable — this field is machine data, not
+// human-curated text.
+//
+// All lookups are scoped to the *current activity's* object via
+// findActivityObjectRange. An earlier version searched from the id
+// anchor through end-of-file, which caused a cascading bug: when this
+// activity had no hoursStructured but a later activity did, the
+// indexOf landed on the later one and mutated the wrong block.
+function applyHoursStructured(raw, id, value) {
+  const range = findActivityObjectRange(raw, id)
+  if (!range) return { raw, applied: false, reason: 'activity object not found' }
+  const { objOpen, objClose } = range
+  const objText = raw.slice(objOpen, objClose + 1)
+
+  // Existing field? Find its key, then bracket-match the value object —
+  // all within objText so we never reach across an activity boundary.
+  const existingKeyIdx = objText.indexOf('"hoursStructured":')
+  if (existingKeyIdx !== -1) {
+    let openIdx = existingKeyIdx + '"hoursStructured":'.length
+    while (openIdx < objText.length && objText[openIdx] !== '{') openIdx++
+    if (objText[openIdx] !== '{') {
+      return { raw, applied: false, reason: 'hoursStructured value brace not found' }
+    }
+    const closeIdx = findMatchingCloseBrace(objText, openIdx)
+    if (closeIdx === -1) {
+      return { raw, applied: false, reason: 'hoursStructured close brace not found' }
+    }
+    if (value == null) {
+      const lineStart = objText.lastIndexOf('\n', existingKeyIdx) + 1
+      let lineEnd = closeIdx + 1
+      if (objText[lineEnd] === ',') lineEnd++
+      if (objText[lineEnd] === '\n') lineEnd++
+      const absStart = objOpen + lineStart
+      const absEnd = objOpen + lineEnd
+      return { raw: raw.slice(0, absStart) + raw.slice(absEnd), applied: true }
+    }
+    const absOpen = objOpen + openIdx
+    const absClose = objOpen + closeIdx + 1
+    const literal = JSON.stringify(value)
+    if (raw.slice(absOpen, absClose) === literal) {
+      return { raw, applied: false, reason: 'no change' }
+    }
+    return {
+      raw: raw.slice(0, absOpen) + literal + raw.slice(absClose),
+      applied: true,
+    }
+  }
+
+  // Insert: place the field on its own line directly before `heroImage`.
+  if (value == null) return { raw, applied: false, reason: 'nothing to insert' }
+  const heroIdx = objText.indexOf('"heroImage":')
+  if (heroIdx === -1) {
+    return { raw, applied: false, reason: 'heroImage anchor not found for insert' }
+  }
+  const lineStart = objText.lastIndexOf('\n', heroIdx) + 1
+  const indent = objText.slice(lineStart, heroIdx)
+  const newLine = `${indent}"hoursStructured": ${JSON.stringify(value)},\n`
+  const insertAt = objOpen + lineStart
+  return { raw: raw.slice(0, insertAt) + newLine + raw.slice(insertAt), applied: true }
+}
+
+// Remove an entire activity object from the JSON array, including its
+// trailing comma + newline. Uses brace matching so nested object
+// braces (descriptions, hoursStructured) don't confuse the scan.
+function removeActivityBlock(raw, id) {
   const idAnchor = raw.indexOf(`"id": ${JSON.stringify(id)}`)
   if (idAnchor === -1) return { raw, applied: false, reason: 'id not found' }
-  const slice = raw.slice(idAnchor)
-  const m = slice.match(HERO_BLOCK_RE)
+
+  // Find the opening `{` for this activity object (the nearest `{`
+  // before the id anchor).
+  const openBrace = raw.lastIndexOf('{', idAnchor)
+  if (openBrace === -1) return { raw, applied: false, reason: 'open brace not found' }
+
+  // Find the matching `}` for this activity.
+  const closeBrace = findMatchingCloseBrace(raw, openBrace)
+  if (closeBrace === -1) {
+    return { raw, applied: false, reason: 'close brace not found' }
+  }
+
+  // Trim leading indent of the activity line + trailing comma/newline
+  // so we don't leave orphan whitespace or a double comma. Two cases:
+  //   - normal (not last in array): trailing comma + newline come after
+  //     the block; consume those.
+  //   - last in array: no trailing comma; we'd leave a dangling comma
+  //     on the *previous* activity, so walk backward and strip that one
+  //     instead.
+  let start = raw.lastIndexOf('\n', openBrace) + 1
+  let end = closeBrace + 1
+  if (raw[end] === ',') {
+    end++
+    if (raw[end] === '\n') end++
+  } else {
+    let back = start - 1
+    while (back >= 0 && (raw[back] === '\n' || raw[back] === ' ' || raw[back] === '\t')) {
+      back--
+    }
+    if (raw[back] === ',') start = back
+  }
+
+  return { raw: raw.slice(0, start) + raw.slice(end), applied: true }
+}
+
+function applyHeroBlock(raw, id, fields) {
+  const range = findActivityObjectRange(raw, id)
+  if (!range) return { raw, applied: false, reason: 'activity object not found' }
+  const { objOpen, objClose } = range
+  const objText = raw.slice(objOpen, objClose + 1)
+  const m = objText.match(HERO_BLOCK_RE)
   if (!m) return { raw, applied: false, reason: 'hero block not found' }
 
-  const blockStart = idAnchor + m.index
+  const blockStart = objOpen + m.index
   const blockEnd = blockStart + m[0].length
 
   // Indent of the heroImage line — look back to the preceding newline.
@@ -346,46 +589,97 @@ async function processFile(filePath) {
     return
   }
 
-  const mutations = new Map()
+  const mutations = new Map() // id → { heroImage, heroImageSource, heroImageCredit, hoursStructured }
+  const closures = new Map() // id → { businessStatus, placeName }
 
   for (const a of activities) {
     if (onlyTripId && a.tripId !== onlyTripId) continue
-    const result = await processActivity(a, mutations)
+    const result = await processActivity(a, mutations, closures)
     if (result.skip) {
       console.log(`  - ${a.id}: skip (${result.skip})`)
+    } else if (result.closed) {
+      const place = result.placeName ? ` [${result.placeName}]` : ''
+      console.warn(
+        `  ✕ ${a.id}: business not operational — status="${result.closed}"${place}; will remove from seed`
+      )
     } else if (result.error) {
       console.log(`  ! ${a.id}: ${result.error}`)
+    } else if (result.partial) {
+      const place = result.placeName ? ` [${result.placeName}]` : ''
+      console.log(`  ~ ${a.id} (hours only): ${result.partial}${place}`)
     } else if (result.ok) {
       const place = result.ok.placeName ? ` [${result.ok.placeName}]` : ''
       const cred = result.ok.credit ? `  credit: ${result.ok.credit}` : ''
+      const hrs = result.ok.hoursStructured ? ' [hours ✓]' : ''
+      const live =
+        result.ok.openNow === true
+          ? ' [open now]'
+          : result.ok.openNow === false
+            ? ' [closed now]'
+            : ''
       console.log(
-        `  ✓ ${a.id} (${result.ok.source}): ${result.ok.bytes} bytes${place}${cred}`
+        `  ✓ ${a.id} (${result.ok.source}): ${result.ok.bytes} bytes${place}${hrs}${live}${cred}`
       )
     }
   }
 
-  if (mutations.size === 0) {
+  if (mutations.size === 0 && closures.size === 0) {
     console.log(`  (no JSON changes for ${filePath})`)
     return
   }
 
+  // Apply mutations first (hero block + hoursStructured), then removals.
+  // Doing removals last means in-flight mutations don't have to track
+  // which activities just vanished.
   let nextRaw = raw0
-  let appliedCount = 0
+  let heroApplied = 0
+  let hoursApplied = 0
   for (const [id, fields] of mutations) {
-    const r = applyHeroBlock(nextRaw, id, fields)
-    if (!r.applied) {
-      console.warn(`  ! ${id}: ${r.reason}`)
-      continue
+    const r1 = applyHeroBlock(nextRaw, id, fields)
+    if (r1.applied) {
+      nextRaw = r1.raw
+      heroApplied += 1
+    } else if (r1.reason !== 'no change') {
+      console.warn(`  ! ${id} hero: ${r1.reason}`)
     }
-    nextRaw = r.raw
-    appliedCount += 1
+    const r2 = applyHoursStructured(nextRaw, id, fields.hoursStructured)
+    if (r2.applied) {
+      nextRaw = r2.raw
+      hoursApplied += 1
+    } else if (r2.reason !== 'no change' && r2.reason !== 'nothing to insert') {
+      console.warn(`  ! ${id} hours: ${r2.reason}`)
+    }
+  }
+
+  let removed = 0
+  for (const [id, info] of closures) {
+    const r = removeActivityBlock(nextRaw, id)
+    if (r.applied) {
+      nextRaw = r.raw
+      removed += 1
+      // Delete the webp on disk so it doesn't ship with the build.
+      const webpPath = join(OUT_DIR, `${id}.webp`)
+      if (!dryRun && existsSync(webpPath)) {
+        try {
+          unlinkSync(webpPath)
+        } catch (e) {
+          console.warn(`  ! ${id}: could not delete ${webpPath}: ${e.message}`)
+        }
+      }
+    } else {
+      console.warn(`  ! ${id} remove: ${r.reason}`)
+    }
   }
 
   if (!dryRun) {
     writeFileSync(filePath, nextRaw)
-    console.log(`  wrote ${appliedCount} heroImage updates to ${filePath}`)
+    console.log(
+      `  wrote ${heroApplied} hero updates, ${hoursApplied} hours updates, ${removed} removals to ${filePath}`
+    )
   } else {
-    console.log(`  [dry-run] would write ${appliedCount} updates to ${filePath}`)
+    console.log(
+      `  [dry-run] would apply ${heroApplied} hero, ${hoursApplied} hours, ${removed} removals to ${filePath}`
+    )
   }
 }
 
@@ -401,7 +695,13 @@ async function main() {
 }
 
 // Export hooks for unit testing.
-export { applyHeroBlock, loadDotenv }
+export {
+  applyHeroBlock,
+  applyHoursStructured,
+  findMatchingCloseBrace,
+  loadDotenv,
+  removeActivityBlock,
+}
 
 const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])
