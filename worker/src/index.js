@@ -878,8 +878,18 @@ function parseDraftJson(text) {
 // sees text_delta + done. Keeps the front-end small and the contract
 // stable if we swap models later.
 
-const CLAUDE_CHAT_MODEL = 'claude-haiku-4-5-20251001'
+// One source of truth for the chat model — M6's budget logic reads
+// this same function to estimate per-call cost from the active model's
+// token rates. To swap the model without a code deploy, set the
+// `CLAUDE_CHAT_MODEL` env var (a Worker `[vars]` entry or
+// `wrangler secret put`); the default below is what ships if no
+// override is set.
+const DEFAULT_CHAT_MODEL = 'claude-sonnet-4-6'
 const CLAUDE_CHAT_MAX_TOKENS = 2048
+export function chatModel(env) {
+  const override = typeof env?.CLAUDE_CHAT_MODEL === 'string' ? env.CLAUDE_CHAT_MODEL.trim() : ''
+  return override || DEFAULT_CHAT_MODEL
+}
 
 async function postClaudeChat(env, traveler, request, cors) {
   if (!env.ANTHROPIC_API_KEY) {
@@ -934,7 +944,7 @@ async function postClaudeChat(env, traveler, request, cors) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: CLAUDE_CHAT_MODEL,
+        model: chatModel(env),
         max_tokens: CLAUDE_CHAT_MAX_TOKENS,
         stream: true,
         system: systemPrompt,

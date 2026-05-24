@@ -15,7 +15,9 @@
 // the panel's first screen when history exists; otherwise we drop
 // straight into a fresh conversation with the empty-state hint.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import {
   streamClaudeChat,
   listConversations,
@@ -23,6 +25,38 @@ import {
   newConversationId,
   isClaudeChatConfigured,
 } from '../lib/claudeChat'
+
+// Configure marked once: GFM on (tables, strikethrough, autolinks),
+// line breaks honored, no header IDs, no HTML pass-through (Claude
+// never needs to emit raw HTML inside a chat reply).
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+  headerIds: false,
+  mangle: false,
+})
+
+// Sanitize + open links in a new tab. DOMPurify post-process: rewrite
+// <a> to carry target=_blank rel=noopener noreferrer. That's safer
+// than putting links through marked's renderer extension because
+// every <a> in the rendered output — even ones inside lists or
+// blockquotes — gets the same treatment.
+function renderMarkdownToSafeHtml(source) {
+  if (typeof source !== 'string' || !source) return ''
+  const dirty = marked.parse(source)
+  const clean = DOMPurify.sanitize(dirty, {
+    ADD_ATTR: ['target', 'rel'],
+  })
+  // Post-process via a detached DOM to add target/rel to every <a>.
+  if (typeof document === 'undefined') return clean
+  const wrap = document.createElement('div')
+  wrap.innerHTML = clean
+  for (const a of wrap.querySelectorAll('a[href]')) {
+    a.setAttribute('target', '_blank')
+    a.setAttribute('rel', 'noopener noreferrer')
+  }
+  return wrap.innerHTML
+}
 
 // ─── Tokens — Helen's linen palette ───────────────────────────────────
 const T = {
@@ -231,7 +265,139 @@ function UserBubble({ children }) {
   )
 }
 
+// Helen-themed CSS for the markdown render. Scoped to `.claude-md` so
+// nothing leaks. We use a real stylesheet (injected once at module
+// load) instead of inline styles because the rendered HTML comes from
+// marked → dangerouslySetInnerHTML, so we can't decorate elements
+// individually. Tokens map 1:1 to the linen palette + Fraunces.
+const CLAUDE_MD_CSS = `
+.claude-md > *:first-child { margin-top: 0; }
+.claude-md > *:last-child  { margin-bottom: 0 !important; }
+.claude-md p { margin: 0 0 10px; }
+.claude-md strong {
+  font-weight: 700;
+  font-style: normal;
+  color: ${T.ink};
+}
+.claude-md em { font-style: italic; font-weight: 500; }
+.claude-md a {
+  color: ${T.accent};
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.claude-md code {
+  font-family: ${FONT.mono};
+  font-size: 0.86em;
+  font-style: normal;
+  background: ${T.surfaceAlt};
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.claude-md pre {
+  background: ${T.surface};
+  border: 1px solid ${T.hairline};
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 8px 0 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.45;
+}
+.claude-md pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+.claude-md ul, .claude-md ol {
+  margin: 4px 0 10px;
+  padding-left: 22px;
+}
+.claude-md ul { list-style-type: disc; }
+.claude-md ol { list-style-type: decimal; }
+.claude-md li { margin: 2px 0; line-height: 1.5; }
+.claude-md ul ul, .claude-md ul ol,
+.claude-md ol ul, .claude-md ol ol {
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+.claude-md h1, .claude-md h2 {
+  font-family: ${FONT.serif};
+  font-style: normal;
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: -0.3px;
+  color: ${T.ink};
+  margin: 14px 0 6px;
+}
+.claude-md h3 {
+  font-family: ${FONT.serif};
+  font-style: normal;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+  color: ${T.ink};
+  margin: 12px 0 4px;
+}
+.claude-md h4, .claude-md h5, .claude-md h6 {
+  font-family: ${FONT.sans};
+  font-style: normal;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: ${T.inkMuted};
+  margin: 10px 0 4px;
+}
+.claude-md blockquote {
+  margin: 8px 0;
+  padding: 4px 0 4px 12px;
+  border-left: 2px solid ${T.hairline};
+  color: ${T.inkMuted};
+}
+.claude-md hr {
+  border: none;
+  height: 1px;
+  background: ${T.hairline};
+  margin: 14px 0;
+}
+.claude-md table {
+  border-collapse: collapse;
+  font-size: 13px;
+  font-style: normal;
+  font-family: ${FONT.sans};
+  color: ${T.ink};
+  margin: 8px 0;
+}
+.claude-md th, .claude-md td {
+  padding: 4px 8px;
+  border-bottom: 1px solid ${T.hairline};
+  text-align: left;
+}
+.claude-md th { font-weight: 600; }
+.claude-md del { color: ${T.inkFaint}; }
+`
+
+// Inject the CSS once at module load. Idempotent — guards against
+// duplicate injection across HMR refreshes.
+if (typeof document !== 'undefined' && !document.getElementById('claude-md-styles')) {
+  const styleEl = document.createElement('style')
+  styleEl.id = 'claude-md-styles'
+  styleEl.textContent = CLAUDE_MD_CSS
+  document.head.appendChild(styleEl)
+}
+
 function ClaudeBubble({ children, streaming = false }) {
+  // Strings flow through marked → DOMPurify → HTML. Non-string
+  // children (the error bubble path) skip markdown and render as-is.
+  const isMarkdown = typeof children === 'string'
+  const html = useMemo(
+    () => (isMarkdown ? renderMarkdownToSafeHtml(children) : ''),
+    [children, isMarkdown]
+  )
   return (
     <div
       style={{
@@ -258,6 +424,7 @@ function ClaudeBubble({ children, streaming = false }) {
         <ClaudeMark size={14} />
       </div>
       <div
+        className="claude-md"
         style={{
           flex: 1,
           minWidth: 0,
@@ -266,11 +433,14 @@ function ClaudeBubble({ children, streaming = false }) {
           fontStyle: 'italic',
           color: T.ink,
           lineHeight: 1.55,
-          whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}
       >
-        {children}
+        {isMarkdown ? (
+          <span dangerouslySetInnerHTML={{ __html: html }} />
+        ) : (
+          children
+        )}
         {streaming && (
           <span
             aria-hidden="true"
@@ -641,7 +811,15 @@ export function ClaudeChatPanel({ open, onClose, userId, tripId = null, tripTitl
 
   return (
     <>
-      <style>{`@keyframes rt-claude-caret { from { opacity: 1 } to { opacity: 0 } }`}</style>
+      <style>{`
+        @keyframes rt-claude-caret { from { opacity: 1 } to { opacity: 0 } }
+        .claude-md > *:last-child { margin-bottom: 0 !important; }
+        .claude-md ul ul, .claude-md ul ol,
+        .claude-md ol ul, .claude-md ol ol {
+          margin-top: 2px !important;
+          margin-bottom: 4px !important;
+        }
+      `}</style>
       {/* dim underlay */}
       <div
         onClick={onClose}
