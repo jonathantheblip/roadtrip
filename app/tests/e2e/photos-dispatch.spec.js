@@ -261,12 +261,19 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
       .locator('[data-testid="tile-date-source"]')
       .getAttribute('data-source')
 
-    expect(exifSource).toBe('exif')
+    // Source attribute is 'memory' when the album has a top-level
+    // capturedAt — which is the post-C0 default for any new upload
+    // with EXIF, and what the boot-time backfill produces for legacy
+    // records whose ref.capturedAt is meaningfully earlier than the
+    // upload time. Both 'memory' and 'exif' are "real capture date"
+    // sources from the viewer's perspective; the alternative would be
+    // 'createdAt' which the fallback test below covers.
+    expect(['memory', 'exif']).toContain(exifSource)
     expect(fallbackSource).toBe('createdAt')
 
-    // The fallback tile additionally labels itself "·uploaded" so the
+    // The fallback tile additionally labels itself "· uploaded" so the
     // viewer can tell that the date isn't the actual capture moment.
-    await expect(fallbackTile).toContainText('·uploaded')
+    await expect(fallbackTile).toContainText('· uploaded')
   })
 })
 

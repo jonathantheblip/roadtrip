@@ -16,7 +16,7 @@ import { PhotosView } from './views/PhotosView'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
-import { mergeFromRemote, saveMemory } from './lib/memoryStore'
+import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import './styles/platform.css'
 
@@ -233,6 +233,19 @@ export default function App() {
   // comes back to the app after losing signal → sync pill drops to
   // zero on its own. No "drained 3 uploads" toast — silent success per
   // the carryover.
+  // One-shot backfill: synthesize memory.capturedAt from any per-photo
+  // ref.capturedAt that pre-dates this field. Idempotent — skips
+  // memories that already carry capturedAt at the top level. Runs once
+  // on mount, before the first auto-sync, so the album's first paint
+  // shows the right chronology even on cold load.
+  useEffect(() => {
+    try {
+      backfillCapturedAt()
+    } catch {
+      /* ignore — never block boot on a backfill failure */
+    }
+  }, [])
+
   useEffect(() => {
     let lastSyncRun = 0
     let drainInFlight = false

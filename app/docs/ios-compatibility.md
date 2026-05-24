@@ -48,6 +48,7 @@ sync pill in the album header.
 | Page Visibility API | universal | n/a | n/a | n/a |
 | `AudioContext.decodeAudioData` (m4a/aac inputs) | 14.0 | Audio extraction returns null. Video encodes without audio. | Silent — encoded mp4 has no audio track. | Nothing. |
 | `navigator.serviceWorker` registration | 11.3 | App still works; sync pill behaves identically because the in-app foreground drain doesn't need the SW. | Nothing visible. | Nothing. |
+| MP4/QuickTime `mvhd` container date parse (C0 — `app/src/lib/videoMeta.js`) | universal | n/a; pure JS DataView. Parsing failure returns null and the album falls back to upload time with the '· uploaded' label. | A video uploaded weeks after capture shows '· uploaded' on the tile instead of the original capture date. | The album owner can flip on `localStorage.rt_dev_mode = 'true'` and use the lightbox "Edit date" affordance to stamp the right date by hand. |
 
 ## Family devices
 
@@ -59,7 +60,7 @@ on iOS 17+ (verify before any release that depends on a 17+ feature).
 | iPhone (latest) | Jonathan | latest | Reference device; the pipeline is shaped to what this device supports. |
 | iPhone | Helen | iOS 17+ assumed — confirm if a future change relies on 17.4+ | Helen's the primary user for the Photos surface; if her iPhone is on 17.2 or below, the video picker will hide and she'll see only the photo picker. That's the designed fallback per §3 — no "Update iOS" copy. |
 | iPhone | Aurelia | iOS 17+ assumed | Aurelia's the secondary user of the Photos surface. Same fallback as Helen. |
-| iPad (9th gen, iPadOS 17 — **needs confirmation**) | Rafa | iPadOS 17 assumed | The oldest device in the family. The iPad 9th gen is the iPad model most likely to be stuck on iPadOS 17 (Apple's last supported release for that hardware). The video picker WILL hide on this device until/unless WebCodecs lands in Safari iPadOS 17 — which it has not, as of this writing. **Action item: confirm Rafa's actual iPad model and iPadOS version before relying on video upload working there.** |
+| iPad | Rafa | current iPadOS | Confirmed by Jonathan: Rafa's iPad runs current iPadOS, not an older hardware-stuck-on-17 build. The video picker surfaces normally for him. |
 
 ## Why this lives here
 

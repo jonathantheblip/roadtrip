@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, Plus, MapPin, Image as ImageIcon, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Plus, MapPin, Image as ImageIcon, RefreshCw, Calendar } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
-import { listMemoriesForTrip } from '../lib/memoryStore'
+import { listMemoriesForTrip, updateMemoryCapturedAt } from '../lib/memoryStore'
 import { AddDispatchModal } from '../components/AddDispatchModal'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
 import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
 import { saveMemory } from '../lib/memoryStore'
 import { classifySwipe } from '../lib/swipeClassify'
+import { isDevModeEnabled } from '../lib/uploadLog'
 
 // Photos-by-event view. Punchlist 3 Item 4 — Helen's primary surface
 // for the trip's photo archive, grouped by Stop/event.
@@ -43,6 +44,25 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
   // (the same-stop sibling array) so prev/next stays within the group
   // the user opened from — switching stops mid-swipe would be jarring.
   const [lightbox, setLightbox] = useState(null) // { entry, list, index }
+
+  // When something the lightbox depends on changes (dev-mode date
+  // override save, queue drain swapping a pending photoRef for an R2
+  // one), the parent's `groups` recompute but the lightbox is still
+  // holding the pre-edit entry. Re-resolve from the fresh group when
+  // we can find the same key — otherwise leave it alone (the photo
+  // was deleted out from under us, which the current UI doesn't do).
+  useEffect(() => {
+    setLightbox((lb) => {
+      if (!lb) return lb
+      const sameGroup = groups.find((g) =>
+        g.entries.some((e) => e.key === lb.entry.key)
+      )
+      if (!sameGroup) return lb
+      const idx = sameGroup.entries.findIndex((e) => e.key === lb.entry.key)
+      if (idx < 0) return lb
+      return { ...lb, list: sameGroup.entries, index: idx, entry: sameGroup.entries[idx] }
+    })
+  }, [groups])
 
   // Dispatch composer state. Auto-opens when the parent set
   // openDispatchOnMount (e.g. user tapped "Add photo" elsewhere).
@@ -222,6 +242,7 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
           onPrev={lightbox.index > 0 ? () => step(-1) : null}
           onNext={lightbox.index < lightbox.list.length - 1 ? () => step(1) : null}
           onClose={closeLightbox}
+          onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
         />
       )}
 
@@ -519,13 +540,15 @@ function PhotoTile({ entry, onOpen }) {
           <span
             title={
               entry.capturedAtSource === 'createdAt'
-                ? 'No EXIF on this photo — showing upload date'
-                : 'EXIF capture date'
+                ? 'No capture date for this photo — showing upload date'
+                : entry.capturedAtSource === 'memory'
+                  ? 'Capture date set for this memory'
+                  : 'Capture date from EXIF'
             }
           >
             {formatShortDate(entry.capturedAt)}
             {entry.capturedAtSource === 'createdAt' && (
-              <span style={{ marginLeft: 2, opacity: 0.7 }}>·uploaded</span>
+              <span style={{ marginLeft: 2, opacity: 0.7 }}>· uploaded</span>
             )}
           </span>
           {entry.locationLabel && (
@@ -551,7 +574,14 @@ function PhotoTile({ entry, onOpen }) {
   )
 }
 
-function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
+function Lightbox({ entry, index, total, onPrev, onNext, onClose, onCapturedAtChanged }) {
+  const devMode = isDevModeEnabled()
+  const [editingDate, setEditingDate] = useState(false)
+  // Reset the editor whenever we navigate to a different entry —
+  // otherwise prev/next would carry a stale draft forward.
+  useEffect(() => {
+    setEditingDate(false)
+  }, [entry?.memoryId, entry?.key])
   // Keyboard for desktop; touch swipe for phone. Both call into the
   // same nav callbacks the arrow buttons use, so behavior stays
   // consistent across input modes.
@@ -717,8 +747,10 @@ function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
             data-source={entry.capturedAtSource}
             title={
               entry.capturedAtSource === 'createdAt'
-                ? 'Upload time — this photo had no EXIF capture date.'
-                : 'Capture date from EXIF.'
+                ? 'Upload time — no capture date on this memory.'
+                : entry.capturedAtSource === 'memory'
+                  ? 'Capture date set for this memory.'
+                  : 'Capture date from EXIF.'
             }
           >
             {formatFullDate(entry.capturedAt)}
@@ -740,10 +772,218 @@ function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
               </span>
             </>
           )}
+          {devMode && !editingDate && (
+            <>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                data-testid="lightbox-edit-date"
+                onClick={() => setEditingDate(true)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(242,235,218,0.35)',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 9,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <Calendar size={10} /> Edit date
+              </button>
+            </>
+          )}
         </div>
+        {devMode && editingDate && (
+          <CapturedAtEditor
+            entry={entry}
+            onCancel={() => setEditingDate(false)}
+            onSaved={() => {
+              setEditingDate(false)
+              onCapturedAtChanged?.()
+            }}
+          />
+        )}
       </footer>
     </div>
   )
+}
+
+// Dev-mode-only manual date editor. Surfaces in the lightbox footer
+// when `localStorage.rt_dev_mode === 'true'` (same gate as the upload
+// log). Lets the album owner stamp a `capturedAt` on memories that
+// have no EXIF — scanned photos, screenshots of old text threads,
+// videos uploaded years after capture. Persists into
+// `memory.capturedAt` so the album immediately re-sorts and the sync
+// mirror carries the change to every device.
+function CapturedAtEditor({ entry, onCancel, onSaved }) {
+  // Seed with whatever the album currently shows (memory override →
+  // exif → upload time), in the local input's expected format.
+  const seedIso = entry.capturedAt || entry.memoryCreatedAt || new Date().toISOString()
+  const [draft, setDraft] = useState(() => isoToLocalInput(seedIso))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  function save() {
+    setBusy(true)
+    setErr(null)
+    try {
+      const iso = localInputToIso(draft)
+      if (!iso) {
+        setErr('Pick a valid date and time.')
+        setBusy(false)
+        return
+      }
+      updateMemoryCapturedAt(entry.memoryId, iso)
+      onSaved?.()
+    } catch (e) {
+      setErr(e?.message || String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function clearOverride() {
+    setBusy(true)
+    setErr(null)
+    try {
+      updateMemoryCapturedAt(entry.memoryId, null)
+      onSaved?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      data-testid="lightbox-date-editor"
+      style={{
+        marginTop: 12,
+        padding: '10px 12px',
+        borderRadius: 8,
+        background: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.18)',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 8,
+        alignItems: 'center',
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 11,
+        color: '#F2EBDA',
+      }}
+    >
+      <label
+        htmlFor="lightbox-date-input"
+        style={{
+          fontSize: 9,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          opacity: 0.7,
+        }}
+      >
+        Capture date
+      </label>
+      <input
+        id="lightbox-date-input"
+        data-testid="lightbox-date-input"
+        type="datetime-local"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        style={{
+          background: 'rgba(0,0,0,0.4)',
+          color: '#F2EBDA',
+          border: '1px solid rgba(255,255,255,0.25)',
+          padding: '4px 6px',
+          borderRadius: 6,
+          fontFamily: 'inherit',
+          fontSize: 12,
+        }}
+      />
+      <button
+        type="button"
+        data-testid="lightbox-date-save"
+        onClick={save}
+        disabled={busy}
+        style={pillButtonStyle()}
+      >
+        Save
+      </button>
+      <button
+        type="button"
+        data-testid="lightbox-date-clear"
+        onClick={clearOverride}
+        disabled={busy}
+        style={pillButtonStyle()}
+      >
+        Clear
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={busy}
+        style={pillButtonStyle()}
+      >
+        Cancel
+      </button>
+      {err && (
+        <span
+          style={{
+            flexBasis: '100%',
+            fontSize: 10,
+            color: '#F2A87A',
+            marginTop: 4,
+            textTransform: 'none',
+            letterSpacing: 0,
+          }}
+        >
+          {err}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function pillButtonStyle() {
+  return {
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.35)',
+    color: '#F2EBDA',
+    padding: '3px 10px',
+    borderRadius: 12,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+  }
+}
+
+// Convert an ISO string into the `YYYY-MM-DDTHH:MM` format the
+// <input type="datetime-local"> control expects. Uses the local
+// timezone — the maintainer is editing what they see in the album,
+// which is rendered in local time.
+function isoToLocalInput(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  )
+}
+
+function localInputToIso(value) {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
 }
 
 function NavArrow({ direction, onClick }) {
@@ -785,26 +1025,46 @@ function NavArrow({ direction, onClick }) {
 // (photoRef = photoRefs[0]) doesn't render twice — but two different
 // memories that happen to share a URL (test fixtures, re-uploads)
 // still each get their own tile.
+//
+// Date precedence (album sort + label):
+//   1. memory.capturedAt  — explicit album date. Set automatically at
+//      save time from EXIF / video container; overridable via the
+//      dev-mode lightbox affordance for retroactively-uploaded photos.
+//   2. ref.capturedAt     — per-photo EXIF for multi-photo memories
+//      whose entries pre-date the migration, or photoExternalURLs
+//      that came through a path that wrote it.
+//   3. memory.createdAt   — the upload time. Rendered with the
+//      '· uploaded' label so the chronology is honest.
 function flattenPhotoEntries(memories) {
   const out = []
   for (const m of memories || []) {
     const seenInThisMem = new Set()
     const refs = [m.photoRef, ...(m.photoRefs || [])].filter(Boolean)
+    const memoryAt =
+      typeof m.capturedAt === 'string' && m.capturedAt ? m.capturedAt : null
     function push(url, ref) {
       if (!url || seenInThisMem.has(url)) return
       seenInThisMem.add(url)
       const exifAt = ref?.capturedAt || null
+      const realDate = memoryAt || exifAt
       out.push({
         key: `${m.id}::${url}`,
         memoryId: m.id,
         stopId: m.stopId || null,
         author: m.authorTraveler,
         caption: m.caption || m.text || '',
-        // EXIF capture date is the chronology Helen cares about (she
-        // uploads hours/days after the event). Falls back to the
-        // memory's createdAt only when EXIF is missing.
-        capturedAt: exifAt || m.createdAt,
-        capturedAtSource: exifAt ? 'exif' : 'createdAt',
+        capturedAt: realDate || m.createdAt,
+        capturedAtSource: realDate
+          ? memoryAt
+            ? 'memory'
+            : 'exif'
+          : 'createdAt',
+        // The memory-level capturedAt the lightbox edits — so the
+        // dev-mode override knows what value to seed its input with
+        // even when this entry's ref also carries a (now-secondary)
+        // EXIF date.
+        memoryCapturedAt: memoryAt,
+        memoryCreatedAt: m.createdAt || null,
         // EXIF lat/lng if present, otherwise null. The stop-association
         // fallback for the LOCATION label is applied during grouping
         // (we need the stop record to compute it).

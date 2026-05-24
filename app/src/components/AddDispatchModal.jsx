@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Image as ImageIcon, Film, Check, Loader } from 'lucide-react'
 import { preparePhotoForUpload } from '../lib/photoPipeline'
 import { encodeVideo, isVideoEncodeSupported } from '../lib/videoPipeline'
+import { extractVideoCreationDate } from '../lib/videoMeta'
 import { saveMemory } from '../lib/memoryStore'
 import { enqueue, registerBackgroundSync } from '../lib/uploadQueue'
 import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
@@ -122,8 +123,13 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
   }
 
   async function runVideoPipeline(file, { onProgress }) {
+    // Read the container creation date in parallel with the encode —
+    // it's cheap and gives us the album's source-of-truth date even
+    // when the user uploads weeks after capture. Tolerates a parse
+    // failure: returns null and the album falls back to upload time.
+    const capturedAtPromise = extractVideoCreationDate(file).catch(() => null)
     return encodeVideo(file, { onProgress })
-      .then((result) => ({
+      .then(async (result) => ({
         ok: true,
         result: {
           kind: 'video',
@@ -133,6 +139,7 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
           height: result.height,
           durationMs: result.durationMs,
           posterBlob: result.posterBlob || null,
+          capturedAt: await capturedAtPromise,
         },
       }))
       .catch((err) => ({
@@ -258,7 +265,16 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
     setBucketCOutcome(null)
     const memoryId = `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
     const isVideo = prep.kind === 'video'
-    const capturedAt = prep.exif?.capturedAt || new Date().toISOString()
+    // capturedAtSource — what the album's top-level capturedAt is
+    // derived from. Memory-level capturedAt is the source-of-truth
+    // for sort + label; null lets the album fall back to upload time
+    // with the '· uploaded' label. We intentionally do NOT stamp the
+    // ref with a fake `new Date()` when no real source exists — the
+    // album reads the absence as "no capture date for this content"
+    // and the fallback path renders correctly.
+    const capturedAtSource = isVideo
+      ? prep.capturedAt || null
+      : prep.exif?.capturedAt || null
     const baseRef = isVideo
       ? {
           kind: 'video',
@@ -266,7 +282,7 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
           width: prep.width,
           height: prep.height,
           durationMs: prep.durationMs,
-          capturedAt,
+          capturedAt: capturedAtSource,
         }
       : {
           kind: 'photo',
@@ -275,7 +291,7 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
           height: prep.height,
           originalWidth: prep.originalWidth,
           originalHeight: prep.originalHeight,
-          capturedAt,
+          capturedAt: capturedAtSource,
           lat: prep.exif?.lat ?? null,
           lng: prep.exif?.lng ?? null,
         }
@@ -294,6 +310,11 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
         kind: 'photo',
         caption: caption.trim() || null,
         photoRef,
+        // Memory-level date passes through to the album as the
+        // primary sort + label. null when neither EXIF (photos) nor
+        // mvhd/Apple Keys (videos) gave us a date — the album then
+        // shows the upload time with the '· uploaded' label.
+        capturedAt: capturedAtSource,
       })
       onSaved?.(rec)
     }
@@ -305,7 +326,7 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
       name: isVideo ? 'video' : prep.mime || 'photo',
       type: prep.mime,
       size: prep.blob?.size,
-      exifDate: prep.exif?.capturedAt || null,
+      exifDate: isVideo ? prep.capturedAt || null : prep.exif?.capturedAt || null,
     }
 
     async function queueSilently(triggeringErr) {

@@ -15,13 +15,25 @@
 //     transcriptionStatus?,
 //     photoRef?, photoRefs?, mood?,
 //     reactions?,
-//     createdAt, updatedAt }
+//     capturedAt?, createdAt, updatedAt }
 // photoRefs is the multi-photo album form (Helen's thread composer);
 // photoRef stays as a back-compat mirror of photoRefs[0] for any reader
 // that hasn't been updated to handle the array.
 //
+// Date semantics (memory-album use, post-2026-05-24):
+//   capturedAt — when the content actually happened. EXIF for photos,
+//   container creation date for videos, or a manual override the album
+//   owner sets via the dev-mode lightbox affordance. Source of truth
+//   for sort order and the on-tile date label.
+//   createdAt  — when the record was first persisted locally (i.e.
+//   the upload time). Used as the audit timestamp and the fallback
+//   sort key when capturedAt is missing.
+//
 // Backward compatibility: pre-§4 records have no `kind`. Read paths
 // treat missing `kind` as 'text'. New writes always set `kind`.
+// Pre-2026-05-24 records have no top-level `capturedAt`; the album's
+// flatten pass falls back to the per-photo `photoRef.capturedAt` and
+// finally to `createdAt`.
 
 const SHARED_KEY = 'rt_memories_shared_v1'
 const PRIVATE_KEY = (traveler) => `rt_memories_private_${traveler}_v1`
@@ -93,6 +105,7 @@ export function saveMemory({
   photoRefs,
   mood,
   reactions,
+  capturedAt,
 }) {
   const now = new Date().toISOString()
   const key = visibility === 'private' ? PRIVATE_KEY(authorTraveler) : SHARED_KEY
@@ -123,6 +136,33 @@ export function saveMemory({
   const resolvedPhotoRef =
     photoRef || (photoRefs && photoRefs.length > 0 ? photoRefs[0] : undefined)
 
+  // Derive a top-level capturedAt when the caller didn't pass one
+  // explicitly. Pick the earliest per-photo ref capturedAt so a
+  // multi-photo memory sorts by the moment the first frame happened —
+  // matches the lightbox prev/next order the user already sees. Falls
+  // through to null when no source has a capture date; the album then
+  // renders the upload-time fallback with the '· uploaded' label.
+  let resolvedCapturedAt = null
+  if (typeof capturedAt === 'string' && capturedAt) {
+    resolvedCapturedAt = capturedAt
+  } else if (capturedAt === null) {
+    resolvedCapturedAt = null
+  } else {
+    const candidates = [
+      resolvedPhotoRef?.capturedAt,
+      ...(photoRefs?.map?.((r) => r?.capturedAt) || []),
+    ].filter((v) => typeof v === 'string' && v)
+    if (candidates.length) {
+      candidates.sort()
+      resolvedCapturedAt = candidates[0]
+    } else {
+      // Preserve a previously-set capturedAt on update so we don't
+      // erase it when the caller only patches caption or photoRef.
+      resolvedCapturedAt =
+        existingShared?.capturedAt || existingPriv?.capturedAt || null
+    }
+  }
+
   const record = {
     id: id || makeId(),
     tripId,
@@ -142,6 +182,7 @@ export function saveMemory({
     photoRefs: photoRefs && photoRefs.length > 0 ? photoRefs : undefined,
     mood,
     reactions: reactions || [],
+    capturedAt: resolvedCapturedAt,
     createdAt: existingShared?.createdAt || existingPriv?.createdAt || now,
     updatedAt: now,
   }
@@ -271,6 +312,103 @@ function hasUsableLocalAsset(m) {
   if (usable(m.audioRef?.storage)) return true
   if (m.photoRefs?.some?.((p) => usable(p?.storage))) return true
   return false
+}
+
+// Dev-mode override: set or clear the album's source-of-truth capture
+// date on a single memory. Used by the lightbox affordance Helen's
+// album owner reaches only when `rt_dev_mode === 'true'`. Pass `null`
+// to clear the override (the album then falls back to per-photo EXIF
+// or the upload time). Re-mirrors to the Worker so other devices pick
+// up the same chronology.
+export function updateMemoryCapturedAt(memoryId, isoOrNull) {
+  if (!memoryId) return null
+  const next =
+    isoOrNull === null
+      ? null
+      : typeof isoOrNull === 'string' && isoOrNull
+        ? isoOrNull
+        : null
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    const now = new Date().toISOString()
+    const patched = { ...list[idx], capturedAt: next, updatedAt: now }
+    list[idx] = patched
+    writeJson(key, list)
+    scheduleMirror({ type: 'save', record: patched })
+    return patched
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  // Try every traveler's private bucket — Aurelia's postcards live here.
+  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return null
+}
+
+// One-shot backfill: walk every local memory and synthesize a top-level
+// `capturedAt` from the earliest *real* `photoRef.capturedAt` we find.
+//
+// Heuristic — what counts as "real" capture vs. a legacy "now stamp":
+// up through 2026-05-24 the dispatch modal stamped `ref.capturedAt =
+// new Date()` even when no EXIF was found, which means many local
+// records carry a ref.capturedAt that's nearly identical to createdAt.
+// We skip promotion when ref.capturedAt is within 60 s of (or after)
+// createdAt — those almost certainly came from the legacy stamp and
+// promoting them would silently strip the '· uploaded' label from
+// memories that genuinely have no capture date.
+//
+// Runs idempotently — memories that already have `capturedAt` set, or
+// whose refs carry no plausible capture date, are skipped. Returns
+// the number of records actually patched so callers can log it. Safe
+// to call at module load; cheap enough that we don't gate behind a
+// version flag.
+const BACKFILL_MIN_GAP_MS = 60_000
+
+export function backfillCapturedAt() {
+  let patched = 0
+  for (const key of [
+    SHARED_KEY,
+    PRIVATE_KEY('jonathan'),
+    PRIVATE_KEY('helen'),
+    PRIVATE_KEY('aurelia'),
+    PRIVATE_KEY('rafa'),
+  ]) {
+    const list = readJson(key)
+    if (!list.length) continue
+    let mutated = false
+    for (const m of list) {
+      if (typeof m.capturedAt === 'string' && m.capturedAt) continue
+      const createdMs = Date.parse(m.createdAt || '') || null
+      const refDates = []
+      if (m.photoRef?.capturedAt) refDates.push(m.photoRef.capturedAt)
+      if (Array.isArray(m.photoRefs)) {
+        for (const r of m.photoRefs) {
+          if (r?.capturedAt) refDates.push(r.capturedAt)
+        }
+      }
+      if (!refDates.length) continue
+      // Filter out refs that look like the legacy "now stamp" — they
+      // sit at or very near createdAt, with no signal of being a real
+      // capture moment.
+      const real = refDates.filter((iso) => {
+        if (!createdMs) return true
+        const t = Date.parse(iso)
+        if (!Number.isFinite(t)) return false
+        return createdMs - t > BACKFILL_MIN_GAP_MS
+      })
+      if (!real.length) continue
+      real.sort()
+      m.capturedAt = real[0]
+      mutated = true
+      patched += 1
+    }
+    if (mutated) writeJson(key, list)
+  }
+  return patched
 }
 
 // Single-entry convenience: load the active traveler's memory for a stop
