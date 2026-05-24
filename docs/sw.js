@@ -12,7 +12,7 @@
 //                    v1.5 hero images are offline after first view.
 //
 // Cache name is versioned so the activate handler wipes stale generations.
-const CACHE_NAME = 'jackson-trip-react-v36';
+const CACHE_NAME = 'jackson-trip-react-v37';
 const TILE_CACHE = 'jackson-trip-tiles-v1';
 const MAX_TILES = 500;
 const CORE = ['./', './index.html', './manifest.json'];
@@ -35,6 +35,37 @@ self.addEventListener('install', (e) => {
 // can force immediate activation without closing the tab.
 self.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// Background Sync — the queue drains when connectivity returns even if
+// the app isn't open in a tab. Available on Android Chrome + desktop
+// Chromium; iOS Safari has no Background Sync API, so we still rely on
+// the Page Visibility + interval drain in App.jsx for the family
+// iPhones / iPads. The SW just posts a message to every active client
+// and lets the main thread run the actual drain (uploadQueue.drain
+// needs blob/file APIs the SW can't fully orchestrate alone).
+const UPLOAD_SYNC_TAG = 'rt-upload-queue';
+
+self.addEventListener('sync', (e) => {
+  if (e.tag !== UPLOAD_SYNC_TAG) return;
+  e.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      // Even when there are zero open windows, we don't fail — the next
+      // foregrounding will trigger the in-app drain. The SW's job here
+      // is best-effort notification, not the drain itself.
+      for (const client of clients) {
+        try {
+          client.postMessage({ type: 'drain-upload-queue', tag: UPLOAD_SYNC_TAG });
+        } catch (_) {
+          /* client unreachable; iterate the rest */
+        }
+      }
+    })()
+  );
 });
 
 self.addEventListener('activate', (e) => {

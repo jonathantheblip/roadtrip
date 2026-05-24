@@ -15,8 +15,9 @@ import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
-import { pullAll } from './lib/workerSync'
-import { mergeFromRemote } from './lib/memoryStore'
+import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
+import { mergeFromRemote, saveMemory } from './lib/memoryStore'
+import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import './styles/platform.css'
 
 // Per-traveler palette tokens for the fixed top bar. Spec §6 dark/light:
@@ -101,6 +102,37 @@ function todayIso() {
   const m = String(now.getMonth() + 1).padStart(2, '0')
   const d = String(now.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
+}
+
+// M4: shared queue runner. Used by both the background drain in App
+// and PhotosView's manual sync-pill tap. Lives at module scope so both
+// callers stay in sync — drift here is the kind of bug that makes the
+// sync pill behave differently depending on which surface drained it.
+async function uploadQueueRunner(item) {
+  if (!isWorkerConfigured()) throw new Error('worker not configured')
+  const endpoint = item.kind === 'video' ? 'video' : 'photo'
+  const r = await workerFetch(
+    `/assets/${endpoint}/${encodeURIComponent(item.id)}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type':
+          item.blob?.type || (item.kind === 'video' ? 'video/mp4' : 'application/octet-stream'),
+      },
+      body: item.blob,
+    }
+  )
+  const remote = await r.json()
+  saveMemory({
+    id: item.id,
+    tripId: item.tripId,
+    stopId: item.stopId,
+    authorTraveler: item.authorTraveler,
+    visibility: 'shared',
+    kind: 'photo', // memories always 'photo' kind; photoRef.kind disambiguates
+    caption: item.caption,
+    photoRef: { ...item.ref, storage: 'r2', key: remote.key, url: remote.url },
+  })
 }
 
 // Active-trip spec: pick the trip whose [startDate, endDate] window
@@ -195,15 +227,23 @@ export default function App() {
   // back-and-forth doesn't spam the API. Silent — failures don't
   // surface (the explicit Pull button in Settings still gives users a
   // way to see real status when they want it).
+  //
+  // M4: piggy-backs the upload-queue drain on the same triggers (cold
+  // load, foreground, SW sync message, ~120s interval backstop). Helen
+  // comes back to the app after losing signal → sync pill drops to
+  // zero on its own. No "drained 3 uploads" toast — silent success per
+  // the carryover.
   useEffect(() => {
-    let lastRun = 0
+    let lastSyncRun = 0
+    let drainInFlight = false
     let cancelled = false
-    const THROTTLE_MS = 5000
+    const SYNC_THROTTLE_MS = 5000
+    const DRAIN_INTERVAL_MS = 120_000
 
     async function runSync() {
       const now = Date.now()
-      if (now - lastRun < THROTTLE_MS) return
-      lastRun = now
+      if (now - lastSyncRun < SYNC_THROTTLE_MS) return
+      lastSyncRun = now
       try {
         const remote = await pullAll()
         if (cancelled) return
@@ -215,16 +255,58 @@ export default function App() {
       }
     }
 
+    async function runDrain() {
+      // Re-entrancy guard rather than a time throttle — a long-running
+      // drain shouldn't be re-triggered while in flight, but the moment
+      // it finishes a new signal (visibility change, online event)
+      // should be free to start another pass without waiting on a
+      // wall-clock window.
+      if (drainInFlight) return
+      drainInFlight = true
+      try {
+        const pending = await queueCount()
+        if (cancelled || pending === 0) return
+        await drainQueue(uploadQueueRunner)
+      } catch (err) {
+        // Drain failures stay silent — the items remain in the queue
+        // for the next attempt. The sync pill (in PhotosView header)
+        // still counts what's left, so the user has a visual signal.
+        console.warn('autoDrain failed', err)
+      } finally {
+        drainInFlight = false
+      }
+    }
+
     runSync() // initial pull on cold load
+    runDrain() // also pick up any items left from a prior session
 
     function onVisibility() {
-      if (document.visibilityState === 'visible') runSync()
+      if (document.visibilityState === 'visible') {
+        runSync()
+        runDrain()
+      }
+    }
+    function onOnline() {
+      runDrain()
+    }
+    function onSwMessage(e) {
+      if (e?.data?.type === 'drain-upload-queue') runDrain()
     }
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('online', onOnline)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener?.('message', onSwMessage)
+    }
+    const drainInterval = setInterval(runDrain, DRAIN_INTERVAL_MS)
 
     return () => {
       cancelled = true
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('online', onOnline)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener?.('message', onSwMessage)
+      }
+      clearInterval(drainInterval)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
