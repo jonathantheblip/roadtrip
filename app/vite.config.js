@@ -33,6 +33,13 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
     },
     server: {
+      // Vite's default FS-allow check rejects any request whose URL
+      // looks like a path-traversal — including innocent query strings
+      // with lots of `%2F`-encoded slashes (which the Share-In flow
+      // produces when `?url=https%3A%2F%2F…` is passed at boot). Turning
+      // off strict mode only relaxes dev-server behavior; production
+      // builds don't go through this middleware.
+      fs: { strict: false },
       proxy: {
         '/openai-proxy': {
           target: 'https://api.openai.com',

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, MapPin, Phone, Clock, AlertCircle, Sparkles } from 'lucide-react'
+import { ChevronLeft, MapPin, Phone, Clock, AlertCircle, Sparkles, Link2 } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { tripHomeBase } from '../data/trips'
 import {
@@ -24,11 +24,13 @@ import { LeaveWhenModal } from '../components/LeaveWhenModal'
 // description text renders inside each card; the chip selection
 // decides which cards appear at all. They're independent — switching
 // themed surfaces does not reset filter state within a session.
-export function ActivitiesView({ trip, traveler, onBack }) {
+export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
   const activities = useMemo(
-    () => getActivitiesForTrip(trip?.id),
-    [trip?.id]
+    () => getActivitiesForTrip(trip?.id, trip),
+    [trip?.id, trip?.sharedActivities]
   )
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteDraft, setPasteDraft] = useState('')
 
   // Default: Everyone on. Gives an immediate full view; chip
   // toggling narrows the list. State is local to this mount —
@@ -122,6 +124,114 @@ export function ActivitiesView({ trip, traveler, onBack }) {
             : 'Around the tournament — filter by who needs what.'}
         </div>
       </header>
+
+      {onOpenImport && (
+        <div style={{ padding: '14px 14px 0' }}>
+          <button
+            type="button"
+            data-testid="open-share-in"
+            onClick={() => setPasteOpen((v) => !v)}
+            style={{
+              width: '100%',
+              padding: '12px 14px',
+              background: 'transparent',
+              border: '1px solid var(--accent)',
+              borderRadius: 10,
+              cursor: 'pointer',
+              color: 'var(--text)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 10,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+            }}
+          >
+            <Link2 size={14} style={{ color: 'var(--accent)' }} />
+            Add from link
+          </button>
+          {pasteOpen && (
+            <div
+              data-testid="share-in-paste"
+              style={{
+                marginTop: 10,
+                padding: '12px',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                background: 'var(--card, transparent)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <label
+                htmlFor="share-in-url"
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 9,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  opacity: 0.6,
+                }}
+              >
+                Paste a Google or Apple Maps link
+              </label>
+              <input
+                id="share-in-url"
+                data-testid="share-in-url"
+                type="url"
+                value={pasteDraft}
+                onChange={(e) => setPasteDraft(e.target.value)}
+                placeholder="https://maps.app.goo.gl/…"
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'transparent',
+                  color: 'var(--text)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 12,
+                }}
+              />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-pill"
+                  onClick={() => {
+                    setPasteOpen(false)
+                    setPasteDraft('')
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  data-testid="share-in-go"
+                  className="btn-pill"
+                  disabled={!pasteDraft.trim()}
+                  onClick={() => {
+                    const url = pasteDraft.trim()
+                    setPasteOpen(false)
+                    setPasteDraft('')
+                    onOpenImport?.(url)
+                  }}
+                  style={{
+                    cursor: pasteDraft.trim() ? 'pointer' : 'not-allowed',
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    border: '1px solid var(--accent)',
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {activities.length > 0 && (
         <FilterChips

@@ -44,6 +44,8 @@
 //     property the family is staying at, etc.) or the hand-entered
 //     value is more accurate than what Routes returns.
 
+import { canonicalKey } from './canonical.js'
+
 const ACTIVITY_MODULES = import.meta.glob('./*.json', { eager: true })
 
 // Build the tripId → activities[] map once at module load. Keys in
@@ -116,14 +118,32 @@ if (import.meta.env?.DEV) {
 // Public: look up activities for a trip id. Returns [] if the trip
 // has no seed file — that's fine, a trip without activities just
 // hides the "Things to do" affordance.
-export function getActivitiesForTrip(tripId) {
-  return ACTIVITIES_BY_TRIP[tripId] || []
+//
+// `trip` is optional. When provided, any user-added entries living on
+// `trip.sharedActivities[]` (Share-In v2) are merged in after the
+// bundled seed. The bundled seed wins on canonical-key collisions —
+// callers can use `findExisting` to short-circuit duplicate adds at
+// import time; what survives a collision here is the seed's polish
+// (verified hours, hero photo, hand-written descriptions).
+export function getActivitiesForTrip(tripId, trip) {
+  const seed = ACTIVITIES_BY_TRIP[tripId] || []
+  const shared = Array.isArray(trip?.sharedActivities) ? trip.sharedActivities : []
+  if (!shared.length) return seed
+  const seen = new Set(seed.map((a) => canonicalKey(a)).filter(Boolean))
+  const out = [...seed]
+  for (const a of shared) {
+    const k = canonicalKey(a)
+    if (k && seen.has(k)) continue
+    out.push(a)
+    if (k) seen.add(k)
+  }
+  return out
 }
 
-// Public: which trips have any activities seeded? Handy for showing
-// the "Things to do" entry point only on trips that have something.
-export function hasActivitiesForTrip(tripId) {
-  return (ACTIVITIES_BY_TRIP[tripId] || []).length > 0
+// Public: which trips have any activities seeded (or shared in)? Used
+// to gate the "Things to do" entry point.
+export function hasActivitiesForTrip(tripId, trip) {
+  return getActivitiesForTrip(tripId, trip).length > 0
 }
 
 // Filter activities by the family-member chip selection (spec §4).
@@ -210,4 +230,5 @@ export function isClosedToday(activity) {
 // ./canonical.js so the Node-based test runner (and other tooling)
 // can import them without dragging the Vite-only import.meta.glob in
 // this module into the import graph.
-export { canonicalKey, findExisting } from './canonical.js'
+export { canonicalKey } from './canonical.js'
+export { findExisting } from './canonical.js'

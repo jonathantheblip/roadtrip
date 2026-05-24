@@ -13,12 +13,33 @@ import { NewTrip } from './views/NewTrip'
 import { TripEditor } from './views/TripEditor'
 import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
+import { ImportView } from './views/ImportView'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import './styles/platform.css'
+
+// Read `?url=` (and optional `&action=import`) at boot — the
+// Web Share Target + Apple Shortcut + paste-interstitial all funnel
+// through this URL shape, dispatching the user straight into the
+// Share-In flow before any other view renders. Defaults to the trip
+// view when no import-related query param is present.
+function initialViewFromUrl() {
+  try {
+    if (typeof window === 'undefined') return { name: 'trip' }
+    const params = new URLSearchParams(window.location.search)
+    const url = params.get('url') || params.get('text') || ''
+    const action = params.get('action') || ''
+    if (url || action === 'import') {
+      return { name: 'import', importUrl: url }
+    }
+  } catch {
+    /* ignore */
+  }
+  return { name: 'trip' }
+}
 
 // Per-traveler palette tokens for the fixed top bar. Spec §6 dark/light:
 // Jonathan permanent dark; Aurelia permanent light; Rafa permanent dark;
@@ -157,7 +178,7 @@ function pickActiveTrip(trips, today = todayIso()) {
 export default function App() {
   const [traveler, setTraveler] = useState(readTraveler)
   const [tripId, setTripId] = useState(readRequestedTripId)
-  const [view, setView] = useState({ name: 'trip' }) // 'index' | 'trip' | 'stop' | 'settings' | 'new'
+  const [view, setView] = useState(() => initialViewFromUrl()) // 'index' | 'trip' | 'stop' | 'settings' | 'new' | 'edit' | 'activities' | 'photos' | 'import'
   const [helenDark, toggleHelenDark] = useHelenDark()
   const tripsApi = useTrips()
   const allTrips = tripsApi.trips
@@ -416,6 +437,33 @@ export default function App() {
     setView({ name: 'activities' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  function openImport(rawUrl) {
+    setView({ name: 'import', importUrl: rawUrl || '' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
+  // Append a Share-In v2 record to the active trip's sharedActivities,
+  // then upsert through the existing tripsApi so the change rides the
+  // same sync path as any other trip edit.
+  async function handleSaveImport(record) {
+    if (!trip || !record) return
+    const next = {
+      ...trip,
+      sharedActivities: [...(trip.sharedActivities || []), record],
+    }
+    await tripsApi.upsertTrip(next)
+    // Clear the URL query param so a reload of the standalone PWA
+    // doesn't keep re-firing the import flow.
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('url')
+      url.searchParams.delete('action')
+      url.searchParams.delete('text')
+      url.searchParams.delete('title')
+      window.history.replaceState(null, '', url.toString())
+    } catch {
+      /* ignore */
+    }
+  }
   function openPhotos() {
     setView({ name: 'photos' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
@@ -455,6 +503,7 @@ export default function App() {
       onOpenSettings: openSettings,
       onOpenActivities: openActivities,
       onOpenPhotos: openPhotos,
+      onOpenImport: openImport,
     }
     switch (traveler) {
       case 'helen':
@@ -501,7 +550,8 @@ export default function App() {
               view.name === 'stop' ||
               view.name === 'settings' ||
               view.name === 'activities' ||
-              view.name === 'photos'
+              view.name === 'photos' ||
+              view.name === 'import'
             const label = inDeepView && trip?.title ? `← ${trip.title}` : '← Trips'
             const handler = inDeepView ? () => setView({ name: 'trip' }) : openIndex
             return (
@@ -627,6 +677,16 @@ export default function App() {
             trip={trip}
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
+            onOpenImport={openImport}
+          />
+        )}
+        {view.name === 'import' && trip && (
+          <ImportView
+            trip={trip}
+            traveler={traveler}
+            initialUrl={view.importUrl || ''}
+            onBack={() => setView({ name: 'activities' })}
+            onSave={handleSaveImport}
           />
         )}
         {view.name === 'photos' && trip && (

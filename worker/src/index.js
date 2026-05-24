@@ -94,6 +94,12 @@ export default {
       if (path === '/places/nearby' && request.method === 'POST') {
         return await postPlacesNearby(env, request, cors)
       }
+      if (path === '/resolve' && request.method === 'GET') {
+        return await getResolve(env, url, cors)
+      }
+      if (path === '/draft' && request.method === 'POST') {
+        return await postDraft(env, request, cors)
+      }
       if (path === '/' && request.method === 'GET') {
         return json({ ok: true, traveler }, 200, cors)
       }
@@ -618,6 +624,218 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
       Math.sin(dLng / 2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   return R * c
+}
+
+// ─── Share-In v2 ──────────────────────────────────────────────────────
+//
+// Two endpoints back the client's import flow:
+//   GET  /resolve?url=...  — follow redirects on Google Maps short
+//                            links (maps.app.goo.gl, goo.gl). Allowlist
+//                            is hardcoded so unrelated short URLs can't
+//                            ride the Worker as a shortener-resolver.
+//   POST /draft            — call Anthropic Claude to draft default
+//                            tags (which family members would enjoy)
+//                            and per-traveler descriptions for a venue.
+//                            Used by the import confirmation card to
+//                            pre-fill suggestions the user can edit.
+
+const SHARE_RESOLVE_ALLOWED_HOSTS = new Set([
+  'maps.app.goo.gl',
+  'goo.gl',
+  // We also accept already-resolved long-form hosts as a no-op —
+  // simplifies the client (just pipe anything through /resolve).
+  'maps.google.com',
+  'www.google.com',
+  'google.com',
+  'maps.apple.com',
+])
+
+const RESOLVE_MAX_HOPS = 5
+
+async function getResolve(env, url, cors) {
+  const target = url.searchParams.get('url')
+  if (!target) return json({ error: 'missing url' }, 400, cors)
+
+  let parsed
+  try {
+    parsed = new URL(target)
+  } catch {
+    return json({ error: 'invalid url' }, 400, cors)
+  }
+  if (!SHARE_RESOLVE_ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) {
+    return json(
+      { error: 'host not allowed', hostname: parsed.hostname },
+      400,
+      cors
+    )
+  }
+
+  let current = parsed.toString()
+  let hops = 0
+  let final = current
+  try {
+    while (hops < RESOLVE_MAX_HOPS) {
+      hops += 1
+      const res = await fetch(current, {
+        method: 'GET',
+        redirect: 'manual',
+        // Workers fetch needs *some* UA on Google's short-link host or
+        // it sometimes serves an interstitial instead of the 302.
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; roadtrip-sync/1.0)' },
+      })
+      const loc = res.headers.get('Location')
+      if (res.status >= 300 && res.status < 400 && loc) {
+        // Resolve relative redirects against the current step.
+        try {
+          current = new URL(loc, current).toString()
+        } catch {
+          break
+        }
+        final = current
+        continue
+      }
+      final = current
+      break
+    }
+  } catch (e) {
+    return json({ error: e?.message || String(e), partial: final }, 502, cors)
+  }
+
+  return json({ resolved: final, hops }, 200, {
+    ...cors,
+    'Cache-Control': 'public, max-age=300',
+  })
+}
+
+// /draft — call Claude to suggest default tags + per-traveler
+// descriptions. Body shape:
+//   { name: string, address?: string, category: string }
+// Response:
+//   { tags: string[], descriptions: Record<traveler, string> }
+//
+// The client uses these as starter values in the confirmation card;
+// every field is editable before save. We never silently save the
+// model output — the user opts in by tapping Save.
+
+const FAMILY = ['jonathan', 'helen', 'aurelia', 'rafa']
+
+const FAMILY_VOICES = {
+  jonathan: 'Direct, dad-driver lens. One sentence that surfaces the operational angle (drive, parking, kid-wrangling).',
+  helen: 'Editorial, evocative. One or two sentences that name an aesthetic — what the light, the menu, or the texture of the place feels like.',
+  aurelia: 'Teen-photogenic angle. One sentence focused on content, vibes, or food worth posting about.',
+  rafa: 'Five-year-old lens. One short sentence about what specifically delights a young kid (slides, animals, snacks, levers).',
+}
+
+const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
+
+async function postDraft(env, request, cors) {
+  if (!env.ANTHROPIC_API_KEY) {
+    return json({ error: 'Anthropic key not configured on worker' }, 500, cors)
+  }
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const name = typeof body?.name === 'string' ? body.name.trim() : ''
+  const address = typeof body?.address === 'string' ? body.address.trim() : ''
+  const category = typeof body?.category === 'string' ? body.category.trim() : ''
+  if (!name) return json({ error: 'missing name' }, 400, cors)
+  if (!category) return json({ error: 'missing category' }, 400, cors)
+
+  const familyVoiceLines = FAMILY.map(
+    (t) => `- ${t}: ${FAMILY_VOICES[t]}`
+  ).join('\n')
+
+  const userPrompt =
+    `A family of four is on a trip and has just shared a place to add to "Things to do" for the trip:\n\n` +
+    `Name: ${name}\n` +
+    (address ? `Address: ${address}\n` : '') +
+    `Category: ${category}\n\n` +
+    `Family members:\n${familyVoiceLines}\n\n` +
+    `Two outputs:\n` +
+    `1. tags — array of which family members are most likely to enjoy this place. Include anyone for whom this is a genuinely good fit; skip anyone for whom it's a poor fit. At least one tag is required.\n` +
+    `2. descriptions — one entry per *tagged* family member, written in their voice above. Skip family members who are NOT in tags.\n\n` +
+    `Respond with a single JSON object: {"tags":[...],"descriptions":{...}}. ` +
+    `No prose, no markdown — just the JSON.`
+
+  let res
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+  } catch (e) {
+    return json(
+      { error: `anthropic fetch failed: ${e?.message || String(e)}` },
+      502,
+      cors
+    )
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return json(
+      { error: `anthropic ${res.status}: ${text.slice(0, 300)}` },
+      502,
+      cors
+    )
+  }
+  const payload = await res.json().catch(() => ({}))
+  const text =
+    (Array.isArray(payload?.content) &&
+      payload.content.map((c) => (c?.type === 'text' ? c.text : '')).join('')) ||
+    ''
+  const parsed = parseDraftJson(text)
+  if (!parsed) {
+    return json(
+      { error: 'could not parse draft', raw: text.slice(0, 500) },
+      502,
+      cors
+    )
+  }
+  return json(parsed, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+// Extract the first JSON object from the model's response. Models
+// usually obey the "JSON only" instruction but occasionally wrap with
+// ```json fences or a leading sentence; this strips both gracefully
+// and falls back to null when nothing parses.
+function parseDraftJson(text) {
+  if (typeof text !== 'string') return null
+  let cleaned = text.trim()
+  cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  const slice = cleaned.slice(start, end + 1)
+  let raw
+  try {
+    raw = JSON.parse(slice)
+  } catch {
+    return null
+  }
+  const tags = Array.isArray(raw?.tags)
+    ? raw.tags.filter((t) => FAMILY.includes(t))
+    : []
+  const descriptions = {}
+  if (raw?.descriptions && typeof raw.descriptions === 'object') {
+    for (const t of tags) {
+      const v = raw.descriptions[t]
+      if (typeof v === 'string' && v.trim()) descriptions[t] = v.trim()
+    }
+  }
+  if (!tags.length) return null
+  return { tags, descriptions }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
