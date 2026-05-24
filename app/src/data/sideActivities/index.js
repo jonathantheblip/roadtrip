@@ -230,5 +230,12 @@ export function isClosedToday(activity) {
 // ./canonical.js so the Node-based test runner (and other tooling)
 // can import them without dragging the Vite-only import.meta.glob in
 // this module into the import graph.
-export { canonicalKey } from './canonical.js'
+//
+// `canonicalKey` is already imported as a local binding at the top of
+// this file (used by getActivitiesForTrip's merge); re-exporting it
+// from here would create a duplicate "canonicalKey" binding which
+// Vite's dev-mode dependency rewriter mishandles — the local
+// disappears at runtime and the merge throws "canonicalKey is not
+// defined". External callers can pull it from './canonical.js'
+// directly, or via the public `findExisting` helper.
 export { findExisting } from './canonical.js'
