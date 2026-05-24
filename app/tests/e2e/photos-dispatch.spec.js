@@ -64,9 +64,14 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     })
   })
 
-  test('rejection: picking a video shows the designed copy, no upload', async ({
+  test('silent rejection: picking a video returns to the picker, no upload, no error panel', async ({
     page,
   }) => {
+    // Per the carryover §3, this case is Bucket A — the iOS picker
+    // can't surface a video via accept="image/*", so reaching it via
+    // file-input shenanigans is a maintainer-only edge that should
+    // never present a technical message to Helen. The modal silently
+    // resets to the picker; the dev-mode upload log captures the code.
     await seedTripIntoCache(page, FIXTURE_TRIP)
     const uploads = await mockSuccessfulUpload(page)
 
@@ -76,13 +81,14 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(mp4FileForRejection())
 
-    const err = modal.getByTestId('dispatch-error')
-    await expect(err).toBeVisible()
-    await expect(err).toContainText('Looks like a video')
+    // No Bucket C panel — Helen sees nothing technical.
+    await expect(modal.getByTestId('dispatch-bucketC')).toHaveCount(0)
+    // Picker affordance is back, ready for another pick.
+    await expect(modal.getByTestId('open-picker')).toBeVisible({ timeout: 4000 })
     expect(uploads.length).toBe(0)
   })
 
-  test('rejection: TIFF gets the "unsupported image" message', async ({ page }) => {
+  test('silent rejection: TIFF returns to the picker silently', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await mockSuccessfulUpload(page)
 
@@ -92,9 +98,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(tiffFileForRejection())
 
-    const err = modal.getByTestId('dispatch-error')
-    await expect(err).toBeVisible()
-    await expect(err).toContainText(/Unsupported|JPEG, PNG, HEIC/i)
+    await expect(modal.getByTestId('dispatch-bucketC')).toHaveCount(0)
+    await expect(modal.getByTestId('open-picker')).toBeVisible({ timeout: 4000 })
   })
 
   test('network failure: upload 500 → queued + tile still appears + sync pill shows', async ({
@@ -168,6 +173,29 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     await page.getByTestId('sync-pill').click()
     await expect(page.getByTestId('sync-pill')).toHaveCount(0, { timeout: 6000 })
     expect(attemptCount).toBeGreaterThanOrEqual(2)
+  })
+
+  test('Bucket C panel renders verbatim §3 copy with no banned vocabulary', async ({
+    page,
+  }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.addInitScript(() => {
+      window.__RT_FORCE_BUCKETC = 'photo-too-large'
+    })
+    await page.goto('/?person=helen&trip=volleyball-2026')
+    await page.getByTestId('helen-photos-entry').click()
+    await page.getByTestId('add-dispatch').click()
+    const panel = page.getByTestId('dispatch-bucketC')
+    await expect(panel).toBeVisible()
+    await expect(panel).toHaveAttribute('data-outcome', 'photo-too-large')
+    await expect(panel).toContainText('This photo is too large')
+    await expect(panel).toContainText(/screenshot/i)
+    // Banned vocabulary spot-checks — none of these technical terms
+    // should appear in any Bucket C surface.
+    const text = (await panel.textContent()) || ''
+    for (const banned of ['HEIC', 'EXIF', 'MB', 'KB', 'bytes', 'compression', 'IndexedDB', 'queue']) {
+      expect(text).not.toMatch(new RegExp(`\\b${banned}\\b`, 'i'))
+    }
   })
 
   test('EXIF capture date is primary, fallback to createdAt is labelled', async ({

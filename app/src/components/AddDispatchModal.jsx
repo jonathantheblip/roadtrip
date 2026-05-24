@@ -1,40 +1,57 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X, Image as ImageIcon, AlertCircle, Check, Loader } from 'lucide-react'
-import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { X, Image as ImageIcon, Check, Loader } from 'lucide-react'
 import { preparePhotoForUpload } from '../lib/photoPipeline'
 import { saveMemory } from '../lib/memoryStore'
 import { enqueue, registerBackgroundSync } from '../lib/uploadQueue'
 import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
-import { copyForError, classifyUploadError } from '../lib/dispatchErrors'
+import {
+  classifyUploadError,
+  userFacingErrorForOutcome,
+  copyForOutcome,
+} from '../lib/dispatchErrors'
+import { logUploadEvent } from '../lib/uploadLog'
 
 // AddDispatchModal — bottom-sheet composer for the "Add photo or
 // video" CTA in PhotosView. M2 ships the photo path; M3 adds the
 // video tab.
 //
-// Flow:
-//   1. User picks an image via the hidden <input type=file>
-//   2. preparePhotoForUpload() validates + reads EXIF + downscales
-//   3. Preview renders with caption + stop dropdown (defaults to the
-//      stop closest in time to the photo's capturedAt, else today's
-//      first stop)
-//   4. Submit: try the worker upload; on failure enqueue to
-//      IndexedDB + register background sync, then save the memory
-//      locally either way so the album updates instantly.
+// Per the carryover §3, this surface no longer renders per-code error
+// copy. Failures collapse to:
+//   - Bucket A (silent): jump to 'done', let the sync pill carry it.
+//   - Bucket C (3 fixed plain-language messages): a single panel.
 //
-// Every failure surfaces a designed message from dispatchErrors.js.
-// No raw error.toString() reaches the UI.
+// Every silent and surfaced failure is captured in the dev-mode upload
+// log via logUploadEvent() so Jonathan can trace what happened without
+// re-running the bug.
 
 const MAX_OUTPUT_BYTES = 6 * 1024 * 1024 // sanity ceiling AFTER downscale
 
 export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
   const fileInputRef = useRef(null)
-  const [phase, setPhase] = useState('pick') // 'pick' | 'preparing' | 'preview' | 'uploading' | 'error' | 'done'
+  const [phase, setPhase] = useState('pick') // 'pick' | 'preparing' | 'preview' | 'uploading' | 'bucketC' | 'done'
   const [prep, setPrep] = useState(null) // result of preparePhotoForUpload
   const [previewUrl, setPreviewUrl] = useState(null)
   const [caption, setCaption] = useState('')
   const [stopId, setStopId] = useState(() => defaultStopForToday(trip)?.id || '')
-  const [errorCode, setErrorCode] = useState(null)
-  const [errorDetail, setErrorDetail] = useState(null)
+  const [bucketCOutcome, setBucketCOutcome] = useState(null)
+  // Track how many times the current file has been through the pipeline.
+  // §3: decode/encode failures retry silently once; only on attempt 2
+  // do they upgrade to a Bucket C 'photo-unreadable' outcome.
+  const decodeAttemptsRef = useRef(0)
+  const lastPickedFileRef = useRef(null)
+
+  // Test hook for screenshot capture — when the page sets
+  // `window.__RT_FORCE_BUCKETC = 'photo-too-large' | 'video-too-long'
+  // | 'photo-unreadable'`, the modal mounts directly into the Bucket C
+  // panel for that outcome. Production code paths never read this.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const forced = window.__RT_FORCE_BUCKETC
+    if (typeof forced === 'string' && forced) {
+      setBucketCOutcome(forced)
+      setPhase('bucketC')
+    }
+  }, [])
 
   // Pick the closest stop to the photo's capturedAt time once EXIF
   // resolves — Helen most often uploads "from when we were at X."
@@ -52,34 +69,94 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
   }, [prep])
 
   function openPicker() {
-    setErrorCode(null)
-    setErrorDetail(null)
+    setBucketCOutcome(null)
+    decodeAttemptsRef.current = 0
+    lastPickedFileRef.current = null
     fileInputRef.current?.click()
+  }
+
+  async function runPipeline(file, { attempt }) {
+    return preparePhotoForUpload(file, { maxOutputBytes: MAX_OUTPUT_BYTES })
+      .then((result) => ({ ok: true, result }))
+      .catch((err) => ({
+        ok: false,
+        err,
+        code: err?.code || classifyUploadError(err) || 'decode-failed',
+        attempt,
+      }))
   }
 
   async function onFileChange(e) {
     const file = e.target.files?.[0]
     e.target.value = '' // reset so the same file can be re-picked
     if (!file) return
+    lastPickedFileRef.current = file
+    decodeAttemptsRef.current = 1
     setPhase('preparing')
-    setErrorCode(null)
-    try {
-      const result = await preparePhotoForUpload(file, {
-        maxOutputBytes: MAX_OUTPUT_BYTES,
+    setBucketCOutcome(null)
+
+    const fileMeta = fileMetaForLog(file)
+    let outcome = await runPipeline(file, { attempt: 1 })
+
+    if (!outcome.ok) {
+      // Log the first failure silently — §3 traceability.
+      logUploadEvent({
+        code: outcome.code,
+        message: outcome.err?.message,
+        stack: outcome.err?.stack,
+        fileMeta,
+        attempt: 1,
+        context: { phase: 'prepare' },
       })
-      setPrep(result)
-      setPhase('preview')
-    } catch (err) {
-      setErrorCode(err?.code || 'decode-failed')
-      setErrorDetail(err?.message || null)
-      setPhase('error')
+
+      // Surface Bucket C for size-cap errors immediately (no retry —
+      // the file isn't going to be smaller next time).
+      if (outcome.code === 'still-too-large') {
+        setBucketCOutcome('photo-too-large')
+        setPhase('bucketC')
+        return
+      }
+
+      // Decode / encode failures get one silent retry per §3.
+      if (
+        outcome.code === 'decode-failed' ||
+        outcome.code === 'heic-decode-failed' ||
+        outcome.code === 'canvas-encode-failed'
+      ) {
+        decodeAttemptsRef.current = 2
+        outcome = await runPipeline(file, { attempt: 2 })
+        if (!outcome.ok) {
+          logUploadEvent({
+            code: outcome.code,
+            outcome: 'photo-unreadable',
+            message: outcome.err?.message,
+            stack: outcome.err?.stack,
+            fileMeta,
+            attempt: 2,
+            context: { phase: 'prepare-retry' },
+          })
+          setBucketCOutcome('photo-unreadable')
+          setPhase('bucketC')
+          return
+        }
+      } else {
+        // Everything else (missing-file, is-video, not-image,
+        // unsupported-image, too-large-input) is Bucket A — silent.
+        // Jump straight back to the picker so Helen can try a
+        // different file without seeing a technical message.
+        setPhase('pick')
+        return
+      }
     }
+
+    setPrep(outcome.result)
+    setPhase('preview')
   }
 
   async function submit() {
     if (!prep || !stopId) return
     setPhase('uploading')
-    setErrorCode(null)
+    setBucketCOutcome(null)
     const memoryId = `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
     const capturedAt = prep.exif?.capturedAt || new Date().toISOString()
     const baseRef = {
@@ -116,10 +193,15 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
     // moment Helen submits — even before the worker confirms. Once the
     // drain succeeds the memory's photoRef is rewritten to the R2 URL.
     const pendingPreviewUrl = URL.createObjectURL(prep.blob)
+    const fileMeta = {
+      name: prep.mime || 'photo',
+      type: prep.mime,
+      size: prep.blob?.size,
+      exifDate: prep.exif?.capturedAt || null,
+    }
 
-    if (!isWorkerConfigured()) {
-      // No worker configured (dev / offline build). Queue and let the
-      // drain pass pick it up if/when worker comes online.
+    async function queueSilently(triggeringErr) {
+      const code = classifyUploadError(triggeringErr) || 'network'
       try {
         await enqueue({
           id: memoryId,
@@ -130,15 +212,41 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
           caption: caption.trim() || null,
           authorTraveler: traveler,
           ref: baseRef,
+          lastErrorCode: code,
+          lastError: triggeringErr?.message || null,
         })
         saveLocal({ ...baseRef, storage: 'pending', url: pendingPreviewUrl })
         await registerBackgroundSync().catch(() => {})
+        logUploadEvent({
+          code,
+          message: triggeringErr?.message,
+          stack: triggeringErr?.stack,
+          fileMeta,
+          attempt: 1,
+          context: { phase: 'upload-queued' },
+        })
         setPhase('done')
-      } catch (err) {
-        setErrorCode(classifyUploadError(err) || 'storage-quota')
-        setErrorDetail(err?.message || null)
-        setPhase('error')
+      } catch (queueErr) {
+        // The queue itself failed (most often storage-quota). §3 says
+        // never surface this — log + skip + move to done. Helen sees
+        // the tile from the in-memory blob URL we already created.
+        const queueCode = classifyUploadError(queueErr) || 'storage-quota'
+        logUploadEvent({
+          code: queueCode,
+          message: queueErr?.message,
+          stack: queueErr?.stack,
+          fileMeta,
+          attempt: 1,
+          context: { phase: 'queue-insert-failed' },
+        })
+        saveLocal({ ...baseRef, storage: 'pending', url: pendingPreviewUrl })
+        setPhase('done')
       }
+    }
+
+    if (!isWorkerConfigured()) {
+      // No worker configured (dev / offline build). Queue silently.
+      await queueSilently(new Error('worker not configured'))
       return
     }
 
@@ -152,8 +260,6 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
         }
       )
       const remote = await r.json() // { key, url, mime }
-      // Upload landed clean — release the in-session preview URL so we
-      // don't leak the blob; the R2 URL takes over.
       URL.revokeObjectURL(pendingPreviewUrl)
       saveLocal({
         ...baseRef,
@@ -163,42 +269,12 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
       })
       setPhase('done')
     } catch (err) {
-      // Worker call failed — queue and notify. The memory still saves
-      // locally (with a pending ref + blob URL preview) so the album
-      // reflects the action immediately; the sync pill tracks the
-      // backlog and the drain pass will swap the URL when the upload
-      // eventually succeeds.
-      const code = classifyUploadError(err) || 'network'
-      try {
-        await enqueue({
-          id: memoryId,
-          tripId: trip.id,
-          stopId,
-          kind: 'photo',
-          blob: prep.blob,
-          caption: caption.trim() || null,
-          authorTraveler: traveler,
-          ref: baseRef,
-        })
-        saveLocal({ ...baseRef, storage: 'pending', url: pendingPreviewUrl })
-        await registerBackgroundSync().catch(() => {})
-        if (code === 'network' || code === 'worker-5xx') {
-          // Soft failure — informational, not an error state.
-          setPhase('done')
-          return
-        }
-        setErrorCode(code)
-        setErrorDetail(err?.message || null)
-        setPhase('error')
-      } catch (queueErr) {
-        setErrorCode(classifyUploadError(queueErr) || 'storage-quota')
-        setErrorDetail(queueErr?.message || null)
-        setPhase('error')
-      }
+      // Worker call failed — silent queue, no error UI. The sync pill
+      // in the album header is the user-visible signal.
+      await queueSilently(err)
     }
   }
 
-  const errCopy = errorCode ? copyForError(errorCode) : null
   const stopOptions = useMemo(() => allStopOptions(trip), [trip])
 
   return (
@@ -278,7 +354,7 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
 
         {phase === 'pick' && <PickPanel onPick={openPicker} />}
         {phase === 'preparing' && (
-          <Status icon={<Loader size={18} />} text="Reading EXIF and compressing…" />
+          <Status icon={<Loader size={18} />} text="Reading your photo…" />
         )}
         {phase === 'preview' && prep && (
           <PreviewPanel
@@ -298,27 +374,27 @@ export function AddDispatchModal({ trip, traveler, onClose, onSaved }) {
           />
         )}
         {phase === 'uploading' && (
-          <Status icon={<Loader size={18} />} text="Uploading…" />
+          <Status icon={<Loader size={18} />} text="Sharing…" />
         )}
-        {phase === 'error' && errCopy && (
-          <ErrorPanel
-            copy={errCopy}
-            detail={errorDetail}
-            onAction={() => {
-              if (errCopy.action.kind === 'retry') {
-                if (prep) submit()
-                else openPicker()
-              } else {
-                onClose?.()
-              }
+        {phase === 'bucketC' && bucketCOutcome && (
+          <BucketCErrorPanel
+            outcome={bucketCOutcome}
+            onPickAnother={() => {
+              setBucketCOutcome(null)
+              setPrep(null)
+              setPreviewUrl(null)
+              setPhase('pick')
+              // Defer the picker open so the panel unmount completes
+              // before the file dialog grabs focus.
+              setTimeout(() => openPicker(), 0)
             }}
-            onDismiss={() => setPhase(prep ? 'preview' : 'pick')}
+            onClose={onClose}
           />
         )}
         {phase === 'done' && (
           <Status
             icon={<Check size={18} />}
-            text="Saved. Your dispatch is in the album."
+            text="Saved. Your photo is in the album."
             tone="ok"
           />
         )}
@@ -354,18 +430,6 @@ function PickPanel({ onPick }) {
         <ImageIcon size={18} style={{ color: 'var(--accent)' }} />
         Pick a photo from this phone
       </button>
-      <p
-        style={{
-          fontFamily: 'Fraunces, Georgia, serif',
-          fontStyle: 'italic',
-          fontSize: 13,
-          color: 'var(--muted)',
-          margin: '12px 0 0',
-          lineHeight: 1.4,
-        }}
-      >
-        Videos come in M3. For now this composer handles photos only.
-      </p>
     </div>
   )
 }
@@ -406,6 +470,10 @@ function PreviewPanel({
           />
         )}
       </div>
+      {/* Internal metadata line. Kept visible for now so dev-mode hands
+          have a quick check while M3 lands, but it's deliberately
+          terse and uses only what Helen would understand if she saw it
+          (no MB/bytes/EXIF labels). */}
       <div
         data-testid="prep-metadata"
         style={{
@@ -419,18 +487,6 @@ function PreviewPanel({
         }}
       >
         {prep.width}×{prep.height} from {prep.originalWidth}×{prep.originalHeight}
-        {' · '}
-        {Math.round(prep.blob.size / 1024)} KB
-        {prep.exif?.capturedAt && (
-          <>
-            {' · '}EXIF: {new Date(prep.exif.capturedAt).toLocaleString(undefined, {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </>
-        )}
       </div>
 
       <label style={labelStyle}>Caption (optional)</label>
@@ -522,50 +578,60 @@ function Status({ icon, text, tone }) {
   )
 }
 
-function ErrorPanel({ copy, detail, onAction, onDismiss }) {
+// The ONLY user-visible failure surface. Renders one of the three
+// Bucket C plain-language outcomes from dispatchErrors.js. There is no
+// per-code variation — anything that needs to be more specific should
+// be queued silently and logged to the dev panel instead.
+function BucketCErrorPanel({ outcome, onPickAnother, onClose }) {
+  const copy = copyForOutcome(outcome)
   return (
     <div
-      data-testid="dispatch-error"
+      data-testid="dispatch-bucketC"
+      data-outcome={outcome}
       style={{
-        padding: '16px 14px',
-        border: '1px solid color-mix(in srgb, var(--accent) 60%, transparent)',
+        padding: '20px 16px',
+        border: '1px solid var(--border)',
         borderRadius: 10,
-        background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+        background: 'var(--card, transparent)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <AlertCircle size={16} style={{ color: 'var(--accent)' }} />
-        <strong
-          style={{
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 16,
-            color: 'var(--text)',
-          }}
-        >
-          {copy.title}
-        </strong>
-      </div>
       <p
         style={{
           fontFamily: 'Fraunces, Georgia, serif',
-          fontSize: 14,
+          fontSize: 17,
+          fontWeight: 600,
+          margin: '0 0 8px',
           color: 'var(--text)',
-          margin: '0 0 12px',
+          lineHeight: 1.3,
+        }}
+      >
+        {copy.title}
+      </p>
+      <p
+        style={{
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 14.5,
+          color: 'var(--text)',
+          margin: '0 0 16px',
           lineHeight: 1.45,
+          opacity: 0.85,
         }}
       >
         {copy.body}
       </p>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        {copy.action.kind !== 'cancel' && (
-          <button type="button" onClick={onDismiss} className="btn-pill" style={{ cursor: 'pointer' }}>
-            Back
-          </button>
-        )}
         <button
           type="button"
-          data-testid="dispatch-error-action"
-          onClick={onAction}
+          onClick={onClose}
+          className="btn-pill"
+          style={{ cursor: 'pointer' }}
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={onPickAnother}
+          data-testid="dispatch-bucketC-action"
           className="btn-pill"
           style={{
             cursor: 'pointer',
@@ -574,7 +640,7 @@ function ErrorPanel({ copy, detail, onAction, onDismiss }) {
             border: '1px solid var(--accent)',
           }}
         >
-          {copy.action.label}
+          Pick another
         </button>
       </div>
     </div>
@@ -645,4 +711,13 @@ function stopMillis(isoDate, timeStr) {
   if (Number.isNaN(d.getTime())) return null
   d.setHours(h, min, 0, 0)
   return d.getTime()
+}
+
+function fileMetaForLog(file) {
+  if (!file) return null
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+  }
 }

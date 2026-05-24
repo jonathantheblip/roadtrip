@@ -47,13 +47,16 @@ function asPromise(req) {
 
 // Add a queued item. `item.id` is the unique key — typically the
 // memory id so a retry of an already-queued upload is a no-op.
-// Returns the stored record.
+// Returns the stored record. `lastErrorCode` is the dispatchErrors
+// classify code from the most recent attempt; the dev-mode upload log
+// uses it to group entries by failure reason.
 export async function enqueue(item) {
   if (!item?.id) throw new Error('enqueue: item.id required')
   const record = {
     queuedAt: Date.now(),
     attempts: 0,
     lastError: null,
+    lastErrorCode: null,
     ...item,
   }
   const db = await openDb()
@@ -126,6 +129,11 @@ export async function clear() {
 // removed; on failure the attempts counter increments and the next
 // item still runs (one bad item doesn't block the rest). Returns
 // `{ drained, remaining, failures }` for the UI to surface.
+//
+// `lastErrorCode` is stamped onto the queue record when the thrown
+// error exposes `.code`. The drain caller (PhotosView triggerDrain,
+// SW sync handler) classifies generic errors before re-throwing so the
+// code lands here without us re-importing the classifier.
 export async function drain(runner) {
   if (typeof runner !== 'function') {
     throw new Error('drain: runner function required')
@@ -144,8 +152,13 @@ export async function drain(runner) {
       await update(item.id, {
         attempts: (item.attempts || 0) + 1,
         lastError: err?.message || String(err),
+        lastErrorCode: err?.code || item.lastErrorCode || null,
       })
-      failures.push({ id: item.id, error: err?.message || String(err) })
+      failures.push({
+        id: item.id,
+        error: err?.message || String(err),
+        code: err?.code || null,
+      })
     }
   }
   const remaining = await count()

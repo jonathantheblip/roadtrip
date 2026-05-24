@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload, FileText, Pencil, Trash2 } from 'lucide-react'
+import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload, FileText, Pencil, Trash2, Terminal } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import {
@@ -10,6 +10,13 @@ import {
   WORKER_META,
 } from '../lib/workerSync'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
+import {
+  clearUploadLog,
+  isDevModeEnabled,
+  readUploadLog,
+  uploadLogAsText,
+  uploadLogHistogram,
+} from '../lib/uploadLog'
 
 // Per-trip settings panel: calendar export, shared album link, appearance,
 // traveler-picker, sync status. Sync now goes to a Cloudflare Worker
@@ -564,6 +571,157 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
           </p>
         )}
       </section>
+
+      <DevModeUploadLog />
     </div>
+  )
+}
+
+// Maintainer-only dev panel. Hidden unless localStorage.rt_dev_mode is
+// 'true' (flipped from DevTools — no UI to set the flag). Renders the
+// dispatch upload log ring buffer with a code histogram and a
+// "Copy all" button for paste-into-Slack debugging.
+function DevModeUploadLog() {
+  const [entries, setEntries] = useState(() =>
+    isDevModeEnabled() ? readUploadLog() : []
+  )
+  const [enabled] = useState(isDevModeEnabled)
+  const [copied, setCopied] = useState(false)
+
+  function refresh() {
+    setEntries(readUploadLog())
+  }
+  function copyAll() {
+    const text = uploadLogAsText()
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+    }
+  }
+  function clearAll() {
+    clearUploadLog()
+    setEntries([])
+  }
+
+  if (!enabled) return null
+  const histogram = uploadLogHistogram()
+  const histLine =
+    Object.entries(histogram)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(' · ') || '(empty)'
+
+  return (
+    <section
+      className="px-6 py-8 border-b surface-rule"
+      data-testid="dev-upload-log"
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Terminal size={14} />
+        <p className="smallcaps f-dm text-[11px] opacity-70">Upload log · dev mode</p>
+      </div>
+      <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
+        Every silent and surfaced dispatch failure. Helen never sees these
+        codes; this panel is the trace surface for debugging without
+        re-running the bug.
+      </p>
+      <p className="f-mono text-[11px] opacity-80 mb-3" data-testid="dev-upload-log-histogram">
+        {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} · {histLine}
+      </p>
+      <div className="flex" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button type="button" className="btn-pill" onClick={refresh}>
+          <RefreshCw size={12} /> Refresh
+        </button>
+        <button type="button" className="btn-pill" onClick={copyAll}>
+          {copied ? <Check size={12} /> : <Upload size={12} />}
+          {copied ? 'Copied' : 'Copy all'}
+        </button>
+        <button
+          type="button"
+          className="btn-pill"
+          onClick={clearAll}
+          style={{ color: 'var(--accent)' }}
+        >
+          <Trash2 size={12} /> Clear
+        </button>
+      </div>
+      {entries.length === 0 ? (
+        <p className="f-dm text-sm opacity-50 italic">
+          No failures recorded yet.
+        </p>
+      ) : (
+        <ul
+          data-testid="dev-upload-log-list"
+          style={{
+            listStyle: 'none',
+            padding: 0,
+            margin: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            maxHeight: 360,
+            overflowY: 'auto',
+          }}
+        >
+          {entries
+            .slice()
+            .reverse()
+            .map((e, i) => (
+              <li
+                key={`${e.ts}-${i}`}
+                style={{
+                  padding: '8px 10px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--card, transparent)',
+                }}
+              >
+                <div
+                  className="f-mono"
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: '0.04em',
+                    color: e.bucket === 'C' ? 'var(--accent)' : 'inherit',
+                    opacity: 0.85,
+                  }}
+                >
+                  [{e.bucket}] {e.code}
+                  {e.outcome ? ` → ${e.outcome}` : ''}
+                  {e.attempt > 1 ? ` · attempt ${e.attempt}` : ''}
+                </div>
+                <div
+                  className="f-mono"
+                  style={{ fontSize: 10, opacity: 0.55, marginTop: 2 }}
+                >
+                  {e.ts}
+                </div>
+                {e.message && (
+                  <div
+                    className="f-dm"
+                    style={{ fontSize: 12, marginTop: 4, wordBreak: 'break-word' }}
+                  >
+                    {e.message}
+                  </div>
+                )}
+                {e.fileMeta && (
+                  <div
+                    className="f-mono"
+                    style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}
+                  >
+                    {[
+                      e.fileMeta.name && `name=${e.fileMeta.name}`,
+                      e.fileMeta.type && `type=${e.fileMeta.type}`,
+                      e.fileMeta.size != null && `size=${e.fileMeta.size}`,
+                    ]
+                      .filter(Boolean)
+                      .join('  ')}
+                  </div>
+                )}
+              </li>
+            ))}
+        </ul>
+      )}
+    </section>
   )
 }

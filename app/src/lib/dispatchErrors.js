@@ -1,98 +1,163 @@
-// Designed error states for the dispatch (Add photo / video) flow.
+// Designed error policy for the dispatch (Add photo / video) flow.
 //
-// Every failure mode the user can encounter has copy here. The modal
-// reads via copyForError(code); falling back to a generic line that
-// is STILL safe to show — never a raw error.toString() in the UI.
+// Per the carryover §3 (2026-05-24), the user-facing surface for upload
+// failures collapses to two buckets:
+//
+//   Bucket A — silent and automatic. The composer jumps to 'done', the
+//   sync pill in the album header carries the signal, and the queue
+//   drains on next foreground / online event / successful retry. No
+//   toast, no language, no technical vocabulary.
+//
+//   Bucket C — genuine user-action-required. Exactly three plain-
+//   language strings ever appear in failure UI. They map to:
+//     - video-too-long   (post-encode size cap exceeded)
+//     - photo-too-large  (post-compression size cap exceeded)
+//     - photo-unreadable (decode failed after one silent retry)
+//
+// The internal classify codes survive for traceability (dev-mode upload
+// log, queue lastErrorCode field), but they no longer drive copy.
+// Helen's vocabulary is photo / video / share / trim / screenshot —
+// nothing else.
 
-const COPY = {
-  // file picker
-  'missing-file': {
-    title: 'No file picked',
-    body: 'Tap the picker and choose a photo or video to share.',
-    action: { kind: 'retry', label: 'Try again' },
+// All internal classify codes the pipeline can produce. Preserved for
+// dev-mode logging and queue metadata. The bucket each code belongs to
+// is what determines whether and how it surfaces.
+export const ALL_CODES = [
+  'missing-file',
+  'is-video',
+  'not-image',
+  'unsupported-image',
+  'too-large-input',
+  'decode-failed',
+  'heic-decode-failed',
+  'canvas-encode-failed',
+  'still-too-large',
+  'storage-quota',
+  'network',
+  'worker-5xx',
+  'worker-auth',
+  // Video-path codes added in M3 — listed here so the bucket map and
+  // the dev log both know about them from day one.
+  'video-encode-failed',
+  'video-too-large',
+  'webcodecs-unavailable',
+]
+
+// Codes that NEVER surface to the user. The composer pivots to 'done'
+// on these and lets the sync pill carry the signal. The dev-mode upload
+// log captures them in full.
+//
+// 'canvas-encode-failed' and 'heic-decode-failed' are silent on the
+// FIRST attempt. If they recur after a single in-modal retry, the
+// caller upgrades them to 'photo-unreadable' (Bucket C) before this
+// map is consulted — so they stay listed here as silent by default.
+const BUCKET_A = new Set([
+  'network',
+  'worker-5xx',
+  'worker-auth',
+  'storage-quota',
+  'missing-file',
+  'canvas-encode-failed',
+  'heic-decode-failed',
+  // The iOS photo picker only surfaces images/videos. These cases are
+  // unreachable from a normal pick but still possible from a Files
+  // picker or a share-sheet drop, so we keep them silent rather than
+  // crashing the modal.
+  'is-video',
+  'not-image',
+  'unsupported-image',
+  'too-large-input',
+  'decode-failed',
+  // M3 silent cases:
+  'webcodecs-unavailable', // hide affordance, don't error
+  'video-encode-failed',   // single silent retry handled by caller; if
+                            // it recurs the caller upgrades to a Bucket C
+                            // outcome
+])
+
+// The three Bucket C outcomes. These are NOT internal codes — they're
+// the named outcomes the UI can render. The mapping from internal code
+// → outcome is what the modal calls to decide whether to render a
+// plain-language panel.
+export const BUCKET_C_OUTCOMES = {
+  'video-too-long': {
+    title: 'This video is too long to share.',
+    body: 'Trim it in Photos first, then share the shorter version.',
   },
-  'is-video': {
-    title: 'Looks like a video',
-    body: 'This dispatch is for photos. Switch to the video composer to share it.',
-    action: { kind: 'cancel', label: 'OK' },
+  'photo-too-large': {
+    title: 'This photo is too large.',
+    body: 'Try sharing a screenshot of it instead.',
   },
-  'not-image': {
-    title: "That doesn't look like a photo",
-    body: 'Pick a JPEG, PNG, HEIC, or WebP image from your library.',
-    action: { kind: 'retry', label: 'Pick again' },
-  },
-  'unsupported-image': {
-    title: 'Unsupported image format',
-    body: 'Pick a JPEG, PNG, HEIC, or WebP. If this is a RAW or DNG file, export a JPEG copy from Photos first.',
-    action: { kind: 'retry', label: 'Pick again' },
-  },
-  'too-large-input': {
-    title: 'File is too large',
-    body: 'Pick a smaller photo, or export a lower-resolution copy from Photos.',
-    action: { kind: 'retry', label: 'Pick again' },
-  },
-  // decode / encode
-  'decode-failed': {
-    title: "Couldn't read the image",
-    body: 'The file looks corrupted or partial. Try a different photo.',
-    action: { kind: 'retry', label: 'Pick another' },
-  },
-  'heic-decode-failed': {
-    title: 'HEIC not readable on this browser',
-    body: 'iPhone HEIC works on iOS 17 and up. Export a JPEG copy from Photos and try again.',
-    action: { kind: 'retry', label: 'Pick again' },
-  },
-  'canvas-encode-failed': {
-    title: "Couldn't compress the photo",
-    body: 'Try again. If it keeps failing, free up some storage on this phone and reopen the app.',
-    action: { kind: 'retry', label: 'Try again' },
-  },
-  'still-too-large': {
-    title: 'Photo is still too big after compression',
-    body: "It must be very high-resolution. Pick a different photo, or export a smaller copy from Photos.",
-    action: { kind: 'retry', label: 'Pick another' },
-  },
-  // storage
-  'storage-quota': {
-    title: 'Out of storage on this phone',
-    body: "Free up space in Photos or apps, then tap retry. Until then, the dispatch will keep trying when storage opens up.",
-    action: { kind: 'retry', label: 'Retry' },
-  },
-  // upload network
-  'network': {
-    title: 'No internet right now',
-    body: "Saved locally — the dispatch will upload when you're back online. You can keep using the app.",
-    action: { kind: 'dismiss', label: 'OK' },
-  },
-  'worker-5xx': {
-    title: 'Server hiccup',
-    body: "We saved the dispatch locally and will retry automatically. Nothing to do.",
-    action: { kind: 'dismiss', label: 'OK' },
-  },
-  'worker-auth': {
-    title: 'Family token rejected',
-    body: 'This phone is signed in as someone the worker doesn\'t recognize. Tell Jonathan.',
-    action: { kind: 'cancel', label: 'Close' },
+  'photo-unreadable': {
+    title: "This photo can't be read right now.",
+    body: 'Try sharing it again, or share a different photo.',
   },
 }
 
-const FALLBACK = {
-  title: 'Something went wrong',
-  body: "Saved locally — it'll try again when conditions improve.",
-  action: { kind: 'retry', label: 'Try again' },
+// Map an internal classify code + the context that produced it to a
+// Bucket C outcome key, or null for silent (Bucket A). Context lets the
+// classify caller signal "this is the second attempt at a decode and it
+// still failed" — only at that point does the silent code upgrade to a
+// user-visible outcome.
+//
+// Returns:
+//   - one of 'video-too-long' / 'photo-too-large' / 'photo-unreadable'
+//   - or null (meaning: silent, queue + pill carries the signal)
+export function userFacingErrorForOutcome({ code, context = {} } = {}) {
+  if (!code) return null
+
+  // Direct Bucket C codes from the video and photo size paths.
+  if (code === 'video-too-large') return 'video-too-long'
+  if (code === 'still-too-large') return 'photo-too-large'
+
+  // Decode failures upgrade to a Bucket C outcome only on the SECOND
+  // attempt — the caller passes { attempt: 2 } after a single silent
+  // retry has already failed.
+  if (
+    (code === 'decode-failed' ||
+      code === 'heic-decode-failed' ||
+      code === 'canvas-encode-failed') &&
+    context.attempt >= 2
+  ) {
+    return 'photo-unreadable'
+  }
+
+  // Everything else is Bucket A.
+  return null
 }
 
-export function copyForError(code) {
-  if (!code) return FALLBACK
-  if (Object.prototype.hasOwnProperty.call(COPY, code)) return COPY[code]
-  return FALLBACK
+// Look up the copy for a Bucket C outcome. Throws if asked for an
+// unknown outcome — that would be a wiring bug worth catching loudly.
+export function copyForOutcome(outcome) {
+  const copy = BUCKET_C_OUTCOMES[outcome]
+  if (!copy) {
+    throw new Error(
+      `copyForOutcome: unknown outcome '${outcome}'. ` +
+        `Valid: ${Object.keys(BUCKET_C_OUTCOMES).join(', ')}.`
+    )
+  }
+  return copy
+}
+
+// Bucket lookup for the dev-mode upload log so the log can colour-code
+// silent vs. surfaced entries. NOT used to drive UI.
+export function bucketForCode(code) {
+  if (BUCKET_A.has(code)) return 'A'
+  if (
+    code === 'video-too-large' ||
+    code === 'still-too-large'
+  ) {
+    return 'C'
+  }
+  return 'A'
 }
 
 // Classify a thrown error from the upload path into one of our codes.
-// `err.code` (set by photoPipeline + uploadQueue) wins; otherwise
-// match on message text. Returns a code that copyForError() understands.
+// `err.code` (set by photoPipeline + uploadQueue) wins; otherwise match
+// on message text. Returns a code that bucketForCode() and
+// userFacingErrorForOutcome() understand, or null if nothing matched.
 export function classifyUploadError(err) {
-  if (err?.code && Object.prototype.hasOwnProperty.call(COPY, err.code)) {
+  if (err?.code && ALL_CODES.includes(err.code)) {
     return err.code
   }
   const msg = String(err?.message || err || '').toLowerCase()
@@ -100,10 +165,51 @@ export function classifyUploadError(err) {
   if (/networkerror|failed to fetch|load failed|fetch failed/.test(msg)) return 'network'
   if (/worker 4\d\d/.test(msg)) {
     if (/401|403/.test(msg)) return 'worker-auth'
-    return 'worker-5xx' // 4xx other than auth → treat as transient server issue
+    return 'worker-5xx' // 4xx other than auth → treat as transient
   }
   if (/worker 5\d\d/.test(msg)) return 'worker-5xx'
   return null
 }
 
-export const ALL_CODES = Object.keys(COPY)
+// ─── Vocabulary guard ───────────────────────────────────────────────
+//
+// Tests use this to assert that no Bucket C copy contains a banned
+// technical term. Kept here (not in the test file) so future copy
+// changes that introduce a banned word fail loudly in CI.
+
+export const BANNED_VOCABULARY = [
+  'HEIC',
+  'EXIF',
+  'codec',
+  'queue',
+  'IndexedDB',
+  'MB',
+  'KB',
+  'bytes',
+  'compression',
+  'encoding',
+  'ffmpeg',
+  'WebCodecs',
+  'mp4-muxer',
+  'blob',
+  'R2',
+  'Worker',
+  'token',
+  'auth',
+  'sync',
+  'drain',
+  'retry-loop',
+  'attempts',
+]
+
+export function containsBannedVocabulary(text) {
+  if (!text) return null
+  const lc = String(text).toLowerCase()
+  for (const word of BANNED_VOCABULARY) {
+    // Word-boundary check on lowercase form to avoid substring false
+    // positives (e.g. 'mb' inside 'remember' should not flag).
+    const pattern = new RegExp(`\\b${word.toLowerCase()}\\b`)
+    if (pattern.test(lc)) return word
+  }
+  return null
+}
