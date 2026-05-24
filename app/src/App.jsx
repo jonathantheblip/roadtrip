@@ -15,6 +15,7 @@ import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
 import { AllPhotosView } from './views/AllPhotosView'
 import { ImportView } from './views/ImportView'
+import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
@@ -181,6 +182,12 @@ export default function App() {
   const [tripId, setTripId] = useState(readRequestedTripId)
   const [view, setView] = useState(() => initialViewFromUrl()) // 'index' | 'trip' | 'stop' | 'settings' | 'new' | 'edit' | 'activities' | 'photos' | 'import'
   const [helenDark, toggleHelenDark] = useHelenDark()
+  // Claude-in-App M1: panel state lives at App level so the entry
+  // points scattered across views all open the same surface, and the
+  // panel's per-trip context falls out of the existing `trip` resolve.
+  const [claudeOpen, setClaudeOpen] = useState(false)
+  function openClaude() { setClaudeOpen(true) }
+  function closeClaude() { setClaudeOpen(false) }
   const tripsApi = useTrips()
   const allTrips = tripsApi.trips
   // Drafts (manual-add, not yet published) never appear in the polished
@@ -625,6 +632,14 @@ export default function App() {
               ))}
             </select>
           )}
+          {/* Claude entry — only when there's a trip in context (matches
+              spec: in-trip surface "Modify this trip with Claude"). On
+              non-trip deep views (settings, photos, etc.) the button
+              still surfaces so the conversation can continue with that
+              trip's context loaded. M1 has no badge. */}
+          {trip && (
+            <ClaudeEntryButton onClick={openClaude} label="Modify this trip with Claude" />
+          )}
           <button
             type="button"
             onClick={openSettings}
@@ -730,6 +745,34 @@ export default function App() {
       {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && (
         <Switcher active={traveler} onSwitch={handleTravelerSwitch} />
       )}
+
+      {/* Claude-in-App M1 — floating entry on the trips index.
+          Bottom-right, lifted above any future bottom chrome. The
+          in-trip entry lives in the fixed top bar above. */}
+      {view.name === 'index' && (
+        <div
+          style={{
+            position: 'fixed',
+            right: 'max(18px, env(safe-area-inset-right))',
+            bottom: 'max(24px, env(safe-area-inset-bottom))',
+            zIndex: 50,
+          }}
+        >
+          <ClaudeEntryButton onClick={openClaude} floating label="Plan with Claude" />
+        </div>
+      )}
+
+      {/* Spec: floating FAB on the trips index = "Plan a trip with
+          Claude" (no specific trip in context). In-trip entry =
+          "Modify this trip with Claude" (trip pre-loaded). The panel
+          drops its trip context whenever the user is on the index. */}
+      <ClaudeChatPanel
+        open={claudeOpen}
+        onClose={closeClaude}
+        userId={traveler}
+        tripId={view.name === 'index' ? null : (trip?.id || null)}
+        tripTitle={view.name === 'index' ? null : (trip?.title || null)}
+      />
     </>
   )
 }

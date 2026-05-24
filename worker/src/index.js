@@ -100,6 +100,22 @@ export default {
       if (path === '/draft' && request.method === 'POST') {
         return await postDraft(env, request, cors)
       }
+
+      // Claude-in-App (M1)
+      if (path === '/claude/chat' && request.method === 'POST') {
+        return await postClaudeChat(env, traveler, request, cors)
+      }
+      if (path === '/claude/conversations' && request.method === 'GET') {
+        return await getClaudeConversations(env, url, cors)
+      }
+      if (path === '/claude/conversations' && request.method === 'POST') {
+        return await postClaudeConversation(env, traveler, request, cors)
+      }
+      const convoMsgMatch = path.match(/^\/claude\/conversations\/([^/]+)\/messages$/)
+      if (convoMsgMatch && request.method === 'GET') {
+        return await getClaudeConversationMessages(env, convoMsgMatch[1], cors)
+      }
+
       if (path === '/' && request.method === 'GET') {
         return json({ ok: true, traveler }, 200, cors)
       }
@@ -836,6 +852,460 @@ function parseDraftJson(text) {
   }
   if (!tags.length) return null
   return { tags, descriptions }
+}
+
+// ─── Claude in the App (M1) ───────────────────────────────────────────
+//
+// Endpoints:
+//   POST /claude/chat                              — streaming SSE
+//   GET  /claude/conversations?user_id&trip_id     — list (newest first)
+//   GET  /claude/conversations/:id/messages        — full history
+//   POST /claude/conversations                     — explicit create
+//
+// /claude/chat is the workhorse. The client passes
+//   { user_id, trip_id, conversation_id, message }
+// the Worker:
+//   1. upserts the conversation row (creates if first message)
+//   2. appends the user message
+//   3. builds the system prompt from family_profiles + active trip + reader identity
+//   4. calls Anthropic with `stream: true`
+//   5. proxies the stream as our simpler shape:
+//        data: { "type": "text_delta", "text": "..." }
+//        data: { "type": "done", "usage": { input_tokens, output_tokens } }
+//   6. persists the full assistant text + token usage on stream completion
+//
+// Anthropic's wire format gets parsed inside the Worker; the client only
+// sees text_delta + done. Keeps the front-end small and the contract
+// stable if we swap models later.
+
+const CLAUDE_CHAT_MODEL = 'claude-haiku-4-5-20251001'
+const CLAUDE_CHAT_MAX_TOKENS = 2048
+
+async function postClaudeChat(env, traveler, request, cors) {
+  if (!env.ANTHROPIC_API_KEY) {
+    return json({ error: 'Anthropic key not configured on worker' }, 500, cors)
+  }
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const userId = typeof body?.user_id === 'string' ? body.user_id : traveler
+  const tripId = typeof body?.trip_id === 'string' && body.trip_id ? body.trip_id : null
+  const conversationId =
+    typeof body?.conversation_id === 'string' && body.conversation_id
+      ? body.conversation_id
+      : null
+  const message = typeof body?.message === 'string' ? body.message.trim() : ''
+  if (!conversationId) return json({ error: 'missing conversation_id' }, 400, cors)
+  if (!message) return json({ error: 'missing message' }, 400, cors)
+
+  // Upsert conversation (idempotent — creates on first call with this id).
+  await upsertConversation(env, conversationId, userId, tripId)
+
+  // Persist user message before the model call, so a failed/aborted
+  // stream still leaves a visible record on next load.
+  await insertMessage(env, conversationId, 'user', message, null, null)
+
+  // Prior message history for this conversation (excluding the one we
+  // just inserted — we'll send it as the final user message below).
+  const history = await listMessagesForApi(env, conversationId)
+  // The just-inserted message is the last row; pop it and use the text
+  // as the final user turn. (Some SQL stacks return it as the most
+  // recent created_at row; we filter by id to be precise.)
+  const apiMessages = history
+    .filter((m) => !(m.role === 'user' && m.content === message && m.position === history.length - 1))
+    .map((m) => ({ role: m.role, content: m.content }))
+  apiMessages.push({ role: 'user', content: message })
+
+  // Build the system prompt from family + active trip + reader identity.
+  const systemPrompt = await buildClaudeSystemPrompt(env, { readerUserId: userId, tripId })
+
+  // Call Anthropic with stream:true. We translate their SSE format into
+  // our own minimal shape before sending bytes to the client.
+  let upstream
+  try {
+    upstream = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: CLAUDE_CHAT_MODEL,
+        max_tokens: CLAUDE_CHAT_MAX_TOKENS,
+        stream: true,
+        system: systemPrompt,
+        messages: apiMessages,
+      }),
+    })
+  } catch (e) {
+    return json(
+      { error: `anthropic fetch failed: ${e?.message || String(e)}` },
+      502,
+      cors
+    )
+  }
+  if (!upstream.ok || !upstream.body) {
+    const text = await upstream.text().catch(() => '')
+    return json(
+      { error: `anthropic ${upstream.status}: ${text.slice(0, 300)}` },
+      502,
+      cors
+    )
+  }
+
+  // Pipe through a transform stream. We accumulate the assistant text +
+  // final usage and write it back to D1 once the upstream stream closes.
+  const { readable, writable } = new TransformStream()
+  const writer = writable.getWriter()
+  const encoder = new TextEncoder()
+
+  ;(async () => {
+    let assembled = ''
+    let usage = { input_tokens: null, output_tokens: null }
+    const reader = upstream.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader()
+    let buf = ''
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += value
+        // Anthropic SSE frames are separated by blank lines; each frame
+        // is an `event:` line followed by a `data:` JSON line. Parse
+        // line-by-line, holding the trailing partial in `buf`.
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          const dataStr = line.slice(5).trim()
+          if (!dataStr) continue
+          let event
+          try {
+            event = JSON.parse(dataStr)
+          } catch {
+            continue
+          }
+          if (
+            event.type === 'content_block_delta' &&
+            event.delta?.type === 'text_delta' &&
+            typeof event.delta.text === 'string'
+          ) {
+            assembled += event.delta.text
+            await writer.write(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'text_delta', text: event.delta.text })}\n\n`
+              )
+            )
+          } else if (event.type === 'message_delta' && event.usage) {
+            if (typeof event.usage.input_tokens === 'number') {
+              usage.input_tokens = event.usage.input_tokens
+            }
+            if (typeof event.usage.output_tokens === 'number') {
+              usage.output_tokens = event.usage.output_tokens
+            }
+          } else if (event.type === 'message_start' && event.message?.usage) {
+            if (typeof event.message.usage.input_tokens === 'number') {
+              usage.input_tokens = event.message.usage.input_tokens
+            }
+          }
+        }
+      }
+      // Persist the full assistant message + usage, then signal done.
+      await insertMessage(
+        env,
+        conversationId,
+        'assistant',
+        assembled,
+        usage.input_tokens,
+        usage.output_tokens
+      )
+      await writer.write(
+        encoder.encode(
+          `data: ${JSON.stringify({ type: 'done', usage })}\n\n`
+        )
+      )
+    } catch (e) {
+      await writer.write(
+        encoder.encode(
+          `data: ${JSON.stringify({ type: 'error', message: e?.message || String(e) })}\n\n`
+        )
+      )
+    } finally {
+      await writer.close().catch(() => {})
+    }
+  })()
+
+  return new Response(readable, {
+    status: 200,
+    headers: {
+      ...cors,
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
+    },
+  })
+}
+
+async function upsertConversation(env, id, userId, tripId) {
+  const now = new Date().toISOString()
+  await env.DB.prepare(
+    `INSERT INTO conversations (id, user_id, trip_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`
+  ).bind(id, userId, tripId, now, now).run()
+}
+
+async function insertMessage(env, conversationId, role, content, inputTok, outputTok) {
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+  await env.DB.prepare(
+    `INSERT INTO conversation_messages
+       (id, conversation_id, role, content, created_at, usage_input_tokens, usage_output_tokens)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, conversationId, role, content, now, inputTok, outputTok).run()
+  await env.DB.prepare(
+    `UPDATE conversations SET updated_at = ? WHERE id = ?`
+  ).bind(now, conversationId).run()
+  return id
+}
+
+// listMessagesForApi returns the messages in chronological order
+// with a `position` field so callers can identify the last row reliably.
+async function listMessagesForApi(env, conversationId) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, role, content, created_at
+       FROM conversation_messages
+      WHERE conversation_id = ?
+      ORDER BY created_at ASC, id ASC`
+  ).bind(conversationId).all()
+  return (results || []).map((r, i) => ({
+    id: r.id,
+    role: r.role,
+    content: r.content,
+    created_at: r.created_at,
+    position: i,
+  }))
+}
+
+async function getClaudeConversations(env, url, cors) {
+  const userId = url.searchParams.get('user_id')
+  if (!userId) return json({ error: 'missing user_id' }, 400, cors)
+  const tripIdParam = url.searchParams.get('trip_id')
+
+  // SQLite treats `WHERE x = NULL` as never-true, so route the null
+  // case through `IS NULL` instead of binding NULL.
+  let rows
+  if (tripIdParam) {
+    const { results } = await env.DB.prepare(
+      `SELECT c.id, c.user_id, c.trip_id, c.created_at, c.updated_at,
+              (SELECT content FROM conversation_messages
+                 WHERE conversation_id = c.id AND role = 'user'
+                 ORDER BY created_at ASC LIMIT 1) AS preview
+         FROM conversations c
+        WHERE c.user_id = ? AND c.trip_id = ?
+        ORDER BY c.updated_at DESC
+        LIMIT 20`
+    ).bind(userId, tripIdParam).all()
+    rows = results
+  } else {
+    const { results } = await env.DB.prepare(
+      `SELECT c.id, c.user_id, c.trip_id, c.created_at, c.updated_at,
+              (SELECT content FROM conversation_messages
+                 WHERE conversation_id = c.id AND role = 'user'
+                 ORDER BY created_at ASC LIMIT 1) AS preview
+         FROM conversations c
+        WHERE c.user_id = ? AND c.trip_id IS NULL
+        ORDER BY c.updated_at DESC
+        LIMIT 20`
+    ).bind(userId).all()
+    rows = results
+  }
+  return json(rows || [], 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+async function postClaudeConversation(env, traveler, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const id = typeof body?.id === 'string' && body.id ? body.id : crypto.randomUUID()
+  const userId = typeof body?.user_id === 'string' ? body.user_id : traveler
+  const tripId = typeof body?.trip_id === 'string' && body.trip_id ? body.trip_id : null
+  await upsertConversation(env, id, userId, tripId)
+  return json({ id, user_id: userId, trip_id: tripId }, 200, cors)
+}
+
+async function getClaudeConversationMessages(env, conversationId, cors) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, role, content, created_at, usage_input_tokens, usage_output_tokens
+       FROM conversation_messages
+      WHERE conversation_id = ?
+      ORDER BY created_at ASC, id ASC`
+  ).bind(conversationId).all()
+  return json(results || [], 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+// System prompt — pulls profiles + active trip + reader identity.
+// Exported so the unit test can call it without a live D1 binding by
+// stubbing env.DB.
+export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
+  const profiles = await loadFamilyProfiles(env)
+  const reader = profiles[readerUserId] || profiles.helen || profiles.jonathan
+  const trip = tripId ? await loadTrip(env, tripId) : null
+
+  const lines = []
+  lines.push(
+    'You are Claude, a thinking partner helping the Jackson family plan and live their trips inside their family trip app.'
+  )
+  lines.push(
+    'Be warm, specific, and grounded. Speak naturally — not in bullet lists unless the question begs for one. Never invent venues, hours, addresses, or other specifics; if you do not know a concrete detail, say so and point the reader back to the app or to checking directly.'
+  )
+  lines.push(
+    'Your job is to help with trip-planning, surfacing tradeoffs, and answering questions about the family\'s trips. You do not take actions yet; in this version you only talk. If asked to make a change, explain what you would change and tell the reader to make the edit themselves for now.'
+  )
+
+  lines.push('')
+  lines.push('## Who is talking to you right now')
+  lines.push(formatReader(reader))
+
+  lines.push('')
+  lines.push('## The family')
+  for (const id of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const p = profiles[id]
+    if (!p) continue
+    lines.push(formatProfile(p))
+  }
+
+  lines.push('')
+  if (trip) {
+    lines.push('## The trip currently open in the app')
+    lines.push(formatTrip(trip))
+  } else {
+    lines.push('## Trip context')
+    lines.push(
+      'No specific trip is currently open. The reader is on the trips list. Help them plan, compare, or pick — without invoking specifics of a trip you have not been shown.'
+    )
+  }
+
+  lines.push('')
+  lines.push('## Style')
+  lines.push(
+    '- Use the reader\'s name once when it lands naturally; do not over-do it.'
+  )
+  lines.push(
+    '- Both adults drive. Do not call Jonathan "the driver" or describe Helen as "being driven." Refer to the family\'s travel without gendered driving framing.'
+  )
+  lines.push(
+    '- Treat any uncertainty as a place to ask a question, not to fabricate. If the family member could verify in the app, say so.'
+  )
+
+  return lines.join('\n')
+}
+
+async function loadFamilyProfiles(env) {
+  const out = {}
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT user_id, display_name, age, role, dietary, interests, tolerances, notes
+         FROM family_profiles`
+    ).all()
+    for (const r of results || []) out[r.user_id] = r
+  } catch {
+    // family_profiles missing (migration not yet run) — fall back to a
+    // minimal in-memory seed so the chat endpoint still works.
+    return {
+      jonathan: { user_id: 'jonathan', display_name: 'Jonathan', age: 'Dad', role: 'ops' },
+      helen: { user_id: 'helen', display_name: 'Helen', age: 'Mom', role: 'archive' },
+      aurelia: { user_id: 'aurelia', display_name: 'Aurelia', age: '13', role: 'her stuff' },
+      rafa: { user_id: 'rafa', display_name: 'Rafa', age: '4', role: 'mission' },
+    }
+  }
+  return out
+}
+
+async function loadTrip(env, tripId) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, title, date_range_start, date_range_end, end_city, data_json
+         FROM trips
+        WHERE id = ? AND deleted_at IS NULL`
+    ).bind(tripId).all()
+    const row = results?.[0]
+    if (!row) return null
+    let data = null
+    try { data = JSON.parse(row.data_json) } catch {}
+    return {
+      id: row.id,
+      title: row.title || data?.title,
+      dateRangeStart: row.date_range_start || data?.dateRangeStart,
+      dateRangeEnd: row.date_range_end || data?.dateRangeEnd,
+      endCity: row.end_city || data?.endCity,
+      data,
+    }
+  } catch {
+    return null
+  }
+}
+
+function formatReader(p) {
+  if (!p) return 'The reader\'s identity could not be resolved.'
+  const bits = [`Name: ${p.display_name}`]
+  if (p.age) bits.push(`Age: ${p.age}`)
+  if (p.role) bits.push(`Role in the family: ${p.role}`)
+  if (p.tolerances) bits.push(`Things they have asked for: ${p.tolerances}`)
+  return bits.join('. ') + '.'
+}
+
+function formatProfile(p) {
+  const bits = [`- ${p.display_name}`]
+  if (p.age) bits.push(`(${p.age})`)
+  if (p.role) bits.push(`— ${p.role}`)
+  let line = bits.join(' ')
+  const tail = []
+  if (p.interests) tail.push(`interests: ${p.interests}`)
+  if (p.dietary) tail.push(`dietary: ${p.dietary}`)
+  if (p.tolerances) tail.push(`tolerances: ${p.tolerances}`)
+  if (p.notes) tail.push(p.notes)
+  if (tail.length) line += `. ${tail.join('; ')}.`
+  return line
+}
+
+function formatTrip(t) {
+  if (!t) return ''
+  const lines = []
+  lines.push(`Title: ${t.title || '(untitled)'}`)
+  if (t.dateRangeStart || t.dateRangeEnd) {
+    lines.push(`Dates: ${t.dateRangeStart || '?'} → ${t.dateRangeEnd || '?'}`)
+  }
+  if (t.endCity) lines.push(`End city: ${t.endCity}`)
+  const days = t.data?.days
+  if (Array.isArray(days) && days.length) {
+    lines.push(`Days: ${days.length}`)
+    for (const d of days) {
+      const dayLine = [
+        `  Day ${d.n}${d.date ? ` (${d.date})` : ''}${d.name ? `: ${d.name}` : ''}`,
+      ]
+      lines.push(dayLine.join(''))
+      const stops = Array.isArray(d.stops) ? d.stops : []
+      for (const s of stops) {
+        const parts = []
+        if (s.time) parts.push(s.time)
+        if (s.kind) parts.push(s.kind)
+        const head = parts.join(' · ')
+        const title = s.title || s.name || '(stop)'
+        const sub = s.location || s.loc || s.address || ''
+        lines.push(`    • ${head ? head + ' — ' : ''}${title}${sub ? ` @ ${sub}` : ''}`)
+      }
+    }
+  }
+  return lines.join('\n')
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
