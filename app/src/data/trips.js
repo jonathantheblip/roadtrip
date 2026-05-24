@@ -822,8 +822,8 @@ export const VOLLEYBALL_TRIP = {
           for: ['jonathan', 'helen', 'aurelia', 'rafa'],
           note: '[Airbnb in New London](https://www.airbnb.com/rooms/54130995?source_impression_id=p3_1779276775_P3yx1UxJ9geaoPks), a short walk from Ocean Beach. Check-in opens at 1 PM but we arrive after the pickups. Keypad code on the lodging card. Tap the photo for the full listing.\n\nHost Justin: if you want the shoreline route on the way in, the Scenic route link below drives past On The Waterfront Restaurant and the Harbor Light House. Don\'t stop — the ocean view is the whole point.',
           address: '41 Lower Boulevard, New London, CT',
-          lat: 41.3052,
-          lng: -72.1072,
+          lat: 41.3225,
+          lng: -72.0943,
           image: './images/bungalow.avif',
           imageUrl:
             'https://www.airbnb.com/rooms/54130995?source_impression_id=p3_1779276775_P3yx1UxJ9geaoPks',
@@ -924,8 +924,8 @@ export const VOLLEYBALL_TRIP = {
           for: ['jonathan', 'helen', 'aurelia', 'rafa'],
           note: 'Late dinner near the beach if anything\'s open, otherwise pack-it-in pizza. Early night — Sunday\'s schedule depends on tonight\'s results.',
           address: '41 Lower Boulevard, New London, CT',
-          lat: 41.3052,
-          lng: -72.1072,
+          lat: 41.3225,
+          lng: -72.0943,
           image: './images/bungalow.avif',
         },
       ],
@@ -934,46 +934,102 @@ export const VOLLEYBALL_TRIP = {
       n: 3,
       date: 'Sun May 24',
       isoDate: '2026-05-24',
-      title: 'Playoff Sunday',
+      title: 'Round 2 Pool 2',
       drive: { from: 'New London, CT', to: 'Uncasville, CT', hours: '30m round trip', miles: 30 },
       lodging: 'Beach Bungalow',
       stops: [
         {
           id: 'vb3-1',
           time: 'AM',
-          name: 'Beach morning',
+          name: 'Beach or breakfast',
           kind: 'beach',
-          for: ['rafa', 'helen'],
-          note: 'Rafa-led. Sand, water, whatever games end up in the bag.',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: 'Low-key morning. Ocean Beach is a short walk; the bungalow kitchen has the basics. No commitment — pick what feels right.',
           address: 'Ocean Beach Park, 1225 Ocean Ave, New London, CT',
           lat: 41.3140,
           lng: -72.1093,
         },
         {
           id: 'vb3-2',
-          time: 'PM',
-          name: 'Sunday matches — depends on Saturday seeding',
-          kind: 'tournament',
-          for: ['aurelia', 'jonathan', 'helen'],
-          note:
-            "Sunday's schedule keys off Saturday's pool finish. The four scenarios:\n\n• If we finish 1st: Sun 3:00 PM on Ct 2 (match R2D1P1M1), then work the 4:00 PM on Ct 2.\n• If 2nd: Sun 4:00 PM on Ct 4 (match R2D1P2M2), then work the 8:00 PM on Ct 4.\n• If 3rd: Sun 3:00 PM on Ct 1 (match R2D2P1M1), then work the 4:00 PM on Ct 1.\n• If 4th: Sun 4:00 PM on Ct 3 (match R2D2P2M2), then work the 8:00 PM on Ct 3.\n\nLive schedule and bracket on the Schedule link below; we'll know which scenario by Saturday night. Plan arrival 30 minutes before the listed match for warmup.",
-          address: 'Mohegan Sun, 1 Mohegan Sun Blvd, Uncasville, CT',
-          lat: 41.4923,
-          lng: -72.0934,
-          url: 'https://events2.sportwrench.com/events/cffaef71f/clubs-teams?search=slam+13p+red&modalTeam=open&divisionId=24986',
-          tentative: true,
+          time: '2:00 PM',
+          name: 'Depart 41 Lower Blvd',
+          kind: 'logistics',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: 'Wheels up by 2:00–2:15 PM to absorb I-395 traffic. Court 3 call time is 3:30 PM.',
+          address: '41 Lower Boulevard, New London, CT',
+          lat: 41.3225,
+          lng: -72.0943,
         },
         {
           id: 'vb3-3',
-          time: 'Evening',
-          name: 'Back to the bungalow',
-          kind: 'lodging',
+          time: '3:30 PM',
+          name: 'Arrive Mohegan Sun — Court 3 call time',
+          kind: 'logistics',
+          for: ['aurelia', 'jonathan'],
+          note: 'Coach call time on Court 3. Helen and Rafa are welcome to spectate — optional, up to them.',
+          address: 'Court 3, Mohegan Sun, 1 Mohegan Sun Blvd, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+          arrivalBuffer: 0,
+        },
+        {
+          id: 'vb3-4',
+          time: '4:00 PM',
+          name: 'Match 1 vs Northeast 13.2 — Court 3',
+          kind: 'tournament',
+          for: ['aurelia', 'jonathan', 'helen'],
+          note: 'Round 2 Pool 2. Best of 3.',
+          address: 'Court 3, Mohegan Sun, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+          url: 'https://events2.sportwrench.com/events/cffaef71f/clubs-teams?search=slam+13p+red&modalTeam=open&divisionId=24986',
+        },
+        {
+          id: 'vb3-5',
+          time: '5:00 PM',
+          name: 'Match 2 vs SLAM 13P Black — Court 3',
+          kind: 'tournament',
+          for: ['aurelia', 'jonathan', 'helen'],
+          note: 'Round 2 Pool 2. Best of 3.',
+          address: 'Court 3, Mohegan Sun, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+          url: 'https://events2.sportwrench.com/events/cffaef71f/clubs-teams?search=slam+13p+red&modalTeam=open&divisionId=24986',
+        },
+        {
+          id: 'vb3-6',
+          time: '7:00 PM',
+          name: 'Match 3 vs NE Shock 13 1 — Court 3',
+          kind: 'tournament',
+          for: ['aurelia', 'jonathan', 'helen'],
+          note: 'Round 2 Pool 2. Best of 3.',
+          address: 'Court 3, Mohegan Sun, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+          url: 'https://events2.sportwrench.com/events/cffaef71f/clubs-teams?search=slam+13p+red&modalTeam=open&divisionId=24986',
+        },
+        {
+          id: 'vb3-7',
+          time: '8:00 PM',
+          name: 'Work duty — Court 3',
+          kind: 'duty',
+          for: ['aurelia'],
+          note: 'Team work assignment: the girls run the score table and line judging. Plan dinner around it.',
+          address: 'Court 3, Mohegan Sun, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
+        },
+        {
+          id: 'vb3-8',
+          time: 'Late',
+          name: 'Departure home — decide by 6 PM',
+          kind: 'logistics',
           for: ['jonathan', 'helen', 'aurelia', 'rafa'],
-          note: 'Pack what we can tonight to make Monday morning easier.',
-          address: '41 Lower Boulevard, New London, CT',
-          lat: 41.3052,
-          lng: -72.1072,
-          image: './images/bungalow.avif',
+          note:
+            "Two options held open, calling it by 6 PM based on Aurelia's energy:\n\n• Option A: Helen and Rafa drive home in the car when Rafa is done; Jonathan and Aurelia Uber back from Mohegan after Aurelia's work shift.\n\n• Option B: Helen and Rafa Uber home; Jonathan and Aurelia drive home together after the work shift.\n\nPrinciple: no rushing back across I-395 to pick anyone up.",
+          address: 'Mohegan Sun, 1 Mohegan Sun Blvd, Uncasville, CT',
+          lat: 41.4923,
+          lng: -72.0934,
         },
       ],
     },
@@ -993,8 +1049,8 @@ export const VOLLEYBALL_TRIP = {
           for: ['jonathan', 'helen', 'aurelia', 'rafa'],
           note: "The keypad deactivates at 1 PM and the Bracket Final tips off at 1:30 PM, so we can't come back between matches. Pack the car, do the checkout chores (towels in the washer / AC off / lights off / lock up / message Mary & Justin), then drive straight to Mohegan Sun.",
           address: '41 Lower Boulevard, New London, CT',
-          lat: 41.3052,
-          lng: -72.1072,
+          lat: 41.3225,
+          lng: -72.0943,
         },
         {
           id: 'vb4-2',
@@ -1084,4 +1140,30 @@ export function allStops(trip) {
   return trip.days.flatMap((d) =>
     d.stops.map((s) => ({ ...s, day: d.n, dayDate: d.date, dayTitle: d.title }))
   )
+}
+
+// Effective home base for distance / leave-when calculations. Prefers
+// the explicit `trip.homeBase` (when the seed sets one), and falls back
+// to the first lodging stop with coordinates. The fallback exists
+// because trip records in D1 may pre-date the homeBase field — without
+// it, the Leave-when button silently disappears.
+export function tripHomeBase(trip) {
+  const hb = trip?.homeBase
+  if (hb && Number.isFinite(hb.lat) && Number.isFinite(hb.lng)) return hb
+  for (const day of trip?.days || []) {
+    for (const stop of day.stops || []) {
+      if (
+        stop.kind === 'lodging' &&
+        Number.isFinite(stop.lat) &&
+        Number.isFinite(stop.lng)
+      ) {
+        return {
+          lat: stop.lat,
+          lng: stop.lng,
+          label: stop.address || stop.name || '',
+        }
+      }
+    }
+  }
+  return null
 }

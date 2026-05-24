@@ -10,8 +10,18 @@
 //   R2 (binding ASSETS)   — audio + photo blobs, keyed by
 //                           <traveler>/<memoryId>/<kind>-<rand>
 //
+// Routes API proxy:
+//   POST /leave-when — keeps GOOGLE_PLACES_API_KEY out of the client
+//   bundle. The iteration logic lives in ./leaveWhen.js.
+//
 // Soft delete: rows aren't dropped; deleted_at gets stamped. Pulls
 // filter by updated_at > since so tombstones propagate.
+
+import {
+  iterateLeaveBy,
+  callRoutesDriveDuration,
+  straightLineMinutes,
+} from './leaveWhen.js'
 
 const TRAVELERS = ['jonathan', 'helen', 'aurelia', 'rafa']
 
@@ -78,6 +88,9 @@ export default {
           env, traveler, uploadMatch[1], uploadMatch[2], request, url, cors
         )
       }
+      if (path === '/leave-when' && request.method === 'POST') {
+        return await postLeaveWhen(env, request, cors)
+      }
       if (path === '/' && request.method === 'GET') {
         return json({ ok: true, traveler }, 200, cors)
       }
@@ -116,7 +129,11 @@ function timingSafeEqual(a, b) {
 
 function corsHeaders(origin, env) {
   const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
-  const isAllowed = allowed.includes(origin) || origin.endsWith('.github.io')
+  // Localhost (any port) is trusted in dev. Avoids the recurring
+  // chore of enumerating every Vite port the team might bind to
+  // (5173, 5174, … 5180, 4173). github.io covers prod.
+  const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin)
+  const isAllowed = allowed.includes(origin) || origin.endsWith('.github.io') || isLocalhost
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : (allowed[0] || '*'),
     'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
@@ -416,6 +433,70 @@ async function fetchAsset(env, key, cors) {
   }
   headers.set('Cache-Control', 'private, max-age=31536000, immutable')
   return new Response(obj.body, { status: 200, headers })
+}
+
+// ─── Leave-when (Routes API proxy) ────────────────────────────────────
+
+async function postLeaveWhen(env, request, cors) {
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    return json({ error: 'Routes API not configured on worker' }, 500, cors)
+  }
+
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+
+  const { origin, destination, targetArrivalISO } = body || {}
+  if (
+    !Number.isFinite(origin?.lat) ||
+    !Number.isFinite(origin?.lng)
+  ) {
+    return json({ error: 'missing or invalid origin {lat,lng}' }, 400, cors)
+  }
+  if (
+    !Number.isFinite(destination?.lat) ||
+    !Number.isFinite(destination?.lng)
+  ) {
+    return json({ error: 'missing or invalid destination {lat,lng}' }, 400, cors)
+  }
+  if (typeof targetArrivalISO !== 'string') {
+    return json({ error: 'missing targetArrivalISO' }, 400, cors)
+  }
+  const targetMs = Date.parse(targetArrivalISO)
+  if (!Number.isFinite(targetMs)) {
+    return json({ error: 'invalid targetArrivalISO' }, 400, cors)
+  }
+  if (targetMs <= Date.now()) {
+    return json({ error: 'Target arrival is already past' }, 400, cors)
+  }
+
+  // Seed: client-supplied (typically drivingMinutesComputed from the
+  // seed), else haversine/30mph fallback. Iteration converges fast even
+  // with a wildly-off seed, but a good seed keeps it to 1 call most of
+  // the time.
+  const seed = Number.isFinite(body.seedDurationMinutes)
+    ? body.seedDurationMinutes
+    : straightLineMinutes(origin.lat, origin.lng, destination.lat, destination.lng)
+
+  try {
+    const result = await iterateLeaveBy({
+      targetArrival: new Date(targetMs),
+      seedDurationMinutes: seed,
+      callRoutes: (departureISO) =>
+        callRoutesDriveDuration({
+          apiKey: env.GOOGLE_PLACES_API_KEY,
+          origin,
+          destination,
+          departureISO,
+        }),
+    })
+    return json(result, 200, cors)
+  } catch (e) {
+    return json({ error: e?.message || String(e) }, 500, cors)
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────

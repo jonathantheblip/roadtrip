@@ -78,6 +78,16 @@
   }
 }
 
+/* Loading shimmer used by LeaveWhenModal's headline skeleton. */
+@keyframes pulseShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* ============================================
    Helen — editorial magazine top bar
    Centered italic Playfair title, brass hairline under

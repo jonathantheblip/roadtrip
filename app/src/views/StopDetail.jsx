@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { ChevronLeft, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash, Copy, Wifi, ClipboardCheck, Route } from 'lucide-react'
+import { ChevronLeft, Clock, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash, Copy, Wifi, ClipboardCheck, Route } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { tripHomeBase } from '../data/trips'
 import { mapsLink, scenicMapsLink } from '../lib/mapsLink'
 import { FlightStatus } from './FlightStatus'
 import { DayChips } from './DayChips'
 import { ThreadedMemories } from '../components/ThreadedMemories'
+import { LeaveWhenModal, leaveWhenDefaultForStop } from '../components/LeaveWhenModal'
 
 function urlLabel(stop) {
   const ticketKinds = new Set(['theater', 'show', 'concert', 'tour', 'arrival', 'departure'])
@@ -20,6 +22,16 @@ function urlLabel(stop) {
 // charcoal/cream so it matches Jonathan / Rafa / dark-mode Helen.
 // Embedded panels (flight, lodging) react to the surface via CSS.
 export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay }) {
+  const [leaveOpen, setLeaveOpen] = useState(false)
+  // Show leave-when only when we have the inputs the modal needs and
+  // it makes sense (skip on lodging — that's the home base itself).
+  const homeBase = tripHomeBase(trip)
+  const canLeaveWhen =
+    !!homeBase &&
+    Number.isFinite(stop?.lat) &&
+    Number.isFinite(stop?.lng) &&
+    stop.kind !== 'lodging'
+  const leaveWhenDefault = leaveWhenDefaultForStop(stop, day)
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
       {onOpenDay && (
@@ -84,8 +96,29 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
               {urlLabel(stop)}
             </a>
           )}
+          {canLeaveWhen && (
+            <button
+              type="button"
+              className="btn-pill"
+              onClick={() => setLeaveOpen(true)}
+              style={{ cursor: 'pointer' }}
+            >
+              <Clock size={12} />
+              Leave when?
+            </button>
+          )}
         </div>
       </header>
+      {leaveOpen && (
+        <LeaveWhenModal
+          destination={{ lat: stop.lat, lng: stop.lng }}
+          destinationName={stop.name}
+          defaultOrigin={homeBase}
+          defaultTarget={leaveWhenDefault}
+          traveler={traveler}
+          onClose={() => setLeaveOpen(false)}
+        />
+      )}
 
       {stop.image && (
         <figure className="px-6 pt-6">

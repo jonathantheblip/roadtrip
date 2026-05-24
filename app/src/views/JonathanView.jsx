@@ -94,6 +94,18 @@ function deriveOpenLoops(trip) {
   return loops.slice(0, 3)
 }
 
+// Cap text at `max` chars but never mid-word. Trailing punctuation
+// trimmed, "…" appended only when actually shortened — so a short
+// overview prints whole and a long one ends cleanly on a word boundary.
+// Was a hard `slice(0, 140)` before, which printed "playoff ma" mid-word.
+function truncateAtWord(str, max) {
+  if (!str || str.length <= max) return str || ''
+  const sliced = str.slice(0, max)
+  const lastSpace = sliced.lastIndexOf(' ')
+  const base = (lastSpace > 40 ? sliced.slice(0, lastSpace) : sliced).replace(/[\s,;:.\-—]+$/, '')
+  return `${base}…`
+}
+
 // Quick-glance flight stat for the top strip. We only show what we
 // know for sure — the flight number and its scheduled arrival time.
 // Live status (delays, gate, etc.) is a separate panel below; lying
@@ -235,7 +247,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
             lineHeight: 1.4,
           }}
         >
-          {trip.overview?.slice(0, 140) || trip.subtitle}
+          {truncateAtWord(trip.overview, 140) || trip.subtitle}
         </div>
       </div>
 

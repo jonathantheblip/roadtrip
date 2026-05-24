@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
@@ -92,11 +92,31 @@ function readRequestedTripId() {
   }
 }
 
-// Default landing trip when the URL doesn't pin one: latest dateRangeStart
-// wins, so adding a future trip auto-rolls the cold-start view forward.
-function pickDefaultTrip(trips) {
+// "Today" in local time as YYYY-MM-DD. Trip dates are stored as
+// YYYY-MM-DD, so string comparison is safe and timezone-stable.
+function todayIso() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// Active-trip spec: pick the trip whose [startDate, endDate] window
+// contains today. If multiple match, the latest startDate wins. Return
+// null when nothing matches — the caller shows the trip picker rather
+// than falling back to any default. Replaces the older "latest
+// dateRangeStart wins regardless of dates" behavior, which made the
+// PWA open on a future trip the moment that trip was scheduled.
+function pickActiveTrip(trips, today = todayIso()) {
   if (!trips || trips.length === 0) return null
-  return trips.reduce((best, t) =>
+  const matches = trips.filter((t) => {
+    const start = t.dateRangeStart
+    const end = t.dateRangeEnd
+    return start && end && start <= today && today <= end
+  })
+  if (matches.length === 0) return null
+  return matches.reduce((best, t) =>
     (t.dateRangeStart || '') > (best.dateRangeStart || '') ? t : best
   )
 }
@@ -149,12 +169,18 @@ export default function App() {
   }, [traveler, helenDark])
 
   // Mirror tripId in the URL too, so a home-screen save remembers it.
+  // When tripId clears (cold-load override decided no trip matches
+  // today), strip ?trip= so the next launch starts clean.
   useEffect(() => {
-    if (!tripId) return
     try {
       const url = new URL(window.location.href)
-      if (url.searchParams.get('trip') !== tripId) {
-        url.searchParams.set('trip', tripId)
+      if (tripId) {
+        if (url.searchParams.get('trip') !== tripId) {
+          url.searchParams.set('trip', tripId)
+          window.history.replaceState(null, '', url.toString())
+        }
+      } else if (url.searchParams.has('trip')) {
+        url.searchParams.delete('trip')
         window.history.replaceState(null, '', url.toString())
       }
     } catch {
@@ -206,8 +232,41 @@ export default function App() {
   // Editor/Drafts can target a draft by id, so resolve against the full
   // list; cold-start default only ever picks from the visible (non-draft)
   // set so a draft can never become the landing trip.
+  const activeTrip = pickActiveTrip(visibleTrips)
   const trip =
-    (tripId && allTrips.find((t) => t.id === tripId)) || pickDefaultTrip(visibleTrips)
+    (tripId && allTrips.find((t) => t.id === tripId)) || activeTrip
+
+  // Cold-load override: when the URL ?trip= param points at a trip whose
+  // window doesn't contain today (typical case: PWA was installed when
+  // some other trip was the latest, the saved home-screen URL pinned
+  // it), bounce to today's active trip per spec. When nothing matches
+  // today's date, drop to the picker — no silent default fallback.
+  const coldLoadHandledRef = useRef(false)
+  useEffect(() => {
+    if (coldLoadHandledRef.current) return
+    if (!visibleTrips.length) return
+    coldLoadHandledRef.current = true
+
+    const today = todayIso()
+    const active = pickActiveTrip(visibleTrips, today)
+    const urlTrip = tripId ? visibleTrips.find((t) => t.id === tripId) : null
+    const urlTripIsActiveToday = !!(
+      urlTrip &&
+      urlTrip.dateRangeStart &&
+      urlTrip.dateRangeEnd &&
+      urlTrip.dateRangeStart <= today &&
+      today <= urlTrip.dateRangeEnd
+    )
+
+    if (urlTripIsActiveToday) return
+    if (active) {
+      if (tripId !== active.id) setTripId(active.id)
+      return
+    }
+    if (tripId) setTripId(null)
+    if (view.name !== 'index') setView({ name: 'index' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleTrips])
 
   // A draft has no polished view — if something points the trip surface
   // at one (e.g. a stale ?trip=<draft> URL), send it to the editor.

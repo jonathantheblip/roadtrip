@@ -69,7 +69,7 @@ function authHeader() {
   return `Bearer ${token}`
 }
 
-async function workerFetch(path, opts = {}) {
+export async function workerFetch(path, opts = {}) {
   if (!isWorkerConfigured()) throw new Error('worker not configured')
   const headers = new Headers(opts.headers || {})
   headers.set('Authorization', authHeader())

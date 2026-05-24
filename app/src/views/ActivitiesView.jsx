@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, MapPin, Phone, Clock, AlertCircle, Sparkles } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { tripHomeBase } from '../data/trips'
 import {
   getActivitiesForTrip,
   filterActivities,
@@ -11,6 +12,7 @@ import {
   isClosedToday,
 } from '../data/sideActivities'
 import { computeOpenState, openStateColor } from '../lib/openState'
+import { LeaveWhenModal } from '../components/LeaveWhenModal'
 
 // Things to do — trip-scoped activity menu. Filter chips at the top
 // (4 family members + Everyone, strict intersection); category-grouped
@@ -142,6 +144,7 @@ export function ActivitiesView({ trip, traveler, onBack }) {
                   key={activity.id}
                   activity={activity}
                   traveler={traveler}
+                  homeBase={tripHomeBase(trip)}
                 />
               ))}
             </Section>
@@ -299,13 +302,21 @@ function Section({ label, children }) {
   )
 }
 
-function ActivityCard({ activity, traveler }) {
+function ActivityCard({ activity, traveler, homeBase }) {
   const [notesOpen, setNotesOpen] = useState(false)
+  const [leaveOpen, setLeaveOpen] = useState(false)
   const description = descriptionFor(activity, traveler)
   const closed = isClosedToday(activity)
   const isShareIn = activity.source === 'share_in'
   const mapsUrl = mapsLinkForActivity(activity, traveler)
   const telHref = activity.phone ? `tel:${String(activity.phone).replace(/[^\d+]/g, '')}` : null
+  // "Leave when?" needs both an origin (homeBase from the trip) and a
+  // destination (the activity's lat/lng). If either is missing, hide
+  // the affordance.
+  const canLeaveWhen =
+    !!homeBase &&
+    Number.isFinite(activity?.lat) &&
+    Number.isFinite(activity?.lng)
 
   function openMaps() {
     if (mapsUrl) window.open(mapsUrl, '_blank')
@@ -442,6 +453,17 @@ function ActivityCard({ activity, traveler }) {
               {TRAVELERS[traveler]?.maps === 'waze' ? 'Open in Waze' : 'Open in Maps'}
             </button>
           )}
+          {canLeaveWhen && (
+            <button
+              type="button"
+              onClick={() => setLeaveOpen(true)}
+              className="btn-pill"
+              style={{ cursor: 'pointer' }}
+            >
+              <Clock size={12} />
+              Leave when?
+            </button>
+          )}
           {telHref && (
             <a className="btn-pill" href={telHref}>
               <Phone size={12} />
@@ -458,6 +480,16 @@ function ActivityCard({ activity, traveler }) {
           />
         )}
       </div>
+      {leaveOpen && (
+        <LeaveWhenModal
+          destination={{ lat: activity.lat, lng: activity.lng }}
+          destinationName={activity.name}
+          defaultOrigin={homeBase}
+          seedDurationMinutes={drivingMinutesFor(activity)}
+          traveler={traveler}
+          onClose={() => setLeaveOpen(false)}
+        />
+      )}
     </article>
   )
 }
