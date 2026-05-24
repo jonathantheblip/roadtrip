@@ -10,7 +10,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 // and emoji, two chunky alt cards (blue + green) with emoji + uppercase
 // title + time, then a giant "TELL A STORY" mic button at the bottom.
 
-export function RafaView({ trip, onOpenStop, onOpenActivities }) {
+export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos }) {
   // Which day's mission is on screen. Default to today-if-in-trip,
   // else day 1. Lets a 3-day weekend show three different missions
   // instead of one summary card that doesn't change.
@@ -366,6 +366,35 @@ export function RafaView({ trip, onOpenStop, onOpenActivities }) {
               </span>
             </div>
             <span style={{ fontSize: 26, fontWeight: 700 }}>→</span>
+          </button>
+        </div>
+      )}
+
+      {onOpenPhotos && (
+        <div style={{ padding: '10px 14px 0' }}>
+          <button
+            type="button"
+            data-testid="rafa-photos-entry"
+            onClick={onOpenPhotos}
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              borderRadius: 14,
+              border: '2px solid #3D6FB8',
+              background: 'transparent',
+              color: '#3D6FB8',
+              cursor: 'pointer',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontFamily: 'Fraunces, Georgia, serif',
+              fontSize: 18,
+              fontWeight: 700,
+            }}
+          >
+            <span>📸 PICTURES</span>
+            <span style={{ fontSize: 22 }}>→</span>
           </button>
         </div>
       )}

@@ -1,3 +1,6 @@
+# Playwright test artifacts (regenerated per run)
+app/test-results/
+app/playwright-report/
 app/node_modules
 app/dist
 app/.vite

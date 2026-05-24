@@ -12,6 +12,7 @@ import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
 import { TripEditor } from './views/TripEditor'
 import { ActivitiesView } from './views/ActivitiesView'
+import { PhotosView } from './views/PhotosView'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll } from './lib/workerSync'
@@ -320,6 +321,17 @@ export default function App() {
     setView({ name: 'activities' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  function openPhotos() {
+    setView({ name: 'photos' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
+  function openDispatch() {
+    // M2 wires the actual dispatch composer; for now route into Photos
+    // so the entry point is reachable. The composer modal mounts inside
+    // PhotosView in M2 and opens via this callback.
+    setView({ name: 'photos', openDispatch: true })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   // Returns the upsert result so NewTrip can show an inline error and
   // stay put on failure (no navigation), per change order §3.4. On
   // success we go straight into the editor — Helen continues adding
@@ -347,6 +359,7 @@ export default function App() {
       onOpenStop: openStop,
       onOpenSettings: openSettings,
       onOpenActivities: openActivities,
+      onOpenPhotos: openPhotos,
     }
     switch (traveler) {
       case 'helen':
@@ -392,7 +405,8 @@ export default function App() {
             const inDeepView =
               view.name === 'stop' ||
               view.name === 'settings' ||
-              view.name === 'activities'
+              view.name === 'activities' ||
+              view.name === 'photos'
             const label = inDeepView && trip?.title ? `← ${trip.title}` : '← Trips'
             const handler = inDeepView ? () => setView({ name: 'trip' }) : openIndex
             return (
@@ -518,6 +532,14 @@ export default function App() {
             trip={trip}
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
+          />
+        )}
+        {view.name === 'photos' && trip && (
+          <PhotosView
+            trip={trip}
+            traveler={traveler}
+            onBack={() => setView({ name: 'trip' })}
+            onAddDispatch={openDispatch}
           />
         )}
         {view.name === 'settings' && trip && (

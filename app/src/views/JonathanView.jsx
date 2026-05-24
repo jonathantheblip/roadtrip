@@ -119,7 +119,7 @@ function flightHeadline(arrival) {
   return sched ? `${s.flightNumber} · ${sched}` : s.flightNumber
 }
 
-export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities }) {
+export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos }) {
   // Default to today if it falls within the trip — Jonathan opens the
   // app mid-trip and expects the current day. Otherwise day 1.
   const [activeDayN, setActiveDayN] = useState(() => {
@@ -574,9 +574,49 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
         </JSection>
       )}
 
-      {/* FILE A DISPATCH moved to the per-trip Photos view (Punchlist 3
-          Item 4). The entry point belongs alongside the gallery, not
-          buried at the bottom of Jonathan's queue. */}
+      {/* PHOTOS — entry point to the per-trip gallery + dispatch
+          composer (Punchlist 3 Item 4). FILE A DISPATCH used to live
+          here as its own block; it's now folded into the Photos view. */}
+      {onOpenPhotos && (
+        <JSection label="Photos" meta="GALLERY · DISPATCH" style={{ marginTop: 6 }}>
+          <button
+            type="button"
+            data-testid="jonathan-photos-entry"
+            onClick={onOpenPhotos}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              padding: '12px 14px',
+              cursor: 'pointer',
+              color: 'inherit',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 14,
+                fontStyle: 'italic',
+              }}
+            >
+              The archive — by event.
+            </span>
+            <span
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 11,
+                color: 'var(--accent)',
+              }}
+            >
+              →
+            </span>
+          </button>
+        </JSection>
+      )}
 
       {/* COLOPHON */}
       <div style={{ padding: '16px 16px 4px', textAlign: 'center' }}>

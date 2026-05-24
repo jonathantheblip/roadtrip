@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Mic, MapPin, Sparkles } from 'lucide-react'
-import { listMemoriesForStop } from '../lib/memoryStore'
+import { Mic, MapPin, Sparkles, Image as ImageIcon } from 'lucide-react'
+import { listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
@@ -12,7 +12,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 // in a vertical timeline with a memory-thread preview strip beneath
 // stops that have memories, or an "+ add a memory" pill when empty.
 
-export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities }) {
+export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos }) {
   const [activeDay, setActiveDay] = useState(trip.days[0]?.n)
   const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const arrival = findArrivalStop(trip)
@@ -207,6 +207,8 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
           <span style={{ color: 'var(--accent)', fontSize: 18 }}>→</span>
         </button>
       )}
+
+      {onOpenPhotos && <HelenPhotosEntry trip={trip} traveler={traveler} onOpen={onOpenPhotos} />}
 
       <button
         type="button"
@@ -522,3 +524,64 @@ function Eyebrow({ children, color, style }) {
     </div>
   )
 }
+
+// Helen's photos entry point — magazine-spread treatment that nods at
+// 'this is where the trip's archive lives.' Counts the visible photo
+// memories and surfaces them as the secondary number.
+function HelenPhotosEntry({ trip, traveler, onOpen }) {
+  const mems = listMemoriesForTrip(trip.id, traveler)
+  const photoCount = mems.reduce((n, m) => {
+    if (m.photoRef || m.photoRefs?.length || m.photoExternalURLs?.length) return n + 1
+    return n
+  }, 0)
+  return (
+    <button
+      type="button"
+      data-testid="helen-photos-entry"
+      onClick={onOpen}
+      style={{
+        margin: '14px 18px 0',
+        padding: '14px 16px',
+        width: 'calc(100% - 36px)',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        cursor: 'pointer',
+        textAlign: 'left',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: 'inherit',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <ImageIcon size={14} style={{ color: 'var(--accent)' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 10,
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color: 'var(--muted)',
+            }}
+          >
+            {photoCount === 0 ? 'Empty' : photoCount + ' captured'}
+          </span>
+          <span
+            style={{
+              fontFamily: 'Fraunces, Georgia, serif',
+              fontSize: 16,
+              fontStyle: 'italic',
+              color: 'var(--text)',
+            }}
+          >
+            Photos
+          </span>
+        </div>
+      </div>
+      <span style={{ color: 'var(--accent)', fontSize: 18 }}>→</span>
+    </button>
+  )
+}
+
