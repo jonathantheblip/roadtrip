@@ -112,6 +112,88 @@ test.describe('PhotosView multi-photo memory rendering', () => {
     await expect(page.getByText('This one is broken')).toBeVisible()
   })
 
+  test('two memories at the same stop render as separate memory-groups with a hairline', async ({
+    page,
+  }) => {
+    // Helen reported: two memories captured at the same stop flowed
+    // into one CSS grid, so tile 5's "1/4" badge looked like a
+    // numbering bug rather than the start of memory 2. Each memory
+    // now renders in its own [data-testid="memory-group"] grid with
+    // a top border on every run after the first.
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await seedMemoriesIntoCache(page, [
+      {
+        id: 'mem-A',
+        tripId: 'volleyball-2026',
+        stopId: 'vb2-3',
+        authorTraveler: 'helen',
+        visibility: 'shared',
+        kind: 'photo',
+        caption: 'First memory',
+        capturedAt: '2026-05-23T10:00:00.000Z',
+        photoRefs: [
+          { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#a1' },
+          { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#a2' },
+        ],
+        photoExternalURLs: [],
+        reactions: [],
+        createdAt: '2026-05-23T10:05:00.000Z',
+        updatedAt: '2026-05-23T10:05:00.000Z',
+      },
+      {
+        id: 'mem-B',
+        tripId: 'volleyball-2026',
+        stopId: 'vb2-3',
+        authorTraveler: 'helen',
+        visibility: 'shared',
+        kind: 'photo',
+        caption: 'Second memory',
+        capturedAt: '2026-05-23T11:00:00.000Z',
+        photoRefs: [
+          { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#b1' },
+          { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#b2' },
+          { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#b3' },
+        ],
+        photoExternalURLs: [],
+        reactions: [],
+        createdAt: '2026-05-23T11:05:00.000Z',
+        updatedAt: '2026-05-23T11:05:00.000Z',
+      },
+    ])
+    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.getByTestId('helen-photos-entry').click()
+
+    const stopGroup = page.getByTestId('stop-group').first()
+    const memoryGroups = stopGroup.getByTestId('memory-group')
+    await expect(memoryGroups).toHaveCount(2)
+    await expect(memoryGroups.nth(0)).toHaveAttribute('data-memory-id', 'mem-A')
+    await expect(memoryGroups.nth(1)).toHaveAttribute('data-memory-id', 'mem-B')
+
+    // The second memory's grid has the hairline (border-top), the
+    // first does not — that's the visual signal Helen needs.
+    const firstBorder = await memoryGroups
+      .nth(0)
+      .evaluate((el) => getComputedStyle(el).borderTopWidth)
+    const secondBorder = await memoryGroups
+      .nth(1)
+      .evaluate((el) => getComputedStyle(el).borderTopWidth)
+    expect(firstBorder).toBe('0px')
+    expect(parseFloat(secondBorder)).toBeGreaterThan(0)
+
+    // Badges are now unambiguous: 1/2, 2/2 inside memory A;
+    // 1/3, 2/3, 3/3 inside memory B.
+    const aBadges = await memoryGroups
+      .nth(0)
+      .getByTestId('tile-multi-index')
+      .allTextContents()
+    const bBadges = await memoryGroups
+      .nth(1)
+      .getByTestId('tile-multi-index')
+      .allTextContents()
+    expect(aBadges.sort()).toEqual(['1/2', '2/2'])
+    expect(bBadges.sort()).toEqual(['1/3', '2/3', '3/3'])
+  })
+
   test('every themed view places the Photos entry within the first viewport', async ({
     page,
   }) => {

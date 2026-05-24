@@ -386,6 +386,21 @@ function EmptyState() {
 }
 
 function StopGroup({ group, onOpen }) {
+  // Partition the stop's entries into contiguous runs by memoryId.
+  // Two memories captured at the same stop used to flow into one
+  // CSS grid, so tile 5's "1/4" badge looked like a numbering
+  // glitch rather than the start of a new memory. Each run renders
+  // as its own grid with a thin hairline between runs — the badge
+  // now reads unambiguously as "photo X of memory Y."
+  const memoryRuns = []
+  for (const entry of group.entries) {
+    const last = memoryRuns[memoryRuns.length - 1]
+    if (last && last.memoryId === entry.memoryId) {
+      last.entries.push(entry)
+    } else {
+      memoryRuns.push({ memoryId: entry.memoryId, entries: [entry] })
+    }
+  }
   return (
     <section
       data-testid="stop-group"
@@ -425,15 +440,33 @@ function StopGroup({ group, onOpen }) {
           {group.stopName}
         </div>
       </header>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-          gap: 10,
-        }}
-      >
-        {group.entries.map((entry) => (
-          <PhotoTile key={entry.key} entry={entry} onOpen={() => onOpen(entry)} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {memoryRuns.map((run, runIdx) => (
+          <div
+            key={`${group.stopKey}::${run.memoryId}::${runIdx}`}
+            data-testid="memory-group"
+            data-memory-id={run.memoryId}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+              gap: 10,
+              // Thin hairline above every memory after the first —
+              // sits inside the flex column gap and reads as a
+              // separator without looking like a heavy block. The
+              // first run shows no rule (the stop header already
+              // anchors the top of the section).
+              ...(runIdx > 0
+                ? {
+                    paddingTop: 12,
+                    borderTop: '1px solid var(--border)',
+                  }
+                : null),
+            }}
+          >
+            {run.entries.map((entry) => (
+              <PhotoTile key={entry.key} entry={entry} onOpen={() => onOpen(entry)} />
+            ))}
+          </div>
         ))}
       </div>
     </section>
