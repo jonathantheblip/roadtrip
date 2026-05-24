@@ -147,6 +147,12 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
         </div>
       )}
 
+      {/* Photos entry promoted to the top of the editorial page so
+          Helen can add or browse from any day's view without scrolling
+          past the timeline. The duplicate render further down was
+          removed; this is the single source of the entry. */}
+      {onOpenPhotos && <HelenPhotosEntry trip={trip} traveler={traveler} onOpen={onOpenPhotos} />}
+
       <div style={{ padding: '14px 0 0' }}>
         {day.stops.map((s, i) => (
           <StopWithThread
@@ -207,8 +213,6 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
           <span style={{ color: 'var(--accent)', fontSize: 18 }}>→</span>
         </button>
       )}
-
-      {onOpenPhotos && <HelenPhotosEntry trip={trip} traveler={traveler} onOpen={onOpenPhotos} />}
 
       <button
         type="button"

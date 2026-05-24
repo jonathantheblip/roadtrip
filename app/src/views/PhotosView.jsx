@@ -442,6 +442,15 @@ function StopGroup({ group, onOpen }) {
 
 function PhotoTile({ entry, onOpen }) {
   const posterColor = TRAVELER_DOT[entry.author] || 'var(--accent)'
+  // Tile-render <img> failures (404 from R2, blocked CORS, decoder
+  // unable to read the bytes on this device) shouldn't leave a black
+  // square next to its siblings. Track per-tile error state so we can
+  // swap in the same fallback the no-URL case uses. Single source of
+  // truth — the lightbox still attempts the real URL and the user
+  // can investigate from there.
+  const [imgFailed, setImgFailed] = useState(false)
+  const isFirstInMemory = (entry.photoIndexInMemory || 0) === 0
+  const memoryCount = entry.photoCountInMemory || 1
   return (
     <button
       type="button"
@@ -460,11 +469,12 @@ function PhotoTile({ entry, onOpen }) {
       }}
     >
       <div style={{ position: 'relative', aspectRatio: '1 / 1', background: '#000' }}>
-        {entry.url ? (
+        {entry.url && !imgFailed ? (
           <img
             src={entry.url}
             alt={entry.caption || 'Trip photo'}
             loading="lazy"
+            onError={() => setImgFailed(true)}
             style={{
               width: '100%',
               height: '100%',
@@ -474,6 +484,7 @@ function PhotoTile({ entry, onOpen }) {
           />
         ) : (
           <div
+            data-testid="tile-image-fallback"
             style={{
               width: '100%',
               height: '100%',
@@ -499,6 +510,26 @@ function PhotoTile({ entry, onOpen }) {
             boxShadow: '0 0 0 1.5px rgba(0,0,0,0.45)',
           }}
         />
+        {memoryCount > 1 && (
+          <span
+            data-testid="tile-multi-index"
+            aria-label={`Photo ${entry.photoIndexInMemory + 1} of ${memoryCount}`}
+            style={{
+              position: 'absolute',
+              top: 6,
+              right: 6,
+              padding: '2px 6px',
+              borderRadius: 8,
+              background: 'rgba(0,0,0,0.55)',
+              color: 'rgba(242,235,218,0.85)',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 9,
+              letterSpacing: '0.10em',
+            }}
+          >
+            {entry.photoIndexInMemory + 1}/{memoryCount}
+          </span>
+        )}
       </div>
       <div
         style={{
@@ -507,7 +538,11 @@ function PhotoTile({ entry, onOpen }) {
           borderTop: '1px solid var(--border)',
         }}
       >
-        {entry.caption && (
+        {/* Show caption only on the first tile of each memory so a
+            multi-photo album doesn't repeat the same sentence on every
+            sibling. Bug 2 fix — captions stay tied to the moment, the
+            "N/M" badge above carries the membership signal. */}
+        {entry.caption && isFirstInMemory && (
           <div
             style={{
               fontFamily: 'Fraunces, Georgia, serif',
@@ -1035,6 +1070,12 @@ function NavArrow({ direction, onClick }) {
 //      that came through a path that wrote it.
 //   3. memory.createdAt   — the upload time. Rendered with the
 //      '· uploaded' label so the chronology is honest.
+// Multi-photo memory handling — legacy album composer (pre-M2) wrote
+// memories with N photos + a single caption. The tile render shows
+// the caption only on photoIndexInMemory === 0 and tags the rest as
+// "2 of 5" so the album doesn't repeat the same sentence on every
+// sibling. Single-photo memories (post-M2 dispatch composer) render
+// normally.
 function flattenPhotoEntries(memories) {
   const out = []
   for (const m of memories || []) {
@@ -1042,9 +1083,21 @@ function flattenPhotoEntries(memories) {
     const refs = [m.photoRef, ...(m.photoRefs || [])].filter(Boolean)
     const memoryAt =
       typeof m.capturedAt === 'string' && m.capturedAt ? m.capturedAt : null
+    // Pass 1 — collect every {url, ref} pair this memory yields,
+    // post-URL-dedup, so we know the count before stamping per-tile
+    // index labels in pass 2.
+    const memoryEntries = []
     function push(url, ref) {
       if (!url || seenInThisMem.has(url)) return
       seenInThisMem.add(url)
+      memoryEntries.push({ url, ref })
+    }
+    for (const ref of refs) push(refUrl(ref), ref)
+    for (const ext of m.photoExternalURLs || []) {
+      if (typeof ext === 'string' && ext) push(ext, null)
+    }
+    const total = memoryEntries.length
+    memoryEntries.forEach(({ url, ref }, idx) => {
       const exifAt = ref?.capturedAt || null
       const realDate = memoryAt || exifAt
       out.push({
@@ -1053,6 +1106,11 @@ function flattenPhotoEntries(memories) {
         stopId: m.stopId || null,
         author: m.authorTraveler,
         caption: m.caption || m.text || '',
+        // Per-photo position within the parent memory. Tile render uses
+        // these to suppress the caption on every sibling after the
+        // first (Bug 2) and to show "N of M" instead.
+        photoIndexInMemory: idx,
+        photoCountInMemory: total,
         capturedAt: realDate || m.createdAt,
         capturedAtSource: realDate
           ? memoryAt
@@ -1074,11 +1132,7 @@ function flattenPhotoEntries(memories) {
           typeof ref?.locationLabel === 'string' ? ref.locationLabel : null,
         url,
       })
-    }
-    for (const ref of refs) push(refUrl(ref), ref)
-    for (const ext of m.photoExternalURLs || []) {
-      if (typeof ext === 'string' && ext) push(ext, null)
-    }
+    })
   }
   return out
 }

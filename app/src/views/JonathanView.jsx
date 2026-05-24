@@ -293,6 +293,98 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
         ))}
       </div>
 
+      {/* PHOTOS — promoted above "The plan" so the album + dispatch
+          composer are above-the-fold during the trip, not buried at
+          the bottom of the page. Helen + Jonathan use this feature
+          heavily during and after each day. */}
+      {onOpenPhotos && (
+        <JSection label="Photos" meta="GALLERY · DISPATCH" style={{ marginTop: 6 }}>
+          <button
+            type="button"
+            data-testid="jonathan-photos-entry"
+            onClick={onOpenPhotos}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '1px solid var(--accent)',
+              padding: '14px 14px',
+              cursor: 'pointer',
+              color: 'inherit',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 14,
+                fontStyle: 'italic',
+              }}
+            >
+              Add a photo · browse the archive.
+            </span>
+            <span
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 11,
+                color: 'var(--accent)',
+              }}
+            >
+              →
+            </span>
+          </button>
+        </JSection>
+      )}
+
+      {/* THINGS TO DO — promoted up here so the activities menu shares
+          the same prominence as Photos. The detailed render below
+          keeps "The plan" as the day's centerpiece. */}
+      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
+        <JSection
+          label="Things to do"
+          meta={`${getActivitiesForTrip(trip.id, trip).length} OPTIONS`}
+          style={{ marginTop: 6 }}
+        >
+          <button
+            type="button"
+            onClick={onOpenActivities}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              padding: '12px 14px',
+              cursor: 'pointer',
+              color: 'inherit',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 14,
+                fontStyle: 'italic',
+              }}
+            >
+              Around the tournament — filter by who.
+            </span>
+            <span
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 11,
+                color: 'var(--accent)',
+              }}
+            >
+              →
+            </span>
+          </button>
+        </JSection>
+      )}
+
       {/* THE PLAN */}
       {day && (
         <JSection label="The plan" meta={`${day.stops.length} STOP${day.stops.length === 1 ? '' : 'S'}`}>
@@ -528,95 +620,6 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
       <JSection label="Queue" meta="WHERE'S THE NEAREST" style={{ marginTop: 6 }}>
         <QueueButtons trip={trip} traveler={traveler} />
       </JSection>
-
-      {/* THINGS TO DO — entry point to the trip-scoped activities menu */}
-      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
-        <JSection
-          label="Things to do"
-          meta={`${getActivitiesForTrip(trip.id).length} OPTIONS`}
-          style={{ marginTop: 6 }}
-        >
-          <button
-            type="button"
-            onClick={onOpenActivities}
-            style={{
-              width: '100%',
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              padding: '12px 14px',
-              cursor: 'pointer',
-              color: 'inherit',
-              textAlign: 'left',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <span
-              style={{
-                fontFamily: 'Fraunces, Georgia, serif',
-                fontSize: 14,
-                fontStyle: 'italic',
-              }}
-            >
-              Around the tournament — filter by who.
-            </span>
-            <span
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 11,
-                color: 'var(--accent)',
-              }}
-            >
-              →
-            </span>
-          </button>
-        </JSection>
-      )}
-
-      {/* PHOTOS — entry point to the per-trip gallery + dispatch
-          composer (Punchlist 3 Item 4). FILE A DISPATCH used to live
-          here as its own block; it's now folded into the Photos view. */}
-      {onOpenPhotos && (
-        <JSection label="Photos" meta="GALLERY · DISPATCH" style={{ marginTop: 6 }}>
-          <button
-            type="button"
-            data-testid="jonathan-photos-entry"
-            onClick={onOpenPhotos}
-            style={{
-              width: '100%',
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              padding: '12px 14px',
-              cursor: 'pointer',
-              color: 'inherit',
-              textAlign: 'left',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <span
-              style={{
-                fontFamily: 'Fraunces, Georgia, serif',
-                fontSize: 14,
-                fontStyle: 'italic',
-              }}
-            >
-              The archive — by event.
-            </span>
-            <span
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 11,
-                color: 'var(--accent)',
-              }}
-            >
-              →
-            </span>
-          </button>
-        </JSection>
-      )}
 
       {/* COLOPHON */}
       <div style={{ padding: '16px 16px 4px', textAlign: 'center' }}>

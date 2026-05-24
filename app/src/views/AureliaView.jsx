@@ -94,12 +94,16 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
         </div>
       )}
 
-      {/* Things to do — pink pill into the trip-scoped activities list */}
-      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
+      {/* Photos entry promoted above Things to do — Aurelia uses the
+          album to post + scroll back through the day, and Helen's
+          dispatch composer launches from here too. Keep it high on
+          the page so a tap is one scroll away from the top. */}
+      {onOpenPhotos && (
         <div style={{ padding: '12px 18px 0' }}>
           <button
             type="button"
-            onClick={onOpenActivities}
+            data-testid="aurelia-photos-entry"
+            onClick={onOpenPhotos}
             style={{
               width: '100%',
               padding: '12px 16px',
@@ -123,19 +127,19 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
                 fontWeight: 600,
               }}
             >
-              ✨ {getActivitiesForTrip(trip.id).length} things to do
+              📷 The photo album
             </span>
             <span style={{ fontSize: 18 }}>→</span>
           </button>
         </div>
       )}
 
-      {onOpenPhotos && (
+      {/* Things to do — secondary pink pill into the activities menu. */}
+      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
         <div style={{ padding: '8px 18px 0' }}>
           <button
             type="button"
-            data-testid="aurelia-photos-entry"
-            onClick={onOpenPhotos}
+            onClick={onOpenActivities}
             style={{
               width: '100%',
               padding: '10px 14px',
@@ -158,7 +162,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
                 fontWeight: 600,
               }}
             >
-              📷 The photo album
+              ✨ {getActivitiesForTrip(trip.id, trip).length} things to do
             </span>
             <span style={{ fontSize: 16 }}>→</span>
           </button>

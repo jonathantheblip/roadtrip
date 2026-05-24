@@ -322,12 +322,15 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos }) {
         </div>
       )}
 
-      {/* Things to do — chunky blue button matching the alt-card palette */}
-      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
+      {/* PICTURES first — the album is the thing Rafa actually pulls
+          up on his own. The Things-to-do button stays below in its
+          chunky blue form so it's still discoverable. */}
+      {onOpenPhotos && (
         <div style={{ padding: '14px 14px 0' }}>
           <button
             type="button"
-            onClick={onOpenActivities}
+            data-testid="rafa-photos-entry"
+            onClick={onOpenPhotos}
             style={{
               width: '100%',
               padding: '16px 18px',
@@ -341,41 +344,23 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos }) {
               justifyContent: 'space-between',
               alignItems: 'center',
               boxShadow: '0 8px 20px rgba(61, 111, 184, 0.35)',
+              fontFamily: 'Fraunces, Georgia, serif',
+              fontSize: 22,
+              fontWeight: 800,
             }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span
-                style={{
-                  fontFamily: 'JetBrains Mono, monospace',
-                  fontSize: 10,
-                  letterSpacing: '0.14em',
-                  opacity: 0.85,
-                }}
-              >
-                {getActivitiesForTrip(trip.id).length} OPTIONS
-              </span>
-              <span
-                style={{
-                  fontFamily: 'Fraunces, Georgia, serif',
-                  fontSize: 22,
-                  fontWeight: 800,
-                  lineHeight: 1,
-                }}
-              >
-                STUFF TO DO
-              </span>
-            </div>
+            <span>📸 PICTURES</span>
             <span style={{ fontSize: 26, fontWeight: 700 }}>→</span>
           </button>
         </div>
       )}
 
-      {onOpenPhotos && (
+      {/* Things to do — outline button under the photos CTA. */}
+      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
         <div style={{ padding: '10px 14px 0' }}>
           <button
             type="button"
-            data-testid="rafa-photos-entry"
-            onClick={onOpenPhotos}
+            onClick={onOpenActivities}
             style={{
               width: '100%',
               padding: '12px 16px',
@@ -393,7 +378,9 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos }) {
               fontWeight: 700,
             }}
           >
-            <span>📸 PICTURES</span>
+            <span>
+              {getActivitiesForTrip(trip.id, trip).length} STUFF TO DO
+            </span>
             <span style={{ fontSize: 22 }}>→</span>
           </button>
         </div>
