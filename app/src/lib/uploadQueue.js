@@ -171,8 +171,16 @@ export async function drain(runner) {
 export async function registerBackgroundSync(tag = 'rt-upload-queue') {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return false
   try {
-    const reg = await navigator.serviceWorker.ready
-    if (!reg.sync) return false
+    // serviceWorker.ready never resolves when registration was skipped
+    // (Playwright runs, dev configurations). Bound the wait so a queue
+    // attempt doesn't hang waiting for an SW that's never coming.
+    const reg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error('sw ready timeout')), 1500)
+      ),
+    ])
+    if (!reg?.sync) return false
     await reg.sync.register(tag)
     return true
   } catch {

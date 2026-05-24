@@ -13,7 +13,18 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // Register the service worker and auto-reload on activation of a new one.
 // This is the standard PWA update flow: install → activate → controllerchange
 // → reload, so installed phones always pick up the latest bundle on next open.
-if ('serviceWorker' in navigator) {
+//
+// Skipped in two cases:
+//   - `?nosw=1` URL param (used in places where the test wants to opt out)
+//   - `navigator.webdriver === true` (Playwright/automation). The SW reload
+//     races test evaluate blocks and erases test context. Real Helen on
+//     a real iPhone always wants the SW.
+const testNoSw =
+  typeof window !== 'undefined' &&
+  (new URLSearchParams(window.location.search).get('nosw') === '1' ||
+    (typeof navigator !== 'undefined' && navigator.webdriver === true))
+
+if ('serviceWorker' in navigator && !testNoSw) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('./sw.js')
