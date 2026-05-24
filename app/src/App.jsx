@@ -539,7 +539,7 @@ export default function App() {
             trip={trip}
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
-            onAddDispatch={openDispatch}
+            openDispatchOnMount={!!view.openDispatch}
           />
         )}
         {view.name === 'settings' && trip && (

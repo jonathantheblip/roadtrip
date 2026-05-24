@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, Plus, MapPin, Image as ImageIcon } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, X, Plus, MapPin, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip } from '../lib/memoryStore'
+import { AddDispatchModal } from '../components/AddDispatchModal'
+import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
+import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
+import { saveMemory } from '../lib/memoryStore'
+import { classifySwipe } from '../lib/swipeClassify'
 
 // Photos-by-event view. Punchlist 3 Item 4 — Helen's primary surface
 // for the trip's photo archive, grouped by Stop/event.
@@ -20,8 +25,14 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 // reference design; the other three themed views inherit via CSS vars
 // when they navigate in.
 
-export function PhotosView({ trip, traveler, onBack, onAddDispatch }) {
-  const memories = listMemoriesForTrip(trip.id, traveler)
+export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
+  // Re-read memories when this view-render flips (e.g. after a save).
+  const [memoryTick, setMemoryTick] = useState(0)
+  const memories = useMemo(
+    () => listMemoriesForTrip(trip.id, traveler),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trip.id, traveler, memoryTick]
+  )
   const photoEntries = useMemo(() => flattenPhotoEntries(memories), [memories])
   const groups = useMemo(
     () => groupByStop(photoEntries, trip),
@@ -32,6 +43,31 @@ export function PhotosView({ trip, traveler, onBack, onAddDispatch }) {
   // (the same-stop sibling array) so prev/next stays within the group
   // the user opened from — switching stops mid-swipe would be jarring.
   const [lightbox, setLightbox] = useState(null) // { entry, list, index }
+
+  // Dispatch composer state. Auto-opens when the parent set
+  // openDispatchOnMount (e.g. user tapped "Add photo" elsewhere).
+  const [dispatchOpen, setDispatchOpen] = useState(!!openDispatchOnMount)
+
+  // Sync pill: live count from the IndexedDB queue. Subscribes so a
+  // save anywhere in the app updates this view without polling.
+  const [queueSize, setQueueSize] = useState(0)
+  const [draining, setDraining] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    function refresh() {
+      queueCount()
+        .then((n) => {
+          if (!cancelled) setQueueSize(n)
+        })
+        .catch(() => {})
+    }
+    refresh()
+    const unsub = subscribeQueue(refresh)
+    return () => {
+      cancelled = true
+      unsub()
+    }
+  }, [])
 
   function openLightbox(entry, list) {
     const index = list.findIndex((e) => e === entry)
@@ -47,6 +83,46 @@ export function PhotosView({ trip, traveler, onBack, onAddDispatch }) {
       if (next < 0 || next >= lb.list.length) return lb
       return { ...lb, index: next, entry: lb.list[next] }
     })
+  }
+
+  // Manual sync trigger. Drains the queue using the same worker upload
+  // path the modal uses on first try. On success the memory's photoRef
+  // is patched in localStorage so the album rehydrates with a usable
+  // R2 URL (no more 'pending' placeholder).
+  async function triggerDrain() {
+    if (draining) return
+    setDraining(true)
+    try {
+      await drainQueue(async (item) => {
+        if (!isWorkerConfigured()) throw new Error('worker not configured')
+        const r = await workerFetch(
+          `/assets/${item.kind === 'video' ? 'video' : 'photo'}/${encodeURIComponent(item.id)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': item.blob?.type || 'application/octet-stream' },
+            body: item.blob,
+          }
+        )
+        const remote = await r.json()
+        saveMemory({
+          id: item.id,
+          tripId: item.tripId,
+          stopId: item.stopId,
+          authorTraveler: item.authorTraveler,
+          visibility: 'shared',
+          kind: item.kind === 'video' ? 'photo' : 'photo',
+          caption: item.caption,
+          photoRef: { ...item.ref, storage: 'r2', key: remote.key, url: remote.url },
+        })
+      })
+    } finally {
+      setDraining(false)
+      setMemoryTick((t) => t + 1)
+    }
+  }
+
+  function onDispatchSaved() {
+    setMemoryTick((t) => t + 1)
   }
 
   return (
@@ -95,21 +171,33 @@ export function PhotosView({ trip, traveler, onBack, onAddDispatch }) {
         </div>
         <div
           style={{
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 14,
-            fontStyle: 'italic',
-            color: 'var(--muted)',
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 8,
             marginTop: 6,
           }}
         >
-          {photoEntries.length === 0
-            ? 'No photos yet. Tap below to add the first one.'
-            : `${photoEntries.length} photo${photoEntries.length === 1 ? '' : 's'} across ${groups.length} ${groups.length === 1 ? 'stop' : 'stops'}.`}
+          <div
+            style={{
+              fontFamily: 'Fraunces, Georgia, serif',
+              fontSize: 14,
+              fontStyle: 'italic',
+              color: 'var(--muted)',
+            }}
+          >
+            {photoEntries.length === 0
+              ? 'No photos yet. Tap below to add the first one.'
+              : `${photoEntries.length} photo${photoEntries.length === 1 ? '' : 's'} across ${groups.length} ${groups.length === 1 ? 'stop' : 'stops'}.`}
+          </div>
+          {queueSize > 0 && (
+            <SyncPill count={queueSize} draining={draining} onTap={triggerDrain} />
+          )}
         </div>
       </header>
 
       <div style={{ padding: '14px 14px 0' }}>
-        <AddDispatchButton onClick={onAddDispatch} />
+        <AddDispatchButton onClick={() => setDispatchOpen(true)} />
       </div>
 
       <div style={{ padding: '12px 14px 0' }}>
@@ -136,7 +224,51 @@ export function PhotosView({ trip, traveler, onBack, onAddDispatch }) {
           onClose={closeLightbox}
         />
       )}
+
+      {dispatchOpen && (
+        <AddDispatchModal
+          trip={trip}
+          traveler={traveler}
+          onClose={() => setDispatchOpen(false)}
+          onSaved={onDispatchSaved}
+        />
+      )}
     </div>
+  )
+}
+
+function SyncPill({ count, draining, onTap }) {
+  return (
+    <button
+      type="button"
+      data-testid="sync-pill"
+      onClick={onTap}
+      title="Pending uploads — tap to retry now"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '4px 10px',
+        borderRadius: 14,
+        border: '1px solid var(--accent)',
+        background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+        color: 'var(--text)',
+        cursor: 'pointer',
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 10,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+      }}
+    >
+      <RefreshCw
+        size={11}
+        style={{
+          animation: draining ? 'pulseShimmer 1s linear infinite' : 'none',
+          color: 'var(--accent)',
+        }}
+      />
+      {count} syncing
+    </button>
   )
 }
 
@@ -381,8 +513,21 @@ function PhotoTile({ entry, onOpen }) {
             color: 'var(--muted)',
             opacity: 0.85,
           }}
+          data-testid="tile-date-source"
+          data-source={entry.capturedAtSource}
         >
-          <span>{formatShortDate(entry.capturedAt)}</span>
+          <span
+            title={
+              entry.capturedAtSource === 'createdAt'
+                ? 'No EXIF on this photo — showing upload date'
+                : 'EXIF capture date'
+            }
+          >
+            {formatShortDate(entry.capturedAt)}
+            {entry.capturedAtSource === 'createdAt' && (
+              <span style={{ marginLeft: 2, opacity: 0.7 }}>·uploaded</span>
+            )}
+          </span>
           {entry.locationLabel && (
             <>
               <span aria-hidden="true">·</span>
@@ -407,9 +552,9 @@ function PhotoTile({ entry, onOpen }) {
 }
 
 function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
-  // Keyboard: arrows for nav, Esc to close. Tested against the desktop
-  // path — touch/swipe is the iPhone case, covered by the position-aware
-  // arrow buttons below until a swipe handler lands in M4.
+  // Keyboard for desktop; touch swipe for phone. Both call into the
+  // same nav callbacks the arrow buttons use, so behavior stays
+  // consistent across input modes.
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') onClose()
@@ -420,6 +565,33 @@ function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose, onPrev, onNext])
 
+  // Touch swipe — left/right = prev/next, down = close. Vertical drag
+  // threshold is taller (80px) so accidental scroll attempts don't
+  // dismiss the lightbox. The handler dispatches via the action
+  // helpers below so the gesture-classification logic is unit-testable
+  // in isolation.
+  const touchRef = useRef(null)
+  function onTouchStart(e) {
+    const t = e.touches?.[0]
+    if (!t) return
+    touchRef.current = { x: t.clientX, y: t.clientY, time: Date.now() }
+  }
+  function onTouchEnd(e) {
+    const start = touchRef.current
+    touchRef.current = null
+    if (!start) return
+    const t = e.changedTouches?.[0]
+    if (!t) return
+    const action = classifySwipe({
+      dx: t.clientX - start.x,
+      dy: t.clientY - start.y,
+      duration: Date.now() - start.time,
+    })
+    if (action === 'prev' && onPrev) onPrev()
+    else if (action === 'next' && onNext) onNext()
+    else if (action === 'close') onClose()
+  }
+
   return (
     <div
       role="dialog"
@@ -428,6 +600,8 @@ function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       style={{
         position: 'fixed',
         inset: 0,
@@ -436,6 +610,7 @@ function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
         display: 'flex',
         flexDirection: 'column',
         color: '#F2EBDA',
+        touchAction: 'pan-y',
       }}
     >
       <div
@@ -537,7 +712,20 @@ function Lightbox({ entry, index, total, onPrev, onNext, onClose }) {
             {TRAVELERS[entry.author]?.name || entry.author}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{formatFullDate(entry.capturedAt)}</span>
+          <span
+            data-testid="lightbox-date-source"
+            data-source={entry.capturedAtSource}
+            title={
+              entry.capturedAtSource === 'createdAt'
+                ? 'Upload time — this photo had no EXIF capture date.'
+                : 'Capture date from EXIF.'
+            }
+          >
+            {formatFullDate(entry.capturedAt)}
+            {entry.capturedAtSource === 'createdAt' && (
+              <span style={{ marginLeft: 4, opacity: 0.7 }}>(uploaded)</span>
+            )}
+          </span>
           {entry.stopName && (
             <>
               <span aria-hidden="true">·</span>
@@ -605,16 +793,18 @@ function flattenPhotoEntries(memories) {
     function push(url, ref) {
       if (!url || seenInThisMem.has(url)) return
       seenInThisMem.add(url)
+      const exifAt = ref?.capturedAt || null
       out.push({
         key: `${m.id}::${url}`,
         memoryId: m.id,
         stopId: m.stopId || null,
         author: m.authorTraveler,
         caption: m.caption || m.text || '',
-        // Capture date prefers EXIF (`ref.capturedAt`) when present;
-        // falls back to the memory's createdAt. EXIF reading is wired
-        // in M2 when the upload pipeline lands.
-        capturedAt: ref?.capturedAt || m.createdAt,
+        // EXIF capture date is the chronology Helen cares about (she
+        // uploads hours/days after the event). Falls back to the
+        // memory's createdAt only when EXIF is missing.
+        capturedAt: exifAt || m.createdAt,
+        capturedAtSource: exifAt ? 'exif' : 'createdAt',
         // EXIF lat/lng if present, otherwise null. The stop-association
         // fallback for the LOCATION label is applied during grouping
         // (we need the stop record to compute it).
