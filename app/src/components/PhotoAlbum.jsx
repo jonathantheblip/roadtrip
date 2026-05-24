@@ -5,6 +5,7 @@ import { updateMemoryCapturedAt } from '../lib/memoryStore'
 import { classifySwipe } from '../lib/swipeClassify'
 import { isDevModeEnabled } from '../lib/uploadLog'
 import { firstLine, formatShortDate, formatFullDate } from '../lib/photoEntries'
+import { thumbUrl } from '../lib/thumbUrl'
 
 // Shared tile + lightbox + capture-date editor used by PhotosView
 // (per-trip album) and AllPhotosView (cross-trip album, Punchlist 4).
@@ -48,7 +49,10 @@ export function PhotoTile({ entry, onOpen }) {
       <div style={{ position: 'relative', aspectRatio: '1 / 1', background: '#000' }}>
         {entry.url && !imgFailed ? (
           <img
-            src={entry.url}
+            // ?w=2048 routes the tile through the Worker's photon
+            // resize endpoint with an R2-cached variant. The
+            // lightbox below uses entry.url bare for full fidelity.
+            src={thumbUrl(entry.url, 2048)}
             alt={entry.caption || 'Trip photo'}
             loading="lazy"
             onError={() => setImgFailed(true)}

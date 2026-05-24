@@ -22,6 +22,13 @@ import {
   callRoutesDriveDuration,
   straightLineMinutes,
 } from './leaveWhen.js'
+// Photon — Rust→WASM image library. We import the workerd entrypoint
+// which initializes synchronously against the bundled .wasm module,
+// so `PhotonImage.new_from_byteslice(...)` works on the first call
+// without a deferred init. Bundle impact: ~700 KB uncompressed
+// (~250 KB compressed). CPU per resize at 5712×4284 → 2048: roughly
+// 100 ms — fine under the Workers Standard plan (30s CPU/request).
+import { PhotonImage, resize, SamplingFilter } from '@cf-wasm/photon'
 
 const TRAVELERS = ['jonathan', 'helen', 'aurelia', 'rafa']
 
@@ -45,7 +52,17 @@ export default {
     // which Apple also served unauthenticated.
     if (request.method === 'GET' && /^\/assets\/.+$/.test(path)) {
       try {
-        return await fetchAsset(env, path.replace(/^\/assets\//, ''), cors)
+        const key = path.replace(/^\/assets\//, '')
+        // ?w= triggers the on-the-fly resize branch. Photo-only,
+        // since audio assets share the /assets/ prefix and resizing
+        // them is meaningless. Cached variants land at
+        // <key>_w<w>_q<quality> in R2 so subsequent requests skip
+        // the photon CPU spend.
+        const wParam = url.searchParams.get('w')
+        if (wParam && key.includes('/photo-')) {
+          return await fetchResizedAsset(env, key, url.searchParams, cors)
+        }
+        return await fetchAsset(env, key, cors)
       } catch (err) {
         console.error('asset fetch error', err?.stack || err)
         return json({ error: err?.message || String(err) }, 500, cors)
@@ -458,6 +475,105 @@ async function fetchAsset(env, key, cors) {
   }
   headers.set('Cache-Control', 'private, max-age=31536000, immutable')
   return new Response(obj.body, { status: 200, headers })
+}
+
+// On-the-fly photo resize with R2-cached variants.
+//
+// URL: GET /assets/<key>?w=<int>[&q=<int>]
+//   - w is clamped to [16, 4096]; values out of range round-trip
+//     to the nearest endpoint silently
+//   - q defaults to 82 (slightly tighter than the 0.85 client
+//     pipeline since we're producing a thumbnail)
+//
+// Cache key: <key>_w<w>_q<q>. First request: fetch the original,
+// run photon resize + JPEG encode, PUT to R2 at the cache key,
+// serve. Subsequent requests: serve the cached variant directly.
+//
+// If the original isn't found, 404. If photon fails on a particular
+// image, the handler falls back to serving the original — the
+// album tile will still render, just bigger than ideal.
+const PHOTO_RESIZE_DEFAULT_QUALITY = 82
+const PHOTO_RESIZE_MIN = 16
+const PHOTO_RESIZE_MAX = 4096
+
+async function fetchResizedAsset(env, key, searchParams, cors) {
+  const decoded = decodeURIComponent(key)
+  // Clamp / coerce inputs.
+  let w = parseInt(searchParams.get('w') || '0', 10)
+  if (!Number.isFinite(w) || w <= 0) {
+    return new Response('bad w', { status: 400, headers: cors })
+  }
+  w = Math.max(PHOTO_RESIZE_MIN, Math.min(PHOTO_RESIZE_MAX, w))
+  let q = parseInt(searchParams.get('q') || '', 10)
+  if (!Number.isFinite(q) || q < 1 || q > 100) q = PHOTO_RESIZE_DEFAULT_QUALITY
+
+  const cacheKey = `${decoded}_w${w}_q${q}`
+
+  // Cache hit — serve directly.
+  const cached = await env.ASSETS.get(cacheKey)
+  if (cached) {
+    const headers = new Headers(cors)
+    headers.set('Content-Type', cached.httpMetadata?.contentType || 'image/jpeg')
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+    headers.set('X-Photon-Cache', 'HIT')
+    return new Response(cached.body, { status: 200, headers })
+  }
+
+  // Cache miss — fetch original, resize, store cached variant.
+  const original = await env.ASSETS.get(decoded)
+  if (!original) return new Response('not found', { status: 404, headers: cors })
+
+  const inputBytes = new Uint8Array(await original.arrayBuffer())
+
+  let resizedBytes
+  try {
+    const inImg = PhotonImage.new_from_byteslice(inputBytes)
+    const srcW = inImg.get_width()
+    const srcH = inImg.get_height()
+    // Preserve aspect, clamp to longest edge = w. If the source is
+    // already <= w on its longest edge, skip the resize and just
+    // re-encode (or could serve the original — but re-encoding at
+    // q=82 still trims bytes for huge JPEGs).
+    let targetW = srcW
+    let targetH = srcH
+    const longest = Math.max(srcW, srcH)
+    if (longest > w) {
+      const scale = w / longest
+      targetW = Math.max(1, Math.round(srcW * scale))
+      targetH = Math.max(1, Math.round(srcH * scale))
+    }
+    let outImg = inImg
+    if (targetW !== srcW || targetH !== srcH) {
+      outImg = resize(inImg, targetW, targetH, SamplingFilter.Lanczos3)
+      inImg.free?.()
+    }
+    resizedBytes = outImg.get_bytes_jpeg(q)
+    outImg.free?.()
+  } catch (err) {
+    // Photon couldn't read the bytes (corrupt, unsupported format,
+    // OOM). Serve the original so the tile at least renders.
+    console.error('photon resize failed', err?.stack || err)
+    const headers = new Headers(cors)
+    headers.set('Content-Type', original.httpMetadata?.contentType || 'image/jpeg')
+    headers.set('Cache-Control', 'private, max-age=300')
+    headers.set('X-Photon-Cache', 'BYPASS')
+    return new Response(inputBytes, { status: 200, headers })
+  }
+
+  // Write the cached variant in the background — don't block the
+  // response on R2 PUT latency. ctx.waitUntil would be ideal here;
+  // we don't have ctx in scope, so we fire-and-forget the put.
+  // Worker isolates stay alive long enough to flush.
+  const variantBuf = resizedBytes
+  env.ASSETS.put(cacheKey, variantBuf, {
+    httpMetadata: { contentType: 'image/jpeg' },
+  }).catch((err) => console.error('photon cache put failed', err?.stack || err))
+
+  const headers = new Headers(cors)
+  headers.set('Content-Type', 'image/jpeg')
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+  headers.set('X-Photon-Cache', 'MISS')
+  return new Response(variantBuf, { status: 200, headers })
 }
 
 // ─── Leave-when (Routes API proxy) ────────────────────────────────────

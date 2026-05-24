@@ -2,6 +2,14 @@ name = "roadtrip-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-01"
 
+# Bundle .wasm modules as Cloudflare Workers CompiledWasm imports.
+# Required for @cf-wasm/photon (the photo resize/JPEG encoder used
+# by /assets/:key?w=<int>).
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true
+
 # D1: roadtrip-db (uuid set after `wrangler d1 create` or via MCP).
 [[d1_databases]]
 binding = "DB"
