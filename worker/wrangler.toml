@@ -16,4 +16,4 @@ bucket_name = "roadtrip-assets"
 # Non-secret config. The 4 FAMILY_TOKEN_* values are stored as secrets
 # (via `wrangler secret put`) and are NOT listed here.
 [vars]
-ALLOWED_ORIGINS = "https://jonathandj.github.io,http://localhost:5173,http://localhost:4173"
+ALLOWED_ORIGINS = "https://jonathantheblip.github.io,http://localhost:5173,http://localhost:4173,http://localhost:5180"

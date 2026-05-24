@@ -142,8 +142,11 @@ export function ThreadedMemories({ trip, stop, traveler }) {
       const refs = []
       for (const p of pendingPhotos) {
         const key = makeAssetKey('photo')
-        await saveAsset('photo', key, p.file, p.file.type)
-        refs.push({ storage: 'idb', key })
+        // saveAsset auto-downscales photos via preparePhotoForUpload.
+        // We read the returned mime so the photoRef tracks the actual
+        // stored bytes (image/jpeg), not the input file's mime.
+        const { mime } = await saveAsset('photo', key, p.file, p.file.type)
+        refs.push({ storage: 'idb', key, mime })
       }
       saveMemory({
         tripId: trip.id,

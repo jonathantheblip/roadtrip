@@ -98,8 +98,11 @@ export function PostcardComposer({ trip, traveler, onClose, initialStopId }) {
       let photoRef = undefined
       if (photoFile) {
         const key = makeAssetKey('photo')
-        await saveAsset('photo', key, photoFile, photoFile.type)
-        photoRef = { storage: 'idb', key }
+        // saveAsset auto-downscales photos via preparePhotoForUpload.
+        // We record the returned mime on the photoRef so downstream
+        // sync (workerSync → R2) uploads with the correct Content-Type.
+        const { mime } = await saveAsset('photo', key, photoFile, photoFile.type)
+        photoRef = { storage: 'idb', key, mime }
       }
       saveMemory({
         tripId: trip.id,

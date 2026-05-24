@@ -522,11 +522,14 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
     // against this stop → workerSync mirrors it to R2 → themed views
     // render it inline in the stop's memory thread.
     const key = makeAssetKey('photo')
-    await saveAsset('photo', key, file, file.type)
+    // saveAsset auto-downscales photos via preparePhotoForUpload. Use
+    // the returned mime so photoRef reflects the actual stored bytes
+    // (image/jpeg) instead of the source mime (which may be HEIC).
+    const { mime } = await saveAsset('photo', key, file, file.type)
     saveMemory({
       tripId, stopId: stop.id, authorTraveler: traveler,
       visibility: 'shared', kind: 'photo',
-      photoRef: { storage: 'idb', key, mime: file.type },
+      photoRef: { storage: 'idb', key, mime },
     })
     onUpdate({}) // nudge autosave + re-render the count
   }
