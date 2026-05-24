@@ -91,6 +91,9 @@ export default {
       if (path === '/leave-when' && request.method === 'POST') {
         return await postLeaveWhen(env, request, cors)
       }
+      if (path === '/places/nearby' && request.method === 'POST') {
+        return await postPlacesNearby(env, request, cors)
+      }
       if (path === '/' && request.method === 'GET') {
         return json({ ok: true, traveler }, 200, cors)
       }
@@ -497,6 +500,124 @@ async function postLeaveWhen(env, request, cors) {
   } catch (e) {
     return json({ error: e?.message || String(e) }, 500, cors)
   }
+}
+
+// ─── Places Nearby (text search w/ location bias) ─────────────────────
+//
+// Powers the Jonathan-view Queue ("Bathroom / Fast food / Outside /
+// Emergency" — runtime queries for "I need this NOW, where's the
+// nearest one"). Wraps Places (New) searchText so the API key never
+// reaches the client bundle. Returns the top results ranked by
+// straight-line distance with name, address, coords, and open state.
+
+async function postPlacesNearby(env, request, cors) {
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    return json({ error: 'Places API not configured on worker' }, 500, cors)
+  }
+
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+
+  const query = typeof body?.query === 'string' ? body.query.trim() : ''
+  if (!query) return json({ error: 'missing query' }, 400, cors)
+  const lat = Number(body?.location?.lat)
+  const lng = Number(body?.location?.lng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return json({ error: 'missing or invalid location {lat,lng}' }, 400, cors)
+  }
+  const radius = Number.isFinite(Number(body?.radius)) ? Number(body.radius) : 1500
+  const clampedRadius = Math.max(100, Math.min(50000, radius))
+  const limit = Math.max(1, Math.min(10, Number(body?.limit) || 5))
+
+  const reqBody = {
+    textQuery: query,
+    maxResultCount: limit,
+    rankPreference: 'DISTANCE',
+    locationBias: {
+      circle: {
+        center: { latitude: lat, longitude: lng },
+        radius: clampedRadius,
+      },
+    },
+  }
+
+  let res
+  try {
+    res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
+        'x-goog-fieldmask':
+          'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber',
+      },
+      body: JSON.stringify(reqBody),
+    })
+  } catch (e) {
+    return json({ error: `places fetch failed: ${e?.message || String(e)}` }, 502, cors)
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return json(
+      { error: `places ${res.status}: ${text.slice(0, 200)}` },
+      502,
+      cors
+    )
+  }
+  const data = await res.json().catch(() => ({}))
+  const places = Array.isArray(data?.places) ? data.places : []
+
+  const results = places
+    .map((p) => {
+      const pLat = p?.location?.latitude
+      const pLng = p?.location?.longitude
+      if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) return null
+      return {
+        placeId: p.id || null,
+        name: p.displayName?.text || '(unnamed)',
+        address: p.formattedAddress || null,
+        lat: pLat,
+        lng: pLng,
+        distanceMeters: Math.round(
+          haversineMeters(lat, lng, pLat, pLng)
+        ),
+        openNow:
+          p?.currentOpeningHours?.openNow ??
+          p?.regularOpeningHours?.openNow ??
+          null,
+        businessStatus: p.businessStatus || null,
+        phone: p.nationalPhoneNumber || null,
+      }
+    })
+    .filter(Boolean)
+    // Filter out NOT operational; CLOSED_TEMPORARILY/PERMANENTLY_CLOSED
+    // are useless for "I need this NOW" queries.
+    .filter((r) => !r.businessStatus || r.businessStatus === 'OPERATIONAL')
+    .sort((a, b) => a.distanceMeters - b.distanceMeters)
+
+  return json({ results, radiusMeters: clampedRadius }, 200, {
+    ...cors,
+    'Cache-Control': 'no-store',
+  })
+}
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000
+  const toRad = (d) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────

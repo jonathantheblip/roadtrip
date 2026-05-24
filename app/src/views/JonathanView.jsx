@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
-import { listMemoriesForTrip, listMemoriesForStop, saveMemory } from '../lib/memoryStore'
+import { listMemoriesForTrip } from '../lib/memoryStore'
+import { tripHomeBase } from '../data/trips'
 import { Avatar, AvatarStack } from '../components/Avatar'
+import { NearbyResultsModal } from '../components/NearbyResultsModal'
 import { findArrivalStop } from './FlightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 
@@ -125,7 +127,6 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
     const onToday = trip.days.find((d) => d.isoDate === today)
     return onToday?.n || trip.days[0]?.n || 1
   })
-  const [quickLogged, setQuickLogged] = useState(null)
   const day = trip.days.find((d) => d.n === activeDayN) || trip.days[0]
   const arrival = findArrivalStop(trip)
   const headline = splitHeadline(day)
@@ -519,17 +520,13 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
         </JSection>
       )}
 
-      {/* QUEUE — quick logs. Each tap saves a one-line Memory against
-          the day's first stop so the family thread reflects what just
-          happened on the road without needing the full composer. */}
-      <JSection label="Queue" meta="LOG, BRIEFLY" style={{ marginTop: 6 }}>
-        <QueueButtons
-          trip={trip}
-          day={day}
-          traveler={traveler}
-          quickLogged={quickLogged}
-          setQuickLogged={setQuickLogged}
-        />
+      {/* QUEUE — runtime "where's the nearest one?" queries. Each tap
+          hits the Worker's /places/nearby endpoint with the device's
+          current location (or trip home base) and surfaces the top
+          results in a modal with map/tap-to-call. NOT a journal — the
+          old log-to-memory behavior was a bug per Punchlist 3 Item 6. */}
+      <JSection label="Queue" meta="WHERE'S THE NEAREST" style={{ marginTop: 6 }}>
+        <QueueButtons trip={trip} traveler={traveler} />
       </JSection>
 
       {/* THINGS TO DO — entry point to the trip-scoped activities menu */}
@@ -577,55 +574,9 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
         </JSection>
       )}
 
-      {/* FILE A DISPATCH */}
-      <div style={{ padding: '22px 16px 4px' }}>
-        <button
-          type="button"
-          onClick={() => {
-            // Open the first stop of today as a dispatch surface.
-            const target = day?.stops?.[0]
-            if (target) onOpenStop(day.n, target.id)
-          }}
-          style={{
-            width: '100%',
-            padding: '16px 14px',
-            background: 'transparent',
-            border: '1px solid rgba(237,230,214,0.28)',
-            borderTop: '2px solid var(--accent)',
-            color: 'var(--text)',
-            cursor: 'pointer',
-            textAlign: 'left',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <JLabel color="var(--accent)" weight={700}>● FILE A DISPATCH</JLabel>
-            <div
-              style={{
-                fontFamily: 'Fraunces, Georgia, serif',
-                fontSize: 18,
-                fontStyle: 'italic',
-                marginTop: 4,
-                color: 'var(--text)',
-              }}
-            >
-              from wherever you are.
-            </div>
-          </div>
-          <span
-            style={{
-              fontFamily: 'Fraunces, Georgia, serif',
-              fontSize: 28,
-              color: 'var(--accent)',
-              fontStyle: 'italic',
-            }}
-          >
-            →
-          </span>
-        </button>
-      </div>
+      {/* FILE A DISPATCH moved to the per-trip Photos view (Punchlist 3
+          Item 4). The entry point belongs alongside the gallery, not
+          buried at the bottom of Jonathan's queue. */}
 
       {/* COLOPHON */}
       <div style={{ padding: '16px 16px 4px', textAlign: 'center' }}>
@@ -654,27 +605,39 @@ function isLiveStop(stop, day) {
   return delta <= 60 * 60 * 1000
 }
 
-const QUEUE_OPTIONS = [
-  ['Bathroom', 'stopped'],
-  ['Fast food', 'in & out'],
-  ['Outside', 'stretch'],
-  ['Emergency', 'flag'],
+// Runtime nearby-search categories. `query` is the text passed through
+// to Places (New) searchText via the worker; `hint` keeps the
+// editorial-magazine line under each row. `note` shows in the modal
+// header to surface ambiguity where it matters (Emergency = hospitals
+// AND urgent care, not always the same answer).
+const QUEUE_CATEGORIES = [
+  {
+    label: 'Bathroom',
+    hint: 'stopped',
+    query: 'public restroom',
+  },
+  {
+    label: 'Fast food',
+    hint: 'in & out',
+    query: 'fast food',
+  },
+  {
+    label: 'Outside',
+    hint: 'stretch',
+    query: 'park',
+  },
+  {
+    label: 'Emergency',
+    hint: 'flag',
+    query: 'urgent care or hospital',
+    note:
+      "Searches urgent care AND hospitals — pick by hours/distance. For a real emergency call 911 first.",
+  },
 ]
 
-function QueueButtons({ trip, day, traveler, quickLogged, setQuickLogged }) {
-  function logIt(label, hint) {
-    const target = day?.stops?.[0]
-    if (!target) return
-    saveMemory({
-      tripId: trip.id,
-      stopId: target.id,
-      authorTraveler: traveler,
-      visibility: 'shared',
-      kind: 'text',
-      text: `${label} — ${hint}`,
-    })
-    setQuickLogged({ label, at: Date.now() })
-  }
+function QueueButtons({ trip, traveler }) {
+  const [openCategory, setOpenCategory] = useState(null)
+  const homeBase = tripHomeBase(trip)
   return (
     <>
       <div
@@ -685,19 +648,18 @@ function QueueButtons({ trip, day, traveler, quickLogged, setQuickLogged }) {
           rowGap: 0,
         }}
       >
-        {QUEUE_OPTIONS.map(([label, hint]) => (
+        {QUEUE_CATEGORIES.map((cat) => (
           <button
-            key={label}
+            key={cat.label}
             type="button"
-            onClick={() => logIt(label, hint)}
-            disabled={!day?.stops?.[0]}
+            onClick={() => setOpenCategory(cat)}
             style={{
               padding: '10px 0',
               textAlign: 'left',
               background: 'transparent',
               border: 'none',
               borderBottom: '1px solid var(--border)',
-              cursor: day?.stops?.[0] ? 'pointer' : 'default',
+              cursor: 'pointer',
               color: 'var(--text)',
               display: 'flex',
               alignItems: 'baseline',
@@ -713,7 +675,7 @@ function QueueButtons({ trip, day, traveler, quickLogged, setQuickLogged }) {
                 textUnderlineOffset: 4,
               }}
             >
-              {label}
+              {cat.label}
             </span>
             <span
               style={{
@@ -723,25 +685,18 @@ function QueueButtons({ trip, day, traveler, quickLogged, setQuickLogged }) {
                 color: 'var(--faint)',
               }}
             >
-              — {hint}
+              — {cat.hint}
             </span>
           </button>
         ))}
       </div>
-      {quickLogged && (
-        <div
-          style={{
-            marginTop: 8,
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: 9,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: 'var(--accent)',
-            opacity: 0.85,
-          }}
-        >
-          ✓ {quickLogged.label} logged to thread
-        </div>
+      {openCategory && (
+        <NearbyResultsModal
+          category={openCategory}
+          homeBase={homeBase}
+          traveler={traveler}
+          onClose={() => setOpenCategory(null)}
+        />
       )}
     </>
   )
