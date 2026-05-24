@@ -13,6 +13,7 @@ import { NewTrip } from './views/NewTrip'
 import { TripEditor } from './views/TripEditor'
 import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
+import { AllPhotosView } from './views/AllPhotosView'
 import { ImportView } from './views/ImportView'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
@@ -468,6 +469,10 @@ export default function App() {
     setView({ name: 'photos' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  function openAllPhotos() {
+    setView({ name: 'all-photos' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   function openDispatch() {
     // M2 wires the actual dispatch composer; for now route into Photos
     // so the entry point is reachable. The composer modal mounts inside
@@ -503,6 +508,7 @@ export default function App() {
       onOpenSettings: openSettings,
       onOpenActivities: openActivities,
       onOpenPhotos: openPhotos,
+      onOpenAllPhotos: openAllPhotos,
       onOpenImport: openImport,
     }
     switch (traveler) {
@@ -551,6 +557,7 @@ export default function App() {
               view.name === 'settings' ||
               view.name === 'activities' ||
               view.name === 'photos' ||
+              view.name === 'all-photos' ||
               view.name === 'import'
             const label = inDeepView && trip?.title ? `← ${trip.title}` : '← Trips'
             const handler = inDeepView ? () => setView({ name: 'trip' }) : openIndex
@@ -695,6 +702,13 @@ export default function App() {
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
             openDispatchOnMount={!!view.openDispatch}
+          />
+        )}
+        {view.name === 'all-photos' && (
+          <AllPhotosView
+            trips={visibleTrips}
+            traveler={traveler}
+            onBack={() => setView({ name: 'trip' })}
           />
         )}
         {view.name === 'settings' && trip && (

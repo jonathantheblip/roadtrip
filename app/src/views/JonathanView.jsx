@@ -119,7 +119,7 @@ function flightHeadline(arrival) {
   return sched ? `${s.flightNumber} · ${sched}` : s.flightNumber
 }
 
-export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos }) {
+export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
   // Default to today if it falls within the trip — Jonathan opens the
   // app mid-trip and expects the current day. Otherwise day 1.
   const [activeDayN, setActiveDayN] = useState(() => {
@@ -296,7 +296,9 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
       {/* PHOTOS — promoted above "The plan" so the album + dispatch
           composer are above-the-fold during the trip, not buried at
           the bottom of the page. Helen + Jonathan use this feature
-          heavily during and after each day. */}
+          heavily during and after each day. Second button: cross-trip
+          archive (Punchlist 4) — same section, smaller secondary
+          affordance so the per-trip flow stays primary. */}
       {onOpenPhotos && (
         <JSection label="Photos" meta="GALLERY · DISPATCH" style={{ marginTop: 6 }}>
           <button
@@ -335,6 +337,46 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
               →
             </span>
           </button>
+          {onOpenAllPhotos && (
+            <button
+              type="button"
+              data-testid="jonathan-all-photos-entry"
+              onClick={onOpenAllPhotos}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                padding: '10px 14px',
+                cursor: 'pointer',
+                color: 'inherit',
+                textAlign: 'left',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 13,
+                  fontStyle: 'italic',
+                  color: 'var(--muted)',
+                }}
+              >
+                All photos — across every trip.
+              </span>
+              <span
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 11,
+                  color: 'var(--muted)',
+                }}
+              >
+                →
+              </span>
+            </button>
+          )}
         </JSection>
       )}
 

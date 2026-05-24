@@ -13,7 +13,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 // placeholder, an italic quote, author + time + felt-mood, WITH
 // avatars, location). Hot-pink FAB at the bottom-right.
 
-export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos }) {
+export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -131,6 +131,39 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
             </span>
             <span style={{ fontSize: 18 }}>→</span>
           </button>
+          {onOpenAllPhotos && (
+            <button
+              type="button"
+              data-testid="aurelia-all-photos-entry"
+              onClick={onOpenAllPhotos}
+              style={{
+                width: '100%',
+                padding: '8px 14px',
+                marginTop: 6,
+                borderRadius: 20,
+                border: '1px solid var(--accent)',
+                background: 'transparent',
+                color: 'var(--accent)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 13,
+                  fontStyle: 'italic',
+                  fontWeight: 500,
+                }}
+              >
+                ✨ Every trip's photos
+              </span>
+              <span style={{ fontSize: 14 }}>→</span>
+            </button>
+          )}
         </div>
       )}
 

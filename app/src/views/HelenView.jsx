@@ -12,7 +12,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 // in a vertical timeline with a memory-thread preview strip beneath
 // stops that have memories, or an "+ add a memory" pill when empty.
 
-export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos }) {
+export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
   const [activeDay, setActiveDay] = useState(trip.days[0]?.n)
   const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const arrival = findArrivalStop(trip)
@@ -152,6 +152,9 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
           past the timeline. The duplicate render further down was
           removed; this is the single source of the entry. */}
       {onOpenPhotos && <HelenPhotosEntry trip={trip} traveler={traveler} onOpen={onOpenPhotos} />}
+      {onOpenAllPhotos && (
+        <HelenAllPhotosEntry traveler={traveler} onOpen={onOpenAllPhotos} />
+      )}
 
       <div style={{ padding: '14px 0 0' }}>
         {day.stops.map((s, i) => (
@@ -585,6 +588,58 @@ function HelenPhotosEntry({ trip, traveler, onOpen }) {
         </div>
       </div>
       <span style={{ color: 'var(--accent)', fontSize: 18 }}>→</span>
+    </button>
+  )
+}
+
+// Sibling to HelenPhotosEntry — calmer outline-only style so the
+// per-trip Photos entry stays primary. Punchlist 4 acceptance: All
+// Photos sits next to the per-trip Photos entry.
+function HelenAllPhotosEntry({ traveler, onOpen }) {
+  return (
+    <button
+      type="button"
+      data-testid="helen-all-photos-entry"
+      onClick={onOpen}
+      style={{
+        margin: '8px 18px 0',
+        padding: '12px 16px',
+        width: 'calc(100% - 36px)',
+        background: 'transparent',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        cursor: 'pointer',
+        textAlign: 'left',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: 'inherit',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span
+          style={{
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 10,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            color: 'var(--muted)',
+          }}
+        >
+          The full archive
+        </span>
+        <span
+          style={{
+            fontFamily: 'Fraunces, Georgia, serif',
+            fontSize: 14,
+            fontStyle: 'italic',
+            color: 'var(--text)',
+          }}
+        >
+          All photos — every trip
+        </span>
+      </div>
+      <span style={{ color: 'var(--muted)', fontSize: 16 }}>→</span>
     </button>
   )
 }
