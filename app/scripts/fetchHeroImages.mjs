@@ -157,6 +157,7 @@ function extractHoursStructured(place) {
 function metadataFromPlace(place) {
   return {
     place,
+    placeId: place.id || null,
     placeName: place.displayName?.text || null,
     businessStatus: place.businessStatus || null,
     hoursStructured: extractHoursStructured(place),
@@ -351,7 +352,7 @@ async function tryOgImage(activity) {
 }
 
 // --- per-activity pipeline -----------------------------------------
-async function processActivity(activity, mutationsForFile, closures, drivingMutations, homeBase) {
+async function processActivity(activity, mutationsForFile, closures, drivingMutations, placeIdMutations, homeBase) {
   const id = activity.id
   if (activity.heroImage && !force) return { skip: 'already has heroImage' }
 
@@ -359,6 +360,17 @@ async function processActivity(activity, mutationsForFile, closures, drivingMuta
   // the photo, because we want businessStatus (closure detection) and
   // regularOpeningHours (structured hours for the card).
   const meta = await fetchPlacesMetadata(activity)
+  // Record the observed Places id so de-dup can match against it later.
+  // Skip when the seed asserted a placeIdOverride — the observed value
+  // is the same and we don't want a redundant field on disk.
+  if (
+    !meta.skip &&
+    meta.placeId &&
+    !activity.placeIdOverride &&
+    activity.placeId !== meta.placeId
+  ) {
+    placeIdMutations.set(id, meta.placeId)
+  }
   // `noAutoHours` lets the seed opt out of writing hoursStructured (used
   // when text search resolves to the wrong venue and the resulting 24/7
   // hours would mislead the user). businessStatus + image fetch still run.
@@ -671,6 +683,58 @@ function applyDrivingMinutesComputed(raw, id, value) {
   return { raw: raw.slice(0, insertAt) + newLine + raw.slice(insertAt), applied: true }
 }
 
+// Insert or replace the activity's `placeId` field (observed Places id,
+// distinct from the asserted `placeIdOverride`). Same brace-scoping
+// pattern as the other surgical edits; placed before `heroImage` so the
+// on-disk shape stays predictable.
+function applyPlaceId(raw, id, value) {
+  if (typeof value !== 'string' || !value) {
+    return { raw, applied: false, reason: 'value must be a non-empty string' }
+  }
+  const range = findActivityObjectRange(raw, id)
+  if (!range) return { raw, applied: false, reason: 'activity object not found' }
+  const { objOpen, objClose } = range
+  const objText = raw.slice(objOpen, objClose + 1)
+
+  const KEY = '"placeId":'
+  const keyIdx = objText.indexOf(KEY)
+  if (keyIdx !== -1) {
+    let i = keyIdx + KEY.length
+    while (i < objText.length && (objText[i] === ' ' || objText[i] === '\t')) i++
+    if (objText[i] !== '"') {
+      return { raw, applied: false, reason: 'placeId value quote not found' }
+    }
+    let j = i + 1
+    while (j < objText.length && objText[j] !== '"') {
+      if (objText[j] === '\\') j++
+      j++
+    }
+    if (objText[j] !== '"') {
+      return { raw, applied: false, reason: 'placeId close quote not found' }
+    }
+    const literal = JSON.stringify(value)
+    if (objText.slice(i, j + 1) === literal) {
+      return { raw, applied: false, reason: 'no change' }
+    }
+    const absStart = objOpen + i
+    const absEnd = objOpen + j + 1
+    return {
+      raw: raw.slice(0, absStart) + literal + raw.slice(absEnd),
+      applied: true,
+    }
+  }
+
+  const heroIdx = objText.indexOf('"heroImage":')
+  if (heroIdx === -1) {
+    return { raw, applied: false, reason: 'heroImage anchor not found for insert' }
+  }
+  const lineStart = objText.lastIndexOf('\n', heroIdx) + 1
+  const indent = objText.slice(lineStart, heroIdx)
+  const newLine = `${indent}"placeId": ${JSON.stringify(value)},\n`
+  const insertAt = objOpen + lineStart
+  return { raw: raw.slice(0, insertAt) + newLine + raw.slice(insertAt), applied: true }
+}
+
 // Remove an entire activity object from the JSON array, including its
 // trailing comma + newline. Uses brace matching so nested object
 // braces (descriptions, hoursStructured) don't confuse the scan.
@@ -757,6 +821,7 @@ async function processFile(filePath) {
   const mutations = new Map() // id → { heroImage, heroImageSource, heroImageCredit, hoursStructured }
   const closures = new Map() // id → { businessStatus, placeName }
   const drivingMutations = new Map() // id → minutes
+  const placeIdMutations = new Map() // id → placeId (observed)
 
   // Each seed file maps 1:1 to a trip id via its filename. The trip's
   // structured `homeBase` is the origin for all driving-time estimates.
@@ -772,7 +837,7 @@ async function processFile(filePath) {
 
   for (const a of activities) {
     if (onlyTripId && a.tripId !== onlyTripId) continue
-    const result = await processActivity(a, mutations, closures, drivingMutations, homeBase)
+    const result = await processActivity(a, mutations, closures, drivingMutations, placeIdMutations, homeBase)
     if (result.skip) {
       console.log(`  - ${a.id}: skip (${result.skip})`)
     } else if (result.closed) {
@@ -844,6 +909,19 @@ async function processFile(filePath) {
     }
   }
 
+  // placeId pass — also independent of hero/hours.
+  let placeIdsApplied = 0
+  for (const [id, placeId] of placeIdMutations) {
+    if (closures.has(id)) continue
+    const r = applyPlaceId(nextRaw, id, placeId)
+    if (r.applied) {
+      nextRaw = r.raw
+      placeIdsApplied += 1
+    } else if (r.reason !== 'no change') {
+      console.warn(`  ! ${id} placeId: ${r.reason}`)
+    }
+  }
+
   let removed = 0
   for (const [id, info] of closures) {
     const r = removeActivityBlock(nextRaw, id)
@@ -867,11 +945,11 @@ async function processFile(filePath) {
   if (!dryRun) {
     writeFileSync(filePath, nextRaw)
     console.log(
-      `  wrote ${heroApplied} hero, ${hoursApplied} hours, ${drivingApplied} driving, ${removed} removals to ${filePath}`
+      `  wrote ${heroApplied} hero, ${hoursApplied} hours, ${drivingApplied} driving, ${placeIdsApplied} placeId, ${removed} removals to ${filePath}`
     )
   } else {
     console.log(
-      `  [dry-run] would apply ${heroApplied} hero, ${hoursApplied} hours, ${drivingApplied} driving, ${removed} removals to ${filePath}`
+      `  [dry-run] would apply ${heroApplied} hero, ${hoursApplied} hours, ${drivingApplied} driving, ${placeIdsApplied} placeId, ${removed} removals to ${filePath}`
     )
   }
 }
@@ -892,6 +970,7 @@ export {
   applyDrivingMinutesComputed,
   applyHeroBlock,
   applyHoursStructured,
+  applyPlaceId,
   findMatchingCloseBrace,
   loadDotenv,
   removeActivityBlock,

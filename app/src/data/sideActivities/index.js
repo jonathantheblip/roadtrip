@@ -205,3 +205,9 @@ export function isClosedToday(activity) {
   const today = new Date().toISOString().slice(0, 10)
   return activity.closedDates.includes(today)
 }
+
+// Re-export the pure canonical-identity helpers. They live in
+// ./canonical.js so the Node-based test runner (and other tooling)
+// can import them without dragging the Vite-only import.meta.glob in
+// this module into the import graph.
+export { canonicalKey, findExisting } from './canonical.js'
