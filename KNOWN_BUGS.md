@@ -16,9 +16,18 @@ suite on Chromium + WebKit-mobile (11.5 min wall clock). Of the
 22 failures: 4 were Chromium-only, 18 were WebKit-only or both —
 exactly the gap pattern the trap was built to surface.
 
+**Reproduction pass — 2026-05-25 (HEAD: `3f47e67`):** all 11
+entries re-run against current main. **11/11 still reproduce as
+described** — none closed by intervening commits, none partially
+fixed. Per-entry status added below.
+
 ---
 
 ## R1 — Lightbox touch gestures don't run on WebKit `[real, S2]`
+
+**Status (2026-05-25, `3f47e67`): [confirmed]** — 2 of 2 tests
+in the spec still fail on webkit-mobile. Same `Illegal
+constructor` symptom; same chromium-passes/webkit-fails pattern.
 
 **Spec:** `tests/e2e/photos-lightbox-swipe.spec.js`
 **Browsers:** webkit-mobile (chromium OK)
@@ -43,6 +52,11 @@ test; if it doesn't, the app's touch handler needs work.
 
 ## R2 — saveAsset auto-downscale tests fail on WebKit `[test, S3]`
 
+**Status (2026-05-25, `3f47e67`): [confirmed]** — all 3 tests
+in the spec still fail on webkit-mobile with `page.evaluate:
+null`. Chromium pass; structural fix from `21fc084` works
+correctly in production.
+
 **Spec:** `tests/e2e/photos-auto-downscale.spec.js` (3 tests)
 **Browsers:** webkit-mobile (chromium OK)
 **Symptom:** `page.evaluate: null`
@@ -65,6 +79,15 @@ The real-media journey-01 already exercises this surface.
 ---
 
 ## R3 — WebCodecs video pipeline doesn't render preview on WebKit `[real, S1]`
+
+**Status (2026-05-25, `3f47e67`): [confirmed]** — 1 of 3 tests
+in the spec fails on webkit-mobile (the encode-pipeline one).
+The other two (`video picker only renders when WebCodecs is
+supported`, `Bucket C oversize video`) pass — those don't
+require the picker to actually produce a preview. Pattern
+matches the hypothesis: WebKit-mobile's WebCodecs surface is
+incomplete; the picker may render but the encode + preview
+pipeline doesn't complete.
 
 **Spec:** `tests/e2e/photos-video.spec.js`
 **Browsers:** webkit-mobile (chromium OK)
@@ -94,6 +117,11 @@ iOS Safari WebCodecs coverage.
 
 ## R4 — Offline sync-pill never surfaces on WebKit `[real, S2]`
 
+**Status (2026-05-25, `3f47e67`): [confirmed]** — both tests in
+the spec still fail on webkit-mobile waiting on the sync-pill
+locator. Chromium both pass. Same symptom as J4 and R6 below;
+likely one root cause across the three entries.
+
 **Spec:** `tests/e2e/photos-offline.spec.js` (2 tests)
 **Browsers:** webkit-mobile (chromium OK)
 **Symptom:** `getByTestId('sync-pill')` not found within 5s.
@@ -120,6 +148,11 @@ adjusting.
 
 ## R5 — Two M2/M4 visual-screenshot specs fail on WebKit `[real or test, S3]`
 
+**Status (2026-05-25, `3f47e67`): [confirmed]** — 2 of 6 tests
+across the two specs fail on webkit-mobile (the sync-pill
+screenshot tests in each). Other tests in the same specs pass.
+Same R4 root cause confirmed; downstream resolves with R4.
+
 **Specs:** `tests/e2e/photos-screenshots-m2.spec.js`,
 `tests/e2e/photos-screenshots-m4.spec.js` (1 each)
 **Browsers:** webkit-mobile (chromium OK)
@@ -134,6 +167,10 @@ adjusting.
 
 ## R6 — photos-dispatch retry + 500-handling fail on WebKit `[test, S3]`
 
+**Status (2026-05-25, `3f47e67`): [confirmed]** — 2 of 7 tests
+in the spec fail on webkit-mobile, both downstream of R4's
+sync-pill issue. Other 5 pass.
+
 **Specs:** `tests/e2e/photos-dispatch.spec.js` (2 tests)
 **Browsers:** webkit-mobile (chromium OK)
 **Symptom:** Sync pill never appears (same root as R4).
@@ -143,6 +180,9 @@ adjusting.
 ---
 
 ## J1 — Journey 01 locator chain `[test, S3]`
+
+**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
+still fail on the journey's photo-picker locator step.
 
 **Spec:** `tests/e2e/journeys/journey-01-photo-thread.spec.js`
 **Browsers:** both
@@ -162,6 +202,10 @@ the test needs to wait for StopDetail's mount before querying.
 
 ## J2 — Journey 03 dispatch-video-input not present `[test, S3]`
 
+**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
+still fail. Shared root with R3 (WebCodecs-gated video picker)
+plus a fixture-skip issue specific to the journey.
+
 **Spec:** `tests/e2e/journeys/journey-03-video-thread.spec.js`
 **Browsers:** both
 **Symptom:** `dispatch-video-input` not attached when expected.
@@ -174,6 +218,10 @@ flag during testing.
 ---
 
 ## J3 — Journey 05 share-in description not pre-filled `[test, S4]`
+
+**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
+still fail. Test missing the `import-enrich` click between
+category select and description assertion.
 
 **Spec:** `tests/e2e/journeys/journey-05-share-in.spec.js`
 **Browsers:** both
@@ -190,6 +238,15 @@ on URL paste alone. My journey skipped that step.
 
 ## J4 — Journey 07 offline sync-pill missing `[real or test, S3]`
 
+**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
+fail at the sync-pill step. Same root as R4; clarifying note —
+this one fails on chromium too, which sharpens the read: it's
+likely a TEST issue (no fixture preconditions, missing wait,
+or assertion timing) rather than a webkit-specific render bug.
+R4 is the webkit-only variant; J4's chromium failure suggests
+the journey's offline flow assertion may need to wait longer
+OR look for a different signal than the pill element.
+
 **Spec:** `tests/e2e/journeys/journey-07-offline-queue.spec.js`
 **Browsers:** both
 **Symptom:** Same as R4 — `sync-pill` doesn't appear.
@@ -200,6 +257,13 @@ investigation.
 ---
 
 ## N1 — Network matrix drop-and-resume not draining `[real or test, S3]`
+
+**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
+fail. Same hypothesis pattern as J4: failing on chromium too
+sharpens the read toward "the test asserts the wrong end
+state". The other two matrix variants (slow-3G, mid-offline)
+pass cleanly on both projects, narrowing the issue to the
+specific drop-and-resume assertion.
 
 **Spec:** `tests/e2e/network-matrix/photo-upload.matrix.spec.js`
 **Browsers:** both
@@ -252,18 +316,65 @@ broken" gap the bug trap was designed to close.
   resize on Worker); these protect against recurrence
   structurally even without test coverage of the symptom.
 
-## Next steps (deferred until after Group A close)
+## Proposed fix order (after Group A close + this status pass)
 
-1. Triage R3 first — confirm whether Playwright's WebKit has
-   WebCodecs; if not, gate the test with `test.skip()` and rely
-   on Item A.6's Simulator for real iOS WebCodecs coverage
-2. Investigate R4 on real iOS via Item A.6 once Xcode lands —
-   if the offline pill is genuinely broken on iOS, that's a
-   higher priority than its current S2 ranking suggests
-3. Fix J3 (5 min)
-4. Add data-testids to ThreadedMemories to clear J1 + reduce
-   future test-locator fragility
-5. Re-run the suite, expect the table to shrink
+Per user direction: severity-first, [real] before [test] within
+a tier. Each fix lands as a separate commit with a regression
+test that fails-before / passes-after; WebKit-mobile pass
+required; Simulator pass for any upload/camera/etc. surface.
 
-Don't start any of these until the user signs off on Group A
-close.
+**Tier 1 — S1 [real]:**
+1. **R3** — confirm Playwright WebKit's WebCodecs status (likely
+   incomplete), gate the encode-pipeline test with `test.skip(...
+   webkitWithoutWebCodecs)`, run the same test under the
+   Simulator gate to keep iOS-real coverage. **Pure test fix
+   once the gating is sound; no app change.**
+
+**Tier 2 — S2 [real]:**
+2. **R1** — lightbox touch on webkit. Two possible shapes:
+   (a) test fix: swap synthetic TouchEvent for Playwright's
+   `page.touchscreen.swipe()` (engine-native dispatch);
+   (b) app fix: app's swipe detector needs to handle the
+   WebKit-on-macOS event variant. Reproduce on Simulator to
+   distinguish. **DESIGN-DECISION POSSIBLE** if the answer is
+   (b) — touch detection logic could change UX.
+3. **R4** — offline sync-pill on webkit. Same investigate-on-
+   Simulator-first sequence. If real on iOS: high-priority real
+   bug. If Playwright-WebKit-only: test gating + add Simulator
+   coverage. **DESIGN-DECISION POSSIBLE** if the pill
+   conditional logic itself needs changes.
+
+**Tier 3 — S3 [real or test], real-leaning first:**
+4. **R5, R6** — downstream of R4; resolve in the same commit
+   or shortly after.
+5. **J4, N1** — both fail on both projects, suggesting
+   test-side issues with the offline / drop-and-resume
+   assertions. Pure test fixes most likely.
+
+**Tier 3 — S3 [test]:**
+6. **R2** — replace in-page dynamic import with a DOM-driven
+   assertion path through the real surface (journey-01 already
+   covers this surface; merge or extend).
+7. **J1** — add data-testids to ThreadedMemories' photo picker
+   button + composer rail; update journey to use them.
+8. **J2** — add WebCodecs feature-detect skip to journey-03;
+   shares R3's resolution.
+
+**Tier 4 — S4 [test]:**
+9. **J3** — add the missing `import-enrich` click between
+   category select and description assertion. ~5 min.
+
+**Notes that affect the order:**
+- Three entries (R4, R5, R6) share a root cause; one fix may
+  close all three.
+- Three entries (R3, J2 + the R3 test gate) share the WebCodecs
+  root cause; one investigation may close all three.
+- J1's data-testid additions are a code change to
+  ThreadedMemories — small, but a real edit.
+- **markdown rendering path is OFF-LIMITS** for this fix series
+  per user direction; react-markdown rollback is queued
+  separately and any KNOWN_BUGS fix touching ClaudeBubble or
+  the marked-derived render must stop and check in first.
+
+Don't start any of these until the user signs off on this
+status pass.
