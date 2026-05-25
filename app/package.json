@@ -16,8 +16,7 @@
     "test:e2e:chromium": "playwright test --project=chromium",
     "test:e2e:webkit": "playwright test --project=webkit-mobile",
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
-    "test:simulator": "playwright test --config=playwright.simulator.config.js",
-    "test:simulator:update-snapshots": "playwright test --config=playwright.simulator.config.js --update-snapshots"
+    "test:simulator": "node tests/simulator/runner.mjs"
   },
   "dependencies": {
     "dompurify": "^3.4.5",
@@ -34,6 +33,7 @@
     "@playwright/test": "^1.60.0",
     "@vitejs/plugin-react": "^4.3.3",
     "sharp": "^0.34.5",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "webdriverio": "^9.27.1"
   }
 }

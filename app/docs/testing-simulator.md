@@ -1,10 +1,12 @@
 # Testing on the iOS Simulator
 
-This is the milestone gate from `BUG_TRAP_PUNCHLIST.md` Item A.6.
-The standard `npm run test:e2e` suite covers Chromium + headless
-WebKit. The Simulator gate runs the same journeys + visual
-baselines against **real iOS Safari on a real iPhone simulator**,
-which catches the gaps WebKit-on-macOS doesn't.
+The milestone gate from `BUG_TRAP_PUNCHLIST.md` Item A.6. The
+standard `npm run test:e2e` suite covers Chromium + headless
+WebKit-on-macOS via Playwright. The Simulator gate runs against
+**real iOS Safari on a real iPhone simulator** via Apple's
+`safaridriver`, which catches the gaps WebKit-on-macOS doesn't —
+notably WebCodecs availability, touch event handling, and iOS-
+specific memory pressure on full-resolution photos.
 
 Run before any milestone closeout that touches:
 - upload (photo or video)
@@ -16,135 +18,148 @@ Run before any milestone closeout that touches:
 
 For every other milestone, the standard suite is sufficient.
 
+## Why not Playwright
+
+Playwright's bundled WebKit is "WebKit-on-macOS" — fundamentally
+the same engine the standard suite's `webkit-mobile` project
+already runs. Playwright cannot drive iOS Simulator Safari
+natively (`channel: 'safari'` errors with
+`Unsupported webkit channel`). True iOS Safari testing requires
+Apple's `safaridriver` directly with the W3C WebDriver
+capabilities `platformName: 'iOS'` + `safari:useSimulator: true`,
+documented in `man safaridriver`. We use the `webdriverio` W3C
+client (free, OSS, no Appium dependency tree) + `node:test` for
+test orchestration — same stack as the existing Node unit tests.
+
 ## Setup — one time per machine
 
 ### 1. Install Xcode
 
 Mac App Store → search "Xcode" → Get. About 14 GB on first
-install, larger after the first iOS runtime downloads.
-
-After Xcode finishes downloading, open it once to accept the
-license agreement.
+install. Open Xcode once after install to accept the license.
 
 ### 2. Install an iOS Simulator runtime
-
-The Simulator runtime is a separate download from Xcode itself.
-Easiest path:
 
 ```
 xcodebuild -downloadPlatform iOS
 ```
 
-Or via the GUI: Xcode → Settings → Components → install the
-latest iOS runtime (17.5+ recommended; iOS 26 is current).
+Or Xcode → Settings → Components → install an iOS runtime
+(17.5+ recommended; iOS 26+ confirmed working).
 
 ### 3. Enable safaridriver
 
-Lets Playwright drive Safari over the WebDriver protocol.
 One-time per machine:
 
 ```
 sudo safaridriver --enable
 ```
 
-You'll be prompted for your password.
+### 4. Web Inspector + Remote Automation on the simulator
 
-### 4. Enable Web Inspector + Remote Automation on a booted
-simulator
+**iOS 26+:** these are on by default. No simulator-side toggles
+needed.
 
-Each simulator profile (iPhone 15, iPhone 15 Pro, etc.) needs
-two switches flipped the first time you use it:
-
-1. Boot the simulator: `xcrun simctl boot "iPhone 15"` or use
-   Simulator.app's Device menu.
-2. Inside the simulated iOS: Settings → Safari → Advanced → toggle
-   **Web Inspector** ON.
-3. On macOS, with Simulator.app focused: top-menu Develop →
-   Simulator name → check **Allow Remote Automation**.
+**iOS 17–25:** boot the simulator first, then:
+- Inside iOS Settings → Safari → Advanced → Web Inspector ON
+- macOS Simulator.app → Develop → [simulator name] →
+  Allow Remote Automation
 
 ### 5. Verify
 
-From the repo's `app/` directory:
-
 ```
-xcrun simctl list devicetypes | grep -i iphone   # shows installed iPhone profiles
-xcrun simctl list runtimes                       # shows installed iOS runtimes
-safaridriver --version                           # confirms safaridriver is reachable
+xcrun simctl list devicetypes | grep -i iphone   # installed iPhone profiles
+xcrun simctl list runtimes                       # installed iOS runtimes
+safaridriver --version                           # safaridriver reachable
 ```
-
-If all three return non-empty answers, the Simulator gate is ready.
 
 ## Running the simulator gate
+
+### One-time: boot a simulator
+
+```
+xcrun simctl boot "iPhone 17"   # or any installed iPhone profile
+open -a Simulator
+```
+
+The simulator can stay booted across runs; the gate doesn't
+auto-boot one because that adds 20+ seconds per run for no
+benefit during iteration.
+
+### Run the gate
 
 From the `app/` directory:
 
 ```
-# 1. Boot a simulator (only need to do this once per session)
-xcrun simctl boot "iPhone 15"
-open -a Simulator
-
-# 2. Run the simulator-targeted Playwright config
 npm run test:simulator
 ```
 
-The simulator config:
-- Only runs the journey specs + visual baselines spec (the
-  network matrix uses route() interception that doesn't work the
-  same way against real Safari)
-- Uses a 180-second per-test timeout (simulator is genuinely
-  slower than headless WebKit)
-- Stores its own snapshot baselines under
-  `tests/e2e/visual-baselines.spec.js-snapshots/<test>-ios-simulator-darwin.png`
-  — distinct from the headless Chromium and WebKit baselines
+The runner (`tests/simulator/runner.mjs`) handles dev-server
+lifecycle: starts vite on :5181 if not up, runs each `.test.mjs`
+under `tests/simulator/` via `node --test`, then kills vite on
+exit. Each test handles its own safaridriver lifecycle internally.
+
+### First-run expectations
+
+- **Smoke takes ~90–110 seconds.** iOS Simulator's first Safari
+  navigation per session is slow. Subsequent navigations within
+  the same session are normal speed.
+- `webdriverio` logs one `WebDriverError` about a `/context`
+  endpoint that safaridriver doesn't implement. This is a probe
+  webdriverio makes during session setup; the actual session
+  works fine. Safe to ignore.
+
+## What's covered
+
+The gate currently runs:
+
+- `smoke.test.mjs` — boots dev server, opens safaridriver,
+  connects to simulator, navigates to the dev server, asserts
+  the app's `<title>` renders.
+
+Additional simulator-only journeys can be added as needed —
+particularly for the iOS-Safari-specific failures in
+`KNOWN_BUGS.md` (R1 lightbox touch, R3 WebCodecs preview, R4
+offline sync-pill) where the standard suite's `webkit-mobile`
+project can't reproduce the production behavior.
 
 ## Common failure modes
 
-### "Could not find safaridriver"
+### "No iPhone simulator booted"
 
-You skipped step 3. Run `sudo safaridriver --enable`.
+You skipped step 5's boot. Run
+`xcrun simctl boot "iPhone 17"` and re-run the gate.
 
-### "Could not connect to Simulator"
+### "safaridriver did not start listening on http://127.0.0.1:4567"
 
-You skipped step 4. Boot the simulator (`xcrun simctl boot
-"iPhone 15"`) before running tests.
+`safaridriver --enable` hasn't been run (step 3) OR a stale
+safaridriver from a prior run is still holding the port. The
+gate's `_driver.mjs` does `pkill -f safaridriver` before each
+test, but if you killed a test mid-run, run `pkill -f safaridriver`
+manually.
 
-### "browserName not supported" or silent fallback to macOS Safari
+### "dev server failed to start in 20s"
 
-Playwright is reaching macOS native Safari instead of the
-simulator. Check that:
-- The simulator is actually booted (`xcrun simctl list devices |
-  grep Booted`)
-- Develop → "Allow Remote Automation" is on for THAT simulator
-  (not just for macOS Safari)
-- safaridriver from `xcrun --sdk iphoneos --find safaridriver`
-  is reachable (not the macOS-only `/usr/bin/safaridriver`)
+Port 5181 is already in use. `lsof -ti :5181 | xargs kill -9`
+clears it.
 
-### A baseline screenshot doesn't match
+### A test fails on the simulator that passes in the standard
+suite
 
-Real iOS Safari renders some surfaces (especially native form
-controls, scroll bars, text-rendering subpixels) slightly
-differently than headless WebKit. Either accept the new baseline
-(`npm run test:simulator -- --update-snapshots`) or investigate
-whether it's a real regression.
-
-### Tests hang at the first navigation
-
-The simulator's Safari has a separate localStorage from macOS.
-The first run after a fresh boot needs to load the dev server
-once before tests can do their `addInitScript` localStorage
-seeding. If hangs persist, try opening
-`http://localhost:5181` manually in the simulator's Safari
-once, then re-running.
+This is the bug trap working as designed — the test surfaced an
+iOS-Safari-specific regression that headless WebKit didn't catch.
+Add an entry to `KNOWN_BUGS.md` and fix in the normal triage flow.
 
 ## Why we don't run this on every commit
 
-- The simulator is single-tenant (one test at a time per booted
-  device) and significantly slower than headless WebKit
+- iOS Simulator is single-tenant (one Safari session at a time
+  per booted device) and significantly slower than headless
+  WebKit
 - The boot + warm-up cost amortizes poorly across small commits
 - The WebKit-on-macOS project from the standard config catches
   most cross-browser regressions; the simulator catches the
   remaining iOS-specific gap
 
 The trade-off: standard suite runs on every commit, simulator
-gate runs on milestone closeout. Helen's iPhone is the final
-gate beyond that.
+gate runs on milestone closeout. Helen's actual iPhone is the
+final gate beyond that.
