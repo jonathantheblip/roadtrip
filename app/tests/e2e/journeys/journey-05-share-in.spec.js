@@ -50,11 +50,22 @@ test('share-in via paste lands an activity', async ({ page }) => {
     )
   })
 
-  await step('pick category + verify per-traveler descriptions', async () => {
+  await step('fill address (URL parser only gives name + coords)', async () => {
+    // The Google Maps URL parser extracts name + lat/lng but not a
+    // street address — the placeholder "5 Water St, Mystic, CT" in the
+    // address field is just placeholder text, not a value. readyToSave
+    // requires a non-empty address, so the test fills one explicitly.
+    await page.getByTestId('import-address').fill('27 Holmes St, Mystic, CT')
+  })
+
+  await step('pick category + enrich + verify per-traveler descriptions', async () => {
     // Category is a required field; pick the first option.
     await page.getByTestId('import-category').selectOption({ index: 1 })
-    // Descriptions for tagged travelers should be pre-filled by the
-    // mocked /draft response.
+    // The mocked /draft response only fires on explicit Enrich click —
+    // descriptions are not auto-fetched on URL paste alone. Click
+    // Enrich, then the per-traveler description fields populate from
+    // the mock.
+    await page.getByTestId('import-enrich').click()
     await expect(page.getByTestId('import-desc-helen')).toHaveValue(/morning bun/i)
     await expect(page.getByTestId('import-desc-jonathan')).toHaveValue(/coffee/i)
   })

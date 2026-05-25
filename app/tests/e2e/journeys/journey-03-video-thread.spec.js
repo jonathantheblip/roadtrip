@@ -11,10 +11,22 @@ import { realMedia } from '../_fixtures/realMedia.js'
 // dispatch modal's WebCodecs encode pipeline runs against actual
 // h.264 + AAC iPhone bytes, surfacing any format-specific
 // regressions.
+//
+// Skipped on both Playwright projects:
+//   - chromium_headless_shell can't decode iPhone .mov (h.264 in
+//     QuickTime container) — HTMLVideoElement reports videoWidth/
+//     videoHeight = 0 and the encode pipeline throws
+//     'video has no dimensions'.
+//   - webkit-mobile lacks the WebCodecs surface needed to complete
+//     the encode end-to-end (covered separately under R3a).
+// The Simulator gate's video-encode.test.mjs is the iOS-real
+// coverage for this surface — it uses the same .mov fixture against
+// booted iPhone Safari (which CAN decode .mov + run WebCodecs).
 
 test.beforeEach(async ({ page }) => setActivePage(page))
 
 test('video upload from album dispatch composer', async ({ page }) => {
+  test.skip(true, 'Playwright headless shells cannot decode iPhone .mov; covered by Simulator gate video-encode.test.mjs (R3b)')
   const fx = realMedia('VIDEO_1080P_5S')
   test.skip(!fx, 'VIDEO_1080P_5S fixture not present')
 

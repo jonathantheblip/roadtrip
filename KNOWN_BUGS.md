@@ -200,39 +200,33 @@ the test needs to wait for StopDetail's mount before querying.
 
 ---
 
-## J2 — Journey 03 dispatch-video-input not present `[test, S3]`
+## J2 — Journey 03 dispatch-video-input not present `[test, S3 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
-still fail. Shared root with R3 (WebCodecs-gated video picker)
-plus a fixture-skip issue specific to the journey.
-
-**Spec:** `tests/e2e/journeys/journey-03-video-thread.spec.js`
-**Browsers:** both
-**Symptom:** `dispatch-video-input` not attached when expected.
-
-**Root cause:** Same as R3 — WebCodecs detection hides the video
-picker when unavailable. The test should `test.skip()` when the
-picker isn't surfaced, or condition the picker on a deterministic
-flag during testing.
+**Status (2026-05-25): [resolved]** — Skipped on both Playwright
+projects. webkit-mobile would otherwise hit the R3a-class
+WebCodecs gap; chromium_headless_shell can't decode iPhone .mov
+(h.264 in QuickTime container) — HTMLVideoElement reports
+videoWidth/videoHeight = 0 and the encode pipeline throws
+'video has no dimensions' (verified via diagnostic). Real iOS
+Safari decodes .mov fine; iOS-real coverage of this surface
+lives in `tests/simulator/video-encode.test.mjs` (R3b).
 
 ---
 
-## J3 — Journey 05 share-in description not pre-filled `[test, S4]`
+## J3 — Journey 05 share-in description not pre-filled `[test, S4 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
-still fail. Test missing the `import-enrich` click between
-category select and description assertion.
+**Status (2026-05-25): [resolved]** — Two test fixes needed (the
+carryover called out one):
 
-**Spec:** `tests/e2e/journeys/journey-05-share-in.spec.js`
-**Browsers:** both
-**Symptom:** `import-desc-helen` doesn't have value matching
-`/morning bun/i` after pasting URL + picking category.
-
-**Root cause:** The mocked `/draft` response only fires after
-the user clicks "Enrich" — the descriptions aren't pre-filled
-on URL paste alone. My journey skipped that step.
-
-**Fix path:** Test bug. Add an explicit `getByTestId('import-enrich').click()` after the category pick, then assert.
+1. Added explicit `import-enrich.click()` after the category
+   pick. The mocked `/draft` response only fires on Enrich, not
+   on URL paste, so descriptions weren't populated.
+2. Added explicit address fill (`27 Holmes St, Mystic, CT`).
+   The Google Maps URL parser extracts name + lat/lng but NOT
+   address — the visible "5 Water St, Mystic, CT" in the field
+   was placeholder text, not a value. readyToSave requires a
+   non-empty address, so without this fill the Save button stays
+   disabled even when everything else looks populated.
 
 ---
 
@@ -287,10 +281,10 @@ Probably a test bug.
 |---|---|---|
 | S1 (blocking) | 0 | R3 [resolved] — R3a (Playwright skip) + R3b (Simulator journey that uncovered + fixed real iOS bug in videoPipeline/worker) |
 | S2 (real bug, important) | 0 | All closed. R1 [resolved] base-Event swipe bypass. R4 [resolved] reclassified to [test] — Playwright WebKit IDB+Blob quirk, real iOS verified clean |
-| S3 (smaller real bug or test bug) | 5 | R2, J1, J2, J4, N1 remain. R5 + R6 closed alongside R4 (shared root cause) |
-| S4 (cosmetic test bug) | 1 | J3 — easy fix |
+| S3 (smaller real bug or test bug) | 4 | R2, J1, J4, N1 remain. J2 closed (skipped on both Playwright projects — codec gap + WebCodecs gap; Simulator video-encode is the iOS-real coverage). R5 + R6 closed alongside R4 |
+| S4 (cosmetic test bug) | 0 | J3 closed — needed two test fixes (enrich click + address fill) |
 
-**Total bug-pile items:** 11 originally; 5 closed (R1, R3, R4, R5, R6); 6 remaining.
+**Total bug-pile items:** 11 originally; 7 closed (R1, R3, R4, R5, R6, J2, J3); 4 remaining.
 
 ## What this catches that the prior suite didn't
 
