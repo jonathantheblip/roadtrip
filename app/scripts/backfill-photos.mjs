@@ -210,8 +210,12 @@ async function main() {
 
       // Write back to R2 at the SAME KEY. wrangler r2 object put
       // overwrites in place — the memory's photoRef.url stays valid.
+      // Don't pass --remote: that flag was added in wrangler 4.x;
+      // older 3.x rejects it as unknown. wrangler 3.x defaults to
+      // remote R2 anyway, so omitting it is correct on both major
+      // versions.
       execSync(
-        `npx wrangler r2 object put "${BUCKET}/${ref.key}" --file="${tmpFile}" --content-type="image/jpeg" --remote`,
+        `npx wrangler r2 object put "${BUCKET}/${ref.key}" --file="${tmpFile}" --content-type="image/jpeg"`,
         { cwd: WORKER_DIR, stdio: ['ignore', 'ignore', 'pipe'] }
       )
 
