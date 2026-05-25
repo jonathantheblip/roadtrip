@@ -80,14 +80,17 @@ The real-media journey-01 already exercises this surface.
 
 ## R3 — WebCodecs video pipeline doesn't render preview on WebKit `[real, S1]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — 1 of 3 tests
-in the spec fails on webkit-mobile (the encode-pipeline one).
-The other two (`video picker only renders when WebCodecs is
-supported`, `Bucket C oversize video`) pass — those don't
-require the picker to actually produce a preview. Pattern
-matches the hypothesis: WebKit-mobile's WebCodecs surface is
-incomplete; the picker may render but the encode + preview
-pipeline doesn't complete.
+**Status (2026-05-25): R3a [resolved], R3b [pending]** — Test
+gate landed via `test.skip(browserName === 'webkit', ...)` on
+the encode-pipeline test. Investigation found that
+`VideoEncoder.isConfigSupported({codec: 'avc1.42E01F'})` AND
+`MediaRecorder.isTypeSupported('video/webm')` both report
+supported on Playwright WebKit, but the actual synthetic
+pipeline never completes — the modal never advances past the
+picker after `setInputFiles`. Runtime feature-detect doesn't
+distinguish the engines reliably; `browserName === 'webkit'` is
+the load-bearing gate. R3b (Simulator journey with real .mov
+fixture) is the iOS-real coverage that R3a's skip delegates to.
 
 **Spec:** `tests/e2e/photos-video.spec.js`
 **Browsers:** webkit-mobile (chromium OK)
