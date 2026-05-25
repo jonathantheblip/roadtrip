@@ -33,7 +33,7 @@ import { PhotonImage, resize, SamplingFilter } from '@cf-wasm/photon'
 const TRAVELERS = ['jonathan', 'helen', 'aurelia', 'rafa']
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url)
     const origin = request.headers.get('Origin') || ''
     const cors = corsHeaders(origin, env)
@@ -60,7 +60,7 @@ export default {
         // the photon CPU spend.
         const wParam = url.searchParams.get('w')
         if (wParam && key.includes('/photo-')) {
-          return await fetchResizedAsset(env, key, url.searchParams, cors)
+          return await fetchResizedAsset(env, ctx, key, url.searchParams, cors)
         }
         return await fetchAsset(env, key, cors)
       } catch (err) {
@@ -496,7 +496,7 @@ const PHOTO_RESIZE_DEFAULT_QUALITY = 82
 const PHOTO_RESIZE_MIN = 16
 const PHOTO_RESIZE_MAX = 4096
 
-async function fetchResizedAsset(env, key, searchParams, cors) {
+async function fetchResizedAsset(env, ctx, key, searchParams, cors) {
   const decoded = decodeURIComponent(key)
   // Clamp / coerce inputs.
   let w = parseInt(searchParams.get('w') || '0', 10)
@@ -561,13 +561,18 @@ async function fetchResizedAsset(env, key, searchParams, cors) {
   }
 
   // Write the cached variant in the background — don't block the
-  // response on R2 PUT latency. ctx.waitUntil would be ideal here;
-  // we don't have ctx in scope, so we fire-and-forget the put.
-  // Worker isolates stay alive long enough to flush.
+  // response on R2 PUT latency. MUST go through ctx.waitUntil:
+  // without it, the Worker isolate is free to terminate as soon as
+  // the response stream ends and the PUT silently never lands. (We
+  // hit exactly that in deploy v7c02b06: identical requests both
+  // returned X-Photon-Cache: MISS because the put was getting
+  // killed.) ctx.waitUntil tells the runtime to keep the isolate
+  // alive until the promise settles.
   const variantBuf = resizedBytes
-  env.ASSETS.put(cacheKey, variantBuf, {
+  const putPromise = env.ASSETS.put(cacheKey, variantBuf, {
     httpMetadata: { contentType: 'image/jpeg' },
   }).catch((err) => console.error('photon cache put failed', err?.stack || err))
+  ctx?.waitUntil?.(putPromise)
 
   const headers = new Headers(cors)
   headers.set('Content-Type', 'image/jpeg')
