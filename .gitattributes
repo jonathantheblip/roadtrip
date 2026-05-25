@@ -1,0 +1,32 @@
+# Git LFS rules for the real-media fixture corpus
+# (tests/fixtures/media/ — see its README).
+#
+# Why LFS: the bug-trap mandates REAL camera-roll files, not
+# synthetic fixtures, because synthetic ones hide exactly the
+# class of bug the trap exists to catch (full-resolution iPhone
+# JPEG memory pressure, HEIC handling, h.265 video container
+# quirks, etc.). Real files are big — total corpus ~150–200 MB —
+# and don't belong in regular git history.
+#
+# GitHub.com free LFS: 1 GiB storage + 1 GiB/month bandwidth.
+# Corpus storage stays well under storage cap; bandwidth budget
+# is one bottleneck only if many fresh clones happen each month.
+# Solo developer use stays inside the free tier comfortably.
+#
+# If bandwidth ever becomes an issue: migrate fixture storage to
+# the existing R2 bucket and replace LFS pointers with a fetch
+# script. Easy lateral move; LFS comes first because it's the
+# zero-configuration option.
+
+# All photo + video fixture binaries land in LFS.
+tests/fixtures/media/*.heic    filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.HEIC    filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.jpg     filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.JPG     filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.jpeg    filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.png     filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.PNG     filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.mp4     filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.MP4     filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.mov     filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/media/*.MOV     filter=lfs diff=lfs merge=lfs -text
