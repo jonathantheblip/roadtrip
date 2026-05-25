@@ -46,31 +46,20 @@ required. Verified 4/4 green on both projects.
 
 ---
 
-## R2 — saveAsset auto-downscale tests fail on WebKit `[test, S3]`
+## R2 — saveAsset auto-downscale tests fail on WebKit `[test, S3 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — all 3 tests
-in the spec still fail on webkit-mobile with `page.evaluate:
-null`. Chromium pass; structural fix from `21fc084` works
-correctly in production.
+**Status (2026-05-25): [resolved]** — Investigation refuted the
+carryover's Vite-URL hypothesis. Switching the dynamic import to
+a window-global hook (DEV-only) made the import succeed, but
+`saveAsset` then failed at `IDBObjectStore.put({...blob})` —
+exactly the R4 IDB+Blob bug. R2 is downstream of R4, same engine
+limitation, same skip pattern.
 
-**Spec:** `tests/e2e/photos-auto-downscale.spec.js` (3 tests)
-**Browsers:** webkit-mobile (chromium OK)
-**Symptom:** `page.evaluate: null`
-
-**Root cause hypothesis:** The tests do a dynamic ESM `import()`
-inside `page.evaluate()` to reach `memAssets.js` directly. Safari
-permits dynamic imports but the module-graph resolution against
-Vite's dev-server URLs behaves differently than Chromium. The
-test's `await import('/src/lib/memAssets.js')` returns null
-rather than the module exports.
-
-**Reproducer:** `npx playwright test tests/e2e/photos-auto-downscale.spec.js --project=webkit-mobile`
-
-**Fix path:** Test bug. Replace the in-page dynamic import with
-the more robust pattern: navigate to a real PWA surface that
-uses saveAsset (the ThreadedMemories picker) and assert via the
-DOM, rather than calling the lib directly from the test runner.
-The real-media journey-01 already exercises this surface.
+**Fix:** `test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)`
+on all 3 tests, reusing the shared reason text from R4a. The
+in-page dynamic import is preserved (works on chromium); no app
+change needed. The Simulator gate's `offline-drain.test.mjs`
+covers IDB+Blob storage on the iOS-real surface.
 
 ---
 
@@ -281,10 +270,10 @@ Probably a test bug.
 |---|---|---|
 | S1 (blocking) | 0 | R3 [resolved] — R3a (Playwright skip) + R3b (Simulator journey that uncovered + fixed real iOS bug in videoPipeline/worker) |
 | S2 (real bug, important) | 0 | All closed. R1 [resolved] base-Event swipe bypass. R4 [resolved] reclassified to [test] — Playwright WebKit IDB+Blob quirk, real iOS verified clean |
-| S3 (smaller real bug or test bug) | 4 | R2, J1, J4, N1 remain. J2 closed (skipped on both Playwright projects — codec gap + WebCodecs gap; Simulator video-encode is the iOS-real coverage). R5 + R6 closed alongside R4 |
+| S3 (smaller real bug or test bug) | 3 | J1, J4, N1 remain. R2 closed (also IDB+Blob — investigation refuted Vite-URL hypothesis; same skip pattern as R4/R5/R6). J2 closed (.mov codec gap on chromium + WebCodecs gap on webkit; Simulator video-encode is the iOS-real coverage). R5 + R6 closed alongside R4 |
 | S4 (cosmetic test bug) | 0 | J3 closed — needed two test fixes (enrich click + address fill) |
 
-**Total bug-pile items:** 11 originally; 7 closed (R1, R3, R4, R5, R6, J2, J3); 4 remaining.
+**Total bug-pile items:** 11 originally; 8 closed (R1, R2, R3, R4, R5, R6, J2, J3); 3 remaining.
 
 ## What this catches that the prior suite didn't
 

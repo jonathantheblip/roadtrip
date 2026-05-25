@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { bigPhotoFile } from './_fixtures/photoFixtures.js'
+import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
 
 // Pri 1 structural fix — saveAsset auto-runs preparePhotoForUpload for
 // photo kind. Pre-fix, ThreadedMemories.savePhotoAlbum bypassed the
@@ -13,8 +14,22 @@ import { bigPhotoFile } from './_fixtures/photoFixtures.js'
 // (a) image/jpeg, not the input PNG, and (b) at or under 2048 on the
 // longest edge. Both conditions only pass if preparePhotoForUpload
 // actually ran during save.
+//
+// Skipped on Playwright webkit-mobile: saveAsset's IDB write trips the
+// same R4 IDB+Blob bug (`IDBObjectStore.put({...blob})` fails with
+// "Error preparing Blob/File data to be stored in object store"). The
+// carryover hypothesis attributed R2 to Vite dev-server URL resolution
+// for the in-page dynamic import; investigation showed the import works
+// after switching to a window-global hook, but the underlying saveAsset
+// then fails at the same IDB+Blob layer R4 hit. Real iOS Safari handles
+// this cleanly; the Simulator gate's offline-drain.test.mjs covers
+// IDB+Blob storage on the iOS-real surface.
 
-test('saveAsset auto-downscales photo input to JPEG at PHOTO_MAX_EDGE', async ({ page }) => {
+test('saveAsset auto-downscales photo input to JPEG at PHOTO_MAX_EDGE', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
 
@@ -70,7 +85,11 @@ test('saveAsset auto-downscales photo input to JPEG at PHOTO_MAX_EDGE', async ({
   expect(result.preparedHeight).toBe(1536)
 })
 
-test('saveAsset({ raw: true }) preserves input bytes for opt-out callers', async ({ page }) => {
+test('saveAsset({ raw: true }) preserves input bytes for opt-out callers', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
   await expect(page.getByRole('button', { name: /Modify this trip with Claude/i })).toBeVisible()
@@ -105,7 +124,11 @@ test('saveAsset({ raw: true }) preserves input bytes for opt-out callers', async
   expect(result.storedBytes).toBe(result.inputBytes)
 })
 
-test('saveAsset still works for audio kind without modification', async ({ page }) => {
+test('saveAsset still works for audio kind without modification', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
   await expect(page.getByRole('button', { name: /Modify this trip with Claude/i })).toBeVisible()
