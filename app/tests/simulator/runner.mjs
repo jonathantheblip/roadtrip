@@ -69,9 +69,12 @@ await ensureDevServer()
 
 // Hand off to node:test against the simulator specs.
 // Node's --test expects glob patterns, not a bare directory.
+// --test-concurrency=1 forces serial execution: each test owns the
+// shared safaridriver instance via _driver.mjs's `pkill` reset, so
+// parallel runs (the default) would race and kill each other.
 const tests = spawn(
   'sh',
-  ['-c', 'node --test tests/simulator/*.test.mjs'],
+  ['-c', 'node --test --test-concurrency=1 tests/simulator/*.test.mjs'],
   { stdio: 'inherit' }
 )
 tests.on('exit', (code) => {

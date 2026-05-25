@@ -213,11 +213,25 @@ async function walkAllFrames(video, totalFrames, onFrame) {
   if (typeof video.requestVideoFrameCallback === 'function') {
     await video.play().catch(() => {})
     let frameCount = 0
+    // iOS Safari can call rVFC with a repeated or non-monotonic
+    // metadata.mediaTime for consecutive frames on certain .mov files —
+    // observed with iPhone 1080p captures on iOS 18.7+ in the Simulator
+    // gate (R3b). The encoder then computes a zero-or-negative chunk
+    // duration from the consecutive timestamps and mp4-muxer rejects
+    // with "addVideoChunkRaw's fourth argument (duration) must be a
+    // non-negative real number". Clamping ts to be strictly greater
+    // than the previous one (≥ 1 µs delta) keeps the encoder's duration
+    // math positive without distorting timing meaningfully.
+    let lastTs = -1
     await new Promise((resolve, reject) => {
       let cancelled = false
       const drain = (_now, metadata) => {
         if (cancelled) return
-        const ts = Math.round((metadata?.mediaTime ?? video.currentTime) * 1_000_000)
+        const rawTs = Math.round(
+          (metadata?.mediaTime ?? video.currentTime) * 1_000_000
+        )
+        const ts = Number.isFinite(rawTs) && rawTs > lastTs ? rawTs : lastTs + 1
+        lastTs = ts
         createImageBitmap(video)
           .then((bitmap) => onFrame(bitmap, ts))
           .catch((err) => {

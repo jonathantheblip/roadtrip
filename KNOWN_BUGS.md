@@ -80,17 +80,33 @@ The real-media journey-01 already exercises this surface.
 
 ## R3 — WebCodecs video pipeline doesn't render preview on WebKit `[real, S1]`
 
-**Status (2026-05-25): R3a [resolved], R3b [pending]** — Test
-gate landed via `test.skip(browserName === 'webkit', ...)` on
-the encode-pipeline test. Investigation found that
-`VideoEncoder.isConfigSupported({codec: 'avc1.42E01F'})` AND
-`MediaRecorder.isTypeSupported('video/webm')` both report
-supported on Playwright WebKit, but the actual synthetic
-pipeline never completes — the modal never advances past the
-picker after `setInputFiles`. Runtime feature-detect doesn't
-distinguish the engines reliably; `browserName === 'webkit'` is
-the load-bearing gate. R3b (Simulator journey with real .mov
-fixture) is the iOS-real coverage that R3a's skip delegates to.
+**Status (2026-05-25): R3a + R3b [resolved]** — Both shipped.
+The R3b Simulator journey did its job: it surfaced a real iOS
+Safari bug in our encode pipeline that the Playwright suite
+never caught. Specifically:
+
+  1. iOS Safari's WebCodecs `VideoEncoder` doesn't auto-compute
+     chunk duration from consecutive frame timestamps the way
+     Chromium does. Without an explicit `duration` on the input
+     `VideoFrame`, the output chunk's duration is unset and
+     `mp4-muxer.addVideoChunk` rejects with "duration must be a
+     non-negative real number". Fixed in
+     `app/src/workers/encodeVideo.worker.js` by stamping every
+     VideoFrame with `duration: frameDurationUs`.
+
+  2. iOS Safari's `requestVideoFrameCallback` can fire with a
+     repeated or non-monotonic `metadata.mediaTime` for some .mov
+     files. Even with the duration fix, that produces 0 / negative
+     chunk durations downstream. Fixed in
+     `app/src/lib/videoPipeline.js` `walkAllFrames` by clamping
+     timestamps to strict monotonicity (lastTs + 1µs floor).
+
+R3a's skip pattern remains in `photos-video.spec.js` because
+Playwright's bundled WebKit still can't drive the synthetic
+pipeline (the failure mode is upstream of these app bugs —
+input synthesis itself stalls). The iOS-real surface now has
+explicit coverage via `tests/simulator/video-encode.test.mjs`
+which passes against booted iPhone 17 / iOS 26.5 (~12s).
 
 **Spec:** `tests/e2e/photos-video.spec.js`
 **Browsers:** webkit-mobile (chromium OK)
@@ -288,13 +304,12 @@ Probably a test bug.
 
 | Severity | Count | Notes |
 |---|---|---|
-| S1 (blocking) | 1 | R3 — WebCodecs gap, possibly intentional Playwright WebKit limitation |
+| S1 (blocking) | 0 | R3 [resolved] — R3a (Playwright skip) + R3b (Simulator journey that uncovered + fixed real iOS bug in videoPipeline/worker) |
 | S2 (real bug, important) | 2 | R1 lightbox touch, R4 offline pill — both align with the iOS Safari class of bug the trap was built for |
 | S3 (smaller real bug or test bug) | 7 | R2, R5, R6, J1, J2, J4, N1 — mostly downstream of R4 or test-side fixes |
 | S4 (cosmetic test bug) | 1 | J3 — easy fix |
 
-**Total bug-pile items:** 11 (after de-duping per-spec failures
-that share a root cause).
+**Total bug-pile items:** 11 originally; 1 closed (R3); 10 remaining.
 
 ## What this catches that the prior suite didn't
 

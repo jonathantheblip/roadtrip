@@ -44,6 +44,13 @@ let totalFrames = 1
 let processedFrames = 0
 let keyFrameInterval = 60
 let errored = false
+// Per-frame duration in microseconds (1 / fps × 1e6). Set in configure()
+// and stamped on every VideoFrame so the encoder's output chunks carry
+// a valid duration. Without this, iOS Safari's encoder leaves chunk
+// duration unset and mp4-muxer rejects with "addVideoChunkRaw's fourth
+// argument (duration) must be a non-negative real number". Chromium's
+// encoder auto-computes from consecutive timestamps; iOS does not.
+let frameDurationUs = Math.round(1_000_000 / 30)
 
 function postError(code, message, stack) {
   if (errored) return
@@ -88,6 +95,7 @@ function configure({ width, height, frameRate, audio, totalFrames: total }) {
   const fps = frameRate || 30
   totalFrames = Math.max(1, total || 1)
   keyFrameInterval = Math.max(1, Math.round(fps * KEYFRAME_INTERVAL_SECONDS))
+  frameDurationUs = Math.max(1, Math.round(1_000_000 / fps))
 
   muxer = new Muxer({
     target: new ArrayBufferTarget(),
@@ -142,7 +150,10 @@ async function encodeFrame(bitmap, timestamp) {
   }
   try {
     scaleCtx.drawImage(bitmap, 0, 0, outW, outH)
-    const frame = new VideoFrame(scaleCanvas, { timestamp })
+    const frame = new VideoFrame(scaleCanvas, {
+      timestamp,
+      duration: frameDurationUs,
+    })
     const keyFrame = processedFrames % keyFrameInterval === 0
     videoEncoder.encode(frame, { keyFrame })
     frame.close()
