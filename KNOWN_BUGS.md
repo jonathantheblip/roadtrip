@@ -168,24 +168,23 @@ Gated via the same `WEBKIT_IDB_BLOB_REASON` skip pattern.
 
 ---
 
-## J1 — Journey 01 locator chain `[test, S3]`
+## J1 — Journey 01 locator chain `[test+app, S3 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
-still fail on the journey's photo-picker locator step.
+**Status (2026-05-25): [resolved]** — Two fixes:
 
-**Spec:** `tests/e2e/journeys/journey-01-photo-thread.spec.js`
-**Browsers:** both
-**Symptom:** Locator for the in-thread photo picker doesn't
-resolve from the trip view.
+1. Added `data-testid="threaded-photo-picker"` and
+   `data-testid="threaded-photo-save"` to ThreadedMemories.jsx
+   (minimal app change — adds inert attrs to existing buttons).
+   Journey-01 now uses these testids instead of role+name
+   matching.
+2. Replaced the final assertion `locator('img').first()` with
+   memory-metadata assertions (`/\d+ memory/` text + Delete
+   button visibility) — the mocked /assets URL doesn't actually
+   serve image bytes, so the `<img>` never renders even after
+   the memory saves successfully.
 
-**Root cause:** ThreadedMemories renders inside StopDetail; the
-journey navigates to StopDetail via "Beach Bungalow" but the
-"Attach photos" aria-labeled button isn't found in the expected
-position.
-
-**Fix path:** Test bug. Either ThreadedMemories needs a stable
-data-testid on its photo-picker button (small code change), or
-the test needs to wait for StopDetail's mount before querying.
+Skipped on webkit-mobile per the R4 IDB+Blob pattern (the save
+flow trips `IDBObjectStore.put({...blob})` on Playwright WebKit).
 
 ---
 
@@ -219,48 +218,39 @@ carryover called out one):
 
 ---
 
-## J4 — Journey 07 offline sync-pill missing `[real or test, S3]`
+## J4 — Journey 07 offline sync-pill missing `[test, S3 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
-fail at the sync-pill step. Same root as R4; clarifying note —
-this one fails on chromium too, which sharpens the read: it's
-likely a TEST issue (no fixture preconditions, missing wait,
-or assertion timing) rather than a webkit-specific render bug.
-R4 is the webkit-only variant; J4's chromium failure suggests
-the journey's offline flow assertion may need to wait longer
-OR look for a different signal than the pill element.
+**Status (2026-05-25): [resolved]** — Fix: replaced
+mockSuccessfulUpload (which unconditionally returns 200) with a
+stateful mock that returns 503 while `simulateOffline=true` and
+200 after we flip it on reconnect. The previous mock contradicted
+the offline state — even with `context.setOffline(true)`, the
+route handler still fired and returned 200, so the upload
+succeeded and nothing queued; the sync-pill assertion timed out.
+Also added explicit hidden→visible visibility-change toggle on
+reconnect (App.jsx's onVisibility only runs on the visible
+transition).
 
-**Spec:** `tests/e2e/journeys/journey-07-offline-queue.spec.js`
-**Browsers:** both
-**Symptom:** Same as R4 — `sync-pill` doesn't appear.
-
-**Fix path:** Same root as R4; likely resolves with that
-investigation.
+Skipped on webkit-mobile per the R4 IDB+Blob pattern.
 
 ---
 
-## N1 — Network matrix drop-and-resume not draining `[real or test, S3]`
+## N1 — Network matrix drop-and-resume not draining `[test, S3 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — both projects
-fail. Same hypothesis pattern as J4: failing on chromium too
-sharpens the read toward "the test asserts the wrong end
-state". The other two matrix variants (slow-3G, mid-offline)
-pass cleanly on both projects, narrowing the issue to the
-specific drop-and-resume assertion.
+**Status (2026-05-25): [resolved]** — Pure test bug, no skip
+needed on either project. Fix: route registration order.
+mockSuccessfulUpload + dropFirstThenResume were both registered
+BEFORE setupAlbumComposer ran seedTripIntoCache (which adds a
+catch-all 404 route). Playwright's route matching is LIFO, so the
+catch-all caught the first /assets/photo call with 404 and
+dropFirstThenResume's abort never fired. Status still hit "Saved"
+(via queueSilently catching the 404), but `probe.dropped()`
+returned false. Reordered: setup first, then mocks.
 
-**Spec:** `tests/e2e/network-matrix/photo-upload.matrix.spec.js`
-**Browsers:** both
-**Symptom:** Save status never reaches "Saved" after the first
-upload is aborted.
-
-**Root cause hypothesis:** The dispatch flow may not auto-retry
-after a network failure — it might queue silently per the
-user-facing error policy. If so, the test is asserting the wrong
-end state (should look at the queue's sync-pill, not the
-dispatch modal's status).
-
-**Fix path:** Verify the retry behavior in the dispatch flow.
-Probably a test bug.
+Note: the original "no auto-retry" hypothesis was correct —
+the dispatch flow queues silently on error and shows "Saved" —
+but the test isn't asserting on retry behavior; it's just
+asserting that the first attempt was actually intercepted.
 
 ---
 
@@ -270,10 +260,10 @@ Probably a test bug.
 |---|---|---|
 | S1 (blocking) | 0 | R3 [resolved] — R3a (Playwright skip) + R3b (Simulator journey that uncovered + fixed real iOS bug in videoPipeline/worker) |
 | S2 (real bug, important) | 0 | All closed. R1 [resolved] base-Event swipe bypass. R4 [resolved] reclassified to [test] — Playwright WebKit IDB+Blob quirk, real iOS verified clean |
-| S3 (smaller real bug or test bug) | 3 | J1, J4, N1 remain. R2 closed (also IDB+Blob — investigation refuted Vite-URL hypothesis; same skip pattern as R4/R5/R6). J2 closed (.mov codec gap on chromium + WebCodecs gap on webkit; Simulator video-encode is the iOS-real coverage). R5 + R6 closed alongside R4 |
+| S3 (smaller real bug or test bug) | 0 | All closed. J1 (data-testids on ThreadedMemories + memory-metadata assertion). J4 (stateful mock replacing mockSuccessfulUpload). N1 (route registration order — setup must register the catch-all BEFORE the more specific mocks since Playwright LIFO). R2, R5, R6 closed via the R4 IDB+Blob skip pattern. J2 closed via skip on both projects (.mov codec gap on chromium + WebCodecs gap on webkit) |
 | S4 (cosmetic test bug) | 0 | J3 closed — needed two test fixes (enrich click + address fill) |
 
-**Total bug-pile items:** 11 originally; 8 closed (R1, R2, R3, R4, R5, R6, J2, J3); 3 remaining.
+**Total bug-pile items:** 11 originally; 11 closed. Bug pile clear.
 
 ## What this catches that the prior suite didn't
 

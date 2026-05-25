@@ -106,11 +106,18 @@ test('offline mid-upload + online again drains the queue', async ({
 test('drop-and-resume: first upload aborts, retry succeeds', async ({
   page,
 }) => {
-  await mockSuccessfulUpload(page)
-  const probe = await dropFirstThenResume(page)
-
-  await step('setup composer + pick fixture + submit', async () => {
+  let probe
+  await step('setup composer + install mocks + pick fixture + submit', async () => {
+    // setupAlbumComposer calls seedTripIntoCache which registers a
+    // catch-all worker 404 route. Playwright's route matching is LIFO,
+    // so the more specific mocks below must register AFTER the catch-
+    // all to win. (Previously mocks were registered before setup, the
+    // catch-all then intercepted /assets/photo with 404 and
+    // dropFirstThenResume's abort never fired — probe.dropped() stayed
+    // false even though the test passed all upstream assertions.)
     await setupAlbumComposer(page)
+    await mockSuccessfulUpload(page)
+    probe = await dropFirstThenResume(page)
     await pickFixtureAndSubmit(page)
   })
 

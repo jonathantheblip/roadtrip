@@ -1,8 +1,8 @@
 import { test } from '@playwright/test'
 import { step, setActivePage, expect } from './_steps.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from '../_fixtures/withTrip.js'
-import { mockSuccessfulUpload } from '../_fixtures/mockUpload.js'
 import { realMedia } from '../_fixtures/realMedia.js'
+import { WEBKIT_IDB_BLOB_REASON } from '../_fixtures/webkitIdbBlobGate.js'
 
 // Journey 07 — Offline upload queue.
 // Spec source: BUG_TRAP_PUNCHLIST.md A.3 seventh bullet.
@@ -20,12 +20,41 @@ test.beforeEach(async ({ page }) => setActivePage(page))
 test('offline upload queues + drains on reconnect', async ({
   page,
   context,
+  browserName,
 }) => {
+  test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   const fx = realMedia('JPEG_FULLRES')
   test.skip(!fx, 'JPEG_FULLRES fixture not present')
 
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await mockSuccessfulUpload(page)
+
+  // Stateful mock: fail while `simulateOffline` is true (so the upload
+  // queues), succeed after we flip it (so the drain clears the queue).
+  // mockSuccessfulUpload would unconditionally return 200, which makes
+  // the offline-then-online dance impossible to assert.
+  let simulateOffline = true
+  await page.route(
+    /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/assets\/(photo|video)/,
+    async (route) => {
+      if (simulateOffline) {
+        await route.fulfill({
+          status: 503,
+          body: '{"error":"offline simulated"}',
+          contentType: 'application/json',
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          key: 'helen/journey07/photo',
+          url: 'https://example.test/journey07/photo',
+          mime: 'image/jpeg',
+        }),
+      })
+    }
+  )
 
   await step('open trip view + Photos album', async () => {
     await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
@@ -66,10 +95,20 @@ test('offline upload queues + drains on reconnect', async ({
 
   await step('reconnect — queue drains, pill clears', async () => {
     await context.setOffline(false)
+    simulateOffline = false
     // Drain hooks listen to `online` event + page-visibility +
-    // a 120s backstop. We trigger a visibility tick to nudge
-    // the drain immediately rather than wait for the interval.
+    // a 120s backstop. Toggle hidden → visible explicitly because
+    // App.jsx's onVisibility only runs on the visible transition.
     await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      })
+      document.dispatchEvent(new Event('visibilitychange'))
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'visible',
+      })
       document.dispatchEvent(new Event('visibilitychange'))
     })
     const pill = page.getByTestId('sync-pill')

@@ -680,6 +680,7 @@ function Composer({
         />
         <button
           type="button"
+          data-testid="threaded-photo-picker"
           onClick={() => canPickMore && fileInputRef.current?.click()}
           aria-label="Attach photos"
           disabled={!canPickMore}
@@ -925,6 +926,7 @@ function PhotoAlbumTray({
       />
       <button
         type="button"
+        data-testid="threaded-photo-save"
         onClick={onSave}
         disabled={saving || n === 0}
         style={{

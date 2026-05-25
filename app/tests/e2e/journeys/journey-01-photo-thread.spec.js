@@ -3,6 +3,7 @@ import { step, setActivePage, expect } from './_steps.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from '../_fixtures/withTrip.js'
 import { mockSuccessfulUpload } from '../_fixtures/mockUpload.js'
 import { realMedia } from '../_fixtures/realMedia.js'
+import { WEBKIT_IDB_BLOB_REASON } from '../_fixtures/webkitIdbBlobGate.js'
 
 // Journey 01 — Photo upload from the in-thread (StopDetail) composer.
 // Spec source: BUG_TRAP_PUNCHLIST.md A.3 first bullet.
@@ -16,7 +17,8 @@ import { realMedia } from '../_fixtures/realMedia.js'
 
 test.beforeEach(async ({ page }) => setActivePage(page))
 
-test('photo upload from in-thread composer', async ({ page }) => {
+test('photo upload from in-thread composer', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   const fx = realMedia('JPEG_FULLRES')
   test.skip(!fx, 'JPEG_FULLRES fixture not present — see tests/fixtures/media/README.md')
 
@@ -35,8 +37,8 @@ test('photo upload from in-thread composer', async ({ page }) => {
     await page.getByRole('button', { name: /Beach Bungalow/i }).first().click()
   })
 
-  await step('open in-thread photo picker (aria-label)', async () => {
-    await page.getByRole('button', { name: /attach photos?/i }).first().click()
+  await step('open in-thread photo picker', async () => {
+    await page.getByTestId('threaded-photo-picker').first().click()
   })
 
   await step('pick real-media JPEG fixture', async () => {
@@ -49,15 +51,21 @@ test('photo upload from in-thread composer', async ({ page }) => {
   })
 
   await step('save the photo album', async () => {
-    // The save action is the send-like button on the composer
-    // rail. ThreadedMemories renders it as the "Send" button
-    // after a photo is staged.
-    const save = page.getByRole('button', { name: /save|send|post|share/i }).first()
-    await save.click()
+    // After staging a photo, ThreadedMemories renders the
+    // "Save N to thread" button on the composer rail.
+    await page.getByTestId('threaded-photo-save').first().click()
   })
 
-  await step('tile renders in the thread', async () => {
-    const tile = page.locator('img').first()
-    await expect(tile).toBeVisible({ timeout: 10_000 })
+  await step('memory lands in the thread', async () => {
+    // The mocked /assets/photo response returns a fake URL, so the
+    // tile's <img> won't load real bytes. Assert on the saved-memory
+    // signals instead: the "N memory · live thread" header text and
+    // the Delete button that appears next to a saved memory.
+    await expect(page.getByText(/\b\d+ memory\b/i)).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(
+      page.getByRole('button', { name: /delete memory/i }).first()
+    ).toBeVisible()
   })
 })
