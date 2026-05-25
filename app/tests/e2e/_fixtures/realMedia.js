@@ -33,9 +33,13 @@ const FIXTURES = {
     file: 'iphone-screenshot.png',
     mimeType: 'image/png',
   },
-  SCREEN_RECORDING_MOV: {
-    file: 'iphone-screen-recording.mov',
-    mimeType: 'video/quicktime',
+  SCREEN_RECORDING: {
+    // iPhone screen recordings come out as .mp4 (h.264 inside an
+    // MP4 container), not the .mov containers that the camera
+    // produces for regular video. The mime is correspondingly
+    // video/mp4.
+    file: 'iphone-screen-recording.mp4',
+    mimeType: 'video/mp4',
   },
   VIDEO_1080P_5S: {
     file: 'iphone-video-1080p-5s.mov',

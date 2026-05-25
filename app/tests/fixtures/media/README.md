@@ -30,7 +30,7 @@ files need refreshing.
 | `iphone-heic-with-gps.heic` | iPhone, HEIC capture mode, location on | ~4 MB | Real HEIC bytes with EXIF + GPS intact. Exercises HEIC decode + EXIF strip on the upload pipeline. |
 | `iphone-jpeg-fullres.jpg` | iPhone, JPEG capture mode | ~5 MB | Full-resolution iPhone JPEG (4032×3024 or 5712×4284). The exact shape that black-tiled on iOS Safari before the structural fix. |
 | `iphone-screenshot.png` | iPhone screenshot (volume + side button) | ~200 KB | PNG-encoded, no EXIF, transparent-color-profile metadata. Exercises the PNG branch + Share-In paste path. |
-| `iphone-screen-recording.mov` | iPhone screen recording (Control Center) | ~5–15 MB | Real iOS screen recording container. h.264 or HEVC with iOS-specific atoms. Exercises the video pipeline against a non-camera source. |
+| `iphone-screen-recording.mp4` | iPhone screen recording (Control Center) | ~5–15 MB | Real iOS screen recording container — iPhones produce `.mp4` (h.264 in MP4) for screen recordings, distinct from the `.mov` files the camera produces. Exercises the video pipeline against a non-camera source. |
 | `iphone-video-1080p-5s.mov` | iPhone, 1080p 30fps, ~5 seconds | ~10 MB | Standard short video. Baseline for the encode pipeline. |
 | `iphone-video-4k-30s.mov` | iPhone, 4K 60fps, ~30 seconds | ~80–100 MB | Large video — exercises the post-encode size cap (25 MB), Bucket C "too long to share" error path, and the memory pressure of decoding a big input. |
 | `iphone-video-portrait.mov` | iPhone, portrait orientation, ~3 seconds | ~5 MB | Portrait-rotation EXIF. Exercises the orientation-honoring branch of the encode pipeline. |
