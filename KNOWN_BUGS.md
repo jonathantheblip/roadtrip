@@ -148,7 +148,10 @@ on every test that depends on the IDB+Blob enqueue path. Shared
 reason text lives at `tests/e2e/_fixtures/webkitIdbBlobGate.js`
 so removing the gate (when Playwright fixes the upstream issue)
 is a single-grep operation. R4b adds iOS-real coverage of the
-offline drain path via the Simulator gate.
+queue+pill surface via `tests/simulator/offline-drain.test.mjs`:
+injects a record into the IDB queue directly, navigates to
+PhotosView, asserts the sync-pill renders with "1 syncing".
+Passes in ~3s against booted iPhone 17 / iOS 26.5.
 
 **Affected specs (all now gated):**
 - `photos-offline.spec.js` (both tests — R4 directly)
