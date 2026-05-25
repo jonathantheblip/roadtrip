@@ -23,30 +23,26 @@ fixed. Per-entry status added below.
 
 ---
 
-## R1 — Lightbox touch gestures don't run on WebKit `[real, S2]`
+## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — 2 of 2 tests
-in the spec still fail on webkit-mobile. Same `Illegal
-constructor` symptom; same chromium-passes/webkit-fails pattern.
+**Status (2026-05-25): [resolved]** — Pure test fix. WebKit
+blocks both `new TouchEvent(...)` and `new Touch({...})` with
+`Illegal constructor`. Playwright's `Touchscreen.tap()` only
+fires at a single coordinate, so it can't synthesize a swipe.
+But the React handler in PhotoAlbum.jsx only reads
+`touches[0].clientX/Y` (touchstart) and
+`changedTouches[0].clientX/Y` (touchend) — it doesn't listen for
+touchmove. So we sidestep both restricted constructors by
+dispatching a base `Event` and pinning `touches` /
+`targetTouches` / `changedTouches` via `Object.defineProperty`.
+React's event delegation listens by event name and reads touches
+off the native event, which is enough.
 
 **Spec:** `tests/e2e/photos-lightbox-swipe.spec.js`
-**Browsers:** webkit-mobile (chromium OK)
-**Symptom:** `page.evaluate: TypeError: Illegal constructor`
-when the test constructs a synthetic `TouchEvent`.
-
-**Root cause hypothesis:** Safari restricts JavaScript
-construction of `TouchEvent` for security reasons; the test
-helper builds one via `new TouchEvent(...)` and Safari rejects.
-Either the test needs to use Playwright's `page.touchscreen.tap()`
-+ `page.touchscreen.swipe()` (engine-native dispatch), OR the
-app's swipe detector needs a polyfilled-touch alternative.
-
-**Reproducer:** `npx playwright test tests/e2e/photos-lightbox-swipe.spec.js --project=webkit-mobile`
-
-**Fix path:** Likely a test fix (switch to Playwright's native
-touch APIs). Confirm by manually swiping a lightbox tile on a
-real iPhone — if the gesture works for Helen, the bug is in the
-test; if it doesn't, the app's touch handler needs work.
+**Reclassification:** Was `[real, S2]` with DESIGN-DECISION risk
+(the carryover allowed for the possibility the app's swipe
+detector needed work). Now confirmed `[test]` — no app change
+required. Verified 4/4 green on both projects.
 
 ---
 
@@ -305,11 +301,11 @@ Probably a test bug.
 | Severity | Count | Notes |
 |---|---|---|
 | S1 (blocking) | 0 | R3 [resolved] — R3a (Playwright skip) + R3b (Simulator journey that uncovered + fixed real iOS bug in videoPipeline/worker) |
-| S2 (real bug, important) | 2 | R1 lightbox touch, R4 offline pill — both align with the iOS Safari class of bug the trap was built for |
+| S2 (real bug, important) | 1 | R4 offline pill remains. R1 reclassified to [test] and [resolved] — base Event + Object.defineProperty bypass for WebKit's TouchEvent/Touch constructor restrictions |
 | S3 (smaller real bug or test bug) | 7 | R2, R5, R6, J1, J2, J4, N1 — mostly downstream of R4 or test-side fixes |
 | S4 (cosmetic test bug) | 1 | J3 — easy fix |
 
-**Total bug-pile items:** 11 originally; 1 closed (R3); 10 remaining.
+**Total bug-pile items:** 11 originally; 2 closed (R3, R1); 9 remaining.
 
 ## What this catches that the prior suite didn't
 

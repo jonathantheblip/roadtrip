@@ -83,34 +83,59 @@ test.describe('Lightbox touch gestures (M2)', () => {
 })
 
 async function dispatchSwipe(page, { from, to, steps = 6 }) {
-  // Playwright's touchscreen.tap doesn't support multi-event swipe.
-  // Dispatch raw TouchEvents via the CDP to bypass that limitation —
-  // the React handler in PhotosView reads only touches[0].clientX/Y.
+  // The React handler in PhotoAlbum.jsx only reads touches[0].clientX/Y
+  // (on touchstart) and changedTouches[0].clientX/Y (on touchend) —
+  // it doesn't listen for touchmove. We just need a touchstart at
+  // `from` and a touchend at `to`.
+  //
+  // WebKit blocks `new TouchEvent(...)` and `new Touch({...})` with
+  // "Illegal constructor". To stay cross-browser we sidestep both:
+  // dispatch a base Event with the touch-list properties pinned via
+  // Object.defineProperty. React's event delegation listens by event
+  // name (touchstart/touchend) and reads touches off the native event,
+  // so the plain Event with the right shape is enough.
   const lightboxSel = '[data-testid="photo-lightbox"]'
   await page.evaluate(
     ({ from, to, steps, lightboxSel }) => {
       const target = document.querySelector(lightboxSel)
       if (!target) throw new Error('no lightbox to swipe')
-      function touch(x, y, id = 0) {
-        return new Touch({ identifier: id, target, clientX: x, clientY: y })
+      function touch(x, y) {
+        return {
+          identifier: 0,
+          target,
+          clientX: x,
+          clientY: y,
+          pageX: x,
+          pageY: y,
+          screenX: x,
+          screenY: y,
+          radiusX: 1,
+          radiusY: 1,
+          rotationAngle: 0,
+          force: 1,
+        }
       }
-      function fire(name, points) {
-        const ev = new TouchEvent(name, {
-          bubbles: true,
-          cancelable: true,
-          touches: name === 'touchend' ? [] : points,
-          targetTouches: name === 'touchend' ? [] : points,
-          changedTouches: points,
-        })
+      function fire(name, touches, changedTouches) {
+        const ev = new Event(name, { bubbles: true, cancelable: true })
+        Object.defineProperty(ev, 'touches', { value: touches })
+        Object.defineProperty(ev, 'targetTouches', { value: touches })
+        Object.defineProperty(ev, 'changedTouches', { value: changedTouches })
         target.dispatchEvent(ev)
       }
-      fire('touchstart', [touch(from.x, from.y)])
+      const start = [touch(from.x, from.y)]
+      fire('touchstart', start, start)
+      // touchmove dispatch is faithful to a real swipe but unused by
+      // the handler — keep it for any future handler that reads it.
       const dx = (to.x - from.x) / steps
       const dy = (to.y - from.y) / steps
       for (let i = 1; i < steps; i++) {
-        fire('touchmove', [touch(from.x + dx * i, from.y + dy * i)])
+        const mid = [touch(from.x + dx * i, from.y + dy * i)]
+        fire('touchmove', mid, mid)
       }
-      fire('touchend', [touch(to.x, to.y)])
+      const end = [touch(to.x, to.y)]
+      // On touchend, `touches` is empty (touch lifted) and the final
+      // coords land in `changedTouches`.
+      fire('touchend', [], end)
     },
     { from, to, steps, lightboxSel }
   )
