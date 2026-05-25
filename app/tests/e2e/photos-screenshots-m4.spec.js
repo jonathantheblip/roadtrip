@@ -1,6 +1,7 @@
 import { test } from '@playwright/test'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
+import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
 
 // Visual captures for M4 + the dev-mode upload log. Each screenshot
 // proves a specific surface renders as designed — the carryover's
@@ -13,7 +14,8 @@ test.describe('M4 + dev-mode — visual capture', () => {
     await page.addInitScript(() => indexedDB.deleteDatabase('roadtrip-upload-queue'))
   })
 
-  test('sync pill — before and after foreground drain', async ({ page }) => {
+  test('sync pill — before and after foreground drain', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
     await seedTripIntoCache(page, FIXTURE_TRIP)
     let nextStatus = 503
     await page.route(

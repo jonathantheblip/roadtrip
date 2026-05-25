@@ -130,67 +130,49 @@ iOS Safari WebCodecs coverage.
 
 ---
 
-## R4 — Offline sync-pill never surfaces on WebKit `[real, S2]`
+## R4 — Offline sync-pill never surfaces on WebKit `[test, S2 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — both tests in
-the spec still fail on webkit-mobile waiting on the sync-pill
-locator. Chromium both pass. Same symptom as J4 and R6 below;
-likely one root cause across the three entries.
+**Status (2026-05-25): [resolved]** — Classified as a
+Playwright-WebKit quirk, NOT a real iOS bug. Verified via
+Simulator diagnostic: real iOS Safari (iPhone 17 / iOS 26.5)
+round-trips Blobs through IndexedDB cleanly; Playwright's
+bundled WebKit fails `IDBObjectStore.put({...blob})` with
+"Error preparing Blob/File data to be stored in object store".
+The app's enqueue path correctly catches the failure and logs
+it (code: `storage-quota`, phase: `queue-insert-failed`), so
+the queue stays empty and the pill correctly doesn't render —
+the test's assertion is the wrong shape for this engine.
 
-**Spec:** `tests/e2e/photos-offline.spec.js` (2 tests)
-**Browsers:** webkit-mobile (chromium OK)
-**Symptom:** `getByTestId('sync-pill')` not found within 5s.
+**Fix:** `test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)`
+on every test that depends on the IDB+Blob enqueue path. Shared
+reason text lives at `tests/e2e/_fixtures/webkitIdbBlobGate.js`
+so removing the gate (when Playwright fixes the upstream issue)
+is a single-grep operation. R4b adds iOS-real coverage of the
+offline drain path via the Simulator gate.
 
-**Root cause hypothesis:** The sync pill renders when items land
-in the IndexedDB upload queue. Either (a) the queue isn't
-populating on WebKit (different IndexedDB write semantics), or
-(b) PhotosView's pill component renders conditionally on a state
-that doesn't update on WebKit.
-
-**Severity S2 because:** Helen's offline upload story IS the bug
-this whole punchlist was prompted by; if the offline path is
-genuinely broken on iOS Safari, that's a real regression.
-
-**Reproducer:** `npx playwright test tests/e2e/photos-offline.spec.js --project=webkit-mobile`
-
-**Fix path:** Investigate the IDB queue on a real iPhone first
-(Item A.6's Simulator gate would prove this fast). If reproduces
-on real iOS, the queue or pill component needs WebKit-specific
-work. If not, it's a Playwright-WebKit quirk and the test needs
-adjusting.
+**Affected specs (all now gated):**
+- `photos-offline.spec.js` (both tests — R4 directly)
+- `photos-dispatch.spec.js` (the two sync-pill tests — R6)
+- `photos-screenshots-m2.spec.js` (sync-pill screenshot — R5)
+- `photos-screenshots-m4.spec.js` (sync-pill drain screenshot — R5)
 
 ---
 
-## R5 — Two M2/M4 visual-screenshot specs fail on WebKit `[real or test, S3]`
+## R5 — Two M2/M4 visual-screenshot specs fail on WebKit `[test, S3 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — 2 of 6 tests
-across the two specs fail on webkit-mobile (the sync-pill
-screenshot tests in each). Other tests in the same specs pass.
-Same R4 root cause confirmed; downstream resolves with R4.
-
-**Specs:** `tests/e2e/photos-screenshots-m2.spec.js`,
-`tests/e2e/photos-screenshots-m4.spec.js` (1 each)
-**Browsers:** webkit-mobile (chromium OK)
-**Symptom:** Screenshot capture fails — probably related to R4
-(sync pill missing on WebKit).
-
-**Reproducer:** `npx playwright test tests/e2e/photos-screenshots-m2.spec.js tests/e2e/photos-screenshots-m4.spec.js --project=webkit-mobile`
-
-**Fix path:** Likely resolves as a downstream of R4.
+**Status (2026-05-25): [resolved]** — Confirmed downstream of
+R4. Both screenshot tests render the sync pill, which depends
+on the IDB+Blob enqueue that Playwright's WebKit chokes on.
+Gated via the same `WEBKIT_IDB_BLOB_REASON` skip pattern as R4.
 
 ---
 
-## R6 — photos-dispatch retry + 500-handling fail on WebKit `[test, S3]`
+## R6 — photos-dispatch retry + 500-handling fail on WebKit `[test, S3 → resolved]`
 
-**Status (2026-05-25, `3f47e67`): [confirmed]** — 2 of 7 tests
-in the spec fail on webkit-mobile, both downstream of R4's
-sync-pill issue. Other 5 pass.
-
-**Specs:** `tests/e2e/photos-dispatch.spec.js` (2 tests)
-**Browsers:** webkit-mobile (chromium OK)
-**Symptom:** Sync pill never appears (same root as R4).
-
-**Fix path:** Same as R4.
+**Status (2026-05-25): [resolved]** — Same downstream-of-R4
+finding: both failing tests assert on the sync pill, which
+doesn't render because Playwright WebKit's IDB+Blob fails.
+Gated via the same `WEBKIT_IDB_BLOB_REASON` skip pattern.
 
 ---
 
@@ -301,11 +283,11 @@ Probably a test bug.
 | Severity | Count | Notes |
 |---|---|---|
 | S1 (blocking) | 0 | R3 [resolved] — R3a (Playwright skip) + R3b (Simulator journey that uncovered + fixed real iOS bug in videoPipeline/worker) |
-| S2 (real bug, important) | 1 | R4 offline pill remains. R1 reclassified to [test] and [resolved] — base Event + Object.defineProperty bypass for WebKit's TouchEvent/Touch constructor restrictions |
-| S3 (smaller real bug or test bug) | 7 | R2, R5, R6, J1, J2, J4, N1 — mostly downstream of R4 or test-side fixes |
+| S2 (real bug, important) | 0 | All closed. R1 [resolved] base-Event swipe bypass. R4 [resolved] reclassified to [test] — Playwright WebKit IDB+Blob quirk, real iOS verified clean |
+| S3 (smaller real bug or test bug) | 5 | R2, J1, J2, J4, N1 remain. R5 + R6 closed alongside R4 (shared root cause) |
 | S4 (cosmetic test bug) | 1 | J3 — easy fix |
 
-**Total bug-pile items:** 11 originally; 2 closed (R3, R1); 9 remaining.
+**Total bug-pile items:** 11 originally; 5 closed (R1, R3, R4, R5, R6); 6 remaining.
 
 ## What this catches that the prior suite didn't
 

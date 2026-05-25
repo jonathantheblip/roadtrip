@@ -4,6 +4,7 @@ import {
   FIXTURE_TRIP,
 } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
+import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
 
 // M4 acceptance — Background Sync fallback (Page Visibility +
 // interval + online event). Plays the actual end-to-end story:
@@ -24,7 +25,9 @@ test.describe('Photos upload — offline drain (M4)', () => {
   test('offline pick → queue populates → online + foreground → drain to zero', async ({
     page,
     context,
+    browserName,
   }) => {
+    test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
     await seedTripIntoCache(page, FIXTURE_TRIP)
 
     // Mock the asset upload endpoint to count attempts. The catch-all
@@ -106,7 +109,9 @@ test.describe('Photos upload — offline drain (M4)', () => {
 
   test('SW message → drain fires (Background Sync fallback path)', async ({
     page,
+    browserName,
   }) => {
+    test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
     // Posting `{ type: 'drain-upload-queue' }` to the page from the
     // SW (or anywhere) should kick off a drain. This is the same
     // message the SW's sync event handler posts.

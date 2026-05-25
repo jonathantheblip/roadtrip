@@ -1,6 +1,7 @@
 import { test } from '@playwright/test'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
+import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
 
 // Capture M2 surfaces after the §3 error-surface collapse: dispatch
 // composer (pick / preview / done) + the sync pill in the album header
@@ -60,7 +61,8 @@ test.describe('M2 photo path — visual capture (post §3)', () => {
     await page.screenshot({ path: `${SHOT_DIR}/m2-dispatch-bucketC.png`, fullPage: true })
   })
 
-  test('album with sync pill — pending upload', async ({ page }) => {
+  test('album with sync pill — pending upload', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
     await seedTripIntoCache(page, FIXTURE_TRIP)
     // Force the upload to fail so the pending state shows.
     await page.route(

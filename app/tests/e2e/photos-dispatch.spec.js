@@ -8,6 +8,7 @@ import {
   mp4FileForRejection,
   tiffFileForRejection,
 } from './_fixtures/photoFixtures.js'
+import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
 
 // M2 acceptance — the AddDispatchModal exercises the real photo
 // pipeline (Canvas decode, EXIF read, downscale, upload, IndexedDB
@@ -104,7 +105,9 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
 
   test('network failure: upload 500 → queued + tile still appears + sync pill shows', async ({
     page,
+    browserName,
   }) => {
+    test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await page.route(
       /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/assets\/photo/,
@@ -135,7 +138,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     await expect(page.getByTestId('sync-pill')).toContainText(/1 syncing/i)
   })
 
-  test('sync pill drains when retry succeeds', async ({ page }) => {
+  test('sync pill drains when retry succeeds', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
     await seedTripIntoCache(page, FIXTURE_TRIP)
     let attemptCount = 0
     await page.route(
