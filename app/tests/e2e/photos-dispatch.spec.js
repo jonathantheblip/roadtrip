@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './_fixtures/clockStub.js'
 import {
   seedTripIntoCache,
   FIXTURE_TRIP,

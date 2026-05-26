@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './_fixtures/clockStub.js'
 
 // Smoke test: app boots, the active trip resolver lands on volleyball
 // (its window contains "today" per the system clock during the

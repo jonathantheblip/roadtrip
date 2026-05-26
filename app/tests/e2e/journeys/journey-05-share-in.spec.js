@@ -1,4 +1,4 @@
-import { test } from '@playwright/test'
+import { test } from '../_fixtures/clockStub.js'
 import { step, setActivePage, expect } from './_steps.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from '../_fixtures/withTrip.js'
 import { mockShareInWorker } from '../_fixtures/mockUpload.js'

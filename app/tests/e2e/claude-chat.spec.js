@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 
 // Claude-in-App M1 — chat surface acceptance. Covers:

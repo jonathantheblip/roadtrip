@@ -1,4 +1,4 @@
-import { test } from '@playwright/test'
+import { test } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
 
 // Capture screenshots of each Photos surface for the verify-in-DOM
