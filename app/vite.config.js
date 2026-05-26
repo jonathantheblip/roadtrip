@@ -27,6 +27,19 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     base: './',
     define: clientDefine,
+    // Force pre-bundling of react-markdown's unified/mdast/micromark/rehype
+    // tree at startup. Without this, the first request that imports
+    // ClaudeChat.jsx triggers a ~34s cold bundle that blows past
+    // Playwright's 30s page.goto budget. Pre-bundling moves the cost
+    // into vite startup so test runs are deterministic.
+    optimizeDeps: {
+      include: [
+        'react-markdown',
+        'remark-gfm',
+        'remark-breaks',
+        'rehype-external-links',
+      ],
+    },
     build: {
       outDir: '../docs',
       emptyOutDir: true,

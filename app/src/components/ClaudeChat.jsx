@@ -15,9 +15,11 @@
 // the panel's first screen when history exists; otherwise we drop
 // straight into a fresh conversation with the empty-state hint.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
+import rehypeExternalLinks from 'rehype-external-links'
 import {
   streamClaudeChat,
   listConversations,
@@ -26,37 +28,16 @@ import {
   isClaudeChatConfigured,
 } from '../lib/claudeChat'
 
-// Configure marked once: GFM on (tables, strikethrough, autolinks),
-// line breaks honored, no header IDs, no HTML pass-through (Claude
-// never needs to emit raw HTML inside a chat reply).
-marked.setOptions({
-  gfm: true,
-  breaks: true,
-  headerIds: false,
-  mangle: false,
-})
-
-// Sanitize + open links in a new tab. DOMPurify post-process: rewrite
-// <a> to carry target=_blank rel=noopener noreferrer. That's safer
-// than putting links through marked's renderer extension because
-// every <a> in the rendered output — even ones inside lists or
-// blockquotes — gets the same treatment.
-function renderMarkdownToSafeHtml(source) {
-  if (typeof source !== 'string' || !source) return ''
-  const dirty = marked.parse(source)
-  const clean = DOMPurify.sanitize(dirty, {
-    ADD_ATTR: ['target', 'rel'],
-  })
-  // Post-process via a detached DOM to add target/rel to every <a>.
-  if (typeof document === 'undefined') return clean
-  const wrap = document.createElement('div')
-  wrap.innerHTML = clean
-  for (const a of wrap.querySelectorAll('a[href]')) {
-    a.setAttribute('target', '_blank')
-    a.setAttribute('rel', 'noopener noreferrer')
-  }
-  return wrap.innerHTML
-}
+// Markdown pipeline: remark-gfm gives us tables, strikethrough,
+// task lists, autolinks; remark-breaks preserves the single-newline
+// → <br> behavior that the previous marked config relied on;
+// rehype-external-links rewrites every rendered <a> to carry
+// target=_blank rel=noopener noreferrer (parity with the prior
+// DOMPurify post-process). react-markdown sanitizes by default.
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm, remarkBreaks]
+const MARKDOWN_REHYPE_PLUGINS = [
+  [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }],
+]
 
 // ─── Tokens — Helen's linen palette ───────────────────────────────────
 const T = {
@@ -267,9 +248,9 @@ function UserBubble({ children }) {
 
 // Helen-themed CSS for the markdown render. Scoped to `.claude-md` so
 // nothing leaks. We use a real stylesheet (injected once at module
-// load) instead of inline styles because the rendered HTML comes from
-// marked → dangerouslySetInnerHTML, so we can't decorate elements
-// individually. Tokens map 1:1 to the linen palette + Fraunces.
+// load) instead of inline styles because react-markdown emits a React
+// tree we don't decorate per-element without custom component overrides
+// (M2 territory). Tokens map 1:1 to the linen palette + Fraunces.
 const CLAUDE_MD_CSS = `
 .claude-md > *:first-child { margin-top: 0; }
 .claude-md > *:last-child  { margin-bottom: 0 !important; }
@@ -391,13 +372,9 @@ if (typeof document !== 'undefined' && !document.getElementById('claude-md-style
 }
 
 function ClaudeBubble({ children, streaming = false }) {
-  // Strings flow through marked → DOMPurify → HTML. Non-string
-  // children (the error bubble path) skip markdown and render as-is.
+  // Strings render via react-markdown. Non-string children (the
+  // error bubble path) skip markdown and render as-is.
   const isMarkdown = typeof children === 'string'
-  const html = useMemo(
-    () => (isMarkdown ? renderMarkdownToSafeHtml(children) : ''),
-    [children, isMarkdown]
-  )
   return (
     <div
       style={{
@@ -437,7 +414,12 @@ function ClaudeBubble({ children, streaming = false }) {
         }}
       >
         {isMarkdown ? (
-          <span dangerouslySetInnerHTML={{ __html: html }} />
+          <ReactMarkdown
+            remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+            rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+          >
+            {children}
+          </ReactMarkdown>
         ) : (
           children
         )}
