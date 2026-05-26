@@ -119,6 +119,80 @@ iOS Safari WebCodecs coverage.
 
 ---
 
+## R3c — Chromium gate extension: vite cold-cache module-resolution race `[test, S2 → gated, ongoing]`
+
+**Status (2026-05-26): [gated, ongoing]** — Test-harness
+limitation, NOT an app bug. The chromium leg of
+`photos-video.spec.js:43` started failing reproducibly on cold
+cache after the markdown-rollback chain landed in `72ad418`
+(react-markdown@9 replacing marked + dompurify). Mechanism is
+characterized; the fix shape that would close it cleanly is
+unknown.
+
+**Root cause:** vite's cold-cache module-resolution race against
+the encode worker. `app/src/workers/encodeVideo.worker.js`
+imports `mp4-muxer`. The worker is loaded via
+`new Worker(new URL('../workers/encodeVideo.worker.js',
+import.meta.url), { type: 'module' })` from
+`app/src/lib/videoPipeline.js:88`, which runs during the test's
+`setInputFiles → onVideoChange → encodeVideo` chain. mp4-muxer
+isn't pre-bundled, so vite discovers it as a new dependency
+mid-request, re-runs optimizeDeps, and emits a full-page reload
+to pick up the new bundle. The page resets to its initial
+'trip' view, the modal unmounts, and the locator wait for
+`dispatch-preview-video` times out.
+
+**Confirmation:** cold-cache diagnostic captured `[vite]
+connected.` TWICE in the console (definitive evidence of a
+mid-test page reload). Encode itself works — same test passes
+in 5s with a warm cache.
+
+**Fix attempts that did NOT work (2026-05-26):**
+
+1. **`optimizeDeps.include: ['mp4-muxer']`** — broke ALL cold-
+   cache tests at React hydration. mp4-muxer references
+   WebCodecs primitives (`VideoEncoder`, `EncodedVideoChunk`,
+   etc.) that don't exist on the main thread; bundling it into
+   the main-thread context via esbuild starves the page-load
+   path enough that React doesn't hydrate within the 30s test
+   budget. Even smoke.spec.js failed 2/2.
+
+2. **`server.warmup.clientFiles:
+   ['./src/workers/encodeVideo.worker.js']`** — same shape as
+   (1). 30+ tests failed at hydration on cold cache before the
+   run was killed. `clientFiles` transforms the worker file as
+   a client-context module, which means mp4-muxer's main-
+   thread bundle still gets generated.
+
+Don't retry either shape. The right fix would need to either
+(a) tell vite the file is a worker without forcing main-thread
+bundling, (b) discover the worker dep graph eagerly without
+bundling, or (c) sidestep the discovery race some other way.
+None of those were obvious in the docs / config surface I
+checked.
+
+**Real coverage:** the R3b Simulator journey at
+`app/tests/simulator/video-encode.test.mjs` exercises the
+encode pipeline against a real iOS Safari + real .mov fixture
+in ~12s. That's strictly stronger coverage than the Playwright
+synthetic, so the gate doesn't reduce production confidence.
+
+**Gate:** `test.skip(browserName === 'webkit' || browserName
+=== 'chromium', ...)` on `photos-video.spec.js:43`. The other
+tests in the same file (`19`, `167`) remain gated only on
+webkit-mobile — they don't hit the encode worker, so the cold-
+cache race doesn't apply to them.
+
+**Spec:** `tests/e2e/photos-video.spec.js`
+**Browsers gated:** chromium + webkit-mobile (both projects)
+**Reproducer:** `rm -rf app/node_modules/.vite &&
+cd app && npx playwright test tests/e2e/photos-video.spec.js:43
+--project=chromium` (skip-removed) — modal opens, encoding
+panel appears, then `[vite] connected.` fires a second time
+and the page is gone.
+
+---
+
 ## R4 — Offline sync-pill never surfaces on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Classified as a
