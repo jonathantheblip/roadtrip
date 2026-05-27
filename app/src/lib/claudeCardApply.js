@@ -30,6 +30,30 @@ function findDayIndex(trip, dayN) {
   return -1
 }
 
+// Locate a stop by id across every day of the trip. Returns
+// { dayIndex, stopIndex } or null if not found. Used by move + cancel
+// — Sonnet emits stopId in card.target.stopId; the applier never
+// guesses or substring-matches.
+function findStopLocation(trip, stopId) {
+  const days = trip?.data?.days || trip?.days || []
+  for (let di = 0; di < days.length; di++) {
+    const stops = days[di]?.stops || []
+    for (let si = 0; si < stops.length; si++) {
+      if (stops[si]?.id === stopId) return { dayIndex: di, stopIndex: si }
+    }
+  }
+  return null
+}
+
+function daysOf(trip) {
+  return trip?.data?.days || trip?.days || []
+}
+
+function withDays(trip, nextDays) {
+  if (trip.data) return { ...trip, data: { ...trip.data, days: nextDays } }
+  return { ...trip, days: nextDays }
+}
+
 // Generate a stable, traceable ID for a Claude-proposed stop. Pattern
 // `cl-<dayN>-<short>` so audit logs can recognize Claude-authored data
 // at a glance, separate from the manual `j<dayN>-<n>` shape.
@@ -90,8 +114,87 @@ function applyAdd(trip, card) {
   return { ...trip, days: dayArr }
 }
 
-// Dispatcher — picks the action handler. M2 ships `add` first; the rest
-// throw so a misordered chunk doesn't silently do nothing.
+// Apply a `move` card — edit a stop in place, optionally relocating to
+// a different day. Sonnet identifies the stop via target.stopId. Card
+// fields whose names match canonical stop properties (time, name,
+// address, kind, note) overwrite those properties. Cross-day moves
+// happen when target.dayN differs from the stop's current day.
+function applyMove(trip, card) {
+  const target = card?.target || {}
+  const stopId = target.stopId
+  if (!stopId) throw new Error('applyMove: target.stopId required')
+  const loc = findStopLocation(trip, stopId)
+  if (!loc) throw new Error(`applyMove: stop ${stopId} not found`)
+  const fields = fieldMap(card)
+  const days = daysOf(trip).map((d) => ({ ...d, stops: [...(d.stops || [])] }))
+  const origStop = days[loc.dayIndex].stops[loc.stopIndex]
+  // Apply field updates by canonical name. Unknown field names are
+  // ignored — Sonnet may emit derived fields (e.g., "Duration") for
+  // display that don't map to a stored property.
+  const next = { ...origStop }
+  if ('time' in fields) next.time = fields.time
+  if ('name' in fields) next.name = fields.name
+  if ('title' in fields) next.name = fields.title
+  if ('address' in fields) next.address = fields.address
+  if ('kind' in fields) next.kind = String(fields.kind || '').toLowerCase()
+  if ('note' in fields) next.note = fields.note
+  if ('notes' in fields) next.note = fields.notes
+  next.claudeMeta = {
+    ...(origStop.claudeMeta || {}),
+    cardId: card.id || null,
+    editedAt: new Date().toISOString(),
+  }
+  // Same-day update: replace in place.
+  if (typeof target.dayN !== 'number' || days[loc.dayIndex].n === target.dayN) {
+    days[loc.dayIndex].stops[loc.stopIndex] = next
+    return withDays(trip, days)
+  }
+  // Cross-day relocation: remove from current day, append to target day.
+  const newDayIdx = findDayIndex(trip, target.dayN)
+  if (newDayIdx < 0) {
+    throw new Error(`applyMove: target day ${target.dayN} not found`)
+  }
+  days[loc.dayIndex].stops.splice(loc.stopIndex, 1)
+  days[newDayIdx].stops.push(next)
+  return withDays(trip, days)
+}
+
+// Apply a `cancel` card — remove a stop from its day's stops array.
+function applyCancel(trip, card) {
+  const target = card?.target || {}
+  const stopId = target.stopId
+  if (!stopId) throw new Error('applyCancel: target.stopId required')
+  const loc = findStopLocation(trip, stopId)
+  if (!loc) throw new Error(`applyCancel: stop ${stopId} not found`)
+  const days = daysOf(trip).map((d, i) =>
+    i === loc.dayIndex
+      ? { ...d, stops: (d.stops || []).filter((_, si) => si !== loc.stopIndex) }
+      : d
+  )
+  return withDays(trip, days)
+}
+
+// Apply a `multi` card — fold each non-skipped sub-edit through its
+// own applier. Skipped edits (the reader unchecked them in the UI)
+// don't run. Each sub-edit inherits the parent card's id so the
+// resulting stops carry one cardId stamp (the multi-edit's), keeping
+// re-load detection coherent.
+function applyMulti(trip, card) {
+  const edits = Array.isArray(card.edits) ? card.edits : []
+  let next = trip
+  for (const e of edits) {
+    if (!e || e.skipped) continue
+    const subCard = {
+      ...e,
+      id: e.id || card.id,
+      target: e.target || card.target,
+    }
+    next = applyCardToTrip(next, subCard)
+  }
+  return next
+}
+
+// Dispatcher — picks the action handler.
 export function applyCardToTrip(trip, card) {
   if (!trip || !card || typeof card !== 'object') {
     throw new Error('applyCardToTrip: trip and card required')
@@ -100,9 +203,11 @@ export function applyCardToTrip(trip, card) {
     case 'add':
       return applyAdd(trip, card)
     case 'move':
+      return applyMove(trip, card)
     case 'cancel':
+      return applyCancel(trip, card)
     case 'multi':
-      throw new Error(`applyCardToTrip: action "${card.action}" not yet wired`)
+      return applyMulti(trip, card)
     default:
       throw new Error(`applyCardToTrip: unknown action "${card.action}"`)
   }

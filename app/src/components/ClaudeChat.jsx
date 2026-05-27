@@ -15,7 +15,7 @@
 // the panel's first screen when history exists; otherwise we drop
 // straight into a fresh conversation with the empty-state hint.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -480,6 +480,14 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
   // Strings render via react-markdown. Non-string children (the
   // error bubble path) skip markdown and render as-is.
   const isMarkdown = typeof children === 'string'
+  // Stabilize the markdown components prop so ReactMarkdown doesn't
+  // see a new components reference every parent render — that would
+  // remount any custom components (i.e. ConfirmCard) and wipe their
+  // local state. cardContext is itself memoized upstream.
+  const mdComponents = useMemo(
+    () => (cardContext ? markdownComponents(cardContext) : undefined),
+    [cardContext]
+  )
   return (
     <div
       style={{
@@ -522,7 +530,7 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
           <ReactMarkdown
             remarkPlugins={MARKDOWN_REMARK_PLUGINS}
             rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-            components={cardContext ? markdownComponents(cardContext) : undefined}
+            components={mdComponents}
           >
             {children}
           </ReactMarkdown>
@@ -801,14 +809,41 @@ export function ClaudeChatPanel({
   const [errorMsg, setErrorMsg] = useState(null)
   const messagesRef = useRef(null)
 
-  // Card context: every assistant bubble shares the same save handler
-  // and the same `alreadySavedIds` snapshot so re-opened conversations
-  // don't render previously-applied drafts as live. The set is derived
-  // from claudeMeta.cardId stamps that applyCardToTrip writes onto each
-  // committed stop.
-  const cardContext = open && onCardSave
-    ? { onCardSave, alreadySavedIds: collectSavedCardIds(trip) }
-    : null
+  // Session-scoped record of cardIds whose change has been committed
+  // through this panel instance. Combined with claudeMeta.cardId stamps
+  // from the trip itself, this is how cancelled cards (whose stop has
+  // been *removed*, so no claudeMeta survives) still resolve to "saved"
+  // after the upsertTrip re-renders the bubble. Lives in a ref because
+  // mutating it must not retrigger render — the next computed
+  // cardContext picks the new entries up via useMemo dep on a counter.
+  const actionedIdsRef = useRef(new Set())
+  const [actionedTick, setActionedTick] = useState(0)
+
+  // Stable cardContext. Recomputes only when the inputs actually change.
+  // Critical for keeping <ReactMarkdown components={...}> from forcing
+  // a ConfirmCard re-mount on every parent render — a re-mount wipes
+  // ConfirmCard's local commit phase and the saved-note never paints.
+  const collectedTripIds = useMemo(() => collectSavedCardIds(trip), [trip])
+  const cardContext = useMemo(() => {
+    if (!open || !onCardSave) return null
+    const alreadySavedIds = new Set([
+      ...collectedTripIds,
+      ...actionedIdsRef.current,
+    ])
+    const wrappedSave = async (card) => {
+      const res = await onCardSave(card)
+      if (card?.id) {
+        actionedIdsRef.current.add(card.id)
+        setActionedTick((t) => t + 1)
+      }
+      return res
+    }
+    return { onCardSave: wrappedSave, alreadySavedIds }
+    // actionedTick re-runs this so the next render picks up the latest
+    // actionedIdsRef. Don't trip on it directly inside the memo body —
+    // it's the dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, onCardSave, collectedTripIds, actionedTick])
 
   // When the panel opens, decide which screen to land on. If past
   // conversations exist for this (user, trip), show the list. Else jump

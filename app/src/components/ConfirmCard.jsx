@@ -227,6 +227,7 @@ function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, seconda
         type="button"
         onClick={onSave}
         disabled={disabled}
+        data-testid="confirm-card-save"
         style={{
           flex: 2,
           height: 34,
