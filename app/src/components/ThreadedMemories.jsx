@@ -10,6 +10,7 @@ import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
 import { Avatar, AvatarStack } from './Avatar'
 import { VoiceRecorder } from './VoiceRecorder'
+import { PhotoLightbox } from './PhotoAlbum'
 
 const MAX_PHOTOS_PER_ALBUM = 6
 
@@ -36,6 +37,18 @@ export function ThreadedMemories({ trip, stop, traveler }) {
   const [pendingPhotos, setPendingPhotos] = useState([])
   const [photoCaption, setPhotoCaption] = useState('')
   const [savingPhotos, setSavingPhotos] = useState(false)
+  // Lightbox for tapping photos inside the thread. Scope: memory-only
+  // (swipe walks the photos of the tapped memory, then stops at the
+  // ends). PhotoBubble builds the entries array using its resolved
+  // urls map so IDB-only memories work the same as R2-backed ones.
+  const [lightbox, setLightbox] = useState(null) // { list, index } | null
+  function stepLightbox(delta) {
+    setLightbox((lb) => {
+      if (!lb) return lb
+      const ni = Math.max(0, Math.min(lb.list.length - 1, lb.index + delta))
+      return { ...lb, index: ni }
+    })
+  }
 
   function refresh() {
     setMemories(listMemoriesForStop(stop.id, traveler))
@@ -198,10 +211,16 @@ export function ThreadedMemories({ trip, stop, traveler }) {
 
       <div className="thread">
         {memories.map((m) => (
-          <ThreadEntry key={m.id} mem={m} traveler={traveler} onDelete={() => {
-            deleteMemory(m)
-            refresh()
-          }} />
+          <ThreadEntry
+            key={m.id}
+            mem={m}
+            traveler={traveler}
+            onDelete={() => {
+              deleteMemory(m)
+              refresh()
+            }}
+            onOpenLightbox={setLightbox}
+          />
         ))}
       </div>
 
@@ -250,11 +269,27 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           onStop={handleVoiceStop}
         />
       )}
+
+      {lightbox && (
+        <PhotoLightbox
+          entry={lightbox.list[lightbox.index]}
+          index={lightbox.index}
+          total={lightbox.list.length}
+          onPrev={lightbox.index > 0 ? () => stepLightbox(-1) : null}
+          onNext={
+            lightbox.index < lightbox.list.length - 1
+              ? () => stepLightbox(1)
+              : null
+          }
+          onClose={() => setLightbox(null)}
+          onCapturedAtChanged={refresh}
+        />
+      )}
     </div>
   )
 }
 
-function ThreadEntry({ mem, traveler, onDelete }) {
+function ThreadEntry({ mem, traveler, onDelete, onOpenLightbox }) {
   const author = TRAVELERS[mem.authorTraveler]
   if (!author) return null
   const isMe = mem.authorTraveler === traveler
@@ -353,17 +388,21 @@ function ThreadEntry({ mem, traveler, onDelete }) {
             </div>
           )}
           {kind === 'voice' && <VoiceBubble mem={mem} isMe={isMe} dot={dot} />}
-          {kind === 'photo' && <PhotoBubble mem={mem} />}
+          {kind === 'photo' && <PhotoBubble mem={mem} onOpenLightbox={onOpenLightbox} />}
         </div>
       </div>
     </div>
   )
 }
 
-function PhotoBubble({ mem }) {
+function PhotoBubble({ mem, onOpenLightbox }) {
   // The schema supports a single photoRef (Aurelia's PostcardComposer)
-  // and a photoRefs[] album (Helen's thread composer). Coalesce both
-  // into one list so this component doesn't care which path saved it.
+  // and a photoRefs[] album (Helen's thread composer). Prefer
+  // photoRefs[] when it's populated; photoRef is a back-compat mirror
+  // that can hold a different R2 key for the same image (see
+  // photoEntries dedup fix) so we don't merge the two — would double
+  // count when both are present. Falls back to photoRef when there
+  // are no array entries (legacy / PostcardComposer).
   const refs = mem.photoRefs?.length
     ? mem.photoRefs
     : mem.photoRef
@@ -431,6 +470,48 @@ function PhotoBubble({ mem }) {
   // outrun the available space.
   const tile = 56
 
+  // Build the lightbox entries array for this memory. Each entry
+  // carries the bare URL (no ?w=) so the lightbox shows full-res.
+  // Only refs with a resolved URL participate (matches what the user
+  // can actually see in the bubble — tapping an unresolved tile is a
+  // no-op rather than opening a blank lightbox).
+  function openLightboxAt(refIndex) {
+    if (!onOpenLightbox) return
+    const list = []
+    let openIndex = -1
+    const memoryAt =
+      typeof mem.capturedAt === 'string' && mem.capturedAt ? mem.capturedAt : null
+    refs.forEach((r, i) => {
+      const url = urls[r.key] || r.url
+      if (!url) return
+      const exifAt = r?.capturedAt || null
+      const realDate = memoryAt || exifAt
+      const entry = {
+        key: `${mem.id}::${r.key || url}`,
+        memoryId: mem.id,
+        author: mem.authorTraveler,
+        caption: caption || '',
+        capturedAt: realDate || mem.createdAt,
+        capturedAtSource: realDate
+          ? memoryAt
+            ? 'memory'
+            : 'exif'
+          : 'createdAt',
+        memoryCreatedAt: mem.createdAt || null,
+        memoryCapturedAt: memoryAt,
+        url,
+        locationLabel:
+          typeof r?.locationLabel === 'string' ? r.locationLabel : null,
+        exifLat: Number.isFinite(r?.lat) ? r.lat : null,
+        exifLng: Number.isFinite(r?.lng) ? r.lng : null,
+      }
+      list.push(entry)
+      if (i === refIndex) openIndex = list.length - 1
+    })
+    if (list.length === 0) return
+    onOpenLightbox({ list, index: openIndex >= 0 ? openIndex : 0 })
+  }
+
   return (
     <div>
       {isAlbum ? (
@@ -443,16 +524,23 @@ function PhotoBubble({ mem }) {
           }}
         >
           {refs.map((r, i) => (
-            <div
+            <button
+              type="button"
               key={r.key || i}
+              onClick={() => openLightboxAt(i)}
+              aria-label={`Open photo ${i + 1} of ${refs.length}`}
+              disabled={!urls[r.key] && !r.url}
               style={{
                 width: tile,
                 height: tile,
                 borderRadius: 6,
+                padding: 0,
+                border: 0,
                 background: urls[r.key]
                   ? `url(${urls[r.key]}) center/cover no-repeat`
                   : 'var(--bg2)',
                 flexShrink: 0,
+                cursor: urls[r.key] || r.url ? 'pointer' : 'default',
               }}
             />
           ))}
@@ -475,15 +563,24 @@ function PhotoBubble({ mem }) {
           <ImageOff size={22} strokeWidth={1.5} />
         </div>
       ) : (
-        <div
+        <button
+          type="button"
+          onClick={() => openLightboxAt(0)}
+          aria-label="Open photo"
+          disabled={!urls[refs[0]?.key] && !refs[0]?.url}
           style={{
+            display: 'block',
             width: 168,
             aspectRatio: '4 / 3',
             borderRadius: 8,
+            padding: 0,
+            border: 0,
             background: urls[refs[0]?.key]
               ? `url(${urls[refs[0].key]}) center/cover no-repeat`
               : 'var(--bg2)',
             marginBottom: caption ? 8 : 0,
+            cursor:
+              urls[refs[0]?.key] || refs[0]?.url ? 'pointer' : 'default',
           }}
         />
       )}

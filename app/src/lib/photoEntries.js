@@ -24,7 +24,21 @@ export function flattenPhotoEntries(memories) {
   const out = []
   for (const m of memories || []) {
     const seenInThisMem = new Set()
-    const refs = [m.photoRef, ...(m.photoRefs || [])].filter(Boolean)
+    // photoRefs[] is the canonical multi-photo form. photoRef is a
+    // back-compat mirror of photoRefs[0] — except after the M2 write
+    // path, the two refs can hold different R2 keys for the same
+    // image (workerSync.pushMemory uploaded the same blob twice on
+    // some memories). URL-only dedup misses that case because the
+    // R2 keys differ. So when photoRefs[] is populated, ignore the
+    // single photoRef entirely. Falls back to photoRef only when
+    // photoRefs[] is missing (legacy / Aurelia PostcardComposer).
+    // See KNOWN_BUGS_HELEN_SURFACE.md duplicate-album-entries
+    // finding (2026-05-27).
+    const refs = m.photoRefs?.length
+      ? m.photoRefs.filter(Boolean)
+      : m.photoRef
+        ? [m.photoRef]
+        : []
     const memoryAt =
       typeof m.capturedAt === 'string' && m.capturedAt ? m.capturedAt : null
     // Pass 1 — collect every {url, ref} pair this memory yields,
