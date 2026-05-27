@@ -16,6 +16,7 @@ import { PhotosView } from './views/PhotosView'
 import { AllPhotosView } from './views/AllPhotosView'
 import { ImportView } from './views/ImportView'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
+import { applyCardToTrip } from './lib/claudeCardApply'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
@@ -472,6 +473,20 @@ export default function App() {
       /* ignore */
     }
   }
+  // M2 — apply a Claude confirmation card to the active trip. The card
+  // arrives with user-edited field values (the draft); applyCardToTrip
+  // maps it to a next-trip snapshot; tripsApi.upsertTrip commits via the
+  // same write path as the manual composer. Re-throws on failure so the
+  // ConfirmCard surface flips to its error state with a retry affordance.
+  async function handleClaudeCardSave(card) {
+    if (!trip || !card) throw new Error('No active trip to apply this change to.')
+    // applyCardToTrip throws on a structural mismatch (unknown day,
+    // unsupported action). Worker push failures are NOT escalated — the
+    // change lives in local state + cache, and the global sync indicator
+    // owns "your change hasn't reached the family yet."
+    const next = applyCardToTrip(trip, card)
+    return tripsApi.upsertTrip(next)
+  }
   function openPhotos() {
     setView({ name: 'photos' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
@@ -772,6 +787,8 @@ export default function App() {
         userId={traveler}
         tripId={view.name === 'index' ? null : (trip?.id || null)}
         tripTitle={view.name === 'index' ? null : (trip?.title || null)}
+        trip={view.name === 'index' ? null : (trip || null)}
+        onCardSave={view.name === 'index' ? null : handleClaudeCardSave}
       />
     </>
   )

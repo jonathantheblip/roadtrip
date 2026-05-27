@@ -27,6 +27,7 @@ import {
   newConversationId,
   isClaudeChatConfigured,
 } from '../lib/claudeChat'
+import { ConfirmCard } from './ConfirmCard'
 
 // Markdown pipeline: remark-gfm gives us tables, strikethrough,
 // task lists, autolinks; remark-breaks preserves the single-newline
@@ -371,7 +372,111 @@ if (typeof document !== 'undefined' && !document.getElementById('claude-md-style
   document.head.appendChild(styleEl)
 }
 
-function ClaudeBubble({ children, streaming = false }) {
+// ─── Card-block markdown override ─────────────────────────────────────
+// Detect fenced ```card blocks inside the streamed reply and render
+// them as inline ConfirmCard components. The text content of the block
+// is a JSON payload matching the contract documented at the top of
+// ConfirmCard.jsx. During streaming the JSON may be incomplete — the
+// override falls back to a "Drafting card…" placeholder until the
+// closing fence arrives and JSON.parse succeeds.
+function CardDraftingPlaceholder() {
+  return (
+    <div
+      data-testid="confirm-card-drafting"
+      style={{
+        margin: '0 0 14px',
+        padding: '10px 12px',
+        borderRadius: 10,
+        background: 'rgba(178,128,40,0.05)',
+        border: `1px dashed rgba(178,128,40,0.30)`,
+        fontFamily: FONT.mono,
+        fontSize: 10,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
+        color: 'rgba(138,111,45,0.85)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: '#8A6F2D',
+          animation: 'rt-claude-caret 1s steps(2) infinite',
+        }}
+      />
+      Drafting card…
+    </div>
+  )
+}
+
+function CardBlock({ raw, onCardSave, alreadySavedIds }) {
+  let card = null
+  try {
+    card = JSON.parse(raw)
+  } catch {
+    return <CardDraftingPlaceholder />
+  }
+  if (!card || typeof card !== 'object') return null
+  const initialPhase =
+    card.id && alreadySavedIds && alreadySavedIds.has(card.id) ? 'saved' : 'idle'
+  return (
+    <ConfirmCard
+      card={card}
+      onSave={onCardSave}
+      onDiscard={() => {}}
+      initialPhase={initialPhase}
+    />
+  )
+}
+
+// Extract the raw text content of a hast code element. react-markdown 9
+// passes the source AST via props.node; this walks its text children.
+function extractCodeText(codeNode) {
+  if (!codeNode || !Array.isArray(codeNode.children)) return ''
+  return codeNode.children
+    .filter((n) => n && n.type === 'text')
+    .map((n) => n.value)
+    .join('')
+}
+
+function classListFrom(node) {
+  if (!node || !node.properties) return []
+  const cn = node.properties.className
+  if (Array.isArray(cn)) return cn.map(String)
+  if (typeof cn === 'string') return [cn]
+  return []
+}
+
+function markdownComponents({ onCardSave, alreadySavedIds }) {
+  return {
+    pre(props) {
+      const node = props.node
+      const codeChild = node?.children?.[0]
+      if (
+        codeChild &&
+        codeChild.type === 'element' &&
+        codeChild.tagName === 'code' &&
+        classListFrom(codeChild).some((c) => /language-card/.test(c))
+      ) {
+        return (
+          <CardBlock
+            raw={extractCodeText(codeChild)}
+            onCardSave={onCardSave}
+            alreadySavedIds={alreadySavedIds}
+          />
+        )
+      }
+      // Default rendering — preserve existing pre/code styling.
+      return <pre>{props.children}</pre>
+    },
+  }
+}
+
+function ClaudeBubble({ children, streaming = false, cardContext = null }) {
   // Strings render via react-markdown. Non-string children (the
   // error bubble path) skip markdown and render as-is.
   const isMarkdown = typeof children === 'string'
@@ -417,6 +522,7 @@ function ClaudeBubble({ children, streaming = false }) {
           <ReactMarkdown
             remarkPlugins={MARKDOWN_REMARK_PLUGINS}
             rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+            components={cardContext ? markdownComponents(cardContext) : undefined}
           >
             {children}
           </ReactMarkdown>
@@ -669,7 +775,23 @@ function formatWhen(iso) {
 }
 
 // ─── ClaudeChatPanel ─────────────────────────────────────────────────
-export function ClaudeChatPanel({ open, onClose, userId, tripId = null, tripTitle = null }) {
+// `trip` and `onCardSave` plumb the M2 confirmation-card pipeline:
+//   • `trip` is the active trip object (or null on the trips index) — used
+//     to compute the set of card IDs whose proposed change already landed
+//     in trip data, so re-opened conversations don't render their old
+//     drafts as live again.
+//   • `onCardSave(card)` is called when the user taps Save on an inline
+//     confirmation card. The handler in App.jsx maps the card → next-trip
+//     snapshot and commits through tripsApi.upsertTrip.
+export function ClaudeChatPanel({
+  open,
+  onClose,
+  userId,
+  tripId = null,
+  tripTitle = null,
+  trip = null,
+  onCardSave = null,
+}) {
   const [phase, setPhase] = useState('loading') // loading | list | chat
   const [pastList, setPastList] = useState([])
   const [conversationId, setConversationId] = useState(null)
@@ -678,6 +800,15 @@ export function ClaudeChatPanel({ open, onClose, userId, tripId = null, tripTitl
   const [sending, setSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState(null)
   const messagesRef = useRef(null)
+
+  // Card context: every assistant bubble shares the same save handler
+  // and the same `alreadySavedIds` snapshot so re-opened conversations
+  // don't render previously-applied drafts as live. The set is derived
+  // from claudeMeta.cardId stamps that applyCardToTrip writes onto each
+  // committed stop.
+  const cardContext = open && onCardSave
+    ? { onCardSave, alreadySavedIds: collectSavedCardIds(trip) }
+    : null
 
   // When the panel opens, decide which screen to land on. If past
   // conversations exist for this (user, trip), show the list. Else jump
@@ -937,10 +1068,16 @@ export function ClaudeChatPanel({ open, onClose, userId, tripId = null, tripTitl
                 m.role === 'user' ? (
                   <UserBubble key={m.id || i}>{m.content}</UserBubble>
                 ) : (
-                  <ClaudeBubble key={m.id || i}>{m.content}</ClaudeBubble>
+                  <ClaudeBubble key={m.id || i} cardContext={cardContext}>
+                    {m.content}
+                  </ClaudeBubble>
                 )
               )}
-              {streamingText && <ClaudeBubble streaming>{streamingText}</ClaudeBubble>}
+              {streamingText && (
+                <ClaudeBubble streaming cardContext={cardContext}>
+                  {streamingText}
+                </ClaudeBubble>
+              )}
               {errorMsg && <ErrorBubble message={errorMsg} />}
             </div>
             <ChatComposer
@@ -1024,6 +1161,23 @@ function ErrorBubble({ message }) {
       {message}
     </div>
   )
+}
+
+// Walk the active trip and collect every card.id that's already been
+// committed to a stop. Used to gate ConfirmCard's initialPhase so cards
+// in re-loaded conversation history don't appear as live drafts after
+// the change they describe already landed.
+function collectSavedCardIds(trip) {
+  const out = new Set()
+  if (!trip) return out
+  const days = trip.data?.days || trip.days || []
+  for (const day of days) {
+    for (const stop of day?.stops || []) {
+      const id = stop?.claudeMeta?.cardId
+      if (id) out.add(id)
+    }
+  }
+  return out
 }
 
 // Map any thrown error from the streaming client to one of the three
