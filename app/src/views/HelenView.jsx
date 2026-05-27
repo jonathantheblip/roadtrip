@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Mic, MapPin, Sparkles, Image as ImageIcon } from 'lucide-react'
 import { listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
+import { thumbUrl } from '../lib/thumbUrl'
+import { useInView } from '../lib/useInView'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
@@ -421,13 +423,23 @@ function ThreadPreviewTile({ mem }) {
       ? [mem.photoRef]
       : []
   const [photoUrl, setPhotoUrl] = useState(null)
+  // Defer the photo fetch (R2 GET or IDB blob materialization) until
+  // the tile is about to enter the viewport. A day with 5 stops × 2
+  // memories on each used to fire 10 full-resolution fetches on
+  // mount; now only the tiles in (or near) view pay the cost. See
+  // KNOWN_BUGS_HELEN_SURFACE.md P0.4.
+  const { ref: tileRef, inView } = useInView({ rootMargin: '300px 0px' })
   useEffect(() => {
+    if (!inView) return
     let cancelled = false
     let created = null
     const first = photoRefs[0]
     if (kind === 'photo' && first?.url) {
-      // R2 / legacy remote — use the URL directly.
-      setPhotoUrl(first.url)
+      // R2 / legacy remote — request a thumbnail-sized variant for
+      // the preview tile. The thumbUrl helper is a no-op for
+      // non-Worker URLs (blob:, data:, third-party), so legacy
+      // entries pass through untouched.
+      setPhotoUrl(thumbUrl(first.url, 600))
     } else if (kind === 'photo' && first?.key && first.storage === 'idb') {
       loadAsset('photo', first.key).then((blob) => {
         if (cancelled || !blob) return
@@ -439,9 +451,9 @@ function ThreadPreviewTile({ mem }) {
       cancelled = true
       if (created) URL.revokeObjectURL(created)
     }
-  }, [kind, photoRefs[0]?.key, photoRefs[0]?.url])
+  }, [inView, kind, photoRefs[0]?.key, photoRefs[0]?.url])
   return (
-    <div style={{ flex: 1, position: 'relative' }}>
+    <div ref={tileRef} style={{ flex: 1, position: 'relative' }}>
       {kind === 'photo' && (
         <div
           style={{

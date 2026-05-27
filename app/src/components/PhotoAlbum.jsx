@@ -6,6 +6,14 @@ import { classifySwipe } from '../lib/swipeClassify'
 import { isDevModeEnabled } from '../lib/uploadLog'
 import { firstLine, formatShortDate, formatFullDate } from '../lib/photoEntries'
 import { thumbUrl } from '../lib/thumbUrl'
+import { useInView } from '../lib/useInView'
+
+// Grid tile thumbnail width. The Worker's photon endpoint serves a
+// downscaled JPEG variant cached in R2; 600px CSS-pixels covers ~2x
+// retina on the album grid (max tile width is ~300px on phone, ~250px
+// at the 5-col desktop layout). The lightbox bypasses this and
+// requests the bare URL for max fidelity.
+const TILE_THUMB_WIDTH = 600
 
 // Shared tile + lightbox + capture-date editor used by PhotosView
 // (per-trip album) and AllPhotosView (cross-trip album, Punchlist 4).
@@ -29,11 +37,19 @@ export function PhotoTile({ entry, onOpen }) {
   const [imgFailed, setImgFailed] = useState(false)
   const isFirstInMemory = (entry.photoIndexInMemory || 0) === 0
   const memoryCount = entry.photoCountInMemory || 1
+  // IntersectionObserver-gated: the <img> isn't rendered until the
+  // tile is within ~300px of the viewport. With 55 photos on a
+  // typical album this caps concurrent in-flight fetches to ~10–15
+  // and lets the page actually reach document_idle. native
+  // loading="lazy" alone is too eager — browsers preload anything
+  // within ~2 viewports.
+  const { ref: tileRef, inView } = useInView({ rootMargin: '300px 0px' })
   return (
     <button
       type="button"
       data-testid="photo-tile"
       data-photo-key={entry.key}
+      data-photo-in-view={inView ? '1' : '0'}
       onClick={onOpen}
       style={{
         position: 'relative',
@@ -46,15 +62,29 @@ export function PhotoTile({ entry, onOpen }) {
         textAlign: 'left',
       }}
     >
-      <div style={{ position: 'relative', aspectRatio: '1 / 1', background: '#000' }}>
-        {entry.url && !imgFailed ? (
+      <div
+        ref={tileRef}
+        style={{
+          position: 'relative',
+          aspectRatio: '1 / 1',
+          // Sage-tinted skeleton while the thumbnail loads (or while
+          // the tile is still offscreen). Previously this was solid
+          // black, which made every still-loading tile look broken —
+          // see KNOWN_BUGS_HELEN_SURFACE.md P0.1.
+          background:
+            'repeating-linear-gradient(45deg, #d6c5a8 0 6px, #c5b497 6px 12px)',
+        }}
+      >
+        {entry.url && !imgFailed && inView ? (
           <img
-            // ?w=2048 routes the tile through the Worker's photon
-            // resize endpoint with an R2-cached variant. The
-            // lightbox below uses entry.url bare for full fidelity.
-            src={thumbUrl(entry.url, 2048)}
+            // Use ?w=600 for the grid — covers retina at the largest
+            // tile size we render and keeps payload to ~50KB instead
+            // of 1MB. Lightbox below uses entry.url bare for full
+            // fidelity.
+            src={thumbUrl(entry.url, TILE_THUMB_WIDTH)}
             alt={entry.caption || 'Trip photo'}
             loading="lazy"
+            decoding="async"
             onError={() => setImgFailed(true)}
             style={{
               width: '100%',
@@ -63,7 +93,7 @@ export function PhotoTile({ entry, onOpen }) {
               display: 'block',
             }}
           />
-        ) : (
+        ) : imgFailed ? (
           <div
             data-testid="tile-image-fallback"
             style={{
@@ -77,7 +107,7 @@ export function PhotoTile({ entry, onOpen }) {
           >
             <ImageIcon size={20} />
           </div>
-        )}
+        ) : null /* offscreen or no url — the sage-stripe skeleton on the parent shows through */}
         <span
           aria-label={`Posted by ${TRAVELERS[entry.author]?.name || entry.author}`}
           style={{

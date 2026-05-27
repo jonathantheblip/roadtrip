@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
+import { thumbUrl } from '../lib/thumbUrl'
+import { useInView } from '../lib/useInView'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { PostcardComposer } from '../components/PostcardComposer'
@@ -548,11 +550,18 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
   const caption =
     mem.text || mem.caption || mem.transcript || '(saved without words)'
   const [photoUrl, setPhotoUrl] = useState(null)
+  // Defer photo fetch until tile is near the viewport — Aurelia's
+  // view can render dozens of postcards across a long-trip archive.
+  // See KNOWN_BUGS_HELEN_SURFACE.md P0.4.
+  const { ref: postcardRef, inView } = useInView({ rootMargin: '300px 0px' })
   useEffect(() => {
+    if (!inView) return
     let active = true
     let created = null
     if (mem.photoRef?.url) {
-      setPhotoUrl(mem.photoRef.url)
+      // R2 / legacy remote — request a thumbnail variant. thumbUrl
+      // passes blob: / data: / third-party URLs through untouched.
+      setPhotoUrl(thumbUrl(mem.photoRef.url, 600))
     } else if (mem.photoRef?.key) {
       loadAsset('photo', mem.photoRef.key).then((blob) => {
         if (!active || !blob) return
@@ -565,10 +574,11 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
       if (created) URL.revokeObjectURL(created)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mem.photoRef?.key, mem.photoRef?.url])
+  }, [inView, mem.photoRef?.key, mem.photoRef?.url])
 
   return (
     <button
+      ref={postcardRef}
       type="button"
       onClick={onClick}
       style={{
