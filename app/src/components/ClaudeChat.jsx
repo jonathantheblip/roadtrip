@@ -1099,15 +1099,24 @@ export function ClaudeChatPanel({
               {messages.length === 0 && !streamingText && !errorMsg && (
                 <ClaudeFirstHint userId={userId} tripTitle={tripTitle} />
               )}
-              {messages.map((m, i) =>
-                m.role === 'user' ? (
-                  <UserBubble key={m.id || i}>{m.content}</UserBubble>
-                ) : (
-                  <ClaudeBubble key={m.id || i} cardContext={cardContext}>
-                    {m.content}
-                  </ClaudeBubble>
+              {messages.map((m, i) => {
+                if (m.role === 'user') {
+                  return <UserBubble key={m.id || i}>{m.content}</UserBubble>
+                }
+                // Mode-transition cue — render the small "MODE · …" tag
+                // above this bubble only if its mode differs from the
+                // previous assistant turn's mode. Mode is derived purely
+                // from whether the message carries a card-fenced block.
+                const shift = computeModeShift(messages, i)
+                return (
+                  <div key={m.id || i}>
+                    {shift && <ModeShiftCue toMode={shift} />}
+                    <ClaudeBubble cardContext={cardContext}>
+                      {m.content}
+                    </ClaudeBubble>
+                  </div>
                 )
-              )}
+              })}
               {streamingText && (
                 <ClaudeBubble streaming cardContext={cardContext}>
                   {streamingText}
@@ -1194,6 +1203,73 @@ function ErrorBubble({ message }) {
       }}
     >
       {message}
+    </div>
+  )
+}
+
+// ─── Mode-transition cue ──────────────────────────────────────────────
+// Per the design spec: when Claude pivots between guidance and execute
+// mid-conversation, the surface signals the shift so Helen isn't
+// surprised. Detection is pure text — a fenced ```card block means
+// execute mode; anything else is guidance. The cue renders only on
+// the turn where mode flips vs. the previous assistant turn.
+const CARD_FENCE_RE = /^```card\s*$/m
+function modeOf(content) {
+  return CARD_FENCE_RE.test(String(content || '')) ? 'execute' : 'guidance'
+}
+function computeModeShift(messages, idx) {
+  const current = messages[idx]
+  if (!current || current.role !== 'assistant') return null
+  const currentMode = modeOf(current.content)
+  // Walk backwards to the previous assistant turn (skip user messages).
+  for (let i = idx - 1; i >= 0; i--) {
+    if (messages[i]?.role !== 'assistant') continue
+    const prevMode = modeOf(messages[i].content)
+    return prevMode !== currentMode ? currentMode : null
+  }
+  return null // first assistant turn — no shift to render
+}
+
+function ModeShiftCue({ toMode }) {
+  const isExecute = toMode === 'execute'
+  return (
+    <div
+      data-testid={`mode-shift-${toMode}`}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginLeft: 38, // align under the Claude mark, not the avatar
+        marginBottom: 6,
+        marginTop: 2,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: FONT.mono,
+          fontSize: 9,
+          letterSpacing: 1.4,
+          textTransform: 'uppercase',
+          color: T.accent,
+          fontWeight: 700,
+          padding: '2px 6px',
+          borderRadius: 4,
+          background: 'rgba(46,93,58,0.10)',
+        }}
+      >
+        MODE · {toMode}
+      </span>
+      <span
+        aria-hidden="true"
+        style={{
+          fontFamily: FONT.mono,
+          fontSize: 10,
+          color: T.inkFaint,
+          letterSpacing: 1,
+        }}
+      >
+        {isExecute ? 'drafting a change →' : '← back to talking'}
+      </span>
     </div>
   )
 }
