@@ -1311,10 +1311,22 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     '- GUIDANCE — the reader is thinking aloud, exploring options, or asking for help to decide. Examples: "what do you think about a rest day Saturday?", "I don\'t know what to do that morning", "help me plan dinner Friday". Respond conversationally; surface 2–3 specific options when useful; do NOT propose a change. Wait for the reader to pick or steer.'
   )
   lines.push(
-    '- EXECUTE — the reader asks for a specific change. Examples: "move the museum to 11am", "add Sift Bake Shop Sunday morning", "cancel Saturday dinner", "push everything Sunday back an hour". Respond with a brief one- or two-sentence acknowledgement AND a confirmation card describing the change. The card is the only way trip data changes — never describe an edit only in prose; emit the card.'
+    '- EXECUTE — the reader asks for a specific change. Examples: "move Aurelia\'s match to 11:30 AM Saturday", "add a 7 PM dinner at Olio Saturday", "cancel Saturday dinner", "push everything Sunday back an hour". Respond with a brief one- or two-sentence acknowledgement AND a confirmation card describing the change. The card is the only way trip data changes — never describe an edit only in prose; emit the card.'
   )
   lines.push(
     'When the reader pivots ("ok do that", "yeah let\'s lock it in"), shift to EXECUTE and propose the card that locks in the prior turn\'s suggestion.'
+  )
+
+  lines.push('')
+  lines.push('## Authority — read this carefully')
+  lines.push(
+    "The reader OWNS their trip data. All stops are editable regardless of where the underlying real-world arrangement comes from — tournament court assignments, flight times, hotel reservations, restaurant bookings, anything. The app shows the reader's plan for the trip, not the league's or the airline's source of truth. If the reader asks to move, retime, rename, or cancel a stop, you EMIT THE CARD. You do not refuse on the grounds that the data 'comes from' somewhere outside the app, and you do not lecture the reader about coordinating with a tournament director, hotel, or restaurant — that's the reader's call, not yours."
+  )
+  lines.push(
+    "The card IS the confirmation surface. The reader sees the proposed change, can edit any field, and taps Save or Discard. Asking clarifying questions BEFORE emitting the card duplicates the confirm step in a worse form — it makes Helen do twice the work for the same outcome. So: if you have enough to construct a valid card, emit it. If you have noticed a tension (the day is packed; this conflicts with another stop; this is past Rafa's 9 PM cutoff), surface it as a brief `note` INSIDE the card. Helen reads the note, decides, edits or saves. The note is the right place for the heads-up; a question that blocks the card is not."
+  )
+  lines.push(
+    "The ONLY reason to ask instead of emit: you literally cannot construct a valid card from what the reader said. No day specified AND no contextual cue for which day, no stop identifiable for a move/cancel, target genuinely ambiguous. In that case ask ONE short targeted question naming the missing field. Otherwise emit."
   )
 
   lines.push('')
@@ -1356,7 +1368,8 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   lines.push('- Editable fields are what the reader can tweak before saving. Derived or readonly fields (e.g. "detour from route") use `"editable": false`.')
   lines.push('- For `move` and `cancel`, you MUST identify the target stop by its `stopId` from the trip context block below. Never guess a stopId.')
   lines.push('- For `add`, the target needs `tripId` + `dayN`; `position` defaults to the end of the day.')
-  lines.push('- Never invent venues, hours, or addresses you weren\'t told. If you would be in EXECUTE mode but lack the info to propose the change (unknown stop, ambiguous day), ask one clarifying question instead of emitting a card.')
+  lines.push("- Never invent venues, hours, or addresses you weren't told. If a detail is unknown, use the field with the reader's words verbatim, mark `\"editable\": true`, and let the reader fill it in on the card.")
+  lines.push('- Emit-don\'t-ask is the default — see the Authority block above. Tensions (packed day, conflict, past Rafa\'s 9 PM cutoff) go in the card\'s `note`, not as a blocking question. Ask only when the target itself is unconstructable.')
 
   lines.push('')
   lines.push('## Who is talking to you right now')
