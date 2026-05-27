@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Mic, MapPin, Sparkles, Image as ImageIcon, ImageOff } from 'lucide-react'
+import { Mic, Sparkles, Image as ImageIcon, ImageOff } from 'lucide-react'
 import { listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
 import { thumbUrl } from '../lib/thumbUrl'
@@ -29,34 +29,13 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
         position: 'relative',
       }}
     >
-      <div
-        style={{
-          padding: '60px 18px 4px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
+      {/* The "MAP" affordance that used to live in this header was a
+          design placeholder — its onClick pointed at onOpenSettings,
+          there's no Map view in the codebase, and the global "⋯" Trip
+          settings button in App.jsx already provides the Settings
+          path Helen needs. See KNOWN_BUGS_HELEN_SURFACE.md P1.6. */}
+      <div style={{ padding: '60px 18px 4px' }}>
         <Eyebrow color="var(--muted)">{(trip.title || '').toUpperCase()}</Eyebrow>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label="Map view"
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: 10,
-            letterSpacing: '0.14em',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          <MapPin size={11} /> MAP
-        </button>
       </div>
 
       {trip.coverPhotoUrl && (

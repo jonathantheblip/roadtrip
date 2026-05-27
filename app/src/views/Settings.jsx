@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Calendar, Image as ImageIcon, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, ExternalLink, Check, Upload, FileText, Pencil, Trash2, Terminal } from 'lucide-react'
+import { ChevronLeft, Calendar, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import {
@@ -18,8 +18,8 @@ import {
   uploadLogHistogram,
 } from '../lib/uploadLog'
 
-// Per-trip settings panel: calendar export, shared album link, appearance,
-// traveler-picker, sync status. Sync now goes to a Cloudflare Worker
+// Per-trip settings panel: calendar export, appearance, traveler-picker,
+// sync status. Sync now goes to a Cloudflare Worker
 // (D1 + R2) authenticated by a per-traveler family token; the panel only
 // surfaces synced / syncing / offline + Pull / Push / Seed actions.
 //
@@ -39,9 +39,6 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [forcePushing, setForcePushing] = useState(false)
   const [forcePushMsg, setForcePushMsg] = useState(null)
   const [seeding, setSeeding] = useState(false)
-  const [albumDraft, setAlbumDraft] = useState(trip?.sharedAlbumURL || '')
-  const [albumSaving, setAlbumSaving] = useState(false)
-  const [albumSavedTick, setAlbumSavedTick] = useState(0)
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
@@ -131,18 +128,6 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     }
   }
 
-  async function saveAlbumUrl() {
-    if (!tripsApi?.saveTrip) return
-    const trimmed = albumDraft.trim()
-    setAlbumSaving(true)
-    try {
-      await tripsApi.saveTrip({ ...trip, sharedAlbumURL: trimmed })
-      setAlbumSavedTick((t) => t + 1)
-    } finally {
-      setAlbumSaving(false)
-    }
-  }
-
   async function runPushAll() {
     setPushAllState({ status: 'running', message: null })
     try {
@@ -169,18 +154,6 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })
-    }
-  }
-
-  async function clearAlbumUrl() {
-    setAlbumDraft('')
-    if (!tripsApi?.saveTrip) return
-    setAlbumSaving(true)
-    try {
-      await tripsApi.saveTrip({ ...trip, sharedAlbumURL: '' })
-      setAlbumSavedTick((t) => t + 1)
-    } finally {
-      setAlbumSaving(false)
     }
   }
 
@@ -300,107 +273,15 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
         </div>
       </section>
 
-      <section className="px-6 py-8 border-b surface-rule">
-        <div className="flex items-center gap-2 mb-3">
-          <ImageIcon size={14} />
-          <p className="smallcaps f-dm text-[11px] opacity-70">Shared album</p>
-        </div>
-        {trip.sharedAlbumURL ? (
-          <>
-            <a
-              className="link-quiet f-news text-base inline-flex items-center gap-1"
-              href={trip.sharedAlbumURL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open in iCloud Photos <ExternalLink size={12} />
-            </a>
-            <p className="f-mono text-[10px] opacity-50 mt-2 break-all">
-              {trip.sharedAlbumURL}
-            </p>
-            <div className="flex mt-3" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn-pill"
-                onClick={clearAlbumUrl}
-                disabled={albumSaving}
-              >
-                Replace URL
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="f-news text-base leading-relaxed opacity-80 max-w-prose mb-4">
-              The Shared Album is the family's photo backbone — Helen creates one
-              album in Photos, enables Public Website, and pastes the URL below.
-              Anyone with the link can view photos in a browser without an Apple
-              ID; family members on iOS see the album natively in Photos.
-            </p>
-            <ol
-              className="f-news text-base leading-relaxed opacity-80 max-w-prose"
-              style={{ paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 14 }}
-            >
-              <li>
-                Open Photos on your Mac or iPhone. Select the photos you want in
-                the album, tap <em>Share</em> → <em>Shared Album</em> → <em>New Shared Album</em>.
-                Name it something memorable like
-                <span className="f-mono text-[12px] mx-1 px-1 rounded" style={{ background: 'var(--bg2)' }}>
-                  {trip.title}
-                </span>.
-              </li>
-              <li>
-                Once the album exists, open it and tap <em>Subscribers</em> (or the
-                people icon). Enable <strong>Public Website</strong> — Photos
-                generates a long iCloud share URL that starts with{' '}
-                <span className="f-mono text-[12px]">https://www.icloud.com/sharedalbum/</span>.
-              </li>
-              <li>
-                Tap <em>Share Link</em>, copy the URL, and paste it into the field
-                below. The trip's photo backbone is live the moment you save.
-              </li>
-            </ol>
-            <div className="flex mt-5" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <input
-                type="url"
-                inputMode="url"
-                placeholder="https://www.icloud.com/sharedalbum/…"
-                value={albumDraft}
-                onChange={(e) => setAlbumDraft(e.target.value)}
-                className="memory-textarea"
-                style={{ flex: 1, minWidth: 240, minHeight: 'auto', padding: 10, fontSize: 13, fontFamily: 'JetBrains Mono, ui-monospace, monospace' }}
-                aria-label="iCloud shared album URL"
-              />
-              <button
-                type="button"
-                className="btn-pill"
-                onClick={saveAlbumUrl}
-                disabled={!albumDraft.trim() || albumSaving}
-                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
-              >
-                {albumSaving ? <RefreshCw size={12} /> : <Check size={12} />}
-                {albumSaving ? 'Saving…' : 'Save link'}
-              </button>
-            </div>
-            {albumSavedTick > 0 && (
-              <p className="f-dm text-[12px] opacity-60 mt-2 italic">
-                Cleared. Paste the new URL above.
-              </p>
-            )}
-            <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
-              Apple's docs:{' '}
-              <a
-                className="link-quiet"
-                href="https://support.apple.com/guide/photos/share-photos-and-videos-pht7a4c4d4ed/mac"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Share photos and videos with Shared Albums →
-              </a>
-            </p>
-          </>
-        )}
-      </section>
+      {/* The "Shared album" section that lived here predated the
+          Cloudflare Worker sync stack — it walked the family through
+          creating an Apple Photos Shared Album, enabling Public
+          Website, and pasting the iCloud share URL. Post-CloudKit
+          retirement, photos sync through the Worker + R2 (see the
+          "sync" section below); the Apple flow is dead. Removed per
+          KNOWN_BUGS_HELEN_SURFACE.md P1.7. The `sharedAlbumURL` field
+          stays in the schema for backward compatibility (TripEditor
+          still surfaces it for explicit edits). */}
 
       {traveler === 'helen' && (
         <section className="px-6 py-8 border-b surface-rule">
