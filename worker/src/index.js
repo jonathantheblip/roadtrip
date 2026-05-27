@@ -236,6 +236,19 @@ async function postMemory(env, traveler, request, url, cors) {
     ? JSON.stringify(body.photoExternalURLs)
     : null
 
+  // Defense-in-depth: a 'photo' memory with no R2 keys and no external
+  // URLs is unrenderable on every device. Before P0.2's client-side
+  // throw in workerSync.pushMemory landed, 21 such half-records leaked
+  // into volleyball-2026. Reject them at the gate so any future
+  // mis-sequenced upload can't bleed past the client guard.
+  if (body.kind === 'photo' && !photoR2Key && !photoR2KeysJson && !photoExternalUrlsJson) {
+    return json(
+      { error: 'photo memory missing all photo sources', id: body.id },
+      400,
+      cors
+    )
+  }
+
   await env.DB.prepare(
     `INSERT INTO memories (
        id, trip_id, stop_id, author_traveler, visibility, kind,

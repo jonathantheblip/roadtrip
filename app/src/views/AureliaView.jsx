@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ImageOff } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
 import { thumbUrl } from '../lib/thumbUrl'
@@ -549,6 +550,19 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
   const mood = mem.mood || inferMood(mem)
   const caption =
     mem.text || mem.caption || mem.transcript || '(saved without words)'
+  // A 'photo' memory with no R2/IDB ref and no external URL has no
+  // image to paint. Surface a calm "unavailable" frame instead of the
+  // tinted-stripe loader, which falsely promises "loading."
+  // See KNOWN_BUGS_HELEN_SURFACE.md P0.2.
+  const photoRefs = mem.photoRefs?.length
+    ? mem.photoRefs
+    : mem.photoRef
+      ? [mem.photoRef]
+      : []
+  const isPhotoMissing =
+    (mem.kind || 'photo') === 'photo' &&
+    !photoRefs.some((r) => r?.url || r?.key) &&
+    !(mem.photoExternalURLs?.length > 0)
   const [photoUrl, setPhotoUrl] = useState(null)
   // Defer photo fetch until tile is near the viewport — Aurelia's
   // view can render dozens of postcards across a long-trip archive.
@@ -608,16 +622,34 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
         }}
       />
       {/* photo */}
-      <div
-        style={{
-          width: '100%',
-          aspectRatio: '5 / 3',
-          borderRadius: 2,
-          background: photoUrl
-            ? `url(${photoUrl}) center/cover no-repeat`
-            : `repeating-linear-gradient(45deg, ${tint}, ${tint} 6px, ${shade(tint, -10)} 6px, ${shade(tint, -10)} 12px)`,
-        }}
-      />
+      {isPhotoMissing ? (
+        <div
+          aria-label="Photo unavailable"
+          style={{
+            width: '100%',
+            aspectRatio: '5 / 3',
+            borderRadius: 2,
+            background: 'var(--bg2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--faint)',
+          }}
+        >
+          <ImageOff size={22} strokeWidth={1.5} />
+        </div>
+      ) : (
+        <div
+          style={{
+            width: '100%',
+            aspectRatio: '5 / 3',
+            borderRadius: 2,
+            background: photoUrl
+              ? `url(${photoUrl}) center/cover no-repeat`
+              : `repeating-linear-gradient(45deg, ${tint}, ${tint} 6px, ${shade(tint, -10)} 6px, ${shade(tint, -10)} 12px)`,
+          }}
+        />
+      )}
       <div
         style={{
           marginTop: 10,

@@ -110,6 +110,16 @@ export async function pushMemory(memory) {
     if (blob) {
       const remote = await uploadBlob('audio', memory.id, blob)
       updated.audioRef = { ...memory.audioRef, ...remote, storage: 'r2' }
+    } else {
+      // IDB blob is gone — keep the record local-canonical, refuse to
+      // POST a half-record that would land on D1 with an idb-flavored
+      // ref the worker will silently drop. scheduleMirror's catch
+      // swallows this; the local store retains the idb ref so a
+      // future retry can succeed if the blob reappears. See
+      // KNOWN_BUGS_HELEN_SURFACE.md P0.2 root cause.
+      throw new Error(
+        `pushMemory ${memory.id}: audio blob missing (idb key ${memory.audioRef.key})`
+      )
     }
   }
   if (memory.photoRef?.key && memory.photoRef.storage !== 'r2') {
@@ -117,6 +127,10 @@ export async function pushMemory(memory) {
     if (blob) {
       const remote = await uploadBlob('photo', memory.id, blob)
       updated.photoRef = { ...memory.photoRef, ...remote, storage: 'r2' }
+    } else {
+      throw new Error(
+        `pushMemory ${memory.id}: photo blob missing (idb key ${memory.photoRef.key})`
+      )
     }
   }
   if (memory.photoRefs?.length) {
@@ -128,8 +142,9 @@ export async function pushMemory(memory) {
       }
       const blob = ref?.key ? await loadAsset('photo', ref.key) : null
       if (!blob) {
-        newRefs.push(ref)
-        continue
+        throw new Error(
+          `pushMemory ${memory.id}: photoRefs blob missing (idb key ${ref?.key || '<none>'})`
+        )
       }
       const remote = await uploadBlob('photo', memory.id, blob)
       newRefs.push({ ...ref, ...remote, storage: 'r2' })

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, Mic, Trash2, Lock, Unlock, Play, X } from 'lucide-react'
+import { Camera, Mic, Trash2, Lock, Unlock, Play, X, ImageOff } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import {
   listMemoriesForStop,
@@ -404,7 +404,13 @@ function PhotoBubble({ mem }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mem.id])
 
-  if (refs.length === 0 && !mem.caption && !mem.text) {
+  // A photo memory carrying no refs at all (neither photoRef nor
+  // photoRefs[]) is unrenderable. Even when there's a caption, leaving
+  // the photo slot as a blank tile reads as "loading" — the icon makes
+  // the unavailable state legible. See KNOWN_BUGS_HELEN_SURFACE.md P0.2.
+  const isPhotoMissing = refs.length === 0
+
+  if (isPhotoMissing && !mem.caption && !mem.text) {
     return (
       <div
         style={{
@@ -450,6 +456,23 @@ function PhotoBubble({ mem }) {
               }}
             />
           ))}
+        </div>
+      ) : isPhotoMissing ? (
+        <div
+          aria-label="Photo unavailable"
+          style={{
+            width: 168,
+            aspectRatio: '4 / 3',
+            borderRadius: 8,
+            background: 'var(--bg2)',
+            marginBottom: caption ? 8 : 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--faint)',
+          }}
+        >
+          <ImageOff size={22} strokeWidth={1.5} />
         </div>
       ) : (
         <div

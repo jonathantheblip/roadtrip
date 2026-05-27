@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Mic, MapPin, Sparkles, Image as ImageIcon } from 'lucide-react'
+import { Mic, MapPin, Sparkles, Image as ImageIcon, ImageOff } from 'lucide-react'
 import { listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
 import { thumbUrl } from '../lib/thumbUrl'
@@ -422,6 +422,17 @@ function ThreadPreviewTile({ mem }) {
     : mem.photoRef
       ? [mem.photoRef]
       : []
+  // A 'photo' memory that carries no R2/IDB ref and no external URL has
+  // no image to paint. Pre-P0.2 these rendered the sage-stripe loader
+  // forever, falsely promising "loading." Now we surface a calm
+  // "unavailable" tile so the state is legible as final, not pending.
+  // 21 such records exist on volleyball-2026 (mix of seed/fixture leak
+  // and real Helen captures whose blobs never reached R2); see
+  // KNOWN_BUGS_HELEN_SURFACE.md P0.2.
+  const hasRenderableSource =
+    photoRefs.some((r) => r?.url || r?.key) ||
+    (mem.photoExternalURLs?.length || 0) > 0
+  const isPhotoMissing = kind === 'photo' && !hasRenderableSource
   const [photoUrl, setPhotoUrl] = useState(null)
   // Defer the photo fetch (R2 GET or IDB blob materialization) until
   // the tile is about to enter the viewport. A day with 5 stops × 2
@@ -454,7 +465,7 @@ function ThreadPreviewTile({ mem }) {
   }, [inView, kind, photoRefs[0]?.key, photoRefs[0]?.url])
   return (
     <div ref={tileRef} style={{ flex: 1, position: 'relative' }}>
-      {kind === 'photo' && (
+      {kind === 'photo' && !isPhotoMissing && (
         <div
           style={{
             aspectRatio: 1,
@@ -465,7 +476,23 @@ function ThreadPreviewTile({ mem }) {
           }}
         />
       )}
-      {kind === 'photo' && photoRefs.length > 1 && (
+      {isPhotoMissing && (
+        <div
+          aria-label="Photo unavailable"
+          style={{
+            aspectRatio: 1,
+            background: 'var(--bg2)',
+            borderRadius: 6,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--faint)',
+          }}
+        >
+          <ImageOff size={18} strokeWidth={1.5} />
+        </div>
+      )}
+      {kind === 'photo' && !isPhotoMissing && photoRefs.length > 1 && (
         <div
           style={{
             position: 'absolute',
