@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, Plus, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { AddDispatchModal } from '../components/AddDispatchModal'
-import { PhotoTile, PhotoLightbox } from '../components/PhotoAlbum'
+import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
 import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
@@ -219,19 +219,21 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
         <AddDispatchButton onClick={() => setDispatchOpen(true)} />
       </div>
 
-      <div style={{ padding: '12px 14px 0' }}>
-        {groups.length === 0 ? (
-          <EmptyState />
-        ) : (
-          groups.map((group) => (
-            <StopGroup
-              key={group.stopKey}
-              group={group}
-              onOpen={(entry) => openLightbox(entry, group.entries)}
-            />
-          ))
-        )}
-      </div>
+      <GridPausedProvider paused={!!lightbox}>
+        <div style={{ padding: '12px 14px 0' }}>
+          {groups.length === 0 ? (
+            <EmptyState />
+          ) : (
+            groups.map((group) => (
+              <StopGroup
+                key={group.stopKey}
+                group={group}
+                onOpen={(entry) => openLightbox(entry, group.entries)}
+              />
+            ))
+          )}
+        </div>
+      </GridPausedProvider>
 
       {lightbox && (
         <PhotoLightbox

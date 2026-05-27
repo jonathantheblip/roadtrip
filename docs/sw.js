@@ -12,7 +12,7 @@
 //                    v1.5 hero images are offline after first view.
 //
 // Cache name is versioned so the activate handler wipes stale generations.
-const CACHE_NAME = 'jackson-trip-react-v49';
+const CACHE_NAME = 'jackson-trip-react-v50';
 const TILE_CACHE = 'jackson-trip-tiles-v1';
 const MAX_TILES = 500;
 const CORE = ['./', './index.html', './manifest.json'];

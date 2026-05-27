@@ -704,3 +704,168 @@ is unaffected — its upstream
 memories with no URLs at the entries layer, so empty-ref
 memories produce zero tiles rather than empty tiles. No fix
 needed there.
+
+---
+
+# Update — 2026-05-27, walkthrough of post-P0.2 surfaces
+
+After P0.2 shipped, walked the surfaces the carryover named as
+un-reached: memory authoring entry points, Whisper voice memos,
+map view, and settings.
+
+## Confirmed working
+
+### ✅ Memory authoring via per-stop "+ add a memory"
+**Surface:** Trip view → stop with no memories → tap pill.
+
+Navigates to the StopDetail view with the composer present:
+text input ("add to the thread…"), photo attach button
+("Attach photos"), voice memo button ("Record voice memo"),
+visibility toggle ("shared with family"). All affordances
+render for Helen. No errors thrown.
+
+### ✅ Whisper voice memos — affordance renders
+**Surface:** StopDetail composer → mic button.
+
+The "Record voice memo" button is present in Helen's composer
+(it's icon-only — easy to miss from a buttons-by-textContent
+sweep, but its aria-label makes it accessible). Tapping it
+mounts the VoiceRecorder UI: "RECORDING 0:00 — Listening —
+release to send. Transcription will arrive a moment after you
+stop. [Cancel] [Stop & Send]". The recorder is wired and
+visually correct. Actual mic capture + Whisper transcription
+not exercised (would require mic permission and is out of
+walkthrough scope).
+
+## New findings — post-P0.2 walk
+
+### P1.6 (NEW) — "MAP" button in trip header opens Settings, not a map
+**Surface:** Helen trip view → header right side, the "⊕ MAP"
+affordance.
+
+**What Helen sees:** Top right of every trip view, a button
+labeled `MAP` with a map-pin icon. She'd reasonably tap this
+expecting a map of the trip's stops. Instead, the page swaps
+to the Trip Settings panel — calendar export, "shared album"
+config, traveler switcher, sync controls.
+
+**Root cause:** [`HelenView.jsx`](app/src/views/HelenView.jsx)
+line ~42-59 wires the button to `onOpenSettings` despite
+`aria-label="Map view"` and the map-pin icon. A repo-wide
+search for `onOpenMap`, `MapView`, `TripMap`, `trip-map`
+returns nothing — no map view has ever been built. The
+affordance is design-only; the click handler points at the
+nearest available view.
+
+**Why it's P1, not P0:** Helen can still reach Settings via the
+"⋯" overflow on the trip header, so the MAP-tap doesn't lose
+her work or strand her. But she taps the obvious "map" button
+and gets the wrong screen. Repeated. Friction.
+
+**Treatment options:**
+- Remove the button until a real Map view ships (cheap, honest).
+- Build the Map view — Leaflet is already a dependency
+  (`react-leaflet`), pin every stop with its lat/lng (most
+  trip stops already carry geo).
+- Rename to "Settings" and use a gear icon (matches the actual
+  behavior, but Settings already has the "⋯" entry — would be
+  a duplicate).
+
+Recommend option 1 short-term (commit a one-line removal),
+option 2 as a follow-up since the data plumbing is mostly
+there.
+
+### P1.7 (NEW) — Settings "shared album" section is stale CloudKit-era documentation
+**Surface:** Trip view → "⋯" → Trip Settings → "shared album"
+section.
+
+**What Helen sees:** A multi-paragraph block explaining how to
+create an Apple Photos Shared Album, enable Public Website,
+copy the iCloud sharedalbum URL, and paste it into the field
+to "make the trip's photo backbone live." The input
+placeholder is `https://www.icloud.com/sharedalbum/…`.
+
+**What's actually true:** Per [[project_cloudkit_config]] in
+the Claude memory bank, CloudKit was retired May 2026. Photos
+now sync to a Cloudflare Worker + R2 bucket (confirmed by the
+Sync section directly below: *"Memories save locally first,
+then mirror to a Cloudflare Worker … Worker
+https://roadtrip-sync.jonathan-d-jackson.workers.dev"*). The
+Apple Shared Album integration is dead — pasting an iCloud
+URL has no effect on photo storage now.
+
+**Why it's P1:** Helen reads onboarding-style instructions
+that don't match the system she's using. She might spend
+real time creating an Apple Shared Album, only to discover
+later that her photos don't appear there (and the family
+album she expected doesn't exist). The Sync section *below*
+the Shared Album section silently invalidates the Shared
+Album section above it.
+
+**Treatment:** Strip the Shared Album section + its URL input,
+or replace with a one-line note explaining that photos live in
+the family Worker by default. The Sync section is sufficient.
+
+### P2.4 (NEW) — Trip-view "+" FAB jumps to the first stop of the active day
+**Surface:** Trip view → floating green "+" button bottom-right.
+
+**Observation:** Aria-label says "Capture memory." On click,
+the handler at [`HelenView.jsx`](app/src/views/HelenView.jsx)
+~225 navigates to `day.stops[0]` — the FIRST stop of the
+currently active day. That's not where Helen is most likely
+to be capturing from; if she's reading the trip view at 3pm
+on Day 2 and taps "+", she probably means "capture for now"
+(closest in time), or "let me pick a stop" — not "drop me at
+the 9am stop."
+
+**Why it's P2:** The action succeeds (she lands in a
+working composer), just at the wrong stop. She can navigate
+between stops via the in-day chip strip on StopDetail. So
+the friction is "extra taps," not "broken."
+
+**Treatment idea:** Either (a) navigate to the stop nearest
+to the current time on travel days / first-with-no-memory on
+planning days, or (b) open a small stop-picker overlay.
+Option (a) is mechanical; option (b) is design.
+
+## Surface verified clean
+
+- **Traveler-switcher dock** (bottom strip on every trip view):
+  renders correctly for Helen — Jonathan/ops, Helen/archive,
+  Aurelia/her stuff, Rafa/mission. Click-to-switch behavior
+  not fully exercised — page froze again (P1.5 reproducing).
+  Surface visibly works; functional behavior pending.
+
+## Surfaces still NOT walked
+
+- **iOS Safari behavior on the phone** — desktop chromium
+  walks now cover ~all functional surfaces. iOS-specific issues
+  (PWA install, Add to Home Screen, share-target, SW updates,
+  iOS-specific photo decoding behavior) remain to be verified
+  on the phone Helen actually uses.
+- **The full memory-authoring write path** — text + photo +
+  voice were observed to mount their composers but no end-to-end
+  capture was attempted (would require real mic / camera access
+  in headless chromium).
+- **Map view** — not walked because it doesn't exist (see P1.6).
+
+## Triage order, revised again
+
+P0.2 cleared. Remaining backlog in priority order:
+
+1. **P1.6** — "MAP" button mis-wired. Helen-visible on every
+   trip header. One-line fix to remove + redeploy, or a
+   build-out for the real map view.
+2. **P1.7** — Settings shared-album section is stale.
+   Delete-or-replace; small.
+3. **P1.5** — Lightbox-over-grid idle hang. Cheap fix
+   (suspend grid IO on lightbox open).
+4. **P1.1 / P1.2 / P1.3** — original P1 batch (Vermont hero,
+   archived trip heros, trips-index Claude context).
+5. **P2.4** — FAB jumps to first stop. Small refinement.
+6. **iOS phone walk** — fills the last big verification gap.
+7. **M2 cascade prompt fix** — still pending from before the
+   Helen walk. Single-commit redeploy.
+8. **P0.2 cleanup decision** — Jonathan decides what to do
+   about the 21 broken records (delete fixtures vs preserve
+   real-capture metadata).

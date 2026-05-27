@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { updateMemoryCapturedAt } from '../lib/memoryStore'
@@ -7,6 +7,25 @@ import { isDevModeEnabled } from '../lib/uploadLog'
 import { firstLine, formatShortDate, formatFullDate } from '../lib/photoEntries'
 import { thumbUrl } from '../lib/thumbUrl'
 import { useInView } from '../lib/useInView'
+
+// When the lightbox opens over a partially-loaded grid, the full-res
+// lightbox fetch joins the still-in-flight grid thumbnail fetches and
+// the tab can't reach `document_idle` for 45+ seconds. See
+// KNOWN_BUGS_HELEN_SURFACE.md P1.5.
+//
+// GridPausedProvider lets the owning view (PhotosView / AllPhotosView)
+// flip a flag while the lightbox is open. PhotoTile reads the flag and
+// unmounts its <img>, which cancels any in-flight fetch. When the
+// lightbox closes the tiles re-mount and the worker's variant cache
+// serves thumbnails fast on the second pass.
+const GridPausedContext = createContext(false)
+export function GridPausedProvider({ paused, children }) {
+  return (
+    <GridPausedContext.Provider value={!!paused}>
+      {children}
+    </GridPausedContext.Provider>
+  )
+}
 
 // Grid tile thumbnail width. The Worker's photon endpoint serves a
 // downscaled JPEG variant cached in R2; 600px CSS-pixels covers ~2x
@@ -44,6 +63,11 @@ export function PhotoTile({ entry, onOpen }) {
   // loading="lazy" alone is too eager — browsers preload anything
   // within ~2 viewports.
   const { ref: tileRef, inView } = useInView({ rootMargin: '300px 0px' })
+  // P1.5 — when the lightbox is open, unmount the grid <img> so any
+  // in-flight thumbnail fetches cancel and the page reaches idle.
+  // inView state is preserved by useInView (once: true), so tiles
+  // re-mount instantly when the lightbox closes.
+  const gridPaused = useContext(GridPausedContext)
   return (
     <button
       type="button"
@@ -75,7 +99,7 @@ export function PhotoTile({ entry, onOpen }) {
             'repeating-linear-gradient(45deg, #d6c5a8 0 6px, #c5b497 6px 12px)',
         }}
       >
-        {entry.url && !imgFailed && inView ? (
+        {entry.url && !imgFailed && inView && !gridPaused ? (
           <img
             // Use ?w=600 for the grid — covers retina at the largest
             // tile size we render and keeps payload to ~50KB instead

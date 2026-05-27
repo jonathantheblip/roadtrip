@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, Image as ImageIcon } from 'lucide-react'
 import { listAllLocalMemories } from '../lib/memoryStore'
-import { PhotoTile, PhotoLightbox } from '../components/PhotoAlbum'
+import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { groupAcrossTrips } from '../lib/photoEntries'
 
 // AllPhotosView — Punchlist 4. A single cross-trip album that reads
@@ -142,19 +142,21 @@ export function AllPhotosView({ trips, traveler, onBack }) {
         </div>
       </header>
 
-      <div style={{ padding: '12px 14px 0' }}>
-        {sections.length === 0 ? (
-          <EmptyState />
-        ) : (
-          sections.map((tripSec) => (
-            <TripSection
-              key={tripSec.tripId}
-              tripSec={tripSec}
-              onOpen={openLightbox}
-            />
-          ))
-        )}
-      </div>
+      <GridPausedProvider paused={!!lightbox}>
+        <div style={{ padding: '12px 14px 0' }}>
+          {sections.length === 0 ? (
+            <EmptyState />
+          ) : (
+            sections.map((tripSec) => (
+              <TripSection
+                key={tripSec.tripId}
+                tripSec={tripSec}
+                onOpen={openLightbox}
+              />
+            ))
+          )}
+        </div>
+      </GridPausedProvider>
 
       {lightbox && (
         <PhotoLightbox
