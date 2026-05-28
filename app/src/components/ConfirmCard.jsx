@@ -19,6 +19,8 @@
 // commits through tripsApi.upsertTrip.
 
 import { useState } from 'react'
+import { TRAVELER_DOT } from '../data/travelers'
+import { travelerNameToId, humanDateRange } from '../lib/createTripCard'
 
 // ─── Tokens — Helen's linen palette (duplicated from ClaudeChat.jsx) ──
 // Kept local rather than DRY'd so this file is a self-contained M2 unit.
@@ -581,6 +583,363 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
   )
 }
 
+// ─── create_trip card ────────────────────────────────────────────────
+// A new card type (alongside add/move/cancel/multi) that drafts a whole
+// trip on the trips-index surface. Scrollable preview: header, collapsible
+// day sections, compact stop rows (time · name · who-dots · drive), each
+// row tappable to reveal its description, each row Skip-able (same escape
+// hatch as the multi card). Save writes Trip + Days + Stops to D1 via the
+// create-trip handler in App.jsx. Skipped stops are dropped at map time
+// (see lib/createTripCard.cardToTrip).
+
+function ChevronDownIcon({ size = 12, color = 'currentColor', open = false }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .15s' }}
+    >
+      <path d="M5 9 L12 16 L19 9" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function WhoDots({ who, max = 4 }) {
+  const ids = (Array.isArray(who) ? who : []).map(travelerNameToId).filter(Boolean)
+  if (ids.length === 0) return null
+  return (
+    <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
+      {ids.slice(0, max).map((id) => (
+        <span
+          key={id}
+          title={id}
+          style={{ width: 7, height: 7, borderRadius: '50%', background: TRAVELER_DOT[id] || T.inkFaint }}
+        />
+      ))}
+    </span>
+  )
+}
+
+function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
+  const skipped = !!stop.skipped
+  return (
+    <div
+      style={{
+        borderBottom: `1px solid ${T.hairline}`,
+        opacity: skipped ? 0.4 : 1,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0' }}>
+        <button
+          type="button"
+          onClick={onToggleOpen}
+          aria-expanded={open}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${stop.name}`}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 8,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 9.5,
+              color: T.inkFaint,
+              width: 52,
+              flexShrink: 0,
+              letterSpacing: 0.4,
+            }}
+          >
+            {stop.time || '—'}
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span
+              style={{
+                fontFamily: FONT.serif,
+                fontSize: 13.5,
+                fontWeight: 600,
+                letterSpacing: -0.1,
+                color: T.ink,
+                textDecoration: skipped ? 'line-through' : 'none',
+              }}
+            >
+              {stop.name}
+            </span>
+            {stop.driveFromPrevious && (
+              <span
+                style={{
+                  fontFamily: FONT.mono,
+                  fontSize: 9,
+                  color: T.inkFaint,
+                  marginLeft: 6,
+                }}
+              >
+                · {stop.driveFromPrevious}
+              </span>
+            )}
+          </span>
+          <WhoDots who={stop.who} />
+        </button>
+        <button
+          type="button"
+          onClick={onToggleSkip}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: T.inkMuted,
+            fontFamily: FONT.mono,
+            fontSize: 9,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            padding: '2px 4px',
+            flexShrink: 0,
+          }}
+        >
+          {skipped ? 'Restore' : 'Skip'}
+        </button>
+      </div>
+      {open && stop.description && (
+        <div
+          style={{
+            padding: '0 0 10px 60px',
+            fontFamily: FONT.serif,
+            fontSize: 12,
+            fontStyle: 'italic',
+            lineHeight: 1.45,
+            color: T.inkMuted,
+          }}
+        >
+          {stop.description}
+          {stop.address && (
+            <div
+              style={{
+                fontFamily: FONT.mono,
+                fontStyle: 'normal',
+                fontSize: 9.5,
+                color: T.inkFaint,
+                marginTop: 4,
+                letterSpacing: 0.3,
+              }}
+            >
+              {stop.address}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }) {
+  const trip = card.trip || {}
+  const days = Array.isArray(draft.tripDays) ? draft.tripDays : []
+  const [collapsedDays, setCollapsedDays] = useState(() => new Set())
+  const [openStops, setOpenStops] = useState(() => new Set())
+
+  const liveCount = days.reduce(
+    (n, d) => n + (d.stops || []).filter((s) => !s.skipped).length,
+    0
+  )
+
+  function toggleDay(di) {
+    setCollapsedDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(di)) next.delete(di)
+      else next.add(di)
+      return next
+    })
+  }
+  function toggleStopOpen(key) {
+    setOpenStops((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  function toggleSkip(di, si) {
+    setDraft((prev) => ({
+      ...prev,
+      tripDays: prev.tripDays.map((d, i) =>
+        i === di
+          ? { ...d, stops: d.stops.map((s, j) => (j === si ? { ...s, skipped: !s.skipped } : s)) }
+          : d
+      ),
+    }))
+  }
+
+  const dateLabel =
+    trip.dateRange || humanDateRange(trip.dateRangeStart, trip.dateRangeEnd)
+
+  return (
+    <div
+      style={{
+        background: T.draftBg,
+        border: `1px solid ${T.draftBorder}`,
+        borderRadius: 14,
+        padding: 12,
+        marginBottom: 14,
+      }}
+      data-testid="confirm-card-create_trip"
+    >
+      <CardHeader tone="draft" actionLabel="Draft · new trip" scopeLabel={dateLabel} />
+
+      {/* Header block */}
+      <div
+        style={{
+          fontFamily: FONT.serif,
+          fontSize: 19,
+          fontWeight: 700,
+          letterSpacing: -0.3,
+          lineHeight: 1.1,
+          color: T.ink,
+        }}
+      >
+        {trip.title || 'New trip'}
+      </div>
+      {trip.subtitle && (
+        <div
+          style={{
+            fontFamily: FONT.serif,
+            fontStyle: 'italic',
+            fontSize: 12.5,
+            color: T.inkMuted,
+            marginTop: 3,
+            lineHeight: 1.4,
+          }}
+        >
+          {trip.subtitle}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+        {(trip.startCity || trip.endCity) && (
+          <span
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 9,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              color: T.inkFaint,
+            }}
+          >
+            {trip.startCity === trip.endCity || !trip.endCity
+              ? trip.startCity
+              : `${trip.startCity} → ${trip.endCity}`}
+          </span>
+        )}
+        <span style={{ marginLeft: 'auto' }}>
+          <WhoDots who={trip.travelers} />
+        </span>
+      </div>
+
+      {/* Scrollable day sections */}
+      <div
+        style={{
+          marginTop: 10,
+          maxHeight: 360,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          borderTop: `1px solid ${T.hairline}`,
+        }}
+      >
+        {days.map((d, di) => {
+          const collapsed = collapsedDays.has(di)
+          const dayLive = (d.stops || []).filter((s) => !s.skipped).length
+          return (
+            <div key={di} style={{ paddingTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => toggleDay(di)}
+                aria-expanded={!collapsed}
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '2px 0 6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  color: T.draftEyebrow,
+                }}
+              >
+                <ChevronDownIcon size={11} color={T.draftEyebrow} open={!collapsed} />
+                <span
+                  style={{
+                    fontFamily: FONT.mono,
+                    fontSize: 9,
+                    letterSpacing: 1.4,
+                    textTransform: 'uppercase',
+                    fontWeight: 600,
+                  }}
+                >
+                  Day {d.dayNumber ?? di + 1}
+                </span>
+                <span
+                  style={{
+                    fontFamily: FONT.serif,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: T.ink,
+                    letterSpacing: -0.1,
+                  }}
+                >
+                  {d.title || ''}
+                </span>
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    fontFamily: FONT.mono,
+                    fontSize: 9,
+                    color: T.inkFaint,
+                  }}
+                >
+                  {dayLive} stop{dayLive === 1 ? '' : 's'}
+                </span>
+              </button>
+              {!collapsed &&
+                (d.stops || []).map((s, si) => {
+                  const key = `${di}:${si}`
+                  return (
+                    <StopRow
+                      key={s.id || key}
+                      stop={s}
+                      dayIdx={di}
+                      stopIdx={si}
+                      open={openStops.has(key)}
+                      onToggleOpen={() => toggleStopOpen(key)}
+                      onToggleSkip={() => toggleSkip(di, si)}
+                    />
+                  )
+                })}
+            </div>
+          )
+        })}
+      </div>
+
+      <CardActions
+        saveLabel={committing ? 'Saving…' : `Save trip · ${liveCount} stop${liveCount === 1 ? '' : 's'}`}
+        saveTone="draft"
+        onSave={onSave}
+        onDiscard={onDiscard}
+        disabled={liveCount === 0 || committing}
+      />
+    </div>
+  )
+}
+
 // ─── ConfirmCard (top-level export) ──────────────────────────────────
 //
 // Props:
@@ -593,7 +952,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
 //   draft       — local mutation buffer; reflects user edits to fields/edits
 //                 before they commit. Reset whenever a fresh card comes in.
 //   commit      — idle | committing | saved | discarded | error
-export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle' }) {
+export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', superseded = false }) {
   const [draft, setDraft] = useState(() => seedDraft(card))
   const [commit, setCommit] = useState({ phase: initialPhase, error: null })
 
@@ -637,13 +996,43 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle' }) 
   // card's place once it's been committed or dismissed. Quiet on
   // purpose; the chat surface carries the conversational reply.
   if (commit.phase === 'saved') {
+    if (card.type === 'create_trip') {
+      return <CardSavedNote action="create_trip" title={card.trip?.title} />
+    }
     return <CardSavedNote action={card.action} title={card.title} />
   }
   if (commit.phase === 'discarded') {
     return null
   }
 
+  // A create_trip draft that's been refined: a newer create_trip card
+  // exists below in the thread. Collapse this one to a quiet note so
+  // Helen doesn't save a stale version. Only applies pre-save — once
+  // saved we already returned the saved note above.
+  if (superseded && card.type === 'create_trip') {
+    return <StaleTripNote title={card.trip?.title} />
+  }
+
   const isCommitting = commit.phase === 'committing'
+
+  // create_trip is keyed off `type`, not `action` — it's a different
+  // surface (drafting a whole trip on the index, not editing the open
+  // one). Handle it before the action switch.
+  if (card.type === 'create_trip') {
+    return (
+      <>
+        <CreateTripCard
+          card={card}
+          draft={draft}
+          setDraft={setDraft}
+          onSave={handleSave}
+          onDiscard={handleDiscard}
+          committing={isCommitting}
+        />
+        {commit.error && <CardErrorNote message={commit.error} />}
+      </>
+    )
+  }
 
   switch (card.action) {
     case 'add':
@@ -700,6 +1089,8 @@ function CardSavedNote({ action, title }) {
       ? 'Moved'
       : action === 'multi'
       ? 'Saved'
+      : action === 'create_trip'
+      ? 'Created'
       : 'Added'
   return (
     <div
@@ -744,6 +1135,49 @@ function CardSavedNote({ action, title }) {
   )
 }
 
+function StaleTripNote({ title }) {
+  return (
+    <div
+      data-testid="confirm-card-superseded"
+      style={{
+        marginBottom: 14,
+        padding: '8px 12px',
+        borderRadius: 10,
+        background: 'rgba(21,32,26,0.04)',
+        border: `1px solid ${T.hairline}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: FONT.mono,
+          fontSize: 9,
+          letterSpacing: 1.4,
+          textTransform: 'uppercase',
+          color: T.inkFaint,
+          fontWeight: 600,
+        }}
+      >
+        Draft replaced
+      </span>
+      {title && (
+        <span
+          style={{
+            fontFamily: FONT.serif,
+            fontStyle: 'italic',
+            fontSize: 12.5,
+            color: T.inkMuted,
+          }}
+        >
+          {title} — see the updated version below.
+        </span>
+      )}
+    </div>
+  )
+}
+
 function CardErrorNote({ message }) {
   return (
     <div
@@ -769,6 +1203,13 @@ function CardErrorNote({ message }) {
 
 function seedDraft(card) {
   if (!card || typeof card !== 'object') return { fields: [], edits: [] }
+  if (card.type === 'create_trip') {
+    const tripDays = (card.trip?.days || []).map((d) => ({
+      ...d,
+      stops: (d.stops || []).map((s) => ({ ...s, skipped: false })),
+    }))
+    return { fields: [], edits: [], tripDays }
+  }
   const fields = Array.isArray(card.fields)
     ? card.fields.map((f) => ({
         name: f.name,
@@ -786,6 +1227,14 @@ function seedDraft(card) {
 }
 
 function applyDraft(card, draft) {
+  // create_trip: fold the per-stop skip flags back onto the trip block
+  // so the save handler (cardToTrip) can drop skipped stops.
+  if (card.type === 'create_trip') {
+    return {
+      ...card,
+      trip: { ...card.trip, days: draft.tripDays },
+    }
+  }
   // Merge user edits back into the card payload that gets handed to the
   // commit path. Keep the action + target + ids intact; replace fields/
   // edits with the live values.

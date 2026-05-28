@@ -17,6 +17,7 @@ import { AllPhotosView } from './views/AllPhotosView'
 import { ImportView } from './views/ImportView'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
+import { cardToTrip } from './lib/createTripCard'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
@@ -479,6 +480,12 @@ export default function App() {
   // same write path as the manual composer. Re-throws on failure so the
   // ConfirmCard surface flips to its error state with a retry affordance.
   async function handleClaudeCardSave(card) {
+    // create_trip is the only card that doesn't require an active trip —
+    // it builds a brand-new one from the trips-index surface. Route it
+    // to its own handler before the active-trip guard.
+    if (card?.type === 'create_trip') {
+      return handleClaudeCreateTrip(card)
+    }
     if (!trip || !card) throw new Error('No active trip to apply this change to.')
     // applyCardToTrip throws on a structural mismatch (unknown day,
     // unsupported action). Worker push failures are NOT escalated — the
@@ -486,6 +493,31 @@ export default function App() {
     // owns "your change hasn't reached the family yet."
     const next = applyCardToTrip(trip, card)
     return tripsApi.upsertTrip(next)
+  }
+  // Trip creation via Claude (create_trip card). Maps the card to a
+  // canonical trip record (skipped stops dropped), commits through the
+  // same upsert path every other write uses, then navigates into the
+  // new trip so Helen lands on it immediately and can refine via the M2
+  // surface. Re-throws on a failed upsert so the card flips to its error
+  // state. The trip id is a deterministic slug, so a refine-then-save
+  // re-uses the same row rather than forking a duplicate.
+  async function handleClaudeCreateTrip(card) {
+    const newTrip = cardToTrip(card)
+    // upsertTrip writes the local cache synchronously, then best-effort
+    // mirrors to the Worker. A failed Worker push returns { ok: false }
+    // but the trip is already in local state — same non-escalation
+    // policy as the M2 edit cards (the global sync indicator owns
+    // "hasn't reached the family yet"). So we navigate regardless; the
+    // deterministic slug id makes a later retry idempotent.
+    const res = await tripsApi.upsertTrip(newTrip)
+    openTrip(newTrip.id)
+    // Close the chat so Helen lands on the trip she just made (spec:
+    // "navigate to the new trip's view"). The in-trip M2 surface is one
+    // tap away when she wants to refine. M2 edit cards leave the panel
+    // open by contrast — they're editing the trip she's already looking
+    // at, so there's nothing new to reveal.
+    closeClaude()
+    return res
   }
   function openPhotos() {
     setView({ name: 'photos' })
@@ -788,7 +820,11 @@ export default function App() {
         tripId={view.name === 'index' ? null : (trip?.id || null)}
         tripTitle={view.name === 'index' ? null : (trip?.title || null)}
         trip={view.name === 'index' ? null : (trip || null)}
-        onCardSave={view.name === 'index' ? null : handleClaudeCardSave}
+        // Always wired now: on the index the only savable card is
+        // create_trip (handleClaudeCardSave routes it to the create
+        // handler); add/move/cancel/multi still require an active trip
+        // and the worker only emits those in-trip.
+        onCardSave={handleClaudeCardSave}
       />
     </>
   )

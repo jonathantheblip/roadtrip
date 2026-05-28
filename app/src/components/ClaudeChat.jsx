@@ -59,11 +59,14 @@ const FONT = {
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────
-// The Claude mark is rendered as a small dot + asterisk-like glyph,
-// matching the lockup in the design files where it appears as
-// `<ClaudeMark size={...} />`. We use a simple SVG abstraction so the
-// icon scales cleanly inside both the entry button and message bubbles.
-export function ClaudeMark({ size = 16, color = T.accent }) {
+// The Claude mark — a four-pointed spark, the Anthropic Claude logo
+// glyph. Replaces the earlier dot+asterisk pair (which read as a
+// "glowing dot" at small sizes) with a clean vector spark. Inline
+// SVG so it's instant and theme-responsive. Default color is
+// `currentColor`, so callers control hue via the parent's `color`
+// CSS — that lets the same component render sage in Helen's panel,
+// oxblood on Jonathan's surface, etc., without prop drilling.
+export function ClaudeMark({ size = 16, color = 'currentColor' }) {
   return (
     <svg
       width={size}
@@ -73,11 +76,10 @@ export function ClaudeMark({ size = 16, color = T.accent }) {
       aria-hidden="true"
       focusable="false"
     >
-      <circle cx="12" cy="12" r="9" fill={color} opacity="0.18" />
-      <path
-        d="M12 5 L13.2 10.8 L19 12 L13.2 13.2 L12 19 L10.8 13.2 L5 12 L10.8 10.8 Z"
-        fill={color}
-      />
+      <path d="M12 2C12 2 14.5 8.5 12 12C9.5 8.5 12 2 12 2Z" fill={color} />
+      <path d="M12 22C12 22 9.5 15.5 12 12C14.5 15.5 12 22 12 22Z" fill={color} />
+      <path d="M2 12C2 12 8.5 9.5 12 12C8.5 14.5 2 12 2 12Z" fill={color} />
+      <path d="M22 12C22 12 15.5 14.5 12 12C15.5 9.5 22 12 22 12Z" fill={color} />
     </svg>
   )
 }
@@ -119,13 +121,16 @@ function ChevronRightIcon({ size = 12, color = 'currentColor' }) {
 }
 
 // ─── ClaudeLockup ─────────────────────────────────────────────────────
-export function ClaudeLockup({ size = 14, color = T.ink, accent = T.accent }) {
+// Brand wordmark — "Claude" in Fraunces followed by the spark. iconSize
+// defaults to 20 so the chat panel header reads the same size the spec
+// names for the header surface; callers can override for compact uses.
+export function ClaudeLockup({ size = 14, color = T.ink, accent = T.accent, iconSize = 20 }) {
   return (
     <span
       style={{
         display: 'inline-flex',
-        alignItems: 'baseline',
-        gap: 6,
+        alignItems: 'center',
+        gap: 8,
         fontFamily: FONT.serif,
         fontSize: size + 6,
         fontWeight: 600,
@@ -134,16 +139,7 @@ export function ClaudeLockup({ size = 14, color = T.ink, accent = T.accent }) {
       }}
     >
       Claude
-      <span
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: '50%',
-          background: accent,
-          display: 'inline-block',
-          transform: 'translateY(-2px)',
-        }}
-      />
+      <ClaudeMark size={iconSize} color={accent} />
     </span>
   )
 }
@@ -181,7 +177,14 @@ export function ClaudeEntryButton({
         alignItems: 'center',
         justifyContent: 'center',
         boxShadow: shadow,
-        color: T.accent,
+        // The entry button lives on each traveler's surface (FAB on the
+        // index, docked in the trip top bar), so the spark takes that
+        // surface's accent per the spec — sage on Helen's, oxblood on
+        // Jonathan's, hot pink on Aurelia's, ochre on Rafa's. Falls
+        // back to Helen's forest where no theme var is set. The chat
+        // panel's internal marks stay T.accent (the panel is linen-
+        // themed in M1).
+        color: 'var(--accent, #2E5D3A)',
         flexShrink: 0,
       }}
     >
@@ -413,7 +416,7 @@ function CardDraftingPlaceholder() {
   )
 }
 
-function CardBlock({ raw, onCardSave, alreadySavedIds }) {
+function CardBlock({ raw, onCardSave, alreadySavedIds, supersededCardIds }) {
   let card = null
   try {
     card = JSON.parse(raw)
@@ -423,12 +426,14 @@ function CardBlock({ raw, onCardSave, alreadySavedIds }) {
   if (!card || typeof card !== 'object') return null
   const initialPhase =
     card.id && alreadySavedIds && alreadySavedIds.has(card.id) ? 'saved' : 'idle'
+  const superseded = !!(card.id && supersededCardIds && supersededCardIds.has(card.id))
   return (
     <ConfirmCard
       card={card}
       onSave={onCardSave}
       onDiscard={() => {}}
       initialPhase={initialPhase}
+      superseded={superseded}
     />
   )
 }
@@ -451,7 +456,7 @@ function classListFrom(node) {
   return []
 }
 
-function markdownComponents({ onCardSave, alreadySavedIds }) {
+function markdownComponents({ onCardSave, alreadySavedIds, supersededCardIds }) {
   return {
     pre(props) {
       const node = props.node
@@ -467,6 +472,7 @@ function markdownComponents({ onCardSave, alreadySavedIds }) {
             raw={extractCodeText(codeChild)}
             onCardSave={onCardSave}
             alreadySavedIds={alreadySavedIds}
+            supersededCardIds={supersededCardIds}
           />
         )
       }
@@ -511,7 +517,7 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
           marginTop: 2,
         }}
       >
-        <ClaudeMark size={14} />
+        <ClaudeMark size={24} />
       </div>
       <div
         className="claude-md"
@@ -824,6 +830,24 @@ export function ClaudeChatPanel({
   // a ConfirmCard re-mount on every parent render — a re-mount wipes
   // ConfirmCard's local commit phase and the saved-note never paints.
   const collectedTripIds = useMemo(() => collectSavedCardIds(trip), [trip])
+
+  // Refinement supersede set: every create_trip card id in the thread
+  // EXCEPT the most recent one. When Helen refines a draft ("swap the
+  // hike for a winery"), Claude emits a fresh create_trip card; the
+  // earlier ones collapse to a quiet "Draft replaced" note so she can't
+  // save a stale version. Computed from committed messages only (not the
+  // in-flight streaming text) so it updates once per turn boundary
+  // rather than on every delta — keeps ConfirmCard from remounting
+  // mid-stream.
+  const supersededCardIds = useMemo(() => {
+    const ids = []
+    for (const m of messages) {
+      if (m.role !== 'assistant') continue
+      for (const id of extractCreateTripCardIds(m.content)) ids.push(id)
+    }
+    return new Set(ids.slice(0, -1))
+  }, [messages])
+
   const cardContext = useMemo(() => {
     if (!open || !onCardSave) return null
     const alreadySavedIds = new Set([
@@ -838,12 +862,12 @@ export function ClaudeChatPanel({
       }
       return res
     }
-    return { onCardSave: wrappedSave, alreadySavedIds }
+    return { onCardSave: wrappedSave, alreadySavedIds, supersededCardIds }
     // actionedTick re-runs this so the next render picks up the latest
     // actionedIdsRef. Don't trip on it directly inside the memo body —
     // it's the dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, onCardSave, collectedTripIds, actionedTick])
+  }, [open, onCardSave, collectedTripIds, actionedTick, supersededCardIds])
 
   // When the panel opens, decide which screen to land on. If past
   // conversations exist for this (user, trip), show the list. Else jump
@@ -1278,6 +1302,25 @@ function ModeShiftCue({ toMode }) {
 // committed to a stop. Used to gate ConfirmCard's initialPhase so cards
 // in re-loaded conversation history don't appear as live drafts after
 // the change they describe already landed.
+// Pull the ids of every create_trip card embedded in a message's
+// markdown (fenced ```card blocks). Used to compute the refinement
+// supersede set — only the latest create_trip draft stays live.
+function extractCreateTripCardIds(text) {
+  if (typeof text !== 'string' || !text.includes('create_trip')) return []
+  const ids = []
+  const re = /```card\s*([\s\S]*?)```/g
+  let m
+  while ((m = re.exec(text))) {
+    try {
+      const card = JSON.parse(m[1].trim())
+      if (card && card.type === 'create_trip' && card.id) ids.push(card.id)
+    } catch {
+      /* incomplete / non-JSON block — skip */
+    }
+  }
+  return ids
+}
+
 function collectSavedCardIds(trip) {
   const out = new Set()
   if (!trip) return out

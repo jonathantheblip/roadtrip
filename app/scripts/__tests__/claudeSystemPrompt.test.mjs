@@ -254,6 +254,41 @@ test('system prompt — no trip + trips in DB injects cross-trip summaries', asy
   assert.ok(prompt.includes('completed'))
   // Should NOT emit the in-trip card section header — no trip is open.
   assert.ok(!prompt.includes('## The trip currently open in the app'))
+  // Trip creation is enabled on the index: the create_trip section,
+  // the card type, the category vocabulary, and the hybrid one-question
+  // rule must all be present so Sonnet can scaffold a new trip.
+  assert.ok(prompt.includes('## Trip creation'))
+  assert.ok(prompt.includes('create_trip'))
+  assert.ok(prompt.includes('LODGING'))
+  assert.ok(prompt.includes('ONE clarifying question'))
+})
+
+test('system prompt — trip-creation section is absent when a trip IS open', async () => {
+  const db = makeDb(({ sql }) => {
+    if (sql.includes('FROM family_profiles')) return { results: profilesRow() }
+    if (sql.includes('FROM trips')) {
+      return {
+        results: [
+          {
+            id: 'jackson-2026',
+            title: 'The Jackson Family Drive',
+            date_range_start: '2026-04-17',
+            date_range_end: '2026-04-24',
+            end_city: 'Houston, TX',
+            data_json: JSON.stringify({ title: 'The Jackson Family Drive', days: [] }),
+          },
+        ],
+      }
+    }
+    return { results: [] }
+  })
+  const prompt = await buildClaudeSystemPrompt({ DB: db }, {
+    readerUserId: 'helen',
+    tripId: 'jackson-2026',
+  })
+  // In-trip surface: the create_trip section belongs only to the index.
+  assert.ok(prompt.includes('## The trip currently open in the app'))
+  assert.ok(!prompt.includes('## Trip creation'))
 })
 
 test('system prompt — style block forbids gendered driving framing', async () => {

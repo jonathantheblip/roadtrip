@@ -1457,7 +1457,89 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push(formatTripSummaries(tripsSummary))
     lines.push('')
     lines.push(
-      'Do NOT invent stop-level details (venues, times, addresses) from these summaries alone — they only carry the trip\'s top-level metadata. If the reader asks for specifics inside a trip, suggest they tap into that trip and continue the conversation there. EXECUTE-mode change cards require an open trip context, so do not emit cards from this surface — answer in GUIDANCE mode only.'
+      'Do NOT invent stop-level details (venues, times, addresses) for an EXISTING trip from these summaries alone — they only carry top-level metadata. If the reader asks for specifics inside an existing trip, suggest they tap into it and continue there. The move/add/cancel/multi cards require an open trip, so don\'t emit those from this surface.'
+    )
+    lines.push('')
+    lines.push('## Trip creation')
+    lines.push(
+      'When the reader asks to plan, create, or start a NEW trip, build a complete trip and emit a `create_trip` card. This is the one EXECUTE card valid on the trips list.'
+    )
+    lines.push('')
+    lines.push('Use everything you know about the family:')
+    lines.push('- Helen: vegetarian, art (Tworkov, Rothko, Twombly, Pollock, Packard), architecture, collected-not-curated aesthetic')
+    lines.push('- Aurelia: 13, volleyball, genuine aesthetic taste, interested in Rice University')
+    lines.push('- Rafa: almost 5, Godzilla, Spider-Verse, dinosaurs, cars, size/gravity comparisons')
+    lines.push('- Jonathan: cognitive neuroscientist, direct, efficient')
+    lines.push('')
+    lines.push(
+      'Every stop names who it serves and what it gives them. A 13-year-old and a 5-year-old want different things.'
+    )
+    lines.push('')
+    lines.push(
+      'Build from the destination and the reader\'s stated interests. Fill in what they don\'t specify with family defaults: the full family travels unless told otherwise; mid-range lodging (boutique hotel or quality rental, not hostel, not Four Seasons); under 6 hours from Belmont is a drive, over 6 hours is a flight; the named month\'s next open weekend; 3 nights for "a weekend", 5 for "a week".'
+    )
+    lines.push('')
+    lines.push(
+      'You may ask ONE clarifying question alongside your acknowledgment ("October — any particular weekend, or wherever the rates land?"). If the reader\'s next message doesn\'t answer it, proceed with the default. Never ask a second question. Never refuse to build because details are missing.'
+    )
+    lines.push('')
+    lines.push(
+      'Drive times must be realistic. Stretches over 2.5 hours get a note. Days must breathe — unscheduled time is not wasted time.'
+    )
+    lines.push('')
+    lines.push(
+      'Food stops: Helen is vegetarian. Surface compatible menu items without flagging or labeling the dietary constraint.'
+    )
+    lines.push('')
+    lines.push('Emit the card as a fenced `card` block (same mechanism as the in-trip cards). Shape:')
+    lines.push('```card')
+    lines.push('{')
+    lines.push('  "type": "create_trip",')
+    lines.push('  "id": "<short stable id for this card, e.g. ct-asheville>",')
+    lines.push('  "trip": {')
+    lines.push('    "title": "Asheville Long Weekend",')
+    lines.push('    "subtitle": "Art, mountains, and good food",')
+    lines.push('    "startCity": "Belmont, MA",')
+    lines.push('    "endCity": "Belmont, MA",')
+    lines.push('    "dateRangeStart": "2026-10-09",')
+    lines.push('    "dateRangeEnd": "2026-10-12",')
+    lines.push('    "travelers": ["Jonathan", "Helen", "Aurelia", "Rafa"],')
+    lines.push('    "days": [')
+    lines.push('      {')
+    lines.push('        "dayNumber": 1,')
+    lines.push('        "title": "Friday — Settle In",')
+    lines.push('        "date": "2026-10-09",')
+    lines.push('        "stops": [')
+    lines.push('          {')
+    lines.push('            "id": "ash-1-1",')
+    lines.push('            "time": "2:00 PM",')
+    lines.push('            "name": "Check in at The Foundry Hotel",')
+    lines.push('            "address": "51 S Market St, Asheville, NC 28801",')
+    lines.push('            "category": "LODGING",')
+    lines.push('            "description": "Who it is for and what it gives them.",')
+    lines.push('            "who": ["Jonathan", "Helen", "Aurelia", "Rafa"],')
+    lines.push('            "driveFromPrevious": null')
+    lines.push('          }')
+    lines.push('        ]')
+    lines.push('      }')
+    lines.push('    ]')
+    lines.push('  }')
+    lines.push('}')
+    lines.push('```')
+    lines.push('')
+    lines.push(
+      'The card\'s `trip.days[].stops[]` array is the complete stop list. Each stop needs: id, time, name, address, category, description (who it\'s for and what it gives them), who (array of traveler names), driveFromPrevious ("8 min", or null for the first stop of a day).'
+    )
+    lines.push('')
+    lines.push('Categories:')
+    lines.push('- LODGING: where they sleep')
+    lines.push('- ACTIVITY: the thing they\'re doing')
+    lines.push('- FOOD: restaurants, cafes, markets')
+    lines.push('- LOGISTICS: car rental, check-in, flights')
+    lines.push('- TRANSIT: driving segments worth naming (scenic routes, rest stops)')
+    lines.push('')
+    lines.push(
+      'One card per turn. If the reader refines the draft before saving ("swap the hike for a winery"), emit a fresh `create_trip` card with the updated trip — it replaces the previous one, same one-card-per-turn pattern as the in-trip cards. After the reader saves, the trip is real and editable via the normal in-trip surface (move, add, cancel, multi).'
     )
   }
 
