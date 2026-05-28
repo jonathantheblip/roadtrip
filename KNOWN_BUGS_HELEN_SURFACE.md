@@ -869,3 +869,170 @@ P0.2 cleared. Remaining backlog in priority order:
 8. **P0.2 cleanup decision** — Jonathan decides what to do
    about the 21 broken records (delete fixtures vs preserve
    real-capture metadata).
+
+---
+
+# Update — 2026-05-28, iOS Safari Simulator walkthrough
+
+Drove the production PWA (`?person=helen`) on a booted iPhone 17 /
+iOS 26.5 simulator via safaridriver + webdriverio. Bundle on test:
+`index-CquOLxz5.js` (HEAD `bc703ef`, the post-P1.3-client + post-
+P2.4 deploy). Walked: trip list, trip view, day chips, FAB, stop
+detail, composer, memory-thread photo tap → lightbox → next/prev,
+album view, lightbox-over-grid (P1.5 verification), Claude entry
+from index.
+
+## Confirmed working on iOS Safari (mobile)
+
+Everything below has been verified live on the Simulator and
+behaves identically to the chromium pass:
+
+- **Trip list heros** — Fun @ the Sun loads the volleyball.png
+  hero (1024×naturalWidth); Rafa's 5th Birthday Weekend renders
+  the R2-backed hero from `heroStopId` fallback (600px
+  thumbnail); Vermont + Jackson Family Drive render title-only
+  (no source data); zero striped placeholders. P1.1 + P1.2 fix
+  holds on iOS.
+- **Day-default-to-today** — Helen's trip view on Rafa's Birthday
+  init's to Day 1 correctly (the trip's date range doesn't
+  intersect today, so fallback to day 1 is right). FAB sits at
+  `right=16, bottom=92, size=52×52` — matches HelenView spec.
+  P2.4 holds.
+- **StopDetail composer** — text input, Attach Photos button,
+  Record Voice Memo button all render and report
+  correct touch sizes. Composer surface is iOS-parity with
+  chromium.
+- **Memory-thread photo tap → lightbox** — the new tile buttons
+  (P0.2 follow-up commit `88dd199`) all wire correctly. Tapping
+  "Open photo 1 of 2" opens the lightbox at "1 / 2" with the
+  bare-URL full-res image (naturalWidth=1536 from R2). Next
+  arrow advances to "2 / 2" with the second photo. Close button
+  present. The memory-scoped boundaries work as designed.
+- **Album view** — 35 tiles (deduped — `flattenPhotoEntries` fix
+  holds on iOS); 5 in-view, 5 imgs mounted, **5/5 loaded, 0
+  still loading, document.readyState=complete**. P0.4 lazy-load
+  + thumbnail discipline + the photoRefs-first dedup all work as
+  intended on iOS WebKit.
+- **P1.5 grid-pause on lightbox open** — opening the album
+  lightbox unmounted **all** remaining grid imgs (grid-imgs-
+  remaining=0 after lightbox open). The GridPausedProvider
+  context wiring works on iOS Safari same as chromium.
+- **Web platform capabilities** — IndexedDB available,
+  `URL.createObjectURL` available, IntersectionObserver
+  available + synthetic test fires correctly,
+  `navigator.visualViewport` present, 5 touch points,
+  navigator.share + Web Share Target support. None of the
+  original P0.2 hypotheses (IDB+Blob breakage, IO not firing,
+  missing APIs) reproduce on iOS 18.7 WebKit.
+- **Claude chat entry from trips index** — button renders. (Did
+  not exercise the actual chat send since the worker P1.3 prompt
+  change hasn't deployed yet; that's task #22.)
+
+## New findings — iOS-specific
+
+### P1.8 (NEW) — Missing `viewport-fit=cover` neuters every `env(safe-area-inset-*)` call
+**Surface:** every screen on iOS, especially the top app bar and
+the bottom-right FAB.
+
+**What I measured:** `env(safe-area-inset-top)` computes to `0px`
+on iPhone 17 / iOS 26.5 Simulator, despite the device having a
+Dynamic Island that should require ~50px of top inset. The
+existing code in [`App.jsx`](app/src/App.jsx#L561) uses
+`paddingTop: 'max(8px, env(safe-area-inset-top))'` for the top
+bar and similar `env(safe-area-inset-{right,bottom})` for the
+FAB at [App.jsx:771-772](app/src/App.jsx#L771-L772) — these were
+designed to dynamically accommodate notches, and the design is
+silently broken.
+
+**Root cause:** [`index.html` line 5](app/index.html#L5) sets
+`<meta name="viewport" content="width=device-width,
+initial-scale=1.0, maximum-scale=1, user-scalable=no" />` —
+notably missing `viewport-fit=cover`. Without this flag,
+iOS Safari does NOT expose `env(safe-area-inset-*)` values; they
+all return 0. The `max(8px, 0)` falls back to 8px on every
+device, so the dynamic-island carve-out never happens.
+
+**Why it's P1 not P0:** Most trip-view headers use a fixed `60px`
+top padding (e.g. `TripIndex` line 50) that happens to clear the
+status-bar / Dynamic Island area on most iPhones by luck. So
+Helen doesn't see content cut off when she's in the trip
+index. But the App-level top bar (the global "← TRIPS" / trip
+selector / "⋯" Trip-settings row) sits at the 8px-fallback,
+which on a real notched iPhone in standalone PWA mode (when she
+"Add to Home Screen"s the app) will sit underneath the Dynamic
+Island. Same risk for the FAB bottom-inset on devices with a
+home-indicator gesture area.
+
+**Fix sketch:** Add `viewport-fit=cover` to the viewport meta in
+`index.html`. The existing `env()` calls then start returning
+real values and the layout shifts down to clear the notch
+automatically. Sanity-check the top bar + FAB after, since the
+shift will reveal layouts that were hiding under the wrong
+assumption.
+
+**Why we didn't catch this earlier:** the entire Helen audit was
+on chromium desktop, where `env(safe-area-inset-*)` is always 0
+regardless of viewport-fit. The bug only manifests on iOS Safari
+(or Android Chrome on notched devices) in PWA + tab modes.
+
+### P3.2 (NEW) — "New trip" button is shorter than the iOS HIG 44pt touch target
+**Surface:** Trips index, top-right.
+
+**What I measured:** `<button>New trip</button>` rendered at
+`87×32` CSS pixels on the iPhone 17 viewport. Apple Human
+Interface Guidelines recommend a minimum **44×44pt** for any
+hit target on touch surfaces. 32px is below that.
+
+**Why it's P3:** The button still hits — iOS expands the touch
+area slightly around small targets via the system. Helen will
+tap it and it works. But mistyped taps are more likely (e.g.
+hitting "⋯" Trip settings just below), especially with a glove
+or one-handed grip.
+
+**Treatment:** Bump `min-height: 44px` on the New trip button.
+Cheap and won't disturb the layout (the existing 32px button
+sits with vertical breathing room).
+
+## False alarms — flagged-but-not-bugs
+
+- **Service worker registrations = 0** under automation. Expected
+  per [`main.jsx:22-25`](app/src/main.jsx#L22-L25): SW is
+  intentionally skipped when `navigator.webdriver === true` to
+  prevent test-race reloads. Real Helen on a real iPhone gets
+  the SW. The carryover's `feedback_pwa_sw_updates` rule still
+  holds.
+- **`navigator.serviceWorker` is `defined`** on iOS Safari (so
+  the carryover's iOS-Safari-rejects-SW concern from older
+  WebKit versions is no longer relevant on iOS 18.x+).
+- **Page rendering, scroll, photo loading** all match the
+  chromium pass. No additional bugs surfaced on this run.
+
+## What was NOT exercised on this run
+
+- **PWA standalone mode** (`display: standalone`) — the
+  walkthrough ran inside Safari tabs, not after Add to Home
+  Screen. P1.8 above would be MORE visible in standalone mode
+  since the WebView fills the whole screen including the notch
+  area.
+- **Whisper voice memo end-to-end** — the mic button renders,
+  but actual recording would require microphone permission in
+  the simulator. Out of scope for an automated walk.
+- **Memory authoring write flow** end-to-end with R2 upload —
+  the composer renders, but tapping Send would actually mutate
+  D1. Out of scope.
+- **Real-device walk** — Simulator is close enough for most
+  things; the only things a real device would reveal are
+  performance + battery + push notification behavior. Worth
+  doing once before any major release but not blocking.
+
+## Triage order — iOS-specific updates
+
+1. **P1.8** — Add `viewport-fit=cover` to viewport meta. Single-
+   character-ish fix with potentially layout-shifting follow-on
+   review. Helen-visible on every screen on a notched iPhone.
+2. **P3.2** — Bump "New trip" button to 44px min-height. Tiny.
+3. Real-device pass before next major release.
+
+The original chromium-pass backlog (P1.1/P1.2/P1.3/P2.4 — all
+shipped; M2 cascade fix; 21-broken-records cleanup decision)
+remains unchanged.
