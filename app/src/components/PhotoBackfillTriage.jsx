@@ -375,7 +375,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
         </p>
       )}
 
-      <div style={{ padding: '12px 18px 140px' }}>
+      <div style={{ padding: '12px 18px 220px' }}>
         {activeDayGroup ? (
           <DayGroupView
             group={activeDayGroup}
@@ -397,14 +397,20 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
             position: 'fixed',
             left: 0,
             right: 0,
-            bottom: 0,
-            padding: '12px 18px calc(env(safe-area-inset-bottom) + 12px)',
+            // Sit above the global traveler Switcher pill (see
+            // App.jsx + styles/platform.css `.switcher`) — switcher
+            // pill is ~64px tall + safe-area-inset-bottom. Without
+            // this offset our upload bar gets buried under the dock.
+            bottom: 'calc(env(safe-area-inset-bottom) + 76px)',
+            padding: '12px 18px',
             background: 'var(--bg)',
             borderTop: '1px solid var(--border)',
+            borderBottom: '1px solid var(--border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
+            zIndex: 51, // above the switcher's z-index: 50
           }}
         >
           <p className="f-dm" style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
