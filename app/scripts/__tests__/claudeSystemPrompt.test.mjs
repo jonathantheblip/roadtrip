@@ -166,7 +166,93 @@ test('system prompt — no trip provided falls back to "trips list" framing', as
     readerUserId: 'helen',
     tripId: null,
   })
-  assert.ok(prompt.includes('No specific trip is currently open'))
+  // No-trip framing should not also claim an open trip is loaded.
+  assert.ok(!prompt.includes('## The trip currently open in the app'))
+  // It should signal the trips-list context one way or another so
+  // Sonnet doesn't speak as if a specific trip is open.
+  assert.ok(
+    prompt.includes('no specific trip is currently open') ||
+      prompt.includes('No specific trip is currently open') ||
+      prompt.toLowerCase().includes('on the trips list')
+  )
+})
+
+test('system prompt — no trip + trips in DB injects cross-trip summaries', async () => {
+  // Date-relative fixtures so the test stays green as the clock moves
+  // — derive a "future" trip (+30 days) and a "past" trip (−30 days)
+  // from today, then verify status flips from the date math.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  function offsetIso(days) {
+    const d = new Date()
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+  const futureStart = offsetIso(30)
+  const futureEnd = offsetIso(32)
+  const pastStart = offsetIso(-30)
+  const pastEnd = offsetIso(-27)
+
+  const db = makeDb(({ sql }) => {
+    if (sql.includes('FROM family_profiles')) return { results: profilesRow() }
+    if (sql.includes('FROM trips')) {
+      return {
+        results: [
+          {
+            id: 'trip-future',
+            title: 'Vermont — Juneteenth Weekend',
+            date_range_start: futureStart,
+            date_range_end: futureEnd,
+            end_city: 'Burlington, VT',
+            data_json: JSON.stringify({
+              title: 'Vermont — Juneteenth Weekend',
+              dateRangeStart: futureStart,
+              dateRangeEnd: futureEnd,
+              subtitle: 'Juneteenth and Father’s Day',
+              days: [{ n: 1 }, { n: 2 }, { n: 3 }],
+            }),
+          },
+          {
+            id: 'trip-past',
+            title: 'Fun @ the Sun',
+            date_range_start: pastStart,
+            date_range_end: pastEnd,
+            end_city: 'New London, CT',
+            data_json: JSON.stringify({
+              title: 'Fun @ the Sun',
+              dateRangeStart: pastStart,
+              dateRangeEnd: pastEnd,
+              days: [{ n: 1 }, { n: 2 }, { n: 3 }, { n: 4 }],
+            }),
+          },
+        ],
+      }
+    }
+    if (sql.includes('FROM memories')) {
+      return {
+        results: [{ trip_id: 'trip-past', n: 19 }],
+      }
+    }
+    return { results: [] }
+  })
+  const prompt = await buildClaudeSystemPrompt({ DB: db }, {
+    readerUserId: 'helen',
+    tripId: null,
+  })
+  // Trip ids and titles surface so Sonnet can answer cross-trip questions.
+  assert.ok(prompt.includes('trip-future'))
+  assert.ok(prompt.includes('Vermont — Juneteenth Weekend'))
+  assert.ok(prompt.includes('trip-past'))
+  assert.ok(prompt.includes('Fun @ the Sun'))
+  // Memory count surfaces.
+  assert.ok(prompt.includes('19 memories'))
+  // Both date endpoints surface.
+  assert.ok(prompt.includes(futureStart))
+  assert.ok(prompt.includes(pastStart))
+  // Status is derived from dates — the past trip is completed,
+  // the future trip is planning, today is neither.
+  assert.ok(prompt.includes('planning'))
+  assert.ok(prompt.includes('completed'))
+  // Should NOT emit the in-trip card section header — no trip is open.
   assert.ok(!prompt.includes('## The trip currently open in the app'))
 })
 

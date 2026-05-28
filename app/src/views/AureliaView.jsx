@@ -20,7 +20,14 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
-  const [activeDay, setActiveDay] = useState(trip.days[0]?.n)
+  // Default to today if today falls inside the trip's ISO date range.
+  // Falls back to day 1 for planning + completed trips. Matches
+  // JonathanView + HelenView. See KNOWN_BUGS_HELEN_SURFACE.md P2.4.
+  const [activeDay, setActiveDay] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const onToday = trip.days.find((d) => d.isoDate === today)
+    return onToday?.n || trip.days[0]?.n
+  })
   const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const mems = listMemoriesForTrip(trip.id, traveler)
   const stopsById = new Map(

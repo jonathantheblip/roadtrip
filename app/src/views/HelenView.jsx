@@ -15,7 +15,17 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 // stops that have memories, or an "+ add a memory" pill when empty.
 
 export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
-  const [activeDay, setActiveDay] = useState(trip.days[0]?.n)
+  // Default the active day to today if today falls inside the trip's
+  // ISO date range — mid-trip openers expect the current day, and the
+  // "+" capture FAB walks to day.stops[0] (P2.4), so init-to-day-1
+  // misroutes the FAB to the wrong day at 4 PM on a live trip. Falls
+  // back to day 1 for planning + completed trips. Matches the pattern
+  // in JonathanView. See KNOWN_BUGS_HELEN_SURFACE.md P2.4.
+  const [activeDay, setActiveDay] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const onToday = trip.days.find((d) => d.isoDate === today)
+    return onToday?.n || trip.days[0]?.n
+  })
   const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const arrival = findArrivalStop(trip)
 

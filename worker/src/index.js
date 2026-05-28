@@ -1303,6 +1303,11 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   const profiles = await loadFamilyProfiles(env)
   const reader = profiles[readerUserId] || profiles.helen || profiles.jonathan
   const trip = tripId ? await loadTrip(env, tripId) : null
+  // When no specific trip is open, Helen still expects "what trips do
+  // I have planned this summer" to work. Pull cross-trip summaries so
+  // Sonnet can answer without deflecting. See KNOWN_BUGS_HELEN_SURFACE.md
+  // P1.3.
+  const tripsSummary = !trip ? await loadTripsSummary(env) : null
 
   const lines = []
   lines.push(
@@ -1401,9 +1406,15 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push('## The trip currently open in the app')
     lines.push(formatTrip(trip))
   } else {
-    lines.push('## Trip context')
+    lines.push("## All of the family's trips (no specific trip is currently open)")
     lines.push(
-      'No specific trip is currently open. The reader is on the trips list. Help them plan, compare, or pick — without invoking specifics of a trip you have not been shown.'
+      'The reader is on the trips list, not inside a single trip. Use the summaries below to answer cross-trip questions like "what trips do I have", "what\'s coming up", "what\'s planned this summer", or "which trip should we do first". Each line gives the trip id, dates, day count, status, and memory count.'
+    )
+    lines.push('')
+    lines.push(formatTripSummaries(tripsSummary))
+    lines.push('')
+    lines.push(
+      'Do NOT invent stop-level details (venues, times, addresses) from these summaries alone — they only carry the trip\'s top-level metadata. If the reader asks for specifics inside a trip, suggest they tap into that trip and continue the conversation there. EXECUTE-mode change cards require an open trip context, so do not emit cards from this surface — answer in GUIDANCE mode only.'
     )
   }
 
@@ -1465,6 +1476,92 @@ async function loadTrip(env, tripId) {
   } catch {
     return null
   }
+}
+
+// Trips-index Claude needs cross-trip context so questions like
+// "what trips do I have planned this summer" don't deflect. Returns
+// every non-deleted trip with a date-derived status, day count, and
+// live memory count. See KNOWN_BUGS_HELEN_SURFACE.md P1.3.
+async function loadTripsSummary(env) {
+  try {
+    const tripsResult = await env.DB.prepare(
+      `SELECT id, title, date_range_start, date_range_end, end_city, data_json
+         FROM trips
+        WHERE deleted_at IS NULL`
+    ).all()
+    const memCountsResult = await env.DB.prepare(
+      `SELECT trip_id, COUNT(*) AS n
+         FROM memories
+        WHERE trip_id IS NOT NULL AND deleted_at IS NULL
+        GROUP BY trip_id`
+    ).all()
+    const countMap = new Map()
+    for (const r of memCountsResult.results || []) countMap.set(r.trip_id, r.n)
+    const today = new Date().toISOString().slice(0, 10)
+    const out = []
+    for (const row of tripsResult.results || []) {
+      let data = null
+      try {
+        data = JSON.parse(row.data_json)
+      } catch {}
+      const start = row.date_range_start || data?.dateRangeStart || null
+      const end = row.date_range_end || data?.dateRangeEnd || null
+      let status = 'planning'
+      if (end && today > end) status = 'completed'
+      else if (start && today >= start) status = 'active'
+      out.push({
+        id: row.id,
+        title: row.title || data?.title || '(untitled)',
+        dateRangeStart: start,
+        dateRangeEnd: end,
+        dateRange: data?.dateRange || null,
+        status,
+        dayCount: Array.isArray(data?.days) ? data.days.length : 0,
+        memoryCount: countMap.get(row.id) || 0,
+        locationLabel: data?.locationLabel || null,
+        startCity: data?.startCity || null,
+        endCity: row.end_city || data?.endCity || null,
+        subtitle: data?.subtitle || null,
+      })
+    }
+    // Chronological by start date so "what trips do I have this
+    // summer" reads naturally top-to-bottom.
+    out.sort((a, b) => {
+      const sa = a.dateRangeStart || ''
+      const sb = b.dateRangeStart || ''
+      if (sa < sb) return -1
+      if (sa > sb) return 1
+      return 0
+    })
+    return out
+  } catch {
+    return []
+  }
+}
+
+function formatTripSummaries(summaries) {
+  if (!summaries?.length) {
+    return 'No trips loaded right now. If the reader asks about specific trips, suggest they open a trip from the list.'
+  }
+  const lines = []
+  for (const t of summaries) {
+    const route = t.locationLabel
+      ? t.locationLabel
+      : t.startCity && t.endCity
+        ? `${t.startCity} → ${t.endCity}`
+        : t.endCity || t.startCity || null
+    lines.push(`- [${t.id}] ${t.title}`)
+    if (t.subtitle) lines.push(`    ${t.subtitle}`)
+    const dateLine = t.dateRange
+      ? t.dateRange
+      : t.dateRangeStart && t.dateRangeEnd
+        ? `${t.dateRangeStart} → ${t.dateRangeEnd}`
+        : t.dateRangeStart || t.dateRangeEnd || '(no dates)'
+    lines.push(
+      `    ${dateLine} · ${t.dayCount} day${t.dayCount === 1 ? '' : 's'} · ${t.status} · ${t.memoryCount} memor${t.memoryCount === 1 ? 'y' : 'ies'}${route ? ` · ${route}` : ''}`
+    )
+  }
+  return lines.join('\n')
 }
 
 function formatReader(p) {

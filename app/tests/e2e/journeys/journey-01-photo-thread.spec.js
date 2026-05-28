@@ -27,6 +27,14 @@ test('photo upload from in-thread composer', async ({ page, browserName }) => {
 
   await step('open Helen trip view, day 1 visible', async () => {
     await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    // HelenView defaults activeDay to today-if-in-range, so the clock
+    // stub (2026-05-23) lands on Day 2 by default. This journey needs
+    // Day 1's stops in view; click the Day 1 chip explicitly to make
+    // the test independent of clock state. See P2.4.
+    await page
+      .getByRole('button', { name: /DAY 1/i })
+      .first()
+      .click()
     await expect(page.getByText(/Pickups/i).first()).toBeVisible({ timeout: 10_000 })
   })
 
