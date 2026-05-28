@@ -5,8 +5,6 @@
 // reused by future surfaces (Aurelia's PostcardComposer, automated
 // share-in importers).
 
-import { parse as parseExif } from 'exifr'
-
 // Max edge length per the punchlist: 2048px on the longest side, JPEG
 // q=0.85. Tuned for a good balance between fidelity (group photos
 // printed at 4×6 still look fine) and bytes-on-the-wire (a typical
@@ -61,7 +59,12 @@ export function validatePhotoFile(file) {
 // "fall back to createdAt / stop address."
 export async function readExif(file) {
   try {
-    const data = await parseExif(file, {
+    // Dynamic import so this module stays importable from Node
+    // --test (exifr's CJS bundle blocks the named static import).
+    // No measurable cost at runtime — Vite already bundles eagerly.
+    const exifr = await import('exifr')
+    const parseFn = exifr.parse || exifr.default?.parse || exifr.default
+    const data = await parseFn(file, {
       // Limit to what the album surface actually uses; speeds parse
       // dramatically vs. the full default mask.
       pick: ['DateTimeOriginal', 'CreateDate', 'GPSLatitude', 'GPSLongitude'],

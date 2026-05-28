@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { ChevronLeft, Calendar, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronLeft, Calendar, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, ImagePlus } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
+import { PhotoBackfillTriage } from '../components/PhotoBackfillTriage'
 import { downloadIcs } from '../lib/icsExport'
 import {
   pullAll,
@@ -41,6 +42,8 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [seeding, setSeeding] = useState(false)
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  const [triageFiles, setTriageFiles] = useState(null)
+  const importInputRef = useRef(null)
 
   const drafts = (tripsApi?.trips || []).filter((t) => t.draft)
 
@@ -157,6 +160,20 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     }
   }
 
+  if (triageFiles && triageFiles.length > 0) {
+    return (
+      <div className={dark ? 'surface-dark' : 'surface-light'}>
+        <PhotoBackfillTriage
+          trip={trip}
+          traveler={traveler}
+          files={triageFiles}
+          onCancel={() => setTriageFiles(null)}
+          onComplete={() => setTriageFiles(null)}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
       <header className="px-6 pt-6 pb-6 border-b surface-rule">
@@ -271,6 +288,39 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
             Export {TRAVELERS[traveler]?.name}-only .ics
           </button>
         </div>
+      </section>
+
+      <section className="px-6 py-8 border-b surface-rule">
+        <div className="flex items-center gap-2 mb-3">
+          <ImagePlus size={14} />
+          <p className="smallcaps f-dm text-[11px] opacity-70">Photos</p>
+        </div>
+        <p className="f-news text-base leading-relaxed opacity-80 mb-4 max-w-prose">
+          Import photos from your library and we'll match them to the trip
+          stops by their EXIF time and location. You pick the keepers in a
+          quick triage; everything checked uploads to the trip.
+        </p>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const files = Array.from(e.target.files || [])
+            // Clear the input value so picking the same file twice still fires.
+            e.target.value = ''
+            if (files.length > 0) setTriageFiles(files)
+          }}
+        />
+        <button
+          type="button"
+          className="btn-pill"
+          onClick={() => importInputRef.current?.click()}
+          style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          <ImagePlus size={14} /> Import photos from your library
+        </button>
       </section>
 
       {/* The "Shared album" section that lived here predated the
