@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { effectiveStatus } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
+import { thumbUrl } from '../lib/thumbUrl'
 import { AvatarStack } from '../components/Avatar'
 
 // Trip index — the platform's home. Direct port of the Design bundle's
@@ -31,6 +32,38 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
     const map = new Map()
     for (const t of trips) {
       map.set(t.id, listMemoriesForTrip(t.id, traveler).length)
+    }
+    return map
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traveler, trips.length])
+
+  // Hero photo fallback per trip: prefer the trip's explicit
+  // heroImage; otherwise pick a photo memory the user has access to,
+  // preferring one tagged to the trip's heroStopId so the card stays
+  // editorially anchored. Computed once at the index level so each
+  // TripCard receives a ready URL — keeps the cards presentational
+  // and avoids N memoryStore reads in the render path. See
+  // KNOWN_BUGS_HELEN_SURFACE.md P1.1 / P1.2.
+  const heroPhotoUrls = useMemo(() => {
+    const map = new Map()
+    for (const t of trips) {
+      if (t.heroImage) continue // explicit hero wins
+      const mems = listMemoriesForTrip(t.id, traveler).filter(
+        (m) => m.kind === 'photo'
+      )
+      let chosen = null
+      if (t.heroStopId) {
+        chosen = mems.find((m) => m.stopId === t.heroStopId) || null
+      }
+      if (!chosen) chosen = mems[0] || null
+      if (!chosen) continue
+      const refs = chosen.photoRefs?.length
+        ? chosen.photoRefs
+        : chosen.photoRef
+          ? [chosen.photoRef]
+          : []
+      const url = refs[0]?.url
+      if (url) map.set(t.id, thumbUrl(url, 600))
     }
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,6 +146,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
               <TripCard
                 trip={trip}
                 memoryCount={liveCounts.get(trip.id) || 0}
+                heroPhotoUrl={heroPhotoUrls.get(trip.id) || null}
                 onOpen={() => onOpenTrip(trip.id)}
                 isFirst={isFirst}
                 animDelay={i}
@@ -146,6 +180,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
                 <TripCard
                   trip={trip}
                   memoryCount={liveCounts.get(trip.id) || 0}
+                  heroPhotoUrl={heroPhotoUrls.get(trip.id) || null}
                   onOpen={() => onOpenTrip(trip.id)}
                   isFirst={false}
                   animDelay={current.length + i}
@@ -211,7 +246,7 @@ function groupTrips(trips) {
   return { current, archives, archiveYears }
 }
 
-function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
+function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay }) {
   // Date-derived status so a 'planning' trip auto-flips to 'live' on
   // its start date and 'archived' after its end date — no need to
   // edit trips.js when the calendar moves. Single source of truth in
@@ -300,10 +335,11 @@ function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
         </div>
       )}
 
-      {trip.heroImage ? (
+      {trip.heroImage || heroPhotoUrl ? (
         <img
-          src={trip.heroImage}
+          src={trip.heroImage || heroPhotoUrl}
           alt={trip.title}
+          loading="lazy"
           style={{
             width: '100%',
             aspectRatio: '16 / 9',
@@ -311,17 +347,6 @@ function TripCard({ trip, memoryCount, onOpen, isFirst, animDelay }) {
             marginTop: 12,
             objectFit: 'cover',
             display: 'block',
-          }}
-        />
-      ) : isFirst ? (
-        <div
-          style={{
-            width: '100%',
-            aspectRatio: '16 / 9',
-            borderRadius: 10,
-            background:
-              'repeating-linear-gradient(45deg, var(--bg2), var(--bg2) 6px, var(--card) 6px, var(--card) 12px)',
-            marginTop: 12,
           }}
         />
       ) : null}
