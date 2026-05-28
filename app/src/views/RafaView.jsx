@@ -65,7 +65,7 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
       {/* Status eyebrow */}
       <div
         style={{
-          padding: '60px 18px 0',
+          padding: 'calc(env(safe-area-inset-top) + 60px) 18px 0',
           display: 'flex',
           justifyContent: 'space-between',
         }}

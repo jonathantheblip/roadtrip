@@ -160,7 +160,7 @@ export function PostcardComposer({ trip, traveler, onClose, initialStopId }) {
           {/* Header */}
           <div
             style={{
-              padding: '60px 18px 4px',
+              padding: 'calc(env(safe-area-inset-top) + 60px) 18px 4px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',

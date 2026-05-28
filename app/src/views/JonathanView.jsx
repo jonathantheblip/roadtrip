@@ -156,7 +156,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
       {/* MASTHEAD */}
       <div
         style={{
-          padding: '60px 16px 0',
+          padding: 'calc(env(safe-area-inset-top) + 60px) 16px 0',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'baseline',

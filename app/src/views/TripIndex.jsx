@@ -91,8 +91,13 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
           type="button"
           onClick={onNewTrip}
           style={{
-            padding: '6px 12px',
-            borderRadius: 16,
+            // 44px min-height matches Apple HIG touch target; was 32px
+            // (6+12+12+text) which lands just under the threshold and
+            // makes mistypes easy next to the "⋯" overflow. See
+            // KNOWN_BUGS_HELEN_SURFACE.md P3.2.
+            minHeight: 44,
+            padding: '6px 14px',
+            borderRadius: 22,
             border: '1px solid var(--text)',
             background: 'transparent',
             color: 'var(--text)',

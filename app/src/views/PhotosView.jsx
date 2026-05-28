@@ -153,7 +153,7 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
         paddingBottom: 120,
       }}
     >
-      <header style={{ padding: '60px 18px 6px' }}>
+      <header style={{ padding: 'calc(env(safe-area-inset-top) + 60px) 18px 6px' }}>
         <button
           onClick={onBack}
           type="button"

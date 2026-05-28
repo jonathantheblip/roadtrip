@@ -44,7 +44,7 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
           there's no Map view in the codebase, and the global "⋯" Trip
           settings button in App.jsx already provides the Settings
           path Helen needs. See KNOWN_BUGS_HELEN_SURFACE.md P1.6. */}
-      <div style={{ padding: '60px 18px 4px' }}>
+      <div style={{ padding: 'calc(env(safe-area-inset-top) + 60px) 18px 4px' }}>
         <Eyebrow color="var(--muted)">{(trip.title || '').toUpperCase()}</Eyebrow>
       </div>
 
