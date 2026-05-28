@@ -1348,6 +1348,49 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   )
 
   lines.push('')
+  lines.push('## Cascades — when one change implies several')
+  lines.push(
+    "Some changes in the trip ripple. Moving a match implies moving the warmup that sits 30 minutes before it. Moving an anchor activity implies moving the depart-from-the-bungalow stop that's timed to land for it. When you spot a ripple, the card is `multi`: primary edit first, cascade edits next, each with its own `target.stopId`. Per-row skip is the reader's escape hatch — if she only wants the primary, she taps Skip on the cascade row."
+  )
+  lines.push('')
+  lines.push('Signs of a cascade:')
+  lines.push('- Same day as the primary move.')
+  lines.push(
+    '- Time-adjacent: the secondary sits within ~90 minutes of the primary, with a stable gap (a warmup typically locks at 15–30 min before the match).'
+  )
+  lines.push(
+    '- Setup or transit language in the secondary\'s name: "warmup", "call time", "arrive at the venue", "depart", "leave by", "wheels up".'
+  )
+  lines.push(
+    "- The secondary's note (when visible in the trip context) explicitly references the primary's time, place, or identity."
+  )
+  lines.push('')
+  lines.push(
+    "When you cascade, preserve the time gap. If a match moves from 3:45 PM to 11:30 AM and the warmup was at 3:15 PM (30 min before), the cascaded warmup goes to 11:00 AM. Don't invent a different gap."
+  )
+  lines.push('')
+  lines.push('When NOT to cascade:')
+  lines.push(
+    '- Loose-time stops ("AM", "Evening", "Late") — they float, they don\'t ripple.'
+  )
+  lines.push('- Stops on a different day from the primary.')
+  lines.push(
+    "- Stops that aren't part of the moved stop's bundle (the *next* match later that day is its own anchor; don't shove it forward because the prior moved, unless the reader's words explicitly cover it)."
+  )
+  lines.push('')
+  lines.push(
+    "If you're unsure whether a stop belongs in the cascade, INCLUDE it. Per-row skip costs nothing; missing it forces the reader to make a second edit. Default to broader, not narrower."
+  )
+  lines.push('')
+  lines.push(
+    "Concrete example for the worked case: input is \"move Aurelia's first match to 11:30 AM Saturday\". The first Saturday match is `vb2-3` (3:45 PM, tournament). The warmup `vb2-2` sits at 3:15 PM with \"warmup\" in the name — that's a cascade. Emit a `multi` card with two rows:"
+  )
+  lines.push('  - move `vb2-3` from 3:45 PM → 11:30 AM (primary)')
+  lines.push(
+    '  - move `vb2-2` from 3:15 PM → 11:00 AM (cascade, preserving the 30-min gap, with a brief note: "warmup is 30 min before the match")'
+  )
+
+  lines.push('')
   lines.push('## Confirmation cards')
   lines.push(
     'A confirmation card is emitted inline inside your reply as a fenced code block with the language tag `card`. Exactly one card per turn. Cards only appear in EXECUTE mode. Never in guidance mode. Never speculative.'
@@ -1382,7 +1425,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   lines.push('```')
   lines.push('')
   lines.push('Rules:')
-  lines.push('- One card per turn. Multi-edit is a single card whose `edits` array batches the changes.')
+  lines.push('- One card per turn. Multi-edit is a single card whose `edits` array batches the changes — use `multi` whenever a primary move implies cascade moves on related stops (see the Cascades section).')
   lines.push('- Editable fields are what the reader can tweak before saving. Derived or readonly fields (e.g. "detour from route") use `"editable": false`.')
   lines.push('- For `move` and `cancel`, you MUST identify the target stop by its `stopId` from the trip context block below. Never guess a stopId.')
   lines.push('- For `add`, the target needs `tripId` + `dayN`; `position` defaults to the end of the day.')
