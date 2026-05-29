@@ -136,7 +136,7 @@ error rather than silently dropping to the trip list.
 action (trip Settings, confirmed trips only) opens:
 
 ```
-shortcuts://run-shortcut?name=Roadtrip%20Calendar%20Pull&input=text&text=<URLENCODED_JSON>
+shortcuts://run-shortcut?name=Pull%20Trip%20Calendar&input=text&text=<URLENCODED_JSON>
 ```
 
 where the text input is JSON the Shortcut parses:
@@ -152,7 +152,7 @@ prompts Helen for a date range, and omits `tripId` so the Worker matches.
 
 The Shortcut itself is authored on the phone and distributed as an iCloud
 link Jonathan installs once per device. Name it exactly
-**`Roadtrip Calendar Pull`** (Path 1's URL refers to it by name). Steps:
+**`Pull Trip Calendar`** (Path 1's URL refers to it by name). Steps:
 
 1. **Accept input** — if "Shortcut Input" has text, parse it as JSON for
    `tripId` + `dateRange` (Path 1). Otherwise **Ask for Input** (a start

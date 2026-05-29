@@ -32,7 +32,7 @@ import {
 // the README). Path 1 opens it with the trip's id + date range so it
 // reads the calendar for exactly these dates and scopes the result back
 // to this trip. Keep in sync with the README + the Shortcut's name.
-const CALENDAR_PULL_SHORTCUT = 'Roadtrip Calendar Pull'
+const CALENDAR_PULL_SHORTCUT = 'Pull Trip Calendar'
 
 export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, tripsApi, onBack, onChangeTraveler, onOpenEditor }) {
   const [workerStatus, setWorkerStatus] = useState({
