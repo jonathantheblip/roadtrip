@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, Calendar, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, ImagePlus } from 'lucide-react'
+import { ChevronLeft, Calendar, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, ImagePlus, Archive } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { PhotoBackfillTriage } from '../components/PhotoBackfillTriage'
 import { downloadIcs } from '../lib/icsExport'
@@ -43,6 +43,7 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [triageFiles, setTriageFiles] = useState(null)
+  const [archiving, setArchiving] = useState(false)
   const importInputRef = useRef(null)
 
   const drafts = (tripsApi?.trips || []).filter((t) => t.draft)
@@ -160,6 +161,31 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     }
   }
 
+  // Mark as archived / unarchive — a soft, reversible label, NOT a lock.
+  // Archiving stamps `archivedAt` (which effectiveStatus + the trip-list
+  // grouping honor regardless of date) and pins `status: 'archived'` for
+  // the dateless case. Unarchiving clears `archivedAt` and resets status
+  // so a dateless trip doesn't stay stuck archived; dated trips just fall
+  // back to their date-derived status. The trip stays fully editable
+  // either way.
+  async function toggleArchive() {
+    if (!tripsApi?.upsertTrip) return
+    setArchiving(true)
+    try {
+      if (trip.archivedAt) {
+        await tripsApi.upsertTrip({ ...trip, archivedAt: null, status: 'planning' })
+      } else {
+        await tripsApi.upsertTrip({
+          ...trip,
+          status: 'archived',
+          archivedAt: new Date().toISOString(),
+        })
+      }
+    } finally {
+      setArchiving(false)
+    }
+  }
+
   if (triageFiles && triageFiles.length > 0) {
     return (
       <div className={dark ? 'surface-dark' : 'surface-light'}>
@@ -167,6 +193,7 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
           trip={trip}
           traveler={traveler}
           files={triageFiles}
+          tripsApi={tripsApi}
           onCancel={() => setTriageFiles(null)}
           onComplete={() => setTriageFiles(null)}
         />
@@ -305,6 +332,7 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
           type="file"
           accept="image/*"
           multiple
+          data-testid="import-file-input"
           style={{ display: 'none' }}
           onChange={(e) => {
             const files = Array.from(e.target.files || [])
@@ -321,6 +349,34 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
         >
           <ImagePlus size={14} /> Import photos from your library
         </button>
+      </section>
+
+      <section className="px-6 py-8 border-b surface-rule">
+        <div className="flex items-center gap-2 mb-3">
+          <Archive size={14} />
+          <p className="smallcaps f-dm text-[11px] opacity-70">Archive</p>
+        </div>
+        <p className="f-news text-base leading-relaxed opacity-80 mb-4 max-w-prose">
+          {trip.archivedAt
+            ? 'This trip is archived — filed under its month in the trip list, out of the way of what comes next. Nothing is locked; it stays fully editable.'
+            : 'Archiving files this trip under its month in the trip list, below your upcoming plans. It stays fully editable — unarchive any time.'}
+        </p>
+        <button
+          type="button"
+          className="btn-pill"
+          onClick={toggleArchive}
+          disabled={archiving}
+          data-testid="archive-toggle"
+          style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          <Archive size={14} />
+          {archiving ? 'Saving…' : trip.archivedAt ? 'Unarchive this trip' : 'Mark as archived'}
+        </button>
+        {trip.archivedAt && (
+          <p className="f-mono text-[10px] opacity-50 mt-3">
+            archived {new Date(trip.archivedAt).toLocaleDateString()}
+          </p>
+        )}
       </section>
 
       {/* The "Shared album" section that lived here predated the

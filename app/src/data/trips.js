@@ -1121,7 +1121,15 @@ export function findStop(day, stopId) {
 //
 // Returns one of: 'planning' (future), 'live' (start ≤ today ≤ end),
 // 'archived' (past), or the stored value when dates are missing.
+//
+// An EXPLICIT archive (Helen pressing "Mark as archived", which stamps
+// `archivedAt`) wins over the date math: she can archive a trip whose
+// dates haven't passed, and it must read archived everywhere. The
+// legacy seed `status: 'archived'` is NOT treated as explicit — those
+// trips keep date-derived status — so this only fires for the new
+// trip-level action, leaving the existing behavior untouched.
 export function effectiveStatus(trip, today = todayIso()) {
+  if (trip?.archivedAt) return 'archived'
   const start = trip?.dateRangeStart
   const end = trip?.dateRangeEnd
   if (!start && !end) return trip?.status || 'planning'

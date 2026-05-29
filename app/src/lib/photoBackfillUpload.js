@@ -53,15 +53,15 @@ export async function uploadBackfillPhotos({
         capturedAt,
       }
 
-      // Pick the stop assignment. GPS+time / time-only matches land on
-      // their stop. Interstitial and deviation matches store with
-      // stopId=null but tag the bucket via stopHint so the triage UI
-      // can show them in the right place after upload too.
+      // Pick the stop assignment. An explicit `entry.stopId` (set by
+      // the reconciliation layer, which binds photos to the FINAL
+      // reconciled stops — including auto-added ones that didn't exist
+      // at match time) always wins, even when it's null (interstitial).
+      // Otherwise fall back to the raw matcher result: GPS+time /
+      // time-only matches land on their stop; interstitial / deviation
+      // store with stopId=null.
       const stopId =
-        entry?.match?.stopId ||
-        (entry?.match?.matchType === 'interstitial' || entry?.match?.matchType === 'deviation'
-          ? null
-          : null)
+        entry?.stopId !== undefined ? entry.stopId : entry?.match?.stopId || null
 
       if (entry.reattachOf) {
         // Re-attach: update the existing metadata-only memory by id,

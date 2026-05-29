@@ -1,30 +1,56 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Image as ImageIcon, MapPin, Loader2, AlertCircle, Check } from 'lucide-react'
+import {
+  ChevronLeft,
+  Image as ImageIcon,
+  MapPin,
+  Loader2,
+  AlertCircle,
+  Check,
+  Pencil,
+  Trash2,
+  RotateCcw,
+  Plus,
+  Scissors,
+  X,
+} from 'lucide-react'
 import { readPhotoExif, filterByTripRange } from '../lib/photoBackfill'
 import { matchPhotosToStops } from '../lib/photoMatch'
 import { reverseGeocode } from '../lib/geocode'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { uploadBackfillPhotos } from '../lib/photoBackfillUpload'
+import {
+  buildReconciliationDraft,
+  STOP_STATE,
+  AUTO_STOP_PLACEHOLDER,
+} from '../lib/reconcileDraft'
+import { applyReconciliation } from '../lib/reconcileApply'
+import {
+  renameStop,
+  retimeStop,
+  markDidntHappen,
+  restoreStop,
+  demoteToInterstitial,
+  promoteToStop,
+  mergeStops,
+  splitStop,
+} from '../lib/reconcileEdits'
 
-// Photo backfill — triage surface. Walks the family member through a
-// day-by-day, stop-by-stop layout of the photos they just picked,
-// pre-selected for upload. They uncheck what they don't want, then
-// hit "Upload N photos." Designed to match Settings/HelenView's
-// editorial aesthetic (linen + Fraunces + sage/brass).
+// Photo backfill + trip reconciliation — one surface. The family member
+// imports the photos they just picked; we match them to the planned
+// stops, then present a day-by-day, stop-by-stop draft of "what actually
+// happened" for them to confirm or refine. Each planned stop carries a
+// state badge (happened / no photos), off-route photo clusters surface
+// as auto-added stops, and transit shots bucket as interstitials. Helen
+// refines on top — rename, retime, mark a no-photo stop as didn't-happen
+// (which removes it), promote a transit bucket to a real stop, demote an
+// auto stop back to transit, merge two stops, split one in two — then
+// Save persists the reconciled trip and uploads the checked photos bound
+// to their final stops.
 //
-// Phases:
-//   - extracting: EXIF read across every input file, in parallel
-//   - matching:   pure deterministic match + reverse-geocode any
-//                 deviation clusters in parallel
-//   - ready:      triage UI, user reviews, presses Upload
-//   - uploading:  upload pipeline runs (handled by parent via
-//                 onUpload — keeps this component pure-ish)
-//
-// On Upload: parent receives an array of `{ file, exif, match,
-// reattachOf }` entries (only the checked ones) plus the deviation
-// clusters with resolved names. Parent handles the actual saveAsset
-// + pushMemory pipeline so this component stays testable in
-// isolation.
+// Phases: extracting → matching → ready (the triage/reconcile draft) →
+// uploading → done. The classification + persistence live in pure libs
+// (reconcileDraft / reconcileEdits / reconcileApply); this component is
+// the view + the save wiring.
 
 const PHASE = {
   EXTRACTING: 'extracting',
@@ -35,15 +61,27 @@ const PHASE = {
   ERROR: 'error',
 }
 
-export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplete }) {
+// State badge palette — Helen's linen/Fraunces/sage language. Sage for
+// confirmed, muted for the no-photo gaps, brass for what we discovered,
+// oxblood for the removed.
+const STATE_BADGE = {
+  [STOP_STATE.HAPPENED]: { label: 'Happened', fg: 'var(--brand, #6F7C5A)', bg: 'rgba(111,124,90,0.14)' },
+  [STOP_STATE.HAPPENED_NO_PHOTOS]: { label: 'No photos', fg: 'var(--muted)', bg: 'transparent' },
+  [STOP_STATE.AUTO_ADDED]: { label: 'Added', fg: '#9A6A2F', bg: 'rgba(154,106,47,0.14)' },
+  [STOP_STATE.DIDNT_HAPPEN]: { label: "Didn't happen", fg: 'var(--accent, #8B2B1F)', bg: 'rgba(139,43,31,0.12)' },
+}
+
+export function PhotoBackfillTriage({ trip, traveler, files, tripsApi, onCancel, onComplete }) {
   const [phase, setPhase] = useState(PHASE.EXTRACTING)
   const [extractProgress, setExtractProgress] = useState({ done: 0, total: 0 })
-  const [extracted, setExtracted] = useState([]) // [{ file, photo, exif }]
+  const [extracted, setExtracted] = useState([]) // [{ id, file, photo, exif }]
   const [excludedCount, setExcludedCount] = useState(0)
   const [matchResult, setMatchResult] = useState({ matches: [], deviationClusters: [] })
   const [clusterNames, setClusterNames] = useState({}) // clusterId -> name
+  const [draft, setDraft] = useState(null) // reconciliation draft (working copy)
   const [checked, setChecked] = useState({}) // photoId -> bool
   const [activeDayN, setActiveDayN] = useState(null)
+  const [editingStopId, setEditingStopId] = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0, currentName: null })
   const [uploadResults, setUploadResults] = useState(null)
@@ -67,6 +105,9 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
     }
   }, [trip.id, traveler])
 
+  const extractedById = useMemo(() => new Map(extracted.map((e) => [e.id, e])), [extracted])
+  const photoById = useMemo(() => new Map(extracted.map((e) => [e.id, e.photo])), [extracted])
+
   // 1. EXIF extraction across every file.
   useEffect(() => {
     let cancelled = false
@@ -78,7 +119,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
       for (const entry of fileEntries) {
         if (cancelled) return
         try {
-          const exif = await readPhotoExif(entry.file)
+          const exif = await readExifWithTestOverride(entry.file)
           results.push({
             id: entry.id,
             file: entry.file,
@@ -125,7 +166,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
     }
   }, [fileEntries, trip.dateRangeStart, trip.dateRangeEnd])
 
-  // 2. Match + reverse-geocode deviation clusters.
+  // 2. Match + build the reconciliation draft + reverse-geocode clusters.
   useEffect(() => {
     if (phase !== PHASE.MATCHING) return
     let cancelled = false
@@ -133,6 +174,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
     const result = matchPhotosToStops(photos, trip)
     if (cancelled) return
     setMatchResult(result)
+    setDraft(buildReconciliationDraft(photos, trip, { matchResult: result }))
 
     // Pre-check every non-duplicate photo.
     const init = {}
@@ -143,30 +185,48 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
     setChecked(init)
 
     // Land on the first day that has any extracted photo.
-    const firstDayN = pickInitialDay(result.matches, trip)
-    setActiveDayN(firstDayN)
-
+    setActiveDayN(pickInitialDay(result.matches, trip))
     setPhase(PHASE.READY)
 
-    // Reverse-geocode each cluster centroid in parallel; surface
-    // names as they resolve.
+    return () => {
+      cancelled = true
+    }
+  }, [phase, extracted, trip, existingMemories])
+
+  // Reverse-geocode the off-route cluster centroids in their OWN effect,
+  // keyed on the match result. Doing this inside the phase-gated matching
+  // effect (above) would lose every result: that effect's cleanup fires
+  // the instant it flips phase to READY, cancelling the in-flight geocode
+  // before setClusterNames lands. Keyed on matchResult, this runs once
+  // after the clusters exist and survives the phase change.
+  useEffect(() => {
+    const clusters = matchResult.deviationClusters || []
+    if (clusters.length === 0) return
+    let cancelled = false
     ;(async () => {
       const entries = await Promise.all(
-        result.deviationClusters.map(async (c) => {
+        clusters.map(async (c) => {
           const name = await reverseGeocode(c.centroid.lat, c.centroid.lng)
           return [c.id, name]
         })
       )
       if (cancelled) return
       const next = {}
-      for (const [id, name] of entries) next[id] = name
-      setClusterNames(next)
+      for (const [id, name] of entries) if (name) next[id] = name
+      if (Object.keys(next).length) setClusterNames(next)
     })()
-
     return () => {
       cancelled = true
     }
-  }, [phase, extracted, trip, existingMemories])
+  }, [matchResult])
+
+  // Patch resolved cluster names onto auto-added stops still wearing the
+  // placeholder — never clobbering a Helen rename (which no longer equals
+  // the placeholder string).
+  useEffect(() => {
+    if (Object.keys(clusterNames).length === 0) return
+    setDraft((prev) => (prev ? patchAutoNames(prev, clusterNames) : prev))
+  }, [clusterNames])
 
   function toggle(photoId) {
     setChecked((prev) => ({ ...prev, [photoId]: !prev[photoId] }))
@@ -177,28 +237,62 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
     [checked]
   )
 
-  async function handleUpload() {
+  // ── draft edit handlers (each is an immutable reconcileEdits op) ──
+  const editApply = (fn) => {
+    setDraft((d) => (d ? fn(d) : d))
+  }
+  const onRename = (dayN, stopId, name) => editApply((d) => renameStop(d, dayN, stopId, name))
+  const onRetime = (dayN, stopId, time) => editApply((d) => retimeStop(d, dayN, stopId, time))
+  const onMarkDidntHappen = (dayN, stopId) => {
+    editApply((d) => markDidntHappen(d, dayN, stopId))
+    setEditingStopId(null)
+  }
+  const onRestore = (dayN, stopId) => editApply((d) => restoreStop(d, dayN, stopId))
+  const onDemote = (dayN, stopId) => {
+    editApply((d) => demoteToInterstitial(d, dayN, stopId))
+    setEditingStopId(null)
+  }
+  const onPromote = (dayN, bucketKey) => editApply((d) => promoteToStop(d, dayN, bucketKey, photoById))
+  const onMerge = (dayN, stopId, intoStopId) => {
+    editApply((d) => mergeStops(d, dayN, stopId, intoStopId, photoById))
+    setEditingStopId(null)
+  }
+  const onSplit = (dayN, stopId) => editApply((d) => splitStop(d, dayN, stopId, photoById))
+
+  async function handleSave() {
+    if (!draft) return
+    const { trip: out, photoBindings } = applyReconciliation(draft, trip)
+
     const matchById = new Map(matchResult.matches.map((m) => [m.photoId, m]))
     const payload = []
     for (const entry of extracted) {
       if (!checked[entry.id]) continue
-      const match = matchById.get(entry.id)
       const dup = isDuplicateOf(entry, existingMemories)
+      const stopId =
+        entry.id in photoBindings
+          ? photoBindings[entry.id]
+          : matchById.get(entry.id)?.stopId ?? null
       payload.push({
         file: entry.file,
         exif: entry.exif,
-        match,
+        match: matchById.get(entry.id),
         reattachOf: dup?.reattach || null,
         duplicateOf: dup?.duplicate || null,
+        stopId,
       })
     }
-    if (payload.length === 0) return
+
     setPhase(PHASE.UPLOADING)
     setUploadProgress({ done: 0, total: payload.length, currentName: null })
     try {
+      // Persist the reconciled trip first. The local write is synchronous
+      // and instant; the Worker push is non-fatal (M2 policy) — a sync
+      // failure must not lose Helen's reconciliation, which is already
+      // safe in the local cache.
+      await tripsApi?.upsertTrip?.(out)
       const results = await uploadBackfillPhotos({
         photos: payload,
-        trip,
+        trip: out,
         traveler,
         onProgress: (p) => setUploadProgress(p),
       })
@@ -253,11 +347,14 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
       <TriageShell trip={trip} onBack={null}>
         <div style={{ padding: '32px 18px' }}>
           <p className="f-news" style={{ fontSize: 20, fontWeight: 600, margin: '0 0 8px' }}>
-            Uploading…
+            Saving…
           </p>
           <p className="f-dm" style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
-            {uploadProgress.done} of {uploadProgress.total} photos
-            {uploadProgress.currentName ? ` · ${uploadProgress.currentName}` : ''}
+            {uploadProgress.total > 0
+              ? `${uploadProgress.done} of ${uploadProgress.total} photos${
+                  uploadProgress.currentName ? ` · ${uploadProgress.currentName}` : ''
+                }`
+              : 'Recording what happened…'}
           </p>
           <div
             style={{
@@ -273,7 +370,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
                 width: `${
                   uploadProgress.total
                     ? Math.round((uploadProgress.done / uploadProgress.total) * 100)
-                    : 0
+                    : 100
                 }%`,
                 height: '100%',
                 background: 'var(--brand, #6F7C5A)',
@@ -292,10 +389,13 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
       <TriageShell trip={trip} onBack={null}>
         <div style={{ padding: '32px 18px' }}>
           <p className="f-news" style={{ fontSize: 24, fontWeight: 700, margin: '0 0 12px' }}>
-            Done.
+            Saved.
           </p>
           <ul className="f-news" style={{ fontSize: 16, lineHeight: 1.6, paddingLeft: 20, margin: 0 }}>
-            <li>{r.ok} new photo{r.ok === 1 ? '' : 's'} imported</li>
+            <li>Trip updated with what actually happened.</li>
+            {r.ok > 0 && (
+              <li>{r.ok} new photo{r.ok === 1 ? '' : 's'} imported</li>
+            )}
             {r.reattached > 0 && (
               <li>{r.reattached} photo{r.reattached === 1 ? '' : 's'} re-attached to existing memories</li>
             )}
@@ -326,20 +426,46 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
     )
   }
 
-  // READY: group photos by day → stop / interstitial bucket.
-  const groupedByDay = groupPhotosByDay(extracted, matchResult.matches, trip, clusterNames)
-  const activeDayGroup = groupedByDay.find((d) => d.dayN === activeDayN) || groupedByDay[0]
+  // READY — draft-driven reconciliation view.
+  const days = draft?.days || []
+  const tripDayByN = new Map((trip.days || []).map((d) => [d.n, d]))
+  const unmatchedNull = (draft?.unmatched || []).filter((u) => u.dayN == null)
+  const dayTabs = [
+    ...days.map((d) => ({ dayN: d.dayN, draftDay: d })),
+    ...(unmatchedNull.length ? [{ dayN: null, draftDay: null }] : []),
+  ]
+  const activeDraftDay = days.find((d) => d.dayN === activeDayN) || null
+  const isNullDay = activeDayN == null && unmatchedNull.length > 0
+  const activeUnmatched = (draft?.unmatched || []).filter((u) =>
+    isNullDay ? u.dayN == null : u.dayN === activeDayN
+  )
+
+  function dayLabelFor(dayN, draftDay) {
+    if (dayN == null) return 'No date'
+    const td = tripDayByN.get(dayN)
+    return td?.date || draftDay?.dayTitle || `Day ${dayN}`
+  }
+  function dayPhotoCount(dayN, draftDay) {
+    if (dayN == null) return unmatchedNull.length
+    let n = (draft?.unmatched || []).filter((u) => u.dayN === dayN).length
+    for (const s of draftDay?.stops || []) n += s.photoIds.length
+    for (const b of draftDay?.interstitials || []) n += b.photoIds.length
+    return n
+  }
 
   return (
     <TriageShell trip={trip} onBack={onCancel}>
       <div style={{ padding: '6px 18px 4px', display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto' }}>
-        {groupedByDay.map((d) => {
-          const isActive = d.dayN === (activeDayGroup?.dayN ?? null)
+        {dayTabs.map(({ dayN, draftDay }) => {
+          const isActive = dayN === activeDayN
           return (
             <button
-              key={`day-${d.dayN}-${d.dayIsoDate}`}
+              key={`day-${dayN ?? 'null'}`}
               type="button"
-              onClick={() => setActiveDayN(d.dayN)}
+              onClick={() => {
+                setActiveDayN(dayN)
+                setEditingStopId(null)
+              }}
               style={{
                 padding: '6px 10px',
                 borderRadius: 10,
@@ -353,13 +479,13 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
               }}
             >
               <div className="f-mono" style={{ fontSize: 9, letterSpacing: '0.1em', opacity: 0.7 }}>
-                DAY {d.dayN ?? '–'}
+                {dayN == null ? '—' : `DAY ${dayN}`}
               </div>
               <div className="f-news" style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>
-                {d.dayLabel}
+                {dayLabelFor(dayN, draftDay)}
               </div>
               <div className="f-mono" style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
-                {d.totalCount} photo{d.totalCount === 1 ? '' : 's'}
+                {dayPhotoCount(dayN, draftDay)} photo{dayPhotoCount(dayN, draftDay) === 1 ? '' : 's'}
               </div>
             </button>
           )
@@ -376,12 +502,60 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
       )}
 
       <div style={{ padding: '12px 18px 220px' }}>
-        {activeDayGroup ? (
-          <DayGroupView
-            group={activeDayGroup}
+        {activeDraftDay ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+            {activeDraftDay.stops.map((stop, i) => (
+              <StopCard
+                key={stop.stopId}
+                stop={stop}
+                dayN={activeDraftDay.dayN}
+                stops={activeDraftDay.stops}
+                index={i}
+                editing={editingStopId === stop.stopId}
+                onToggleEdit={() =>
+                  setEditingStopId((cur) => (cur === stop.stopId ? null : stop.stopId))
+                }
+                checked={checked}
+                existingMemories={existingMemories}
+                extractedById={extractedById}
+                onToggle={toggle}
+                onRename={onRename}
+                onRetime={onRetime}
+                onMarkDidntHappen={onMarkDidntHappen}
+                onRestore={onRestore}
+                onDemote={onDemote}
+                onMerge={onMerge}
+                onSplit={onSplit}
+              />
+            ))}
+            {activeDraftDay.interstitials.map((bucket) => (
+              <InterstitialCard
+                key={bucket.key}
+                bucket={bucket}
+                dayN={activeDraftDay.dayN}
+                checked={checked}
+                existingMemories={existingMemories}
+                extractedById={extractedById}
+                onToggle={toggle}
+                onPromote={onPromote}
+              />
+            ))}
+            {activeUnmatched.length > 0 && (
+              <UnmatchedSection
+                unmatched={activeUnmatched}
+                checked={checked}
+                existingMemories={existingMemories}
+                extractedById={extractedById}
+                onToggle={toggle}
+              />
+            )}
+          </div>
+        ) : isNullDay ? (
+          <UnmatchedSection
+            unmatched={activeUnmatched}
             checked={checked}
             existingMemories={existingMemories}
-            extractedById={new Map(extracted.map((e) => [e.id, e]))}
+            extractedById={extractedById}
             onToggle={toggle}
           />
         ) : (
@@ -397,10 +571,9 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
             position: 'fixed',
             left: 0,
             right: 0,
-            // Sit above the global traveler Switcher pill (see
-            // App.jsx + styles/platform.css `.switcher`) — switcher
-            // pill is ~64px tall + safe-area-inset-bottom. Without
-            // this offset our upload bar gets buried under the dock.
+            // Sit above the global traveler Switcher pill (see App.jsx +
+            // styles/platform.css `.switcher`) — the dock is ~64px +
+            // safe-area. Without this offset the bar buries under it.
             bottom: 'calc(env(safe-area-inset-bottom) + 76px)',
             padding: '12px 18px',
             background: 'var(--bg)',
@@ -418,20 +591,20 @@ export function PhotoBackfillTriage({ trip, traveler, files, onCancel, onComplet
           </p>
           <button
             type="button"
-            onClick={handleUpload}
-            disabled={checkedCount === 0}
+            onClick={handleSave}
             className="btn-pill"
             style={{
               padding: '10px 18px',
               fontSize: 14,
-              background: checkedCount === 0 ? 'transparent' : 'var(--text)',
-              color: checkedCount === 0 ? 'var(--muted)' : 'var(--bg)',
-              opacity: checkedCount === 0 ? 0.5 : 1,
+              background: 'var(--text)',
+              color: 'var(--bg)',
               minHeight: 44,
-              cursor: checkedCount === 0 ? 'not-allowed' : 'pointer',
+              cursor: 'pointer',
             }}
           >
-            Upload {checkedCount} photo{checkedCount === 1 ? '' : 's'}
+            {checkedCount > 0
+              ? `Save · upload ${checkedCount} photo${checkedCount === 1 ? '' : 's'}`
+              : 'Save changes'}
           </button>
         </div>
       )}
@@ -477,10 +650,7 @@ function TriageShell({ trip, onBack, children }) {
         >
           Import photos
         </h1>
-        <p
-          className="f-news-i"
-          style={{ fontSize: 14, opacity: 0.6, marginTop: 6 }}
-        >
+        <p className="f-news-i" style={{ fontSize: 14, opacity: 0.6, marginTop: 6 }}>
           {trip.title}
         </p>
       </div>
@@ -489,60 +659,330 @@ function TriageShell({ trip, onBack, children }) {
   )
 }
 
-function DayGroupView({ group, checked, existingMemories, extractedById, onToggle }) {
+function StateBadge({ state }) {
+  const b = STATE_BADGE[state] || STATE_BADGE[STOP_STATE.HAPPENED_NO_PHOTOS]
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {group.buckets.map((bucket) => (
-        <BucketSection
-          key={bucket.key}
-          bucket={bucket}
+    <span
+      className="f-mono smallcaps"
+      style={{
+        fontSize: 9,
+        letterSpacing: '0.08em',
+        padding: '2px 7px',
+        borderRadius: 999,
+        color: b.fg,
+        background: b.bg,
+        border: b.bg === 'transparent' ? `1px solid var(--border)` : 'none',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}
+    >
+      {b.label}
+    </span>
+  )
+}
+
+function PhotoGrid({ photoIds, checked, existingMemories, extractedById, onToggle }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))',
+        gap: 8,
+      }}
+    >
+      {photoIds.map((pid) => {
+        const entry = extractedById.get(pid)
+        if (!entry) return null
+        const dup = isDuplicateOf(entry, existingMemories)
+        return (
+          <PhotoTile
+            key={pid}
+            entry={entry}
+            checked={!!checked[pid]}
+            duplicate={dup}
+            onToggle={() => onToggle(pid)}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function StopCard({
+  stop,
+  dayN,
+  stops,
+  index,
+  editing,
+  onToggleEdit,
+  checked,
+  existingMemories,
+  extractedById,
+  onToggle,
+  onRename,
+  onRetime,
+  onMarkDidntHappen,
+  onRestore,
+  onDemote,
+  onMerge,
+  onSplit,
+}) {
+  const isGone = stop.state === STOP_STATE.DIDNT_HAPPEN
+
+  // didnt_happen renders compactly with an Undo affordance — it's a
+  // removal preview, not an editable stop.
+  if (isGone) {
+    return (
+      <section style={{ opacity: 0.6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              className="f-news"
+              style={{ fontSize: 16, fontWeight: 600, textDecoration: 'line-through' }}
+            >
+              {stop.name}
+            </div>
+          </div>
+          <StateBadge state={stop.state} />
+          <button
+            type="button"
+            onClick={() => onRestore(dayN, stop.stopId)}
+            className="btn-pill"
+            style={{ fontSize: 11, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            <RotateCcw size={11} /> Undo
+          </button>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {stop.time ? (
+              <span className="f-mono" style={{ fontSize: 10, opacity: 0.6 }}>{stop.time}</span>
+            ) : null}
+            <StateBadge state={stop.state} />
+          </div>
+          <div className="f-news" style={{ fontSize: 17, fontWeight: 600, marginTop: 3, lineHeight: 1.15 }}>
+            {stop.name}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onToggleEdit}
+          aria-label={editing ? `Close editor for ${stop.name}` : `Edit ${stop.name}`}
+          aria-expanded={editing}
+          className="btn-pill"
+          style={{
+            fontSize: 11,
+            padding: '5px 9px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            flexShrink: 0,
+            minHeight: 32,
+            background: editing ? 'var(--text)' : 'transparent',
+            color: editing ? 'var(--bg)' : 'inherit',
+          }}
+        >
+          {editing ? <X size={12} /> : <Pencil size={12} />}
+        </button>
+      </div>
+
+      {editing && (
+        <StopEditPanel
+          stop={stop}
+          dayN={dayN}
+          stops={stops}
+          index={index}
+          onRename={onRename}
+          onRetime={onRetime}
+          onMarkDidntHappen={onMarkDidntHappen}
+          onDemote={onDemote}
+          onMerge={onMerge}
+          onSplit={onSplit}
+        />
+      )}
+
+      {stop.photoIds.length > 0 ? (
+        <PhotoGrid
+          photoIds={stop.photoIds}
           checked={checked}
           existingMemories={existingMemories}
           extractedById={extractedById}
           onToggle={onToggle}
         />
-      ))}
+      ) : (
+        <p className="f-news-i" style={{ fontSize: 12, opacity: 0.5, margin: 0 }}>
+          No photos matched this stop.
+        </p>
+      )}
+    </section>
+  )
+}
+
+// Nearest non-removed stops on each side, for merge targets.
+function mergeNeighbors(stops, index) {
+  const ok = (s) => s && s.state !== STOP_STATE.DIDNT_HAPPEN
+  let prev = null
+  let next = null
+  for (let i = index - 1; i >= 0; i--) if (ok(stops[i])) { prev = stops[i]; break }
+  for (let i = index + 1; i < stops.length; i++) if (ok(stops[i])) { next = stops[i]; break }
+  return { prev, next }
+}
+
+function StopEditPanel({ stop, dayN, stops, index, onRename, onRetime, onMarkDidntHappen, onDemote, onMerge, onSplit }) {
+  const hasPhotos = stop.photoIds.length > 0
+  const canSplit = stop.photoIds.length >= 2
+  const canDidntHappen = !hasPhotos // photos are proof
+  const canDemote = stop.source !== 'planned'
+  const { prev, next } = mergeNeighbors(stops, index)
+
+  const fieldStyle = {
+    width: '100%',
+    padding: '8px 10px',
+    borderRadius: 8,
+    border: '1px solid var(--border)',
+    background: 'var(--bg)',
+    color: 'var(--text)',
+    fontSize: 14,
+    fontFamily: 'inherit',
+  }
+  const actionStyle = {
+    fontSize: 12,
+    padding: '7px 11px',
+    minHeight: 36,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+  }
+
+  return (
+    <div
+      style={{
+        marginBottom: 12,
+        padding: 12,
+        borderRadius: 12,
+        border: '1px solid var(--border)',
+        background: 'var(--card, transparent)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <label style={{ display: 'block' }}>
+        <span className="f-mono smallcaps" style={{ fontSize: 9, opacity: 0.6, letterSpacing: '0.08em' }}>Name</span>
+        <input
+          type="text"
+          value={stop.name}
+          data-testid="stop-name-input"
+          onChange={(e) => onRename(dayN, stop.stopId, e.target.value)}
+          style={{ ...fieldStyle, marginTop: 4 }}
+        />
+      </label>
+      <label style={{ display: 'block' }}>
+        <span className="f-mono smallcaps" style={{ fontSize: 9, opacity: 0.6, letterSpacing: '0.08em' }}>Time</span>
+        <input
+          type="text"
+          value={stop.time}
+          placeholder="e.g. 3:30 PM"
+          data-testid="stop-time-input"
+          onChange={(e) => onRetime(dayN, stop.stopId, e.target.value)}
+          style={{ ...fieldStyle, marginTop: 4 }}
+        />
+      </label>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {canSplit && (
+          <button type="button" className="btn-pill" style={actionStyle} onClick={() => onSplit(dayN, stop.stopId)}>
+            <Scissors size={12} /> Split here
+          </button>
+        )}
+        {prev && (
+          <button type="button" className="btn-pill" style={actionStyle} onClick={() => onMerge(dayN, stop.stopId, prev.stopId)}>
+            Merge into {truncate(prev.name)}
+          </button>
+        )}
+        {next && (
+          <button type="button" className="btn-pill" style={actionStyle} onClick={() => onMerge(dayN, stop.stopId, next.stopId)}>
+            Merge into {truncate(next.name)}
+          </button>
+        )}
+        {canDemote && (
+          <button
+            type="button"
+            className="btn-pill"
+            style={{ ...actionStyle, color: 'var(--accent, #8B2B1F)' }}
+            onClick={() => onDemote(dayN, stop.stopId)}
+          >
+            <Trash2 size={12} /> Not a stop
+          </button>
+        )}
+        {canDidntHappen && (
+          <button
+            type="button"
+            className="btn-pill"
+            style={{ ...actionStyle, color: 'var(--accent, #8B2B1F)' }}
+            onClick={() => onMarkDidntHappen(dayN, stop.stopId)}
+          >
+            <Trash2 size={12} /> Didn't happen
+          </button>
+        )}
+      </div>
     </div>
   )
 }
 
-function BucketSection({ bucket, checked, existingMemories, extractedById, onToggle }) {
+function InterstitialCard({ bucket, dayN, checked, existingMemories, extractedById, onToggle, onPromote }) {
   return (
     <section>
-      <div
-        className="f-mono smallcaps"
-        style={{ fontSize: 11, opacity: 0.7, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}
-      >
-        {bucket.kind === 'deviation' ? <MapPin size={11} /> : null}
-        {bucket.title}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <div
+          className="f-mono smallcaps"
+          style={{ fontSize: 11, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}
+        >
+          <MapPin size={11} /> {bucket.title || 'In transit'}
+        </div>
+        <button
+          type="button"
+          className="btn-pill"
+          onClick={() => onPromote(dayN, bucket.key)}
+          style={{ fontSize: 11, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+        >
+          <Plus size={11} /> Make a stop
+        </button>
       </div>
-      {bucket.subtitle && (
-        <p className="f-news-i" style={{ fontSize: 12, opacity: 0.55, margin: '0 0 8px' }}>
-          {bucket.subtitle}
-        </p>
-      )}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))',
-          gap: 8,
-        }}
-      >
-        {bucket.photoIds.map((pid) => {
-          const entry = extractedById.get(pid)
-          if (!entry) return null
-          const dup = isDuplicateOf(entry, existingMemories)
-          return (
-            <PhotoTile
-              key={pid}
-              entry={entry}
-              checked={!!checked[pid]}
-              duplicate={dup}
-              onToggle={() => onToggle(pid)}
-            />
-          )
-        })}
+      <PhotoGrid
+        photoIds={bucket.photoIds}
+        checked={checked}
+        existingMemories={existingMemories}
+        extractedById={extractedById}
+        onToggle={onToggle}
+      />
+    </section>
+  )
+}
+
+function UnmatchedSection({ unmatched, checked, existingMemories, extractedById, onToggle }) {
+  return (
+    <section>
+      <div className="f-mono smallcaps" style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>
+        Not matched to a stop
       </div>
+      <p className="f-news-i" style={{ fontSize: 12, opacity: 0.55, margin: '0 0 8px' }}>
+        These upload to the trip without a stop — assign them later.
+      </p>
+      <PhotoGrid
+        photoIds={unmatched.map((u) => u.photoId)}
+        checked={checked}
+        existingMemories={existingMemories}
+        extractedById={extractedById}
+        onToggle={onToggle}
+      />
     </section>
   )
 }
@@ -673,8 +1113,58 @@ function PhotoTile({ entry, checked, duplicate, onToggle }) {
 
 // ─── helpers ─────────────────────────────────────────────────────
 
-// Returns { duplicate: <existingMemory>, reattach: <existingMemory> } | null.
-// duplicate = same EXIF timestamp ±60s AND existing record has photoRefs (real photo on R2).
+// EXIF read with a test seam (parallels AddDispatchModal's
+// `window.__RT_FORCE_BUCKETC`). Headless image fixtures can't carry real
+// GPS EXIF, so when `window.__RT_BACKFILL_EXIF` maps this file's name to
+// a record, we feed that record straight into the REAL matcher + draft
+// pipeline instead of reading bytes. The global is never set in
+// production, so this is inert outside tests.
+async function readExifWithTestOverride(file) {
+  const map = typeof window !== 'undefined' ? window.__RT_BACKFILL_EXIF : null
+  if (map && file && Object.prototype.hasOwnProperty.call(map, file.name)) {
+    const o = map[file.name] || {}
+    return {
+      capturedAt: o.capturedAt ?? null,
+      capturedAtSource: 'test',
+      lat: Number.isFinite(o.lat) ? o.lat : null,
+      lng: Number.isFinite(o.lng) ? o.lng : null,
+      orientation: null,
+      offset: null,
+    }
+  }
+  return readPhotoExif(file)
+}
+
+function truncate(s, n = 16) {
+  const str = String(s || '')
+  return str.length > n ? `${str.slice(0, n - 1)}…` : str
+}
+
+// Patch resolved geocode names onto auto-added stops still showing the
+// placeholder. Returns the same draft when nothing changed so React
+// doesn't re-render needlessly.
+function patchAutoNames(draft, clusterNames) {
+  let changed = false
+  const days = draft.days.map((day) => ({
+    ...day,
+    stops: day.stops.map((stop) => {
+      if (
+        stop.source === 'auto_added' &&
+        stop.name === AUTO_STOP_PLACEHOLDER &&
+        stop.clusterId &&
+        clusterNames[stop.clusterId]
+      ) {
+        changed = true
+        return { ...stop, name: clusterNames[stop.clusterId] }
+      }
+      return stop
+    }),
+  }))
+  return changed ? { ...draft, days } : draft
+}
+
+// Returns { duplicate, reattach } | null.
+// duplicate = same EXIF timestamp ±60s AND existing record has photoRefs.
 // reattach  = same EXIF timestamp ±60s AND existing record is metadata-only.
 function isDuplicateOf(entry, existingMemories) {
   const ts = entry?.exif?.capturedAt
@@ -696,7 +1186,6 @@ function isDuplicateOf(entry, existingMemories) {
 function pickInitialDay(matches, trip) {
   const days = trip.days || []
   if (days.length === 0) return null
-  // Use the lowest-n day that has any photo matched to it.
   const counts = new Map()
   for (const m of matches) {
     if (m.dayN == null) continue
@@ -706,196 +1195,4 @@ function pickInitialDay(matches, trip) {
     if (counts.has(day.n)) return day.n
   }
   return days[0].n
-}
-
-// Group every photo by trip-day + intra-day bucket. Output:
-//   [
-//     {
-//       dayN, dayIsoDate, dayLabel, totalCount,
-//       buckets: [
-//         { key, kind: 'stop'|'interstitial'|'deviation'|'unmatched', title, subtitle, photoIds: [] }
-//       ]
-//     }
-//   ]
-function groupPhotosByDay(extracted, matches, trip, clusterNames) {
-  const matchById = new Map(matches.map((m) => [m.photoId, m]))
-  const stopMap = new Map()
-  for (const day of trip.days || []) {
-    for (const stop of day.stops || []) {
-      stopMap.set(stop.id, { stop, day })
-    }
-  }
-
-  // Day buckets keyed by dayN; "no day" entries land in a synthetic
-  // bucket at the end.
-  const dayBuckets = new Map()
-  function ensureDay(dayN, dayIsoDate, dayLabel) {
-    if (dayBuckets.has(dayN)) return dayBuckets.get(dayN)
-    const created = {
-      dayN,
-      dayIsoDate,
-      dayLabel,
-      totalCount: 0,
-      // Map of bucket key → bucket object
-      _bucketMap: new Map(),
-      buckets: [],
-    }
-    dayBuckets.set(dayN, created)
-    return created
-  }
-
-  for (const day of trip.days || []) {
-    ensureDay(day.n, day.isoDate, formatDayLabel(day))
-  }
-
-  for (const entry of extracted) {
-    const m = matchById.get(entry.id)
-    let dayBucket
-    if (!m || m.dayN == null) {
-      dayBucket = ensureDay(null, null, 'No date')
-    } else {
-      dayBucket = ensureDay(m.dayN, m.dayIsoDate, dayBucket?.dayLabel || formatDayLabelByIso(m.dayIsoDate, trip))
-    }
-    dayBucket.totalCount += 1
-
-    const bucket = getBucketForMatch(m, dayBucket, stopMap, clusterNames)
-    bucket.photoIds.push(entry.id)
-  }
-
-  // Finalize: build buckets list in stop order for each day.
-  const result = []
-  for (const day of trip.days || []) {
-    const d = dayBuckets.get(day.n)
-    if (!d) continue
-    d.buckets = orderBucketsForDay(d._bucketMap, day, clusterNames)
-    delete d._bucketMap
-    result.push(d)
-  }
-  // Append the "no day" bucket if it has any entries.
-  const nullDay = dayBuckets.get(null)
-  if (nullDay && nullDay.totalCount > 0) {
-    nullDay.buckets = Array.from(nullDay._bucketMap.values())
-    delete nullDay._bucketMap
-    result.push(nullDay)
-  }
-  return result
-}
-
-function formatDayLabel(day) {
-  if (day.date) return day.date.split(' ')[0]
-  return `Day ${day.n}`
-}
-function formatDayLabelByIso(iso, trip) {
-  const day = (trip.days || []).find((d) => d.isoDate === iso)
-  return day ? formatDayLabel(day) : iso || '—'
-}
-
-function getBucketForMatch(match, dayBucket, stopMap, clusterNames) {
-  let key
-  let title
-  let subtitle = null
-  let kind
-
-  if (!match || match.matchType === 'unmatched' || match.dayN == null) {
-    key = 'unmatched'
-    title = 'Not matched to a stop'
-    subtitle = 'Tap a photo to assign it manually after upload.'
-    kind = 'unmatched'
-  } else if (match.matchType === 'gps+time' || match.matchType === 'time') {
-    key = `stop:${match.stopId}`
-    const stopEntry = stopMap.get(match.stopId)
-    title = stopEntry ? (stopEntry.stop.name || stopEntry.stop.title || match.stopId) : match.stopId
-    if (match.matchType === 'time') subtitle = 'matched by time'
-    kind = 'stop'
-  } else if (match.matchType === 'deviation') {
-    key = `deviation:${match.deviationClusterId}`
-    const name = clusterNames?.[match.deviationClusterId]
-    title = name || 'Off-route stop'
-    subtitle = 'photos clustered off the planned route'
-    kind = 'deviation'
-  } else if (match.matchType === 'interstitial') {
-    const a = match.interstitialBefore
-    const b = match.interstitialAfter
-    key = `interstitial:${a || 'start'}-${b || 'end'}`
-    const aName = a ? stopMap.get(a)?.stop?.name : null
-    const bName = b ? stopMap.get(b)?.stop?.name : null
-    if (aName && bName) title = `From ${aName} to ${bName}`
-    else if (bName) title = `Before ${bName}`
-    else if (aName) title = `After ${aName}`
-    else title = 'In transit'
-    kind = 'interstitial'
-  } else {
-    key = 'other'
-    title = match.matchType
-    kind = match.matchType
-  }
-
-  if (!dayBucket._bucketMap.has(key)) {
-    dayBucket._bucketMap.set(key, { key, kind, title, subtitle, photoIds: [] })
-  }
-  return dayBucket._bucketMap.get(key)
-}
-
-// Order buckets within a day: walk the day's stop list in time order,
-// interleaving any interstitial / deviation buckets that fall after
-// each stop. Unmatched goes last.
-function orderBucketsForDay(bucketMap, day, clusterNames) {
-  const ordered = []
-  const remaining = new Map(bucketMap)
-  // Walk stops in their original order (the day's stops array is
-  // already authored in time order in our data).
-  for (let i = 0; i < (day.stops || []).length; i++) {
-    const stop = day.stops[i]
-    const key = `stop:${stop.id}`
-    if (remaining.has(key)) {
-      ordered.push(remaining.get(key))
-      remaining.delete(key)
-    }
-    // Interstitials sitting between this stop and the next.
-    const next = day.stops[i + 1]
-    if (next) {
-      const intKey = `interstitial:${stop.id}-${next.id}`
-      if (remaining.has(intKey)) {
-        ordered.push(remaining.get(intKey))
-        remaining.delete(intKey)
-      }
-      // Deviation clusters between these two stops — match by name in clusterNames.
-      for (const [k, v] of remaining) {
-        if (v.kind !== 'deviation') continue
-        // We can't easily attribute the deviation to a stop pair from
-        // the cluster name alone, so we just splice them in here when
-        // their match's between-stops align. For now, anchor every
-        // deviation cluster after its day's first stop and let the
-        // user see them in the natural day flow.
-        ordered.push(v)
-        remaining.delete(k)
-      }
-    }
-  }
-  // "Before first stop" interstitial — interstitial:start-<firstStop.id>
-  const firstStop = day.stops?.[0]
-  if (firstStop) {
-    const k = `interstitial:start-${firstStop.id}`
-    if (remaining.has(k)) {
-      ordered.unshift(remaining.get(k))
-      remaining.delete(k)
-    }
-  }
-  // "After last stop" interstitial.
-  const lastStop = day.stops?.[day.stops.length - 1]
-  if (lastStop) {
-    const k = `interstitial:${lastStop.id}-end`
-    if (remaining.has(k)) {
-      ordered.push(remaining.get(k))
-      remaining.delete(k)
-    }
-  }
-  // Anything left over (orphan deviations, unmatched) at the end.
-  for (const v of remaining.values()) {
-    if (v.kind === 'unmatched') ordered.push(v)
-  }
-  for (const v of remaining.values()) {
-    if (v.kind !== 'unmatched' && !ordered.includes(v)) ordered.push(v)
-  }
-  return ordered
 }

@@ -27,7 +27,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
   // applies the same date logic to the layout: current-year trips
   // (upcoming first, then most-recent past) up top, prior years in
   // ARCHIVE · YYYY sections below.
-  const { current, archives, archiveYears } = useMemo(() => groupTrips(trips), [trips])
+  const { current, archives } = useMemo(() => groupTrips(trips), [trips])
   const liveCounts = useMemo(() => {
     const map = new Map()
     for (const t of trips) {
@@ -160,7 +160,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
           )
         })}
 
-        {archiveYears.map((year) => (
+        {archives.map(({ year, count, months }) => (
           <div key={year} style={{ marginTop: 36 }}>
             <div
               style={{
@@ -174,22 +174,32 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
                 ARCHIVE · {year}
               </Eyebrow>
               <Eyebrow color="var(--faint, var(--muted))">
-                {archives.get(year).length} TRIP
-                {archives.get(year).length === 1 ? '' : 'S'}
+                {count} TRIP{count === 1 ? '' : 'S'}
               </Eyebrow>
             </div>
             <Hairline color="var(--text)" />
-            {archives.get(year).map((trip, i) => (
-              <div key={trip.id}>
-                {i > 0 && <Hairline color="var(--text)" style={{ margin: '14px 0' }} />}
-                <TripCard
-                  trip={trip}
-                  memoryCount={liveCounts.get(trip.id) || 0}
-                  heroPhotoUrl={heroPhotoUrls.get(trip.id) || null}
-                  onOpen={() => onOpenTrip(trip.id)}
-                  isFirst={false}
-                  animDelay={current.length + i}
-                />
+            {months.map((month) => (
+              <div key={month.key} style={{ marginTop: 18 }}>
+                <Eyebrow
+                  color="var(--muted)"
+                  weight={600}
+                  style={{ display: 'block', padding: '2px 0 8px' }}
+                >
+                  {month.label.toUpperCase()}
+                </Eyebrow>
+                {month.trips.map((trip, i) => (
+                  <div key={trip.id}>
+                    {i > 0 && <Hairline color="var(--text)" style={{ margin: '14px 0' }} />}
+                    <TripCard
+                      trip={trip}
+                      memoryCount={liveCounts.get(trip.id) || 0}
+                      heroPhotoUrl={heroPhotoUrls.get(trip.id) || null}
+                      onOpen={() => onOpenTrip(trip.id)}
+                      isFirst={false}
+                      animDelay={current.length + i}
+                    />
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -205,12 +215,26 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
 const TODAY_ISO = new Date().toISOString().slice(0, 10)
 const CURRENT_YEAR = new Date().getFullYear()
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 function tripYear(t) {
   // Prefer the end date when both are present so multi-day trips that
   // straddle a year boundary archive into the year they ended.
   const startYear = parseInt((t.dateRangeStart || '').slice(0, 4), 10)
   const endYear = parseInt((t.dateRangeEnd || '').slice(0, 4), 10)
   return endYear || startYear || CURRENT_YEAR
+}
+
+// Month index (0–11) a trip files under within its archive year. Keyed
+// off the start date (fallback end) per spec, so a trip reads under the
+// month it began. null when no date is pinned.
+function archiveMonth(t) {
+  const src = t.dateRangeStart || t.dateRangeEnd || ''
+  const m = parseInt(src.slice(5, 7), 10)
+  return Number.isFinite(m) && m >= 1 && m <= 12 ? m - 1 : null
 }
 
 function isUpcomingOrActive(t) {
@@ -220,16 +244,25 @@ function isUpcomingOrActive(t) {
   return t.dateRangeEnd >= TODAY_ISO
 }
 
+// An explicit archive (Helen's "Mark as archived" action, which stamps
+// archivedAt) belongs in the archive regardless of date. The legacy
+// seed `status: 'archived'` is intentionally NOT treated as explicit —
+// those trips group by date like everything else, preserving the
+// existing layout.
+function isExplicitlyArchived(t) {
+  return !!t.archivedAt
+}
+
 function groupTrips(trips) {
   const current = []
-  const archives = new Map()
+  const archived = []
   for (const t of trips) {
-    const y = tripYear(t)
-    if (y === CURRENT_YEAR) {
+    if (isExplicitlyArchived(t)) {
+      archived.push(t)
+    } else if (tripYear(t) === CURRENT_YEAR) {
       current.push(t)
     } else {
-      if (!archives.has(y)) archives.set(y, [])
-      archives.get(y).push(t)
+      archived.push(t)
     }
   }
   // Current year: upcoming/active first (soonest start), then past
@@ -244,11 +277,44 @@ function groupTrips(trips) {
     if (aUp) return (a.dateRangeStart || '').localeCompare(b.dateRangeStart || '')
     return (b.dateRangeEnd || '').localeCompare(a.dateRangeEnd || '')
   })
-  for (const arr of archives.values()) {
-    arr.sort((a, b) => (b.dateRangeEnd || '').localeCompare(a.dateRangeEnd || ''))
+
+  // Archive: year (newest first) → month (newest first), section
+  // headers, newest trips first within each month.
+  const byYear = new Map()
+  for (const t of archived) {
+    const y = tripYear(t)
+    if (!byYear.has(y)) byYear.set(y, [])
+    byYear.get(y).push(t)
   }
-  const archiveYears = Array.from(archives.keys()).sort((a, b) => b - a)
-  return { current, archives, archiveYears }
+  const archives = Array.from(byYear.keys())
+    .sort((a, b) => b - a)
+    .map((year) => {
+      const yearTrips = byYear.get(year)
+      const byMonth = new Map()
+      for (const t of yearTrips) {
+        const m = archiveMonth(t)
+        const key = m == null ? 'undated' : m
+        if (!byMonth.has(key)) byMonth.set(key, [])
+        byMonth.get(key).push(t)
+      }
+      for (const arr of byMonth.values()) {
+        arr.sort((a, b) => (b.dateRangeEnd || '').localeCompare(a.dateRangeEnd || ''))
+      }
+      const months = Array.from(byMonth.keys())
+        .sort((a, b) => {
+          if (a === 'undated') return 1
+          if (b === 'undated') return -1
+          return b - a
+        })
+        .map((mk) => ({
+          key: `${year}-${mk}`,
+          label: mk === 'undated' ? 'Undated' : MONTH_NAMES[mk],
+          trips: byMonth.get(mk),
+        }))
+      return { year, count: yearTrips.length, months }
+    })
+
+  return { current, archives }
 }
 
 function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay }) {
