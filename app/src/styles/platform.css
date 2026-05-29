@@ -385,6 +385,9 @@ button { font: inherit; }
   font-size: 13px; font-weight: 500;
   background: #1A1614; color: #FBF8F2;
 }
+/* On a dark surface the near-black fill blends into the charcoal page;
+   invert so the primary action stays prominent (New Trip submit, etc.). */
+.surface-dark .btn-solid { background: #F2EBDA; color: #1A1614; }
 .link-quiet { color: inherit; text-decoration: none; }
 .link-quiet:hover { text-decoration: underline; }
 
@@ -403,6 +406,9 @@ button { font: inherit; }
   resize: vertical;
 }
 .memory-textarea:focus { outline: none; border-color: #1A1614; }
+/* Placeholder contrast on the cream (light) input. Browser defaults
+   sit too light on #FBF8F2; pin it to a legible warm gray. */
+.memory-textarea::placeholder { color: rgba(26, 22, 20, 0.42); }
 /* Dark surfaces flip the textarea so it doesn't read as a cream
    slab inside a charcoal page. */
 .surface-dark .memory-textarea,
@@ -411,6 +417,11 @@ button { font: inherit; }
   background: #1F1A14;
   color: #F2EBDA;
   border-color: rgba(242, 235, 218, 0.22);
+}
+.surface-dark .memory-textarea::placeholder,
+.jj-paper .memory-textarea::placeholder,
+.helen-bone.helen-dark .memory-textarea::placeholder {
+  color: rgba(242, 235, 218, 0.45);
 }
 .surface-dark .memory-textarea:focus,
 .jj-paper .memory-textarea:focus,

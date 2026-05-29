@@ -255,12 +255,16 @@ test('system prompt — no trip + trips in DB injects cross-trip summaries', asy
   // Should NOT emit the in-trip card section header — no trip is open.
   assert.ok(!prompt.includes('## The trip currently open in the app'))
   // Trip creation is enabled on the index: the create_trip section,
-  // the card type, the category vocabulary, and the hybrid one-question
-  // rule must all be present so Sonnet can scaffold a new trip.
+  // the card type, and the category vocabulary must all be present.
   assert.ok(prompt.includes('## Trip creation'))
   assert.ok(prompt.includes('create_trip'))
   assert.ok(prompt.includes('LODGING'))
-  assert.ok(prompt.includes('ONE clarifying question'))
+  // The hybrid contract must be unambiguous: MUST emit a card on the
+  // first turn, and never reply with only questions (FIX 1 — Claude
+  // was asking three questions and never emitting a card).
+  assert.ok(prompt.includes('MUST emit a create_trip card in your first response'))
+  assert.ok(prompt.includes('Never respond to a trip-planning request with only questions and no card'))
+  assert.ok(prompt.includes('ONE short clarifying question'))
 })
 
 test('system prompt — trip-creation section is absent when a trip IS open', async () => {

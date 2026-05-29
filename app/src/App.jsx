@@ -718,7 +718,7 @@ export default function App() {
             onNewTrip={openNewTrip}
           />
         )}
-        {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} />}
+        {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} dark={darkSurface} />}
         {view.name === 'edit' && trip && (
           <TripEditor
             trip={trip}

@@ -15,7 +15,7 @@ import { newTripId } from '../utils/ids'
 //  - Success → brief confirmation → straight into the editor.
 //  - Failure → inline error, no navigation, retry is safe (same id).
 //  - Missing required field → inline error, nothing written.
-export function NewTrip({ onBack, onCreate }) {
+export function NewTrip({ onBack, onCreate, dark = false }) {
   // Minted once. Stable for the lifetime of this form — the linchpin of
   // idempotency. Do NOT move this into handleSubmit.
   const idRef = useRef(newTripId())
@@ -96,10 +96,16 @@ export function NewTrip({ onBack, onCreate }) {
   const done = phase === 'done'
 
   return (
-    <div className="min-h-screen helen-paper pb-32" style={{ color: '#1A1614' }}>
+    // Theme-aware surface (was hardcoded `helen-paper` + near-black text,
+    // which rendered title/subtitle/footer invisible on Jonathan's dark
+    // theme since `helen-paper` is `background: var(--card)` = charcoal
+    // there). surface-light/surface-dark set both the background AND a
+    // legible `--text` foreground, and surface-dark flips the cream
+    // inputs to their dark variant. Matches the Settings pattern.
+    <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
       <header
         className="px-6 pt-6 pb-6"
-        style={{ borderBottom: '1px solid #DDD3C2' }}
+        style={{ borderBottom: '1px solid var(--border)' }}
       >
         <button
           onClick={onBack}
@@ -187,8 +193,11 @@ export function NewTrip({ onBack, onCreate }) {
                 className="btn-pill"
                 disabled={busy || done}
                 style={{
-                  background: travelers.includes(id) ? '#1A1614' : 'transparent',
-                  color: travelers.includes(id) ? '#FBF8F2' : 'inherit',
+                  // Theme-inverting active state so the selected pill
+                  // reads on both light and dark surfaces (was hardcoded
+                  // near-black, which vanished on Jonathan's dark theme).
+                  background: travelers.includes(id) ? 'var(--text)' : 'transparent',
+                  color: travelers.includes(id) ? 'var(--bg)' : 'inherit',
                   textTransform: 'capitalize',
                   opacity: busy || done ? 0.5 : 1,
                 }}

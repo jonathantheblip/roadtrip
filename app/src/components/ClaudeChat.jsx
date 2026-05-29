@@ -76,10 +76,16 @@ export function ClaudeMark({ size = 16, color = 'currentColor' }) {
       aria-hidden="true"
       focusable="false"
     >
-      <path d="M12 2C12 2 14.5 8.5 12 12C9.5 8.5 12 2 12 2Z" fill={color} />
-      <path d="M12 22C12 22 9.5 15.5 12 12C14.5 15.5 12 22 12 22Z" fill={color} />
-      <path d="M2 12C2 12 8.5 9.5 12 12C8.5 14.5 2 12 2 12Z" fill={color} />
-      <path d="M22 12C22 12 15.5 14.5 12 12C15.5 9.5 22 12 22 12Z" fill={color} />
+      {/* One four-point star with concave sides — the Anthropic spark
+          silhouette. Tips at top/bottom (y 1.5 / 22.5) run longer than
+          the left/right tips (x 5 / 19), a taller-than-wide proportion.
+          Control points sit near the center so each edge bows inward,
+          giving sharp points and a filled body that reads at 16-24px
+          instead of the thin-cross the four-petal version became. */}
+      <path
+        d="M12 1.5 Q13.5 10.5 19 12 Q13.5 13.5 12 22.5 Q10.5 13.5 5 12 Q10.5 10.5 12 1.5 Z"
+        fill={color}
+      />
     </svg>
   )
 }

@@ -1462,8 +1462,10 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push('')
     lines.push('## Trip creation')
     lines.push(
-      'When the reader asks to plan, create, or start a NEW trip, build a complete trip and emit a `create_trip` card. This is the one EXECUTE card valid on the trips list.'
+      'When the reader asks to plan a trip, you MUST emit a create_trip card in your first response. Build the complete trip from the destination plus whatever they gave you, filling gaps with family defaults. Do not ask questions before building. You may include ONE short clarifying question in your prose alongside the card (e.g., "I assumed you\'re driving from Belmont — say the word if you\'d rather fly"), but the card ships regardless. Never respond to a trip-planning request with only questions and no card.'
     )
+    lines.push('')
+    lines.push('The `create_trip` card is the one EXECUTE card valid on the trips list.')
     lines.push('')
     lines.push('Use everything you know about the family:')
     lines.push('- Helen: vegetarian, art (Tworkov, Rothko, Twombly, Pollock, Packard), architecture, collected-not-curated aesthetic')
@@ -1477,10 +1479,6 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push('')
     lines.push(
       'Build from the destination and the reader\'s stated interests. Fill in what they don\'t specify with family defaults: the full family travels unless told otherwise; mid-range lodging (boutique hotel or quality rental, not hostel, not Four Seasons); under 6 hours from Belmont is a drive, over 6 hours is a flight; the named month\'s next open weekend; 3 nights for "a weekend", 5 for "a week".'
-    )
-    lines.push('')
-    lines.push(
-      'You may ask ONE clarifying question alongside your acknowledgment ("October — any particular weekend, or wherever the rates land?"). If the reader\'s next message doesn\'t answer it, proceed with the default. Never ask a second question. Never refuse to build because details are missing.'
     )
     lines.push('')
     lines.push(
