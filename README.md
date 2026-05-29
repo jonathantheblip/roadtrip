@@ -117,11 +117,15 @@ Shortcut base64-encodes the Worker's JSON response and opens:
 https://jonathantheblip.github.io/roadtrip/?action=calendar-import&data=<BASE64>&person=<traveler>
 ```
 
-`data` is the Worker response body, base64-encoded (URL-safe base64, or
-standard base64 URL-encoded — the app decodes both, UTF-8 aware).
-`person` is optional (defaults to the last-used traveler). The app decodes
-`data`, resolves the trip from `tripId`, and renders the confirmation
-screen.
+`data` is the Worker response body, base64-encoded — **standard or
+URL-safe, encoded or raw**. Apple's "Encode with base64" emits standard
+base64 and the Shortcut appends it unencoded; the app restores the
+`+`→space that an unencoded query produces, accepts `-`/`_`, re-pads, and
+decodes UTF-8 — so you don't need to URL-encode it. `person` is optional
+(defaults to the last-used traveler). The app decodes `data`, resolves the
+trip from `tripId`, and renders the confirmation screen. If `data` can't
+be decoded, the app shows a visible "couldn't read the calendar data"
+error rather than silently dropping to the trip list.
 
 **4. Path 1 input (app → Shortcut).** The in-app "Pull calendar events"
 action (trip Settings, confirmed trips only) opens:

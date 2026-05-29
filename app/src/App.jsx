@@ -399,6 +399,15 @@ export default function App() {
     if (!visibleTrips.length) return
     coldLoadHandledRef.current = true
 
+    // Deep-link views route themselves from the URL payload (Share-In's
+    // ?action=import, Calendar Pull's ?action=calendar-import). The
+    // active-trip cold-load override below must NOT fire for them — its
+    // "no trip is active today → drop to the index" branch would yank a
+    // calendar-import deep link (whose trip is usually a future/non-today
+    // trip) straight to the trip list, which is exactly the bug where the
+    // confirmation screen never rendered.
+    if (view.name === 'calendar-import' || view.name === 'import') return
+
     const today = todayIso()
     const active = pickActiveTrip(visibleTrips, today)
     const urlTrip = tripId ? visibleTrips.find((t) => t.id === tripId) : null

@@ -19,7 +19,17 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function decodeCalendarPayload(raw) {
   if (!raw) return null
   try {
-    const b64 = String(raw).replace(/-/g, '+').replace(/_/g, '/')
+    // The Shortcut's "Encode with base64" emits STANDARD base64 (with
+    // '+' '/' '='). Dropped into ?data= unencoded, URLSearchParams.get
+    // turns every '+' into a space — so restore spaces to '+' first.
+    // Also accept URL-safe base64 ('-' '_') and re-pad to a multiple of
+    // 4, so the decode is robust to whatever the Shortcut produces.
+    let b64 = String(raw).trim()
+      .replace(/ /g, '+')
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+    const pad = b64.length % 4
+    if (pad) b64 += '='.repeat(4 - pad)
     const bin = atob(b64)
     const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
     const json = new TextDecoder().decode(bytes)

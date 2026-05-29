@@ -45,9 +45,14 @@ export function CalendarImportView({ trip, payload, onConfirm, onBack }) {
     }
   }
 
-  const noMatch = !payload || payload.matched === false || !trip
-  const reason =
-    payload?.reason === 'no matching trip'
+  // decodeFailed: the deep link routed us here but ?data= didn't decode
+  // into a payload at all — a distinct, visible failure (malformed/
+  // truncated base64) rather than a silent fall-through to the trip list.
+  const decodeFailed = !payload
+  const noMatch = decodeFailed || payload.matched === false || !trip
+  const reason = decodeFailed
+    ? "Couldn't read the calendar data from that link — it may be malformed or truncated. Try running the shortcut again."
+    : payload?.reason === 'no matching trip'
       ? 'No confirmed trip covers those dates. Create or confirm the trip first, then pull again.'
       : !trip
         ? "That trip isn't on this device yet — open it once so it syncs, then pull again."
@@ -71,7 +76,10 @@ export function CalendarImportView({ trip, payload, onConfirm, onBack }) {
       </header>
 
       {noMatch ? (
-        <div style={{ padding: '8px 18px' }} data-testid="calendar-import-nomatch">
+        <div
+          style={{ padding: '8px 18px' }}
+          data-testid={decodeFailed ? 'calendar-import-error' : 'calendar-import-nomatch'}
+        >
           <Banner tone="warn" text={reason} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
             <button type="button" onClick={onBack} className="btn-pill" style={primaryBtn}>

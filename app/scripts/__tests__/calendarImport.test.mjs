@@ -42,9 +42,32 @@ test('decodeCalendarPayload round-trips a UTF-8 JSON payload', () => {
 test('decodeCalendarPayload tolerates URL-safe base64 and junk', () => {
   const urlSafe = b64({ a: 1 }).replace(/\+/g, '-').replace(/\//g, '_')
   assert.deepEqual(decodeCalendarPayload(urlSafe), { a: 1 })
-  assert.equal(decodeCalendarPayload('@@not base64@@'), null)
+  assert.equal(decodeCalendarPayload('@@@@@@'), null)
   assert.equal(decodeCalendarPayload(''), null)
   assert.equal(decodeCalendarPayload(null), null)
+})
+
+test('decodeCalendarPayload restores + from the space URLSearchParams produces', () => {
+  // The Shortcut emits STANDARD base64 (with +); dropped into ?data=
+  // unencoded, URLSearchParams.get turns each + into a space. Build a
+  // payload whose base64 definitely contains a '+' (emoji bytes reliably
+  // encode to one), simulate the mangling, and confirm it round-trips.
+  let payload
+  let standard = ''
+  for (let i = 1; i <= 50 && !standard.includes('+'); i++) {
+    payload = { matched: true, tripId: 'asheville-2026', note: '😀'.repeat(i) }
+    standard = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64')
+  }
+  assert.ok(standard.includes('+'), 'precondition: produced a base64 containing +')
+  const mangled = standard.replace(/\+/g, ' ') // what the browser hands back
+  assert.deepEqual(decodeCalendarPayload(mangled), payload)
+})
+
+test('decodeCalendarPayload handles URL-safe base64 with stripped padding', () => {
+  const payload = { a: 'b', n: 5, s: 'café' }
+  const std = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64')
+  const urlSafeNoPad = std.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  assert.deepEqual(decodeCalendarPayload(urlSafeNoPad), payload)
 })
 
 // ── time / date formatting ─────────────────────────────────────────
