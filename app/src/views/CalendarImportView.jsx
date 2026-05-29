@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, CalendarDays, Check, AlertCircle, MapPin } from 'lucide-react'
 import { formatEventWhen } from '../lib/calendarImport'
+import { humanDateRange } from '../lib/createTripCard'
 
 // Calendar Pull — confirmation screen. The Apple Shortcut reads the
 // family calendar on-device, the worker filters + geocodes, and the app
@@ -13,9 +14,11 @@ import { formatEventWhen } from '../lib/calendarImport'
 //   payload   — worker response: { matched, tripId, dateRange, events, reason }
 //   onConfirm(checkedEvents) — turns checked events into stops (App wires
 //               this to eventsToMultiCard → applyCardToTrip → upsertTrip)
+//   onCreateTrip(payload) — Feature A: on the no-match state, scaffold a
+//               new trip from the event window and route into confirmation
 //   onBack    — leave the flow
 
-export function CalendarImportView({ trip, payload, onConfirm, onBack }) {
+export function CalendarImportView({ trip, payload, onConfirm, onCreateTrip, onBack }) {
   const events = useMemo(
     () => (Array.isArray(payload?.events) ? payload.events : []),
     [payload]
@@ -23,6 +26,7 @@ export function CalendarImportView({ trip, payload, onConfirm, onBack }) {
   const [checked, setChecked] = useState(() => events.map(() => true))
   const [phase, setPhase] = useState('confirming') // 'confirming' | 'saving' | 'saved'
   const [savedCount, setSavedCount] = useState(0)
+  const [creating, setCreating] = useState(false)
 
   const checkedCount = checked.filter(Boolean).length
 
@@ -45,6 +49,20 @@ export function CalendarImportView({ trip, payload, onConfirm, onBack }) {
     }
   }
 
+  // Feature A — "Create a trip from these dates" on the no-match state.
+  // App scaffolds the trip and re-routes this view to the event checklist
+  // against the new trip, so the component remounts on success and there's
+  // no local state to reset; on failure we stay put for a retry.
+  async function handleCreate() {
+    if (creating) return
+    setCreating(true)
+    try {
+      await onCreateTrip?.(payload)
+    } catch {
+      setCreating(false)
+    }
+  }
+
   // decodeFailed: the deep link routed us here but ?data= didn't decode
   // into a payload at all — a distinct, visible failure (malformed/
   // truncated base64) rather than a silent fall-through to the trip list.
@@ -57,6 +75,22 @@ export function CalendarImportView({ trip, payload, onConfirm, onBack }) {
       : !trip
         ? "That trip isn't on this device yet — open it once so it syncs, then pull again."
         : 'Nothing to import.'
+
+  // Feature A — offer "Create a trip from these dates" only on the genuine
+  // no-matching-trip state with a usable window. NOT on a decode error
+  // (we have no dates) and NOT on the trip-not-on-this-device case (that's
+  // a sync gap, not a missing trip — creating a second trip would fork it).
+  const canCreate =
+    typeof onCreateTrip === 'function' &&
+    !decodeFailed &&
+    payload?.reason === 'no matching trip' &&
+    !!(payload?.dateRange?.start)
+  const rangeLabel = canCreate
+    ? humanDateRange(
+        String(payload.dateRange.start || '').slice(0, 10),
+        String(payload.dateRange.end || '').slice(0, 10)
+      )
+    : ''
 
   return (
     <div style={shellStyle}>
@@ -81,9 +115,44 @@ export function CalendarImportView({ trip, payload, onConfirm, onBack }) {
           data-testid={decodeFailed ? 'calendar-import-error' : 'calendar-import-nomatch'}
         >
           <Banner tone="warn" text={reason} />
+          {canCreate && (
+            <div style={{ marginTop: 18 }}>
+              <p
+                style={{
+                  fontFamily: 'Fraunces, Georgia, serif',
+                  fontSize: 14,
+                  color: 'var(--muted)',
+                  lineHeight: 1.4,
+                  marginBottom: 12,
+                }}
+              >
+                {events.length > 0
+                  ? `Start a new trip for ${rangeLabel} and drop ${
+                      events.length === 1 ? 'this event' : `these ${events.length} events`
+                    } in to confirm.`
+                  : `Start a new trip for ${rangeLabel}.`}
+              </p>
+              <button
+                type="button"
+                data-testid="calendar-import-create"
+                className="btn-pill"
+                disabled={creating}
+                onClick={handleCreate}
+                style={{ ...primaryBtn, minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <CalendarDays size={14} />
+                {creating ? 'Creating…' : 'Create a trip from these dates'}
+              </button>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-            <button type="button" onClick={onBack} className="btn-pill" style={primaryBtn}>
-              Back
+            <button
+              type="button"
+              onClick={onBack}
+              className="btn-pill"
+              style={canCreate ? undefined : primaryBtn}
+            >
+              {canCreate ? 'Not now' : 'Back'}
             </button>
           </div>
         </div>

@@ -19,7 +19,7 @@ import { CalendarImportView } from './views/CalendarImportView'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { decodeCalendarPayload, eventsToMultiCard } from './lib/calendarImport'
-import { cardToTrip } from './lib/createTripCard'
+import { cardToTrip, scaffoldTripFromCalendar } from './lib/createTripCard'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
@@ -531,6 +531,34 @@ export default function App() {
     await tripsApi.upsertTrip(next)
     clearCalendarParams()
   }
+  // Feature A — create a trip from a no-match calendar pull. Scaffolds a
+  // trip spanning payload.dateRange (every day present, no stops), saves
+  // it via the same upsert path every other write uses, then re-points
+  // THIS view at the new trip with a matched payload so the standard
+  // confirmation checklist runs — the pulled events are confirmed into
+  // stops (Helen's "no silent saves" bar), not auto-dropped. Mirrors
+  // handleClaudeCreateTrip; the deterministic-slug id keeps a re-pull
+  // idempotent (same dates+title re-save the same row, no duplicate).
+  // Re-throws on a failed scaffold so the no-match view can stay put and
+  // surface a retry; an upsert worker-push failure is non-escalating
+  // (trip is in local state, the global sync indicator owns "not synced").
+  async function handleCalendarCreateTrip(payload) {
+    if (!payload || payload.matched) return
+    const newTrip = scaffoldTripFromCalendar({
+      dateRange: payload.dateRange,
+      events: payload.events,
+    })
+    await tripsApi.upsertTrip(newTrip)
+    setTripId(newTrip.id)
+    // Flip the deep-link payload to "matched" against the freshly-created
+    // trip. The view remounts (its key includes tripId) and renders the
+    // event checklist; handleCalendarImport then adds the checked events
+    // as stops against newTrip. Events ride through unchanged.
+    setView({
+      name: 'calendar-import',
+      calendarPayload: { ...payload, matched: true, tripId: newTrip.id, reason: undefined },
+    })
+  }
   // M2 — apply a Claude confirmation card to the active trip. The card
   // arrives with user-edited field values (the draft); applyCardToTrip
   // maps it to a next-trip snapshot; tripsApi.upsertTrip commits via the
@@ -821,6 +849,7 @@ export default function App() {
             trip={trip}
             payload={view.calendarPayload}
             onConfirm={handleCalendarImport}
+            onCreateTrip={handleCalendarCreateTrip}
             onBack={() => {
               clearCalendarParams()
               setView({ name: trip ? 'trip' : 'index' })

@@ -13,7 +13,12 @@ const {
   humanDayLabel,
   humanDateRange,
   cardToTrip,
+  enumerateDays,
+  deriveCalendarTripTitle,
+  scaffoldTripFromCalendar,
 } = await import('../../src/lib/createTripCard.js')
+const { eventsToMultiCard } = await import('../../src/lib/calendarImport.js')
+const { applyCardToTrip } = await import('../../src/lib/claudeCardApply.js')
 
 // ─── travelerNameToId / travelerIdsFrom ───────────────────────────
 
@@ -217,4 +222,143 @@ test('cardToTrip tolerates an empty / missing trip block', () => {
   assert.equal(trip.title, 'Untitled trip')
   assert.deepEqual(trip.travelers, ['jonathan', 'helen', 'aurelia', 'rafa'])
   assert.equal(trip.days.length, 0)
+})
+
+// ─── Feature A: enumerateDays ───────────────────────────────────────
+
+test('enumerateDays lists each inclusive day in the window', () => {
+  assert.deepEqual(enumerateDays('2026-10-09', '2026-10-12'), [
+    '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12',
+  ])
+})
+
+test('enumerateDays crosses a month boundary correctly (UTC-stepped)', () => {
+  assert.deepEqual(enumerateDays('2026-10-30', '2026-11-02'), [
+    '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02',
+  ])
+})
+
+test('enumerateDays tolerates datetime strings and slices to the day', () => {
+  assert.deepEqual(enumerateDays('2026-10-09T09:00:00', '2026-10-10T23:00:00'), [
+    '2026-10-09', '2026-10-10',
+  ])
+})
+
+test('enumerateDays: missing/invalid end → just the start day; end<start → start', () => {
+  assert.deepEqual(enumerateDays('2026-10-09', null), ['2026-10-09'])
+  assert.deepEqual(enumerateDays('2026-10-09', 'nope'), ['2026-10-09'])
+  assert.deepEqual(enumerateDays('2026-10-09', '2026-10-05'), ['2026-10-09'])
+  assert.deepEqual(enumerateDays(null, '2026-10-12'), [])
+})
+
+test('enumerateDays caps a runaway window at 60 days', () => {
+  const days = enumerateDays('2026-01-01', '2027-01-01') // ~366 days
+  assert.equal(days.length, 60)
+  assert.equal(days[0], '2026-01-01')
+})
+
+// ─── Feature A: deriveCalendarTripTitle ─────────────────────────────
+
+test('deriveCalendarTripTitle uses the most-common city + month/year', () => {
+  const events = [
+    { address: '288 Fore St, Portland, ME 04101, USA' },
+    { address: '7 Congress Sq, Portland, ME 04101, USA' },
+    { address: '12 Captain Strout Cir, Cape Elizabeth, ME, USA' },
+  ]
+  assert.equal(
+    deriveCalendarTripTitle(events, { start: '2026-10-09', end: '2026-10-12' }),
+    'Portland · October 2026'
+  )
+})
+
+test('deriveCalendarTripTitle falls back to "Trip · Month Year" with no usable city', () => {
+  const events = [{ location: 'Fore Street' }, { location: 'PMA' }] // single-segment → no city
+  assert.equal(
+    deriveCalendarTripTitle(events, { start: '2026-10-09', end: '2026-10-12' }),
+    'Trip · October 2026'
+  )
+})
+
+test('deriveCalendarTripTitle handles a 2-part address (no state/country)', () => {
+  assert.equal(
+    deriveCalendarTripTitle([{ address: 'Cúrate, Asheville' }], { start: '2026-10-09' }),
+    'Asheville · October 2026'
+  )
+})
+
+test('deriveCalendarTripTitle degrades to "Trip" when there is no date at all', () => {
+  assert.equal(deriveCalendarTripTitle([], {}), 'Trip')
+})
+
+// ─── Feature A: scaffoldTripFromCalendar ────────────────────────────
+
+const PORTLAND_PULL = {
+  dateRange: { start: '2026-10-09', end: '2026-10-11' },
+  events: [
+    { title: 'Dinner at Fore Street', start: '2026-10-10T19:00:00', end: '2026-10-10T21:00:00', location: 'Fore Street', address: '288 Fore St, Portland, ME', lat: 43.6571, lng: -70.2495 },
+    { title: 'Portland Head Light', start: '2026-10-09T16:00:00', end: '2026-10-09T17:00:00', location: 'Head Light', address: '12 Captain Strout Cir, Cape Elizabeth, ME', lat: 43.6231, lng: -70.2079 },
+  ],
+}
+
+test('scaffoldTripFromCalendar builds a renderer-safe trip spanning the window', () => {
+  const trip = scaffoldTripFromCalendar(PORTLAND_PULL)
+  assert.equal(trip.draft, false)
+  assert.equal(trip.status, 'planning')
+  assert.equal(trip.source, 'calendar')
+  assert.equal(trip.title, 'Portland · October 2026')
+  assert.equal(trip.dateRange, 'October 9 – 11, 2026')
+  assert.equal(trip.dateRangeStart, '2026-10-09')
+  assert.equal(trip.dateRangeEnd, '2026-10-11')
+  assert.deepEqual(trip.travelers, ['jonathan', 'helen', 'aurelia', 'rafa'])
+  // EVERY day present (empty stops) — unlike cardToTrip, scaffolds keep
+  // empty days so the events have somewhere to land on confirm.
+  assert.equal(trip.days.length, 3)
+  assert.deepEqual(trip.days.map((d) => d.isoDate), ['2026-10-09', '2026-10-10', '2026-10-11'])
+  assert.deepEqual(trip.days.map((d) => d.n), [1, 2, 3])
+  assert.equal(trip.days[0].date, 'Fri Oct 9')
+  assert.ok(trip.days.every((d) => Array.isArray(d.stops) && d.stops.length === 0))
+})
+
+test('scaffoldTripFromCalendar id is deterministic (idempotent re-pull)', () => {
+  const a = scaffoldTripFromCalendar(PORTLAND_PULL)
+  const b = scaffoldTripFromCalendar(PORTLAND_PULL)
+  assert.equal(a.id, b.id)
+  assert.ok(a.id.startsWith('portland-october-2026'))
+})
+
+test('scaffoldTripFromCalendar honors an explicit title override', () => {
+  const trip = scaffoldTripFromCalendar({ ...PORTLAND_PULL, title: 'Leaf Peeping' })
+  assert.equal(trip.title, 'Leaf Peeping')
+  assert.ok(trip.id.startsWith('leaf-peeping'))
+})
+
+test('scaffolded trip + eventsToMultiCard + applyCardToTrip lands stops on the right days', () => {
+  // The create+confirm integration: scaffold a trip, then push the pulled
+  // events through the SAME stop-add path the matched flow uses.
+  const trip = scaffoldTripFromCalendar(PORTLAND_PULL)
+  const card = eventsToMultiCard(trip, PORTLAND_PULL.events)
+  const next = applyCardToTrip(trip, card)
+
+  const d1 = next.days.find((d) => d.n === 1) // Oct 9
+  const d2 = next.days.find((d) => d.n === 2) // Oct 10
+  assert.equal(d2.stops.length, 1)
+  assert.equal(d1.stops.length, 1)
+
+  const dinner = d2.stops[0]
+  assert.equal(dinner.name, 'Dinner at Fore Street')
+  assert.equal(dinner.time, '7:00 PM')
+  assert.equal(dinner.address, '288 Fore St, Portland, ME')
+  assert.equal(dinner.lat, 43.6571)
+  assert.deepEqual(dinner.for, ['jonathan', 'helen', 'aurelia', 'rafa'])
+
+  const lighthouse = d1.stops[0]
+  assert.equal(lighthouse.name, 'Portland Head Light')
+  assert.equal(lighthouse.time, '4:00 PM')
+})
+
+test('scaffoldTripFromCalendar tolerates an empty events list (dates-only trip)', () => {
+  const trip = scaffoldTripFromCalendar({ dateRange: { start: '2026-10-09', end: '2026-10-10' }, events: [] })
+  assert.equal(trip.title, 'Trip · October 2026')
+  assert.equal(trip.days.length, 2)
+  assert.ok(trip.days.every((d) => d.stops.length === 0))
 })

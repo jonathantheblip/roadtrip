@@ -213,7 +213,10 @@ test('buildCalendarImport (Path 2) matches the date range to a confirmed trip', 
   assert.deepEqual(out.events.map((e) => e.title), ['Dinner at Cúrate', 'Mystery far place'])
 })
 
-test('buildCalendarImport (Path 2) with no covering trip returns no-matching-trip and no events', async () => {
+test('buildCalendarImport (Path 2) with no covering trip returns no-matching-trip but STILL the filtered survivors', async () => {
+  // Feature A (create-a-trip-from-these-dates) needs the geocoded
+  // survivors on the no-match path so the app can scaffold a new trip and
+  // drop them in. Symmetric with the Path-1 trip-not-found branch.
   const out = await buildCalendarImport({
     dateRange: { start: '2026-12-24', end: '2026-12-26' },
     events: MIXED_EVENTS,
@@ -221,8 +224,27 @@ test('buildCalendarImport (Path 2) with no covering trip returns no-matching-tri
     geocode: mockGeocode,
   })
   assert.equal(out.matched, false)
+  assert.equal(out.tripId, null)
   assert.equal(out.reason, 'no matching trip')
-  assert.deepEqual(out.events, [])
+  // The survivors are scoped to the requested window — these Dec events
+  // don't overlap MIXED_EVENTS' October dates, so nothing survives here;
+  // the point is the field carries the filtered list, not a hard [].
+  assert.deepEqual(out.events.map((e) => e.title), [])
+})
+
+test('buildCalendarImport (Path 2) no-match returns the in-window survivors for the create path', async () => {
+  // Events that fall inside the requested (unmatched) window survive the
+  // filter and ride back on matched:false so Feature A can seed a trip.
+  const out = await buildCalendarImport({
+    dateRange: { start: '2026-10-09', end: '2026-10-12' },
+    events: MIXED_EVENTS,
+    trips: [], // no trips at all → guaranteed no match
+    geocode: mockGeocode,
+  })
+  assert.equal(out.matched, false)
+  assert.equal(out.tripId, null)
+  assert.equal(out.reason, 'no matching trip')
+  assert.deepEqual(out.events.map((e) => e.title), ['Dinner at Cúrate', 'Mystery far place'])
 })
 
 test('buildCalendarImport scopes to the dateRange — multi-day overlap kept, out-of-window dropped', async () => {

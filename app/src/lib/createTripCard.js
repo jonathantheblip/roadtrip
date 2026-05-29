@@ -144,3 +144,133 @@ export function cardToTrip(card, { existingId = null } = {}) {
     source: 'claude',
   }
 }
+
+// ── Feature A: scaffold a trip from a no-match calendar pull ──────────
+//
+// When a Path-2 pull finds no covering trip, the no-match screen offers
+// "Create a trip from these dates". This builds the canonical trip record
+// the themed views + the calendar confirmation checklist read: EVERY day
+// in the window is present (with empty stops) so the pulled events can be
+// confirmed onto the right days through the SAME eventsToMultiCard →
+// applyCardToTrip path the matched flow uses. Pure (no I/O); the App
+// handler upserts it and routes into the confirmation view.
+//
+// NOTE: unlike cardToTrip, empty days are KEPT here — providing days for
+// the events to land on is the scaffold's whole job, and applyAdd throws
+// on a missing target day.
+
+// A calendar pull window past two months is almost certainly a
+// mis-entered range; cap the scaffold so a bad dateRange can't build a
+// thousand-day trip.
+const MAX_SCAFFOLD_DAYS = 60
+
+function dayOf(s) {
+  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : ''
+}
+
+// Inclusive list of 'YYYY-MM-DD' from start..end, stepped one UTC day at a
+// time (timezone-stable, DST-proof). Missing/invalid end → [start]; end
+// before start → [start]; capped at MAX_SCAFFOLD_DAYS.
+export function enumerateDays(startIso, endIso) {
+  const start = dayOf(startIso)
+  if (!start) return []
+  const startMs = Date.parse(`${start}T00:00:00Z`)
+  if (!Number.isFinite(startMs)) return []
+  const end = dayOf(endIso)
+  let endMs = end ? Date.parse(`${end}T00:00:00Z`) : startMs
+  if (!Number.isFinite(endMs) || endMs < startMs) endMs = startMs
+  const out = []
+  for (let ms = startMs; ms <= endMs && out.length < MAX_SCAFFOLD_DAYS; ms += 86_400_000) {
+    out.push(new Date(ms).toISOString().slice(0, 10))
+  }
+  return out
+}
+
+function monthYearLabel(iso) {
+  const m = dayOf(iso).match(/^(\d{4})-(\d{2})/)
+  if (!m) return ''
+  return `${MONTHS_FULL[parseInt(m[2], 10) - 1]} ${m[1]}`
+}
+
+// Pull a city out of a geocoded address: strip a trailing country and a
+// trailing state(+zip) segment, then take the last remaining segment.
+// Only trusts addresses with ≥2 comma parts, so a bare "Fore Street" (a
+// geocode miss where address fell back to the raw location) can't
+// masquerade as a city. Returns '' when nothing is confident.
+//   "288 Fore St, Portland, ME 04101, USA" → "Portland"
+//   "Asheville, NC"                        → "Asheville"
+function cityFromAddress(addr) {
+  const parts = String(addr || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (parts.length < 2) return ''
+  const work = parts.slice()
+  if (/^(usa|u\.s\.a\.|united states|us)$/i.test(work[work.length - 1])) work.pop()
+  if (work.length > 1 && /^[A-Za-z]{2}(\s+\d{5}(-\d{4})?)?$/.test(work[work.length - 1])) work.pop()
+  return work.length ? work[work.length - 1] : ''
+}
+
+// An editable default title from the pulled events' most-common city,
+// else a plain "Trip · <Month> <Year>" from the window start.
+export function deriveCalendarTripTitle(events, dateRange) {
+  const list = Array.isArray(events) ? events : []
+  const counts = new Map()
+  const order = []
+  for (const ev of list) {
+    const city = cityFromAddress(ev?.address || ev?.location || '')
+    if (!city) continue
+    if (!counts.has(city)) order.push(city)
+    counts.set(city, (counts.get(city) || 0) + 1)
+  }
+  let best = ''
+  let bestCount = 0
+  for (const city of order) {
+    // First-seen wins ties (strict >), so the order array decides.
+    if (counts.get(city) > bestCount) {
+      best = city
+      bestCount = counts.get(city)
+    }
+  }
+  const my = monthYearLabel(dateRange?.start)
+  if (best) return my ? `${best} · ${my}` : best
+  return my ? `Trip · ${my}` : 'Trip'
+}
+
+// Build a canonical trip record from a (no-match) calendar pull. `title`
+// overrides the derived default. Reuses the create_trip id convention so
+// re-running the same pull (same title + month) re-saves the same row
+// rather than forking a duplicate.
+export function scaffoldTripFromCalendar({ dateRange, events, title } = {}) {
+  const start = dayOf(dateRange?.start)
+  const end = dayOf(dateRange?.end)
+  const finalTitle =
+    (typeof title === 'string' && title.trim()) || deriveCalendarTripTitle(events, dateRange)
+  const id = tripIdFromTitle(finalTitle, start)
+  const days = enumerateDays(start, end).map((iso, i) => ({
+    n: i + 1,
+    isoDate: iso,
+    date: humanDayLabel(iso),
+    title: `Day ${i + 1}`,
+    stops: [],
+  }))
+  return {
+    id,
+    draft: false,
+    status: 'planning',
+    title: finalTitle,
+    subtitle: '',
+    epigraph: '',
+    dateRange: humanDateRange(start, end),
+    dateRangeStart: start || null,
+    dateRangeEnd: end || null,
+    startCity: '',
+    endCity: '',
+    miles: 0,
+    travelers: [...TRAVELER_ORDER],
+    overview: '',
+    sharedAlbumURL: '',
+    days,
+    source: 'calendar',
+  }
+}

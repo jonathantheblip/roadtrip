@@ -61,7 +61,12 @@ no second deployment.
 ```
 
 When no trip matches (Path 2, no `tripId`, no confirmed trip covers the
-range): `{ "matched": false, "tripId": null, "events": [], "reason": "no matching trip" }`.
+range): `{ "matched": false, "tripId": null, "events": [ …survivors ], "reason": "no matching trip" }`.
+The filtered + geocoded survivors **still ride along** on the no-match
+response (not `[]`) so the app's "Create a trip from these dates"
+affordance (Feature A) can scaffold a new trip from `dateRange` and drop
+them in. This mirrors the Path-1 trip-not-found response, which already
+returns the survivors.
 
 **Filters (applied server-side as the authority — the worker is the source
 of truth on what's trip-relevant):**
@@ -173,6 +178,58 @@ link Jonathan installs once per device. Name it exactly
    `https://jonathantheblip.github.io/roadtrip/?action=calendar-import&data=<that>` —
    the app opens to the confirmation screen.
 
-If the Worker returns `matched: false`, show the `reason` as an alert and
-stop (nothing to confirm). All-day events (vacation blocks, school days)
-arrive at midnight and become stops with no clock time — expected, not a bug.
+**On `matched: false`, still `Open URL` the app** — do *not* alert-and-stop.
+The app shows a no-match screen with a **"Create a trip from these dates"**
+button that scaffolds a new trip from `dateRange` and drops the pulled
+events in to confirm (Feature A). The Shortcut should base64-encode and
+open the response the same way it does on `matched: true`; the app routes
+itself. (Older Shortcut builds that alerted-and-stopped on `matched: false`
+must be updated, or Feature A is unreachable via a standalone Path-2 run.)
+All-day events (vacation blocks, school days) arrive at midnight and become
+stops with no clock time — expected, not a bug.
+
+### Opening the installed PWA instead of a Safari tab
+
+The Shortcut's final **Open URL** lands the deep link in a **Safari tab**,
+not Helen's installed home-screen PWA. The SPA works fine in the tab
+(routing + decode are handled), but the installed app is the intended
+surface. **Status: investigated — no reliable iOS mechanism exists; a
+real-device probe is needed and no app/worker change ships for this.**
+
+What was investigated, and why nothing is shipped:
+
+- **Custom scheme (`roadtrip://…` or `web+roadtrip://…`).** Registering a
+  scheme via the manifest's `protocol_handlers` is a Chromium/Android
+  feature; **iOS Safari and iOS home-screen web apps do not support it.** A
+  `roadtrip://` Open URL launches nothing on Helen's iPhone — it *fails
+  silently*, exactly the outcome to avoid. Not shipped.
+- **Universal Links** (an `https` link that opens an app) require a real
+  **native app** plus an `apple-app-site-association` file and
+  entitlements. A pure PWA has no native target, so this isn't available
+  without shipping a native wrapper — far more than this is worth now.
+- **In-scope `https` URL.** The deep link already sits inside the
+  manifest's `scope` (`./`) and `start_url` (`./`), so there is **nothing
+  to change on the app side.** Whether iOS routes an in-scope `https`
+  Open URL to the *standalone* installed app (vs. Safari) is
+  version-dependent and **must be confirmed on Helen's actual device** —
+  the expected behavior is that it opens Safari.
+
+**The on-device probe (Jonathan's call):** from the Shortcut, `Open URL`
+the in-scope link and see where it lands —
+
+```
+https://jonathantheblip.github.io/roadtrip/?action=calendar-import&data=<BASE64>&person=helen
+```
+
+- Opens the **installed PWA** → done, no change needed.
+- Opens **Safari** (likely) → that's the accepted, working fallback; keep
+  the `https` link as the Open URL. Do **not** swap in a custom scheme — it
+  won't open the standalone app on iOS and would fail quietly.
+
+(Worth a glance during the probe: whether the **"Open App"** Shortcut
+action lists the installed "Road Trip" web app on Helen's iOS. Even if it
+does, that action can't carry the `?data=` payload, so it's not a path
+without a fragile clipboard hand-off — out of scope, noted only so the
+probe is complete.) If first-class PWA-open ever becomes a hard
+requirement, the only robust route is a thin native wrapper that claims
+Universal Links — a separate, larger piece of work.

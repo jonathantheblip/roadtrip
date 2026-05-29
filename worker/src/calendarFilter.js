@@ -181,7 +181,15 @@ export async function buildCalendarImport({ tripId, dateRange, events, trips, ge
   // Path 2 — match the date range to a confirmed trip.
   const matchedId = matchTripByDateRange(allTrips, dateRange)
   if (!matchedId) {
-    return { matched: false, tripId: null, dateRange, events: [], reason: 'no matching trip' }
+    // No confirmed trip covers the range. Return the filtered survivors
+    // anyway (not []) so the app's "Create a trip from these dates" path
+    // (Feature A) can scaffold a new trip from dateRange and drop these
+    // geocoded events in as stops. Symmetric with the Path-1
+    // trip-not-found branch above, which already returns the survivors.
+    // Backward-compatible: the shipped client ignores `events` on a
+    // matched:false response (it shows the no-match banner), so emitting
+    // them changes nothing until the create affordance is live.
+    return { matched: false, tripId: null, dateRange, events: filtered, reason: 'no matching trip' }
   }
   return { matched: true, tripId: matchedId, dateRange, events: filtered }
 }
