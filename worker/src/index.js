@@ -1019,7 +1019,14 @@ function parseDraftJson(text) {
 // `wrangler secret put`); the default below is what ships if no
 // override is set.
 const DEFAULT_CHAT_MODEL = 'claude-sonnet-4-6'
-const CLAUDE_CHAT_MAX_TOKENS = 2048
+// 8192 (was 2048). A full create_trip payload — every day, every stop
+// with a who/what description — runs ~1,300-3,000 tokens of JSON, and at
+// 2048 it truncated mid-JSON: the stream closed with unparseable output,
+// so the client's JSON.parse threw and the card hung on "Drafting card…"
+// forever. GUIDANCE answers and the small M2 edit cards never approached
+// the old cap; max_tokens is a ceiling, not a target, so raising it
+// doesn't lengthen or cost more on normal replies.
+const CLAUDE_CHAT_MAX_TOKENS = 8192
 export function chatModel(env) {
   const override = typeof env?.CLAUDE_CHAT_MODEL === 'string' ? env.CLAUDE_CHAT_MODEL.trim() : ''
   return override || DEFAULT_CHAT_MODEL
@@ -1465,6 +1472,10 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
       'When the reader asks to plan a trip, you MUST emit a create_trip card in your first response. Build the complete trip from the destination plus whatever they gave you, filling gaps with family defaults. Do not ask questions before building. You may include ONE short clarifying question in your prose alongside the card (e.g., "I assumed you\'re driving from Belmont — say the word if you\'d rather fly"), but the card ships regardless. Never respond to a trip-planning request with only questions and no card.'
     )
     lines.push('')
+    lines.push(
+      'Keep your prose to ONE or TWO sentences. The card is the response — not an essay before it. Put the detail in the card\'s stops, not in a long preamble.'
+    )
+    lines.push('')
     lines.push('The `create_trip` card is the one EXECUTE card valid on the trips list.')
     lines.push('')
     lines.push('Use everything you know about the family:')
@@ -1474,15 +1485,23 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push('- Jonathan: cognitive neuroscientist, direct, efficient')
     lines.push('')
     lines.push(
+      'Use these profiles exactly as written. Do NOT invent facts, roles, or hobbies that are not listed — e.g., Helen is not a photographer, do not assign her or anyone a hobby or profession the profile does not state. Tie each stop to a listed interest, not a fabricated one.'
+    )
+    lines.push('')
+    lines.push(
       'Every stop names who it serves and what it gives them. A 13-year-old and a 5-year-old want different things.'
     )
     lines.push('')
     lines.push(
-      'Build from the destination and the reader\'s stated interests. Fill in what they don\'t specify with family defaults: the full family travels unless told otherwise; mid-range lodging (boutique hotel or quality rental, not hostel, not Four Seasons); under 6 hours from Belmont is a drive, over 6 hours is a flight; the named month\'s next open weekend; 3 nights for "a weekend", 5 for "a week".'
+      'Build from the destination and the reader\'s stated interests. Fill in what they don\'t specify with family defaults: the full family travels unless told otherwise; mid-range lodging (boutique hotel or quality rental, not hostel, not Four Seasons); the named month\'s next open weekend; 3 nights for "a weekend", 5 for "a week".'
     )
     lines.push('')
     lines.push(
-      'Drive times must be realistic. Stretches over 2.5 hours get a note. Days must breathe — unscheduled time is not wasted time.'
+      'DRIVE VS FLY — do not guess. Estimate the real one-way driving time from the start city (Belmont, MA unless told otherwise) to the destination, then apply the threshold strictly: 6 hours or less = drive; MORE than 6 hours = fly. When it flies, the first day\'s stops are LOGISTICS (flight out, rental car or airport transfer) and the last day\'s end is the return flight — do not open a long-haul trip with a "depart Belmont by car" stop. Worked examples: Belmont→Asheville, NC is ~16 hours of driving — that FLIES. Belmont→Portland, ME is ~2 hours — that DRIVES. Belmont→Montreal is ~5 hours — that DRIVES. Belmont→Charleston, SC is ~15 hours — that FLIES.'
+    )
+    lines.push('')
+    lines.push(
+      'Once the mode is set, the in-trip driving times must be realistic. Stretches over 2.5 hours get a note. Days must breathe — unscheduled time is not wasted time.'
     )
     lines.push('')
     lines.push(

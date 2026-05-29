@@ -265,6 +265,16 @@ test('system prompt — no trip + trips in DB injects cross-trip summaries', asy
   assert.ok(prompt.includes('MUST emit a create_trip card in your first response'))
   assert.ok(prompt.includes('Never respond to a trip-planning request with only questions and no card'))
   assert.ok(prompt.includes('ONE short clarifying question'))
+  // Prose is capped so the card is the response, not an essay (the
+  // verbose preamble also ate the token budget before the JSON).
+  assert.ok(prompt.includes('Keep your prose to ONE or TWO sentences'))
+  // Drive-vs-fly must be explicit + worked: the model drove a ~16h
+  // Belmont→Asheville trip when the rule says >6h flies.
+  assert.ok(prompt.includes('DRIVE VS FLY'))
+  assert.ok(prompt.includes('6 hours or less = drive'))
+  assert.ok(prompt.includes('Asheville'))
+  // No invented family facts (the model called Helen a photographer).
+  assert.ok(prompt.includes('Helen is not a photographer'))
 })
 
 test('system prompt — trip-creation section is absent when a trip IS open', async () => {
