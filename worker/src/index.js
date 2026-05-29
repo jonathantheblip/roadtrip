@@ -22,7 +22,6 @@ import {
   callRoutesDriveDuration,
   straightLineMinutes,
 } from './leaveWhen.js'
-import { buildCalendarImport } from './calendarFilter.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -70,16 +69,9 @@ export default {
       }
     }
 
-    // Auth (everything else). /calendar/import additionally accepts a
-    // dedicated least-privilege token (CALENDAR_IMPORT_TOKEN) so the
-    // iCloud-distributed Apple Shortcut never has to carry a family
-    // credential. That endpoint is read-only — it filters, geocodes, and
-    // matches a trip, but creates nothing (stop creation happens
-    // client-side on confirmation) — so a leaked import token can't read
-    // memories or mutate any data.
+    // Auth: every route below requires a valid family bearer token.
     const traveler = authenticate(request, env)
-    const isCalendarImport = path === '/calendar/import' && request.method === 'POST'
-    if (!traveler && !(isCalendarImport && calendarImportAuthorized(request, env))) {
+    if (!traveler) {
       return json({ error: 'unauthorized' }, 401, cors)
     }
 
@@ -124,9 +116,6 @@ export default {
       }
       if (path === '/draft' && request.method === 'POST') {
         return await postDraft(env, request, cors)
-      }
-      if (path === '/calendar/import' && request.method === 'POST') {
-        return await postCalendarImport(env, request, cors)
       }
 
       // Claude-in-App (M1)
@@ -176,18 +165,6 @@ function timingSafeEqual(a, b) {
   let diff = 0
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
   return diff === 0
-}
-
-// Bearer match against the dedicated CALENDAR_IMPORT_TOKEN secret. Used
-// only to gate POST /calendar/import; never maps to a traveler and never
-// authorizes any other route.
-function calendarImportAuthorized(request, env) {
-  const expected = env.CALENDAR_IMPORT_TOKEN
-  if (!expected) return false
-  const auth = request.headers.get('Authorization') || ''
-  const m = auth.match(/^Bearer\s+(.+)$/)
-  if (!m) return false
-  return timingSafeEqual(m[1].trim(), expected)
 }
 
 // ─── CORS ─────────────────────────────────────────────────────────────
@@ -878,92 +855,6 @@ async function getResolve(env, url, cors) {
     ...cors,
     'Cache-Control': 'public, max-age=300',
   })
-}
-
-// POST /calendar/import — Calendar Pull. The Apple Shortcut reads the
-// family iCloud calendar on-device, pre-filters, and POSTs the surviving
-// events here. The worker re-applies BOTH filters as the authority
-// (non-recurring AND away-from-home), geocodes the surviving locations,
-// scopes to the given trip (Path 1) or matches the date range to a
-// confirmed trip (Path 2), and returns the filtered list for the app's
-// confirmation screen. Read-only: the actual stop creation happens
-// client-side on confirmation, reusing the existing stop-add path.
-//
-// Body: { tripId?, dateRange:{start,end},
-//         events:[{title,start,end,location,hasRecurrence}] }
-// Returns: { matched, tripId, dateRange,
-//            events:[{title,start,end,location,address,lat,lng}], reason? }
-async function postCalendarImport(env, request, cors) {
-  let body
-  try {
-    body = await request.json()
-  } catch {
-    return json({ error: 'invalid JSON body' }, 400, cors)
-  }
-  // Thin adapter: load trips from D1, inject the real Places geocoder,
-  // and let the pure builder do the filter→geocode→match→shape work.
-  const trips = await loadTrips(env)
-  const result = await buildCalendarImport({
-    tripId: body?.tripId,
-    dateRange: body?.dateRange || {},
-    events: body?.events,
-    trips,
-    geocode: (q) => geocodeLocation(env, q),
-  })
-  return json(result, 200, { ...cors, 'Cache-Control': 'no-store' })
-}
-
-// Text location → { lat, lng, address } via Google Places searchText
-// (same key + host as /places/nearby; no locationBias, since event
-// locations can be anywhere). Returns null on any failure — a located
-// event that can't be geocoded is kept by the filter (safety net).
-async function geocodeLocation(env, query) {
-  if (!env.GOOGLE_PLACES_API_KEY) return null
-  const q = String(query || '').trim()
-  if (!q) return null
-  let res
-  try {
-    res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
-        'x-goog-fieldmask': 'places.location,places.formattedAddress',
-      },
-      body: JSON.stringify({ textQuery: q, maxResultCount: 1 }),
-    })
-  } catch {
-    return null
-  }
-  if (!res.ok) return null
-  const data = await res.json().catch(() => ({}))
-  const p = Array.isArray(data?.places) ? data.places[0] : null
-  const lat = p?.location?.latitude
-  const lng = p?.location?.longitude
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-  return { lat, lng, address: p.formattedAddress || q }
-}
-
-// Every non-deleted trip, parsed, with the denormalized date columns
-// overlaid (mirrors getTrips). buildCalendarImport uses the ids for the
-// Path-1 existence check; matchTripByDateRange filters out drafts and
-// dateless trips for Path-2 matching.
-async function loadTrips(env) {
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM trips WHERE deleted_at IS NULL'
-  ).all()
-  return results
-    .map((r) => {
-      try {
-        const trip = JSON.parse(r.data_json)
-        if (r.date_range_start) trip.dateRangeStart = r.date_range_start
-        if (r.date_range_end) trip.dateRangeEnd = r.date_range_end
-        return trip
-      } catch {
-        return null
-      }
-    })
-    .filter(Boolean)
 }
 
 // /draft — call Claude to suggest default tags + per-traveler

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, Calendar, CalendarDays, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, ImagePlus, Archive } from 'lucide-react'
+import { ChevronLeft, Calendar, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, ImagePlus, Archive } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { PhotoBackfillTriage } from '../components/PhotoBackfillTriage'
 import { downloadIcs } from '../lib/icsExport'
@@ -28,11 +28,6 @@ import {
 // surface theming there share a single source of truth — calling
 // useHelenDark() locally gave each consumer its own state, so flipping
 // it inside Settings didn't update the surface class App computes.
-// The Apple Shortcut the family installs once per phone (iCloud link in
-// the README). Path 1 opens it with the trip's id + date range so it
-// reads the calendar for exactly these dates and scopes the result back
-// to this trip. Keep in sync with the README + the Shortcut's name.
-const CALENDAR_PULL_SHORTCUT = 'Pull Trip Calendar'
 
 export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, tripsApi, onBack, onChangeTraveler, onOpenEditor }) {
   const [workerStatus, setWorkerStatus] = useState({
@@ -192,21 +187,6 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
     }
   }
 
-  // Path 1 — hand this trip's id + date range to the on-device Shortcut,
-  // which reads the family calendar for those dates, filters, POSTs to the
-  // worker, and reopens the app on the confirmation screen. Input rides as
-  // text the Shortcut parses as JSON.
-  const tripConfirmed = !trip.draft && !!trip.dateRangeStart && !!trip.dateRangeEnd
-  function pullCalendarEvents() {
-    const input = JSON.stringify({
-      tripId: trip.id,
-      dateRange: { start: trip.dateRangeStart || null, end: trip.dateRangeEnd || null },
-    })
-    const target = `shortcuts://run-shortcut?name=${encodeURIComponent(
-      CALENDAR_PULL_SHORTCUT
-    )}&input=text&text=${encodeURIComponent(input)}`
-    window.location.href = target
-  }
 
   if (triageFiles && triageFiles.length > 0) {
     return (
@@ -371,38 +351,6 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
         >
           <ImagePlus size={14} /> Import photos from your library
         </button>
-      </section>
-
-      <section className="px-6 py-8 border-b surface-rule">
-        <div className="flex items-center gap-2 mb-3">
-          <CalendarDays size={14} />
-          <p className="smallcaps f-dm text-[11px] opacity-70">Pull from calendar</p>
-        </div>
-        <p className="f-news text-base leading-relaxed opacity-80 mb-4 max-w-prose">
-          Pull events from the family calendar into this trip — the dinner already booked,
-          the museum tickets, the flight. The shortcut reads your calendar for the trip
-          dates, keeps the away-from-home plans (skipping recurring commitments and
-          anything near home), and hands them back here to confirm.
-        </p>
-        {tripConfirmed ? (
-          <button
-            type="button"
-            className="btn-pill"
-            data-testid="pull-calendar"
-            onClick={pullCalendarEvents}
-            style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-          >
-            <CalendarDays size={14} /> Pull calendar events
-          </button>
-        ) : (
-          <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
-            Set the trip’s start and end dates first — the pull needs a date range.
-          </p>
-        )}
-        <p className="f-dm text-[11px] opacity-50 mt-3 max-w-prose italic">
-          First time? Install the “{CALENDAR_PULL_SHORTCUT}” shortcut once per phone — the
-          iCloud link is in the project README.
-        </p>
       </section>
 
       <section className="px-6 py-8 border-b surface-rule">

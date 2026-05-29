@@ -15,11 +15,9 @@ import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
 import { AllPhotosView } from './views/AllPhotosView'
 import { ImportView } from './views/ImportView'
-import { CalendarImportView } from './views/CalendarImportView'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
-import { decodeCalendarPayload, eventsToMultiCard } from './lib/calendarImport'
-import { cardToTrip, scaffoldTripFromCalendar } from './lib/createTripCard'
+import { cardToTrip } from './lib/createTripCard'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
@@ -37,12 +35,6 @@ function initialViewFromUrl() {
     if (typeof window === 'undefined') return { name: 'trip' }
     const params = new URLSearchParams(window.location.search)
     const action = params.get('action') || ''
-    // Calendar Pull — the Apple Shortcut opens the app here with the
-    // worker's filtered events base64'd into ?data=. Decode once and
-    // hand the payload to the confirmation view.
-    if (action === 'calendar-import') {
-      return { name: 'calendar-import', calendarPayload: readCalendarImportPayload() }
-    }
     const url = params.get('url') || params.get('text') || ''
     if (url || action === 'import') {
       return { name: 'import', importUrl: url }
@@ -117,27 +109,10 @@ function writeTravelerCookie(value) {
   }
 }
 
-// Decode the Calendar Pull payload from ?data= when the Shortcut deep-
-// links in (action=calendar-import). Returns the worker response object
-// or null. Cheap enough to call at a couple of init sites.
-function readCalendarImportPayload() {
-  try {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('action') !== 'calendar-import') return null
-    return decodeCalendarPayload(params.get('data'))
-  } catch {
-    return null
-  }
-}
-
 // Read the requested trip id from the URL — actual existence check
-// happens in the render pass once useTrips has resolved. For a calendar
-// deep-link the trip comes from the decoded payload (no ?trip=), so the
-// matched trip resolves on the very first render.
+// happens in the render pass once useTrips has resolved.
 function readRequestedTripId() {
   try {
-    const payload = readCalendarImportPayload()
-    if (payload?.tripId) return payload.tripId
     return new URLSearchParams(window.location.search).get('trip') || null
   } catch {
     return null
@@ -399,14 +374,11 @@ export default function App() {
     if (!visibleTrips.length) return
     coldLoadHandledRef.current = true
 
-    // Deep-link views route themselves from the URL payload (Share-In's
-    // ?action=import, Calendar Pull's ?action=calendar-import). The
-    // active-trip cold-load override below must NOT fire for them — its
-    // "no trip is active today → drop to the index" branch would yank a
-    // calendar-import deep link (whose trip is usually a future/non-today
-    // trip) straight to the trip list, which is exactly the bug where the
-    // confirmation screen never rendered.
-    if (view.name === 'calendar-import' || view.name === 'import') return
+    // Share-In's deep link (?action=import) routes itself from the URL;
+    // the active-trip cold-load override below must NOT fire for it (its
+    // "no trip active today → drop to index" branch would yank the
+    // import flow to the trip list).
+    if (view.name === 'import') return
 
     const today = todayIso()
     const active = pickActiveTrip(visibleTrips, today)
@@ -507,57 +479,6 @@ export default function App() {
     } catch {
       /* ignore */
     }
-  }
-  // Strip the calendar deep-link params so a reload of the standalone PWA
-  // doesn't re-fire the import flow against a stale payload.
-  function clearCalendarParams() {
-    try {
-      const url = new URL(window.location.href)
-      url.searchParams.delete('action')
-      url.searchParams.delete('data')
-      window.history.replaceState(null, '', url.toString())
-    } catch {
-      /* ignore */
-    }
-  }
-  // Calendar Pull — turn the confirmed events into stops via the existing
-  // stop-add path (eventsToMultiCard → applyCardToTrip), then upsert
-  // through the same write path as every other trip edit. Re-throws on
-  // failure so the confirmation view can stay put and let the user retry.
-  async function handleCalendarImport(events) {
-    if (!trip || !Array.isArray(events) || events.length === 0) return
-    const card = eventsToMultiCard(trip, events)
-    const next = applyCardToTrip(trip, card)
-    await tripsApi.upsertTrip(next)
-    clearCalendarParams()
-  }
-  // Feature A — create a trip from a no-match calendar pull. Scaffolds a
-  // trip spanning payload.dateRange (every day present, no stops), saves
-  // it via the same upsert path every other write uses, then re-points
-  // THIS view at the new trip with a matched payload so the standard
-  // confirmation checklist runs — the pulled events are confirmed into
-  // stops (Helen's "no silent saves" bar), not auto-dropped. Mirrors
-  // handleClaudeCreateTrip; the deterministic-slug id keeps a re-pull
-  // idempotent (same dates+title re-save the same row, no duplicate).
-  // Re-throws on a failed scaffold so the no-match view can stay put and
-  // surface a retry; an upsert worker-push failure is non-escalating
-  // (trip is in local state, the global sync indicator owns "not synced").
-  async function handleCalendarCreateTrip(payload) {
-    if (!payload || payload.matched) return
-    const newTrip = scaffoldTripFromCalendar({
-      dateRange: payload.dateRange,
-      events: payload.events,
-    })
-    await tripsApi.upsertTrip(newTrip)
-    setTripId(newTrip.id)
-    // Flip the deep-link payload to "matched" against the freshly-created
-    // trip. The view remounts (its key includes tripId) and renders the
-    // event checklist; handleCalendarImport then adds the checked events
-    // as stops against newTrip. Events ride through unchanged.
-    setView({
-      name: 'calendar-import',
-      calendarPayload: { ...payload, matched: true, tripId: newTrip.id, reason: undefined },
-    })
   }
   // M2 — apply a Claude confirmation card to the active trip. The card
   // arrives with user-edited field values (the draft); applyCardToTrip
@@ -697,8 +618,7 @@ export default function App() {
               view.name === 'activities' ||
               view.name === 'photos' ||
               view.name === 'all-photos' ||
-              view.name === 'import' ||
-              view.name === 'calendar-import'
+              view.name === 'import'
             const label = inDeepView && trip?.title ? `← ${trip.title}` : '← Trips'
             const handler = inDeepView ? () => setView({ name: 'trip' }) : openIndex
             return (
@@ -842,18 +762,6 @@ export default function App() {
             initialUrl={view.importUrl || ''}
             onBack={() => setView({ name: 'activities' })}
             onSave={handleSaveImport}
-          />
-        )}
-        {view.name === 'calendar-import' && (
-          <CalendarImportView
-            trip={trip}
-            payload={view.calendarPayload}
-            onConfirm={handleCalendarImport}
-            onCreateTrip={handleCalendarCreateTrip}
-            onBack={() => {
-              clearCalendarParams()
-              setView({ name: trip ? 'trip' : 'index' })
-            }}
           />
         )}
         {view.name === 'photos' && trip && (
