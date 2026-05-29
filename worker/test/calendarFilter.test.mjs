@@ -8,6 +8,7 @@ const {
   hasRecurrence,
   hasLocation,
   isAwayFromHome,
+  overlapsWindow,
   filterCalendarEvents,
   matchTripByDateRange,
   buildCalendarImport,
@@ -61,6 +62,22 @@ test('isAwayFromHome respects a custom radius', () => {
     isAwayFromHome({ location: 'Cambridge', ...CAMBRIDGE }, { radiusMeters: 1609 }),
     true
   )
+})
+
+// ── date-window overlap (Fix 2 — date scoping moved to the worker) ──
+
+test('overlapsWindow: day-granularity overlap incl. multi-day, boundaries, edges', () => {
+  const W = { start: '2026-10-09', end: '2026-10-12' }
+  // The exact missed case: a multi-day event that STARTED before the
+  // window and spans into it.
+  assert.equal(overlapsWindow({ start: '2026-10-07T00:00:00', end: '2026-10-11T00:00:00' }, W), true)
+  assert.equal(overlapsWindow({ start: '2026-10-10T19:00:00', end: '2026-10-10T21:00:00' }, W), true)
+  assert.equal(overlapsWindow({ start: '2026-10-01', end: '2026-10-08' }, W), false) // entirely before
+  assert.equal(overlapsWindow({ start: '2026-10-13', end: '2026-10-14' }, W), false) // entirely after
+  assert.equal(overlapsWindow({ start: '2026-10-05', end: '2026-10-09' }, W), true) // ends on window-start day
+  assert.equal(overlapsWindow({ start: '2026-10-10T12:00:00' }, W), true) // missing end → point event
+  assert.equal(overlapsWindow({ start: '2026-10-10' }, {}), true) // no window → keep
+  assert.equal(overlapsWindow({ start: '' }, W), true) // unparseable → keep (safety net)
 })
 
 // ── the two filters together ───────────────────────────────────────
@@ -206,6 +223,24 @@ test('buildCalendarImport (Path 2) with no covering trip returns no-matching-tri
   assert.equal(out.matched, false)
   assert.equal(out.reason, 'no matching trip')
   assert.deepEqual(out.events, [])
+})
+
+test('buildCalendarImport scopes to the dateRange — multi-day overlap kept, out-of-window dropped', async () => {
+  const events = [
+    // Started before the window, spans into it — the exact case missed in
+    // testing. Must be kept.
+    { title: 'Family vacation', start: '2026-10-07T00:00:00', end: '2026-10-12T00:00:00', location: 'Cúrate, Asheville' },
+    // Fully before the window — dropped (and never geocoded).
+    { title: 'Earlier dinner', start: '2026-09-30T19:00:00', end: '2026-09-30T21:00:00', location: 'Cúrate, Asheville' },
+  ]
+  const out = await buildCalendarImport({
+    tripId: 'asheville',
+    dateRange: { start: '2026-10-09', end: '2026-10-12' },
+    events,
+    trips: IMPORT_TRIPS,
+    geocode: mockGeocode,
+  })
+  assert.deepEqual(out.events.map((e) => e.title), ['Family vacation'])
 })
 
 test('buildCalendarImport survives a throwing geocoder (treats as a miss → kept)', async () => {

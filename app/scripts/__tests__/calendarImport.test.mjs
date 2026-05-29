@@ -49,17 +49,19 @@ test('decodeCalendarPayload tolerates URL-safe base64 and junk', () => {
 
 // ── time / date formatting ─────────────────────────────────────────
 
-test('formatEventTime reads the wall clock, handles AM/PM/midnight/noon/all-day', () => {
+test('formatEventTime reads the wall clock; treats midnight + no-time as all-day', () => {
   assert.equal(formatEventTime('2026-10-10T19:00:00'), '7:00 PM')
   assert.equal(formatEventTime('2026-10-10T09:30:00'), '9:30 AM')
-  assert.equal(formatEventTime('2026-10-10T00:15:00'), '12:15 AM')
+  assert.equal(formatEventTime('2026-10-10T00:15:00'), '12:15 AM') // 12:15 AM is a real time
   assert.equal(formatEventTime('2026-10-10T12:00:00'), '12:00 PM')
-  assert.equal(formatEventTime('2026-10-11'), '') // all-day, no time
+  assert.equal(formatEventTime('2026-07-04T00:00:00'), '') // midnight → all-day, not "12:00 AM"
+  assert.equal(formatEventTime('2026-10-11'), '') // date only → all-day
 })
 
-test('formatEventWhen composes a readable date + time', () => {
+test('formatEventWhen composes date + time, or "all day" for midnight/date-only', () => {
   assert.equal(formatEventWhen({ start: '2026-10-10T19:00:00' }), 'Oct 10 · 7:00 PM')
   assert.equal(formatEventWhen({ start: '2026-10-11' }), 'Oct 11 · all day')
+  assert.equal(formatEventWhen({ start: '2026-07-04T00:00:00' }), 'Jul 4 · all day')
 })
 
 test('isoDateOf slices the date', () => {
@@ -105,6 +107,16 @@ test('eventsToMultiCard + applyCardToTrip creates stops on the right days with t
   const biltmore = d1.stops[0]
   assert.equal(biltmore.time, '10:00 AM')
   assert.equal(biltmore.lat, 35.5401)
+})
+
+test('an all-day event becomes a stop with no clock time', () => {
+  const card = eventsToMultiCard(TRIP, [
+    { title: 'Family vacation', start: '2026-10-09T00:00:00', end: '2026-10-12T00:00:00', location: 'Asheville', address: 'Asheville, NC', lat: 35.5951, lng: -82.5515 },
+  ])
+  const next = applyCardToTrip(TRIP, card)
+  const stop = next.days.find((d) => d.n === 1).stops[0]
+  assert.equal(stop.name, 'Family vacation')
+  assert.equal(stop.time, '') // all-day → no "12:00 AM"
 })
 
 test('an event with no coords yields a stop with null lat/lng (not 0,0)', () => {

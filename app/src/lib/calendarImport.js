@@ -39,16 +39,18 @@ export function isoDateOf(start) {
 // Reads the clock straight out of the ISO string (no timezone math) —
 // the Shortcut sends local wall-clock, and stop.time is a display string,
 // so this keeps the stop time matching what Helen saw on her calendar.
-// Returns '' for an all-day event (no time component).
+// Returns '' for an all-day event: either no time component, or midnight
+// (T00:00), which is how all-day events (vacation blocks, school days)
+// arrive — rendering those as "12:00 AM" looked broken in the feed.
 export function formatEventTime(start) {
   const m = String(start || '').match(/T(\d{2}):(\d{2})/)
   if (!m) return ''
-  let h = parseInt(m[1], 10)
-  const min = m[2]
+  const h = parseInt(m[1], 10)
+  const min = parseInt(m[2], 10)
+  if (h === 0 && min === 0) return '' // midnight → all-day, no clock time
   const ampm = h >= 12 ? 'PM' : 'AM'
-  h = h % 12
-  if (h === 0) h = 12
-  return `${h}:${min} ${ampm}`
+  const hr = h % 12 === 0 ? 12 : h % 12
+  return `${hr}:${m[2]} ${ampm}`
 }
 
 // "Oct 10 · 7:00 PM" / "Oct 10 · all day" for the confirmation row.

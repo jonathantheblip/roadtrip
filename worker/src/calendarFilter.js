@@ -55,11 +55,38 @@ export function isAwayFromHome(ev, opts = {}) {
   return haversineMeters(home.lat, home.lng, lat, lng) > radius
 }
 
-// The two filters together: non-recurring AND away-from-home.
+// Does the event overlap the trip's date window? The Shortcut's "Find
+// Calendar Events" can't express an overlap predicate (its Start Date
+// operators are only is-exactly / is-today / is-between / is-in-next /
+// is-in-last — no before/after), so it over-pulls a wide window and the
+// worker does the real date scoping here.
+//
+// Compared at DAY granularity (YYYY-MM-DD): this sidesteps timezone
+// ambiguity in the ISO strings AND iCal's exclusive-end convention, and
+// pads to day boundaries so all-day events (which sit at midnight) aren't
+// dropped by a strict comparison. An event with no parseable start, or
+// when no window is given, is kept — the confirmation screen is the net.
+//   overlap  ⇔  eventStartDay <= windowEnd  AND  eventEndDay >= windowStart
+export function overlapsWindow(ev, dateRange) {
+  const wStart = isoDay(dateRange?.start)
+  const wEnd = isoDay(dateRange?.end)
+  if (!wStart || !wEnd) return true
+  const evStart = isoDay(ev?.start)
+  if (!evStart) return true
+  const evEnd = isoDay(ev?.end) || evStart // missing end → treat as a point event
+  return evStart <= wEnd && evEnd >= wStart
+}
+
+// All the filters together: non-recurring AND located AND (when a
+// dateRange is supplied) overlapping the trip window AND away-from-home.
 export function filterCalendarEvents(events, opts = {}) {
   const list = Array.isArray(events) ? events : []
   return list.filter(
-    (ev) => !hasRecurrence(ev) && hasLocation(ev) && isAwayFromHome(ev, opts)
+    (ev) =>
+      !hasRecurrence(ev) &&
+      hasLocation(ev) &&
+      overlapsWindow(ev, opts.dateRange) &&
+      isAwayFromHome(ev, opts)
   )
 }
 
@@ -119,7 +146,10 @@ export async function buildCalendarImport({ tripId, dateRange, events, trips, ge
   const geocoded = []
   for (const ev of list) {
     const base = normalizeEvent(ev)
-    if (base.hasRecurrence || !base.location.trim()) {
+    // Skip the geocode for anything the filter will drop anyway —
+    // recurring, no-location, or outside the trip window (the Shortcut
+    // over-pulls a wide window). Saves Places quota on the noise.
+    if (base.hasRecurrence || !base.location.trim() || !overlapsWindow(base, dateRange)) {
       geocoded.push(base)
       continue
     }
@@ -136,7 +166,7 @@ export async function buildCalendarImport({ tripId, dateRange, events, trips, ge
     )
   }
 
-  const filtered = filterCalendarEvents(geocoded, opts).map(shapeEvent)
+  const filtered = filterCalendarEvents(geocoded, { ...(opts || {}), dateRange }).map(shapeEvent)
 
   // Path 1 — scope to the given trip (any existing trip; the app only
   // offers the action on confirmed trips).

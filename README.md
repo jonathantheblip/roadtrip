@@ -63,13 +63,26 @@ no second deployment.
 When no trip matches (Path 2, no `tripId`, no confirmed trip covers the
 range): `{ "matched": false, "tripId": null, "events": [], "reason": "no matching trip" }`.
 
-**Filters (applied server-side as the authority — the Shortcut also
-pre-filters, belt and suspenders):**
-1. Drop any event with a recurrence rule (`hasRecurrence` / `recurrence` /
-   `rrule`). Standing commitments (karate, practice) are never trip stops.
-2. Drop events with no location, or a location within ~25 mi of home
-   (Belmont, MA). Located events that can't be geocoded are **kept** —
-   the confirmation screen is the safety net.
+**Filters (applied server-side as the authority — the worker is the source
+of truth on what's trip-relevant):**
+1. **Date-window overlap.** Keep only events overlapping `dateRange`:
+   `event.start ≤ windowEnd AND event.end ≥ windowStart`, compared at day
+   granularity (so multi-day events that *started before* the window but
+   span into it — a Jul 1–5 vacation vs. a Jul 3 window — are kept, and
+   all-day midnight events aren't dropped by a strict comparison). The
+   Shortcut's "Find Calendar Events" can't express an overlap predicate
+   (its Start Date operators are only is-exactly / is-today / is-between /
+   is-in-next / is-in-last), so it **over-pulls a wide window** and the
+   worker does the precise scoping. Requires `start` **and** `end` per event.
+2. **Recurrence.** Drop events with a recurrence rule (`hasRecurrence` /
+   `recurrence` / `rrule` / `recurrenceRule`). The Shortcut can't read
+   recurrence on-device, so it sends them — but standing commitments
+   (karate, practice) are near-home or location-less and get dropped by
+   filter 3 anyway; a rare *away-from-home* recurring event surfaces in the
+   confirmation screen for a one-tap uncheck.
+3. **Location away from home.** Drop events with no location, or a location
+   within ~25 mi of home (Belmont, MA). Located events that can't be
+   geocoded are **kept** — the confirmation screen is the safety net.
 
 **Trip resolution:**
 - `tripId` present → scope to that trip (Path 1).
@@ -135,20 +148,27 @@ link Jonathan installs once per device. Name it exactly
 1. **Accept input** — if "Shortcut Input" has text, parse it as JSON for
    `tripId` + `dateRange` (Path 1). Otherwise **Ask for Input** (a start
    and end date) (Path 2).
-2. **Find Calendar Events** in the family calendar where Start Date is in
-   the range.
-3. **Pre-filter** (optional but keeps the payload small): drop events that
-   "Is Recurring", drop events with an empty Location or a Location near
-   home. (The Worker re-filters regardless.)
-4. **Build JSON** — an array of `{ title, start, end, location, hasRecurrence }`,
-   wrapped as `{ tripId?, dateRange, events }`.
-5. **Get Contents of URL** — `POST` to
+2. **Find Calendar Events** — over-pull a **wide** window (e.g. Start Date
+   *is between* a few days before `start` and `end`). Don't try to be
+   precise here: Shortcuts has no before/after operator and no overlap, so
+   the worker does the exact date scoping. Don't bother filtering recurring
+   or near-home either — the worker handles both.
+3. **Build the payload as JSON _text_, not native events.** Loop the
+   events and assemble a raw JSON string — each event a dict with
+   `title`, `start`, `end`, `location` (dates via *Format Date → ISO
+   8601*; `end` is required for the worker's overlap scoping). Wrap as
+   `{ tripId?, dateRange, events }`. **Critical:** the request body must be
+   this JSON string sent as text — if you hand Shortcuts the native
+   Calendar Event objects, it coerces them to `.ics` files and the worker
+   rejects the body (HTTP 400 `invalid JSON body`).
+4. **Get Contents of URL** — `POST` to
    `https://roadtrip-sync.jonathan-d-jackson.workers.dev/calendar/import`
-   with header `Authorization: Bearer <CALENDAR_IMPORT_TOKEN>` and the
-   JSON body.
-6. **Base64-encode** the response, then **Open URL**
+   with header `Authorization: Bearer <CALENDAR_IMPORT_TOKEN>` and the JSON
+   text as the body.
+5. **Base64-encode** the response, then **Open URL**
    `https://jonathantheblip.github.io/roadtrip/?action=calendar-import&data=<that>` —
    the app opens to the confirmation screen.
 
 If the Worker returns `matched: false`, show the `reason` as an alert and
-stop (nothing to confirm).
+stop (nothing to confirm). All-day events (vacation blocks, school days)
+arrive at midnight and become stops with no clock time — expected, not a bug.
