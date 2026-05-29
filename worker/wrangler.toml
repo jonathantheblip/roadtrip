@@ -21,7 +21,10 @@ database_id = "33bb806c-1c1d-4268-830f-7bad3e49711f"
 binding = "ASSETS"
 bucket_name = "roadtrip-assets"
 
-# Non-secret config. The 4 FAMILY_TOKEN_* values are stored as secrets
-# (via `wrangler secret put`) and are NOT listed here.
+# Non-secret config. Secrets (set via `wrangler secret put`, NOT listed
+# here): the 4 FAMILY_TOKEN_* values, GOOGLE_PLACES_API_KEY (geocoding +
+# /leave-when + /places/nearby), and CALENDAR_IMPORT_TOKEN — a dedicated
+# least-privilege bearer the Apple Shortcut uses for POST /calendar/import
+# so no family token rides along in the iCloud-distributed Shortcut.
 [vars]
 ALLOWED_ORIGINS = "https://jonathantheblip.github.io,http://localhost:5173,http://localhost:4173,http://localhost:5180"

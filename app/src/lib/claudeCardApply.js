@@ -57,6 +57,12 @@ function withDays(trip, nextDays) {
 // Generate a stable, traceable ID for a Claude-proposed stop. Pattern
 // `cl-<dayN>-<short>` so audit logs can recognize Claude-authored data
 // at a glance, separate from the manual `j<dayN>-<n>` shape.
+function coordOrNull(v) {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
 function newStopId(dayN) {
   let suffix
   try {
@@ -88,8 +94,13 @@ function applyAdd(trip, card) {
     for: ['jonathan', 'helen', 'aurelia', 'rafa'],
     note: fields.notes || fields.note || fields.description || '',
     address: fields.address || fields.location || '',
-    lat: null,
-    lng: null,
+    // Honor geocoded coords when a caller supplies them (Calendar Pull
+    // passes lat/lng for the map). Absent / null / '' → null, unchanged
+    // for every existing caller (Claude cards don't emit coord fields).
+    // Guard the null/'' cases explicitly — Number(null) and Number('')
+    // are 0, which would wrongly stamp a stop at the equator.
+    lat: coordOrNull(fields.lat),
+    lng: coordOrNull(fields.lng),
     url: '',
     reservation: '',
     confirmation: '',

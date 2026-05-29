@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
-    "wrangler": "^3.99.0"
+    "wrangler": "^4.94.0"
   },
   "dependencies": {
     "@cf-wasm/photon": "^0.3.5"
