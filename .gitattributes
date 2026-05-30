@@ -17,16 +17,16 @@
 # zero-configuration option.
 
 # All photo + video fixture binaries land in LFS.
-tests/fixtures/media/*.heic    filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.HEIC    filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.jpg     filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.JPG     filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.jpeg    filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.png     filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.PNG     filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.mp4     filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.MP4     filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.mov     filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/media/*.MOV     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.heic    filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.HEIC    filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.jpg     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.JPG     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.jpeg    filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.png     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.PNG     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.mp4     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.MP4     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.mov     filter=lfs diff=lfs merge=lfs -text
+**/tests/fixtures/media/*.MOV     filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 *.mov filter=lfs diff=lfs merge=lfs -text
