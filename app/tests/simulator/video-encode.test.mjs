@@ -43,9 +43,12 @@ import {
   newSimulatorSession,
   assertSimulatorBooted,
 } from './_driver.mjs'
-import { FIXTURE_TRIP } from '../e2e/_fixtures/withTrip.js'
+import { dateStableTripSeed } from './_seed.mjs'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
+// Date-stable seed (see _seed.mjs) — the sim tier has no clockStub.js, so
+// the raw May-2026 fixture would bounce to the trips index on today's clock.
+const SEED_TRIP = dateStableTripSeed()
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_PATH = resolve(
   HERE,
@@ -88,7 +91,7 @@ test('WebCodecs encode pipeline runs end-to-end on iOS Simulator Safari', async 
     for (const k of KEYS_TO_CLEAR) localStorage.removeItem(k)
     localStorage.setItem('rt_trips_cache_v1', JSON.stringify([trip]))
     localStorage.setItem('rt_person_v2', 'helen')
-  }, FIXTURE_TRIP)
+  }, SEED_TRIP)
 
   await browser.url(BASE_URL + '/?person=helen&trip=volleyball-2026&nosw=1')
 

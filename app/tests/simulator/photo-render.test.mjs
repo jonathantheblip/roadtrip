@@ -66,7 +66,7 @@ import {
   newSimulatorSession,
   assertSimulatorBooted,
 } from './_driver.mjs'
-import { FIXTURE_TRIP } from '../e2e/_fixtures/withTrip.js'
+import { dateStableTripSeed } from './_seed.mjs'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -79,26 +79,12 @@ const FIXTURE_PATH = resolve(
 )
 const ARTIFACT_DIR = resolve(HERE, '__artifacts__')
 
-// Date-stable trip seed. App.jsx's cold-load override (the ?trip= deep
-// link) only lands on the trip view when the trip's date window contains
-// *today* (dateRangeStart <= today <= dateRangeEnd); otherwise it strips
-// ?trip= and drops to the trips index, where helen-photos-entry doesn't
-// exist. FIXTURE_TRIP is pinned to May 22-25 2026, so seeding it raw makes
-// this gate (and the sibling video/offline sim specs that seed it the same
-// way) silently fail once that window passes. We shift only the date range
-// to span today so the deep link is evergreen — nothing else about the
-// fixture changes, and the shared FIXTURE_TRIP (also used by Playwright) is
-// left untouched.
-function isoDay(off = 0) {
-  const d = new Date()
-  d.setDate(d.getDate() + off)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-const SEED_TRIP = {
-  ...FIXTURE_TRIP,
-  dateRangeStart: isoDay(-1),
-  dateRangeEnd: isoDay(1),
-}
+// Date-stable trip seed (see _seed.mjs): shifts FIXTURE_TRIP's date range
+// to span today so App.jsx's ?trip= cold-load override lands on the trip
+// view on the real clock. Without it the raw May-2026 fixture bounces to
+// the trips index and helen-photos-entry never renders. FIXTURE_TRIP itself
+// stays pinned for the clock-stubbed e2e suite + its visual baselines.
+const SEED_TRIP = dateStableTripSeed()
 
 // Non-black thresholds (luma on a 0-255 Rec.601 scale). A blacked-out
 // render reads max≈0 / range≈0; a real photo clears these with wide
