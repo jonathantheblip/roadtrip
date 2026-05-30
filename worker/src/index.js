@@ -878,6 +878,25 @@ const FAMILY_VOICES = {
 
 const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
 
+// Default Anthropic origin. The base is read from env so the test
+// runtime can redirect the live call at a local stub; when the var is
+// unset (production), this falls back to the real API and the request
+// is byte-for-byte unchanged. (TEST_STRATEGY_SPEC Unit 2 — the fetch
+// seam. Deliberately a change to the live Anthropic request path.)
+const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
+
+// Resolve the Anthropic Messages endpoint from env.ANTHROPIC_BASE_URL,
+// tolerating a trailing slash, and falling back to the real API when the
+// var is unset or blank. Exported for direct unit testing (same pattern
+// as chatModel). Applied at BOTH Anthropic call sites (postDraft and
+// postClaudeChat) so the single seam governs every outbound model call.
+export function anthropicMessagesUrl(env) {
+  const configured =
+    typeof env?.ANTHROPIC_BASE_URL === 'string' ? env.ANTHROPIC_BASE_URL.trim() : ''
+  const base = (configured || DEFAULT_ANTHROPIC_BASE_URL).replace(/\/+$/, '')
+  return `${base}/v1/messages`
+}
+
 async function postDraft(env, request, cors) {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: 'Anthropic key not configured on worker' }, 500, cors)
@@ -912,7 +931,7 @@ async function postDraft(env, request, cors) {
 
   let res
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch(anthropicMessagesUrl(env), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -1077,7 +1096,7 @@ async function postClaudeChat(env, traveler, request, cors) {
   // our own minimal shape before sending bytes to the client.
   let upstream
   try {
-    upstream = await fetch('https://api.anthropic.com/v1/messages', {
+    upstream = await fetch(anthropicMessagesUrl(env), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
