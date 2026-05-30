@@ -1136,6 +1136,9 @@ async function postClaudeChat(env, traveler, request, cors) {
   ;(async () => {
     let assembled = ''
     let usage = { input_tokens: null, output_tokens: null }
+    // Unit 4: capture the upstream stop_reason so a max_tokens cutoff can
+    // be surfaced to the client. It appears only on the message_delta frame.
+    let stopReason = null
     const reader = upstream.body
       .pipeThrough(new TextDecoderStream())
       .getReader()
@@ -1171,11 +1174,17 @@ async function postClaudeChat(env, traveler, request, cors) {
                 `data: ${JSON.stringify({ type: 'text_delta', text: event.delta.text })}\n\n`
               )
             )
-          } else if (event.type === 'message_delta' && event.usage) {
-            if (typeof event.usage.input_tokens === 'number') {
+          } else if (event.type === 'message_delta') {
+            // stop_reason lives on event.delta (NOT event.usage). Anthropic
+            // emits "max_tokens" here when the 8192-token ceiling cut the
+            // reply off mid-stream — the gap this unit closes.
+            if (event.delta && typeof event.delta.stop_reason === 'string') {
+              stopReason = event.delta.stop_reason
+            }
+            if (event.usage && typeof event.usage.input_tokens === 'number') {
               usage.input_tokens = event.usage.input_tokens
             }
-            if (typeof event.usage.output_tokens === 'number') {
+            if (event.usage && typeof event.usage.output_tokens === 'number') {
               usage.output_tokens = event.usage.output_tokens
             }
           } else if (event.type === 'message_start' && event.message?.usage) {
@@ -1194,10 +1203,14 @@ async function postClaudeChat(env, traveler, request, cors) {
         usage.input_tokens,
         usage.output_tokens
       )
+      // Surface a max_tokens cutoff so the client can flag a truncated
+      // reply. Conservative: the done frame is byte-identical to before for
+      // a normal reply; `truncated: true` is added ONLY when the upstream
+      // stop_reason was max_tokens (the 8192-ceiling cut).
+      const donePayload = { type: 'done', usage }
+      if (stopReason === 'max_tokens') donePayload.truncated = true
       await writer.write(
-        encoder.encode(
-          `data: ${JSON.stringify({ type: 'done', usage })}\n\n`
-        )
+        encoder.encode(`data: ${JSON.stringify(donePayload)}\n\n`)
       )
     } catch (e) {
       await writer.write(
