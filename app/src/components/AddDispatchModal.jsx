@@ -735,6 +735,7 @@ function PreviewPanel({
             <img
               src={previewUrl}
               alt="Preview"
+              data-testid="dispatch-preview-image"
               style={{
                 width: '100%',
                 height: '100%',

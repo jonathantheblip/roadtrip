@@ -33,9 +33,12 @@ import {
   newSimulatorSession,
   assertSimulatorBooted,
 } from './_driver.mjs'
-import { FIXTURE_TRIP } from '../e2e/_fixtures/withTrip.js'
+import { dateStableTripSeed } from './_seed.mjs'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
+// Date-stable seed (see _seed.mjs) — the sim tier has no clockStub.js, so
+// the raw May-2026 fixture would bounce to the trips index on today's clock.
+const SEED_TRIP = dateStableTripSeed()
 
 test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', async (t) => {
   await assertSimulatorBooted()
@@ -75,7 +78,7 @@ test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', as
         req.onerror = () => reject(req.error || new Error('IDB delete failed'))
         req.onblocked = () => resolve() // accept blocked; we'll proceed
       }),
-    FIXTURE_TRIP
+    SEED_TRIP
   )
 
   await browser.url(BASE_URL + '/?person=helen&trip=volleyball-2026&nosw=1')

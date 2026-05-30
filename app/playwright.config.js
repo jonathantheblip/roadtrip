@@ -68,5 +68,23 @@ export default defineConfig({
     timeout: 30_000,
     stdout: 'ignore',
     stderr: 'pipe',
+    // Config floor for the claude-* e2e specs. The chat client only fires
+    // the /claude/* requests that page.route intercepts when
+    // isWorkerConfigured() is true — i.e. VITE_WORKER_URL + at least one
+    // VITE_FAMILY_TOKEN_* present at vite-serve time (see
+    // src/lib/workerSync.js). Without them, workerFetch throws "worker not
+    // configured" BEFORE any route can fire, so every claude spec goes red
+    // on a bare clone (no .env is committed). Setting them here makes the
+    // suite env-independent.
+    //
+    // The token is a TRANSPARENTLY-FAKE placeholder, NOT a credential: every
+    // e2e network flow is mocked via page.route, which fulfills before the
+    // request ever reaches the worker, so the token is never transmitted or
+    // validated. Any non-empty string works. The URL is the public worker
+    // origin only because the route regexes match on that host.
+    env: {
+      VITE_WORKER_URL: 'https://roadtrip-sync.jonathan-d-jackson.workers.dev',
+      VITE_FAMILY_TOKEN_HELEN: 'fake-e2e-token-routes-are-mocked-not-a-credential',
+    },
   },
 })
