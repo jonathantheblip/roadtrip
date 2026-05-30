@@ -57,6 +57,14 @@ const FIXTURE_PATH = resolve(
   'media',
   'iphone-video-1080p-5s.mov'
 )
+// Preview-wait bound. MUST exceed the pipeline's own ENCODE_TIMEOUT_MS
+// (120_000 ms in app/src/lib/videoPipeline.js) plus margin, so a slow-
+// but-valid encode (cold sim, loaded machine) gets its full pipeline
+// budget before the test declares failure. Below the pipeline cap, the
+// test would fail on merely-slow encodes the pipeline would still
+// complete. Do NOT lower this back toward the encode time (~18s warm) —
+// that reopens the too-tight-bound flake. 120s cap + 30s margin = 150s.
+const PREVIEW_WAIT_MS = 150_000
 
 test('WebCodecs encode pipeline runs end-to-end on iOS Simulator Safari', async (t) => {
   await assertSimulatorBooted()
@@ -205,7 +213,7 @@ test('WebCodecs encode pipeline runs end-to-end on iOS Simulator Safari', async 
   // preview video being displayed.
   const preview = await browser.$('[data-testid="dispatch-preview-video"]')
   try {
-    await preview.waitForDisplayed({ timeout: 90_000 })
+    await preview.waitForDisplayed({ timeout: PREVIEW_WAIT_MS })
   } catch (err) {
     const probe = await browser.execute(() => ({
       modalTestids: Array.from(
