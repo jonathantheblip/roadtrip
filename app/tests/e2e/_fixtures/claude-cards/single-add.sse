@@ -1,0 +1,26 @@
+data: {"type":"text_delta","text":"I"}
+
+data: {"type":"text_delta","text":" have enough to build the card — just need"}
+
+data: {"type":"text_delta","text":" to know the venue name (or should I leave it blank for"}
+
+data: {"type":"text_delta","text":" you to fill in)?\n\nActually, scratch that — I'll emit the card with an ed"}
+
+data: {"type":"text_delta","text":"itable name field so you can fill it in right there.\n\n```card\n{\n  \"action\": \"add\",\n  \"id\": \"c-sat"}
+
+data: {"type":"text_delta","text":"-dinner-add\",\n  \"eyebrow\": \"DAY 2 · SAT MAY 23\",\n  \"title\": \"Add Dinner\",\n  \"fields\": [\n    { \"name\":"}
+
+data: {"type":"text_delta","text":" \"name\", \"label\": \"Venue\", \"value\": \"\", \"editable\": true },\n    { \"name\": \"time\", \"label\": \"Time\", \"value\": \"7:00 PM\", \""}
+
+data: {"type":"text_delta","text":"editable\": true },\n    { \"name\": \"address\", \"label\": \"Address\", \"value\": \"\", \"editable\": true }\n  ],\n  \"target\": {\n    \"tripId\": \"volleyball-2026\",\n    \"dayN\": 2,"}
+
+data: {"type":"text_delta","text":"\n    \"position\": \"end\"\n  },\n  \"note\": \"Aurelia's match is at 3:45 PM — dinner at"}
+
+data: {"type":"text_delta","text":" 7 PM should give the family comfortable time to finish up and"}
+
+data: {"type":"text_delta","text":" get settled. Venue and address are blank"}
+
+data: {"type":"text_delta","text":"; fill in before saving.\"\n}\n```"}
+
+data: {"type":"done","usage":{"input_tokens":2714,"output_tokens":299}}
+

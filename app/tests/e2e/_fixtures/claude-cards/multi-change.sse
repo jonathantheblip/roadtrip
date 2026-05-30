@@ -1,0 +1,32 @@
+data: {"type":"text_delta","text":"Three"}
+
+data: {"type":"text_delta","text":" changes, all lined up. Saturday's match doesn't have a warmup stop"}
+
+data: {"type":"text_delta","text":" in the current trip, so no cascade there. Sunday's cancel is straightforward."}
+
+data: {"type":"text_delta","text":" For the dinner I've left the venue name editable — fill"}
+
+data: {"type":"text_delta","text":" it in on the card before you save.\n\n```card\n{\n  \"action\": \"multi\",\n  \"id\": \"c-multi-sat"}
+
+data: {"type":"text_delta","text":"-sun\",\n  \"eyebrow\": \"DAY 2 · SAT MAY 23 + DAY 3 · SUN MA"}
+
+data: {"type":"text_delta","text":"Y 24\",\n  \"title\": \"Move match, cancel Sunday, add dinner\",\n  \"edits\": [\n    {\n      \"action\": \"move\","}
+
+data: {"type":"text_delta","text":"\n      \"title\": \"vs BEV 13 Empire @ Court 1, Mohegan Sun\",\n      \"from\": \"3:45 PM\",\n      \"to\": \"11:00 AM\","}
+
+data: {"type":"text_delta","text":"\n      \"target\": { \"tripId\": \"volleyball-2026\", \"stopId\": \"vb2-3\" }\n    },\n    {\n      \"action\": \"cancel\",\n      \"title\": \"Match 1 vs Northeast 13."}
+
+data: {"type":"text_delta","text":"2 @ Court 3, Mohegan Sun\",\n      \"note\": \"Sunday's tournament stop will be removed.\","}
+
+data: {"type":"text_delta","text":"\n      \"target\": { \"tripId\": \"volleyball-2026\", \"stopId\": \"vb3-4\" }\n    },\n    {\n      \"action\": \"add\",\n      \"title\": \"Dinner\",\n      \"target\": { \"trip"}
+
+data: {"type":"text_delta","text":"Id\": \"volleyball-2026\", \"dayN\": 2, \"position\": \"end\" },\n      \"fields\": [\n        { \"name\": \"time\", \"label\": \"Time\", \"value\": \"7:00 PM\", \"editable\": true },\n        { \""}
+
+data: {"type":"text_delta","text":"name\": \"venue\", \"label\": \"Venue\", \"value\": \"\", \"editable\": true },\n        { \"name\": \"address\", \"label\": \"Address\", \"value\": \"\", \"editable\": true }\n      "}
+
+data: {"type":"text_delta","text":"]\n    }\n  ],\n  \"note\": \"7 PM dinner is well before Rafa's 9 PM cutoff —"}
+
+data: {"type":"text_delta","text":" good timing.\"\n}\n```"}
+
+data: {"type":"done","usage":{"input_tokens":2730,"output_tokens":494}}
+

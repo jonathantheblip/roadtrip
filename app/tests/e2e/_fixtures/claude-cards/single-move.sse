@@ -1,0 +1,24 @@
+data: {"type":"text_delta","text":"On"}
+
+data: {"type":"text_delta","text":" it, Helen. I don't see a warmup stop tied"}
+
+data: {"type":"text_delta","text":" to that Saturday match in the current trip, so this is a clean single-stop move.\n\n```"}
+
+data: {"type":"text_delta","text":"card\n{\n  \"action\": \"move\",\n  \"id\": \"c-vb2-3-move\",\n  \"eyebrow\": \""}
+
+data: {"type":"text_delta","text":"DAY 2 · SAT MAY 23\",\n  \"title\": \"Move Saturday match to 11:00 AM, Court 3\",\n  \"fields"}
+
+data: {"type":"text_delta","text":"\": [\n    { \"name\": \"time\", \"label\": \"Time\", \"from\": \"3:45 PM\", \"value\": \"11:00 AM\", \"previousValue\": \""}
+
+data: {"type":"text_delta","text":"3:45 PM\", \"editable\": true },\n    { \"name\": \"court\", \"label\": \"Court\", \"value\": \"Court 3\", \"previousValue\": \"Court 1\", \"editable\": true },\n    {"}
+
+data: {"type":"text_delta","text":" \"name\": \"opponent\", \"label\": \"Opponent\", \"value\": \"vs BEV 13 Empire\", \"editable\": false },\n    { \"name\": \"venue"}
+
+data: {"type":"text_delta","text":"\", \"label\": \"Venue\", \"value\": \"Mohegan Sun\", \"editable\": false }\n  ],\n  \"target\": {\n    \"tripId\": \"volleyball-2026\",\n    \"stop"}
+
+data: {"type":"text_delta","text":"Id\": \"vb2-3\"\n  },\n  \"note\": \"Court changed from Court 1 to Court 3 per your request."}
+
+data: {"type":"text_delta","text":" Confirm with the tournament schedule if needed.\"\n}\n```"}
+
+data: {"type":"done","usage":{"input_tokens":2721,"output_tokens":341}}
+

@@ -1,0 +1,16 @@
+data: {"type":"text_delta","text":"Canc"}
+
+data: {"type":"text_delta","text":"elling Sunday's Match 1 against Northeast 13.2 from the plan"}
+
+data: {"type":"text_delta","text":".\n\n```card\n{\n  \"action\": \"cancel\",\n  \"id\": \"c-vb3-4-cancel"}
+
+data: {"type":"text_delta","text":"\",\n  \"eyebrow\": \"DAY 3 · SUN MAY 24\",\n  \"title\": \"Remove match from plan\",\n  \"subtitle\": \"Match"}
+
+data: {"type":"text_delta","text":" 1 vs Northeast 13.2 @ Court 3, Mohegan Sun — 4:00 PM\",\n  \"warning\": \"This removes the stop from your trip"}
+
+data: {"type":"text_delta","text":" plan. If the match is still on the tournament schedule, you'd want"}
+
+data: {"type":"text_delta","text":" to handle that separately.\",\n  \"target\": {\n    \"tripId\": \"volleyball-2026\",\n    \"stopId\": \"vb3-4\"\n  }\n}\n```"}
+
+data: {"type":"done","usage":{"input_tokens":2709,"output_tokens":189}}
+

@@ -1,0 +1,109 @@
+{
+  "note": "Canonical, MODEL-AUTHORED Claude responses captured ONCE against the live model via scripts/capture-card-fixtures.mjs (worker). Replayed by app/tests/e2e/claude-card-replay.spec.js with no key and no network. Card shape here is decided by the model, not a mock.",
+  "model": "claude-sonnet-4-6",
+  "reader": "helen",
+  "tripId": "volleyball-2026",
+  "maxTokens": 8192,
+  "capturedAt": "2026-05-30T17:41:38.406Z",
+  "systemPromptChars": 9624,
+  "fixtures": [
+    {
+      "name": "single-move",
+      "kind": "single move",
+      "file": "single-move.sse",
+      "requestMessage": "Move Aurelia's Saturday match to 11 AM on court 3.",
+      "model": "claude-sonnet-4-6",
+      "reader": "helen",
+      "tripId": "volleyball-2026",
+      "capturedAt": "2026-05-30T17:41:38.406Z",
+      "stopReason": "end_turn",
+      "usage": {
+        "input_tokens": 2721,
+        "output_tokens": 341
+      },
+      "assembledChars": 903,
+      "cardBlockCount": 1,
+      "cardActions": [
+        "move"
+      ]
+    },
+    {
+      "name": "single-cancel",
+      "kind": "single cancel",
+      "file": "single-cancel.sse",
+      "requestMessage": "Cancel Sunday's match.",
+      "model": "claude-sonnet-4-6",
+      "reader": "helen",
+      "tripId": "volleyball-2026",
+      "capturedAt": "2026-05-30T17:41:38.406Z",
+      "stopReason": "end_turn",
+      "usage": {
+        "input_tokens": 2709,
+        "output_tokens": 189
+      },
+      "assembledChars": 498,
+      "cardBlockCount": 1,
+      "cardActions": [
+        "cancel"
+      ]
+    },
+    {
+      "name": "single-add",
+      "kind": "single add",
+      "file": "single-add.sse",
+      "requestMessage": "Add a 7 PM dinner on Saturday.",
+      "model": "claude-sonnet-4-6",
+      "reader": "helen",
+      "tripId": "volleyball-2026",
+      "capturedAt": "2026-05-30T17:41:38.406Z",
+      "stopReason": "end_turn",
+      "usage": {
+        "input_tokens": 2714,
+        "output_tokens": 299
+      },
+      "assembledChars": 865,
+      "cardBlockCount": 1,
+      "cardActions": [
+        "add"
+      ]
+    },
+    {
+      "name": "multi-change",
+      "kind": "multi-change",
+      "file": "multi-change.sse",
+      "requestMessage": "Move Saturday's match to 11 AM, cancel Sunday's match, and add a 7 PM dinner on Saturday.",
+      "model": "claude-sonnet-4-6",
+      "reader": "helen",
+      "tripId": "volleyball-2026",
+      "capturedAt": "2026-05-30T17:41:38.406Z",
+      "stopReason": "end_turn",
+      "usage": {
+        "input_tokens": 2730,
+        "output_tokens": 494
+      },
+      "assembledChars": 1355,
+      "cardBlockCount": 1,
+      "cardActions": [
+        "multi"
+      ]
+    },
+    {
+      "name": "guidance",
+      "kind": "guidance (non-card)",
+      "file": "guidance.sse",
+      "requestMessage": "What do you think we should do Saturday morning before Aurelia’s match?",
+      "model": "claude-sonnet-4-6",
+      "reader": "helen",
+      "tripId": "volleyball-2026",
+      "capturedAt": "2026-05-30T17:41:38.406Z",
+      "stopReason": "end_turn",
+      "usage": {
+        "input_tokens": 2720,
+        "output_tokens": 385
+      },
+      "assembledChars": 1539,
+      "cardBlockCount": 0,
+      "cardActions": []
+    }
+  ]
+}
