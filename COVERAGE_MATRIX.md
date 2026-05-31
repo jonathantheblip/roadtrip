@@ -13,7 +13,10 @@ capability grid.
   (Phase 2 — persona `a876757`, security `24a1b7e`/`cf096da`/`fd75e51`, axe
   `fcf691a`, dead-code `14ab6a0`, instrument `b27b4e0`). The §1 Status column and
   the governing-spec note are refreshed accordingly; capability columns (§3) are
-  unchanged. Phase 3 fills **Walked / Findings**.
+  unchanged. Phase 3 fills **Walked / Findings**. **Phase 3 capture COMPLETE (2026-05-31):
+  all 19 surface rows walked across slices C1–C5; findings P3-01 (Claude wrong-theme, M6) ·
+  P3-02 (new-trip exit affordance, trivial) · P3-03 (all-photos guard, latent) + inherited
+  A11Y-1 / DEADCODE-1; no severe/blocking. P3-01 proven bounded to exactly the O1/O2 Claude family.**
 - **Governing-spec note:** at Phase-1 grounding (HEAD `4b04639`)
   `QA_COVERAGE_SYSTEM_SPEC.md` did not yet exist, so this matrix was grounded in
   the Phase-1 task brief + the parent `TEST_STRATEGY_SPEC.md`. The spec was
@@ -108,7 +111,7 @@ Legend: `pw`=playwright `sim`=sim `ax`=axe `sec`=security `inst`=instrument
 | S1 Trips index | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | **axe ×4** (J/H/A/R) · pw smoke+visual | **clean** — no new serious/critical; A11Y-1 contrast (allowlisted, M6); **A/R newly scanned** |
 | S2 Trip home (themed) | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | **pw visual ×4** (J/H/A/R) | **themes correctly ×4** (bounds wrong-theme bug to Claude/C2); C1-GAP-2 (no axe contrast on S2) |
 | S3 Stop detail | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | — none — | **C1-GAP-1** — zero walked coverage (no existing stop-detail spec); deferred |
-| S4 Settings | ✓ | ✓ | ✓ | ✓ | pw, sim, ax | overlap | | |
+| S4 Settings | ✓ | ✓ | ✓ | ✓ | pw, sim, ax | overlap | code-read (theme) · incidental helen (reconcile-archive O8 + m4 dev-log) | **C5: clean** — themes correctly (surface/var, no hardcode). Own content (calendar/archive/traveler/sync/drafts) not directly walked. **C5-GAP-1** (own-content + no axe) |
 | S5 New trip | ✓ | ✓ | ✓ | ✓ | pw, ax | overlap | **pw helen both engines** (claude-create-trip 3✓ — Claude card path) · code-read + live drive (manual form) | **C4: clean** — Claude create_trip path green; manual NewTrip themes correctly (var/surface). **P3-02** exit present+functional (minor: 1 link, no symmetric Cancel — NOT a strand). **C4-GAP-3** (manual form no spec) · **C4-GAP-4** (no axe) · **C4-GAP-5** (J/A/R, benign) |
 | S6 Trip editor | ✓ | ✓ | ✓ | ✓ | pw, ax | overlap | code-read + live drive (no spec) | **C4: clean** — TripEditor themes correctly (surface/var), autosaves on unmount, exit functional (**P3-02**, shared shape with S5). **C4-GAP-1** (no editor spec) · **C4-GAP-4** (no axe) |
 | S7 Activities | ✓ | ✓ | ✓ | ✓ | pw, ax, chrome | overlap | **pw helen** (reached via share-in funnel: journey-05 + share-in) | **C4: clean** — ActivitiesView entry + Things-to-do → Share-In funnel green; own content (list/add/edit) not asserted. **C4-GAP-2** (activities own-content thin) · **C4-GAP-4** (no axe) |
@@ -118,12 +121,12 @@ Legend: `pw`=playwright `sim`=sim `ax`=axe `sec`=security `inst`=instrument
 | O1 Claude chat panel | ✓ | ✓ | ✓ | ✓ | pw, ax, sec(render) | overlap | **pw 22✓ · axe ×4 · sec(render)** | **P3-01** wrong-theme bleed (Helen palette, all personas); XSS-inert ✓; axe clean (A11Y-1 contrast); H/A/R newly scanned |
 | O2 Confirm cards | ✓ | ✓ | ✓ | ✓ | pw (replay), ax, sec(render) | overlap | **pw 6 card types ✓ · sec(render)** | **P3-01** (cards hardcode Helen T); behavior 22✓; **C2-GAP-1** (instrument not wired on cards) |
 | O3 Dispatch composer | ✓ | ✓ | ✓ | ✓ | pw, **sim**(WebCodecs), inst | overlap | **pw helen both engines** (dispatch/video/screenshots green chromium; gates fire) · **sim** video-encode (real iOS) · inst COLLECT · **code-read** (O3 theme) | **C3b: clean, no P3-02** — `AddDispatchModal` CSS-var-themed (no Helen hardcode; bounds P3-01 to Claude); R3/R3c WebCodecs gates fire as characterized; instrument Bucket-A only (by-design). **C3b-GAP-1** (J/A/R walked none — helen-pinned specs; benign per code-read) |
-| O4 Leave-when | ✓ | ✓ | ✓ | ✓ | pw, sec(api-proxy) | thin→overlap | | |
-| O5 Nearby results | **J only** | – | – | – | pw | **thin** | | |
-| O6 Postcard composer | – | – | **A only** | – | pw | **thin** | | |
+| O4 Leave-when | ✓ | ✓ | ✓ | ✓ | pw, sec(api-proxy) | thin→overlap | code-read (theme) · **leaveWhen.test 10/10** · worker auth 6/6 (/leave-when 401-gated) | **C5: clean** — themes correctly (var); logic + api-proxy auth green. Modal UI not walked (**C5-GAP-2**) |
+| O5 Nearby results | **J only** | – | – | – | pw | **thin** | code-read (theme) · worker auth (/places/nearby 401-gated) | **C5: clean** — themes correctly (var). J-only **by design**. Modal UI not walked (**C5-GAP-3**) |
+| O6 Postcard composer | – | – | **A only** | – | pw | **thin** | code-read (theme) | **C5: clean** — themes correctly (var; kraft decoration by-design). A-only **by design**. UI not walked (**C5-GAP-4**) |
 | O7 Photo lightbox | ✓ | ✓ | ✓ | ✓ | pw (swipe), **sim** | overlap | **pw both engines** (swipe + visual) · sim (photo-render decode) | **C3a: clean** — R1 [resolved] swipe holds on webkit; lightbox visual green; **C3a-GAP-1** (no axe) |
 | O8 Photo backfill triage | ✓ | ✓ | ✓ | ✓ | pw | thin | **pw both engines** (reconcile-archive → PhotoBackfillTriage, helen) | **C3a: clean, NOT a gap** — triage list/applying walked (overturns Phase-1 "no coverage"); **C3a-GAP-2** (helen-only); **C3a-GAP-1** (no axe) |
-| O9 Flight status | – | **H** | – | – | pw | **thin** | | |
+| O9 Flight status | – | **H** | – | – | pw | **thin** | code-read (theme) | **C5: clean** — themes correctly (currentColor, surface-agnostic by design). H-only **by design**. UI not walked (**C5-GAP-5**); flightStatus.js dup-export in DEADCODE-1 |
 
 ### Persona-coverage reality (critical gap)
 

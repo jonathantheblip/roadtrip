@@ -471,6 +471,107 @@ Phase-3 capture is complete.
 
 ---
 
+## Phase 3 — Slice C5: Settings + persona overlays (S4 · O4 · O5 · O6 · O9) `[capture log]` — PHASE 3 CAPTURE COMPLETE
+
+**Walked 2026-05-31, HEAD `eb1e522`.** The final, thinnest cluster — settings + the persona-specific
+overlays (O5 Jonathan-only · O6 Aurelia-only · O9 Helen-only, single-persona **by design**). **Tiers
+run (existing only):** source-of-truth **theme code-read** (the headline), the O4 logic unit test +
+the worker auth test (the api-proxy surface), and the incidental Settings reach from prior slices.
+axe = GAP (reaches none of S4–O9); sim = N/A; instrument = the dev-log VIEW lives in Settings but its
+harvest is C3b's (the `rt_upload_log_v1` hot zone).
+
+**Result: NO new `[real]` bug. Latest finding ID stays P3-03.** The theme check **completes the proof
+that P3-01 is bounded to exactly the O1/O2 Claude-in-app family** — every other surface themes
+correctly per-persona.
+
+### Theme check — all five C5 surfaces theme correctly (completes the P3-01-bounded proof)
+- **S4 `Settings.jsx`** — `surface-light/dark` + `surface-rule` + `var(--border/--accent/--card)`;
+  only persona-invariant literals (`#8B2B1F` danger, `#FBF8F2` pill text, `TRAVELERS[id].color`
+  identity, Helen's own dark-toggle swatch `#14110D`/`#F2EBDA` gated to her appearance section).
+- **O4 `LeaveWhenModal.jsx`** — `var(--bg/--text/--muted/--accent/--border)`,
+  `var(--accent-warning, #f59e0b)` (var + fallback).
+- **O5 `NearbyResultsModal.jsx`** — `var(--bg/--text/--muted/--accent/--border)` throughout.
+- **O6 `PostcardComposer.jsx`** — `var(--bg/--text/--card/--accent/--border/--bg2)`; the `#e8a880`
+  kraft texture + paper-tape are intentional postcard *decoration* (persona-invariant), not a theme
+  palette; `TRAVELER_DOT[id]` is identity color.
+- **O9 `FlightStatus.jsx`** — `currentColor`/`inherit` by design ("works on both light and dark
+  surfaces", `:69-78`); `#C0573F` is a deliberate contrast-safe DELAYED/CANCELLED status color.
+
+**None defines a module-level `const T` = a fixed palette applied via inline styles ignoring
+`data-theme`** (the P3-01 mechanism). **Verdict: P3-01 is the lone wrong-theme outlier in the app,
+confined to O1 panel + O2 cards** — proof complete across C1 (spine) + C2 (the bug) + C3 (photos) +
+C4 (creation/editing) + C5 (settings/overlays).
+
+### Confirmations (existing tiers)
+- **O4 logic — `leaveWhen.test.mjs` 10/10 pass** (trafficNote thresholds, past-target throw,
+  straight-line minutes). Repro: `cd app && node --test scripts/__tests__/leaveWhen.test.mjs`.
+- **O4/O5 api-proxy auth — worker `security-auth-isolation` 6/6 pass.** `/leave-when` + `/places/nearby`
+  are authed routes (401 without a valid family token) — the api-proxy is auth-gated, not an open
+  secret surface. Repro: `cd worker && npx vitest run security-auth-isolation`. (Phase-2 security tier
+  `24a1b7e`, re-confirmed for the C5 proxy surfaces.)
+- **S4 Settings reach (incidental, helen):** `reconcile-archive` renders `PhotoBackfillTriage` in
+  Settings (C3a green) + `photos-screenshots-m4` screenshots the dev-mode upload-log in Settings (C3b
+  green). Settings' OWN content not separately asserted (C5-GAP-1).
+
+### Gaps recorded
+- **C5-GAP-1 `[gap, S4 own-content + axe]`** — Settings own content (calendar export, `archive-toggle`,
+  traveler picker, sync actions, drafts list) not directly walked (only incidental, helen); axe doesn't
+  scan it. Deferred.
+- **C5-GAP-2 `[gap, O4 modal UI]`** — `LeaveWhenModal` render/flow not walked (logic ✓, worker auth ✓;
+  modal has no e2e spec). Deferred.
+- **C5-GAP-3 `[gap, O5 modal UI]`** — `NearbyResultsModal` render not walked (worker auth ✓). **O5 is
+  Jonathan-only BY DESIGN — single-persona is correct, not a persona gap;** the gap is the absent UI
+  walk. Deferred.
+- **C5-GAP-4 `[gap, O6 modal UI]`** — `PostcardComposer` not walked (no spec/lib/route). **O6 is
+  Aurelia-only BY DESIGN.** Deferred.
+- **C5-GAP-5 `[gap, O9 view UI]`** — `FlightStatus` not walked (`flightStatus.js` lib only; its
+  `airlineStatusUrl` dup-export is already in **DEADCODE-1**). **O9 is Helen-only BY DESIGN.** Deferred.
+
+*(By-design single-persona O5/O6/O9 are distinct from helen-PINNED multi-persona gaps: walking
+O5/O6/O9 as one persona is correct; the gap is that their UI isn't walked at all. S4 + O4 are
+multi-persona surfaces reached only helen/incidentally.)*
+
+---
+
+## Phase 3 (capture run) — COMPLETE · Matrix 19/19
+
+**Slices:** Slice 0 `d107f77` · C1 `21425f9` (spine) · C2 `a5b498d` (Claude — the bug) · C3a
+`634e859` (photos render) · C3b `434e480` (photos write/upload hot zone) · C4 `eb1e522`
+(creation/editing) · C5 (this commit, settings/overlays).
+
+**Findings catalog (Phase 3):**
+- **P3-01 `[real, S2 — deferred M6]`** — O1 panel + O2 cards render Helen's hardcoded `T` palette for
+  ALL personas (`ClaudeChat.jsx:43` + `ConfirmCard.jsx:27`, inline styles, no `data-theme`). **C5
+  proved this is bounded to exactly O1/O2** — no other surface hardcodes. M6 rewires to
+  `TRAVELERS[persona].theme`.
+- **P3-02 `[real, S4 trivial — M6 polish; not a strand]`** — NewTrip/TripEditor single-exit affordance
+  (lone top-left `‹ Trips` link, no symmetric Cancel, chrome suppressed). Exit functional (live-confirmed).
+- **P3-03 `[real, latent — not user-reachable]`** — `AllPhotosView` is the only deep view missing the
+  `&& trip` guard (`App.jsx:775`); back would blank IF reached trip-less, but normal nav can't (live:
+  back returns to the trip). Add the guard.
+- **Inherited (pre-Phase-3, re-confirmed):** **A11Y-1** `[real, serious — M6]` themed contrast
+  (corroborates P3-01 from the contrast angle); **DEADCODE-1** `[real, dead-code]` 78 orphan files +
+  2 dead deps + 21 dead exports. The R/J/N WebKit pile (R1–R6, J1–J4, N1) is all `[resolved]`,
+  re-confirmed firing-as-characterized in C3b.
+
+**Net: the capture run surfaced ONE genuinely new real bug (P3-01, M6-bounded) + two minor/latent
+edges (P3-02/P3-03). No severe/blocking findings. The founding black-photo bug class does NOT
+reproduce (C3a sim, non-black on real iOS).**
+
+**For Jonathan's triage (deferred — no specs authored during capture):**
+- **Spec-authoring to close gaps:** S3 stop-detail (C1-GAP-1); per-persona walks (lift `?person=helen`
+  → RT_PERSONA) for photos write-states / dispatch / cards / O8 triage (C3b-GAP-1, C3a-GAP-2, C2-GAP-1);
+  S6 editor / S7 activities-content / S5 manual-form (C4-GAP-1/2/3); S4 settings-content + O4/O5/O6/O9
+  modal UIs (C5-GAP-1..5).
+- **axe extension:** wire a11y-axe beyond trips-index + Claude panel (C1-GAP-2 / C3a-GAP-1 / C4-GAP-4 /
+  C5-GAP-1 — S2/S3, photos, creation/editing, settings).
+- **M6 fixes:** P3-01 (+ re-gate A11Y-1 contrast), P3-02 polish, P3-03 guard.
+- **DEADCODE-1:** delete-vs-restore triage (useTheme restore? map cluster + leaflet/react-leaflet delete?).
+- **Real-device (Jonathan's):** hardware iOS memory-pressure (the founding trigger, sim-structurally
+  uncatchable), `wrangler tail` worker traces, real-cellular at the arena.
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit
