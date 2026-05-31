@@ -62,6 +62,84 @@ commit that added the tier).
 
 ---
 
+## DEADCODE-1 — orphaned pre-refactor component/data/hook layer (78 files) `[real, dead-code]`
+
+**Source:** the dead-code tier — knip (QA_COVERAGE_SYSTEM_SPEC §4 build-list #3),
+wired 2026-05-31 at HEAD `fcf691a`. Reproducer: `cd app && npm run deadcode`.
+knip builds the real module graph from the production entry (index.html →
+src/main.jsx → App.jsx) plus the test/script/worker entries; anything in
+`src/**` not reachable is reported. Non-vacuous: the 3 known orphans appear AND
+live code (JonathanView + its imports Avatar/NearbyResultsModal/FlightStatus) is
+NOT flagged; spot-checks confirmed each flagged file's only importers are other
+orphans.
+
+**Status: [real, recorded — do NOT delete in this pass].** Cataloging is the
+job; deletion (or restoration) is a separate triage decision.
+
+**Root cause:** the "four refined themed views" refactor (commit `1fc7a9f`)
+replaced a prior single-view design generation; the old layer it used was left
+mounted-by-nothing — one connected dead subgraph (DiscoverView →
+StopCard/RouteMapLazy → …; ItineraryView → NextUpCard/useVisited → …). Live views
+import a different, smaller set.
+
+**RESTORE-vs-DELETE flags (do NOT resolve here):**
+- **`src/hooks/useTheme.js`** — dead (no live importer), BUT it holds the
+  per-person PWA **manifest + icon + theme-color/apple-title swap** logic.
+  App.jsx now sets only `data-theme` inline, so that per-person install capture
+  is NOT running — a POSSIBLE silent PWA-install regression. Likely a RESTORE
+  (re-wire into App), not a delete. (Its deps `src/data/themes.js`,
+  `src/utils/appIcon.js` are also flagged.)
+- **Map cluster** — `RouteMap.jsx`, `RouteMapLazy.jsx`, `RouteSvg.jsx`,
+  `MapCard.jsx` + the unused deps **`leaflet`** + **`react-leaflet`**. A whole
+  map feature went dark in the refactor. Restore-vs-delete; if delete, drop the
+  two deps to shed install/bundle weight.
+
+**Unused files (78), by dir:**
+- views (1): RoadSearch.jsx
+- components (37): ActualLog, AudioMemo, BottomNav, CeremonyMorningOptions,
+  DayOrientationBanner, DiscoverView, DriveTimeCalculator, EmergencyFab,
+  EssentialsCard, FilterBar, FlightHomeCard, GasWarning, HoustonFriday,
+  ItineraryView, JonathanQueue, KennedaleDay, MapCard, MediaView,
+  MondayWeatherCard, NavBar, Navigation, NextUpCard, PersonSelector,
+  PodcastSection, PrepCard, RePlan, RiskWatch, RouteMap, RouteMapLazy, RouteSvg,
+  ShareButton, StopCard, ThursdayDriveBox, TomorrowHeadsUp, TonightCard,
+  TripView, YouTubeSection
+- data (21): actualSeed, ceremonyOptions, curatedStops, essentials,
+  flightScenario, gas_warnings, jonathan_podcasts, kennedale, meta, mileage,
+  overnight, podcasts, preferences, prep, riskFlags, route, stops, themes,
+  tripCalendar, verifiedStops, youtube
+- hooks (9): useDismissed, useGeolocation, useItineraryFilters, useOnlineStatus,
+  useSwipeDays, useTheme, useVisited, useWeatherPath, VisitedContext
+- utils (10): actualLog, appIcon, driveTime, filterStops, navLinks, quickSearch,
+  riskWatch, scoreStop, share, tripDay
+
+**Unused dependencies (2):** `leaflet`, `react-leaflet` (the dead map cluster).
+
+**Unused exports (21)** — exported but imported nowhere, in OTHERWISE-LIVE files
+(dead exports; lower severity than dead files): ClaudeChat.jsx `ClaudeMark`,
+`ClaudeLockup`; claudeChat.js `createConversation`; flightStatus.js
+`airlineStatusUrl` (also a duplicate-export alias of `flightAwareUrl`);
+icsExport.js `buildIcs`; leaveWhen.js `clearLeaveWhenCache`; memAssets.js
+`deleteAsset`; memoryStore.js `loadOwnMemoryForStop`; openState.js `formatTime`;
+photoBackfillUpload.js `mergeRefIntoExisting`; photoEntries.js `refUrl`;
+photoPipeline.js `PHOTO_MAX_EDGE`, `PHOTO_JPEG_QUALITY`, `validatePhotoFile`,
+`readExif`, `downscaleImage`; uploadQueue.js `list`, `remove`, `update`,
+`clear`; whisper.js `transcribeAudio`.
+
+**Noise / not-real (documented, not findings):**
+- Unresolved import (1): `tests/e2e/photos-auto-downscale.spec.js` does
+  `import('/src/lib/memAssets.js')` (absolute-path dynamic import — a DEV-only
+  test hook, ref KNOWN_BUGS R2); knip can't resolve it. Harness pattern, not
+  dead code.
+- Config hints (4): knip flags `src/main.jsx` / `vite.config.js` /
+  `playwright.config.js` as redundant entries (it auto-detects them) + a generic
+  "78 unused files — add an entry?" nudge. The redundant-entry hints are
+  cosmetic; the "add entry" nudge is a FALSE alarm here (the 78 are verified
+  genuinely dead, not a missing-entry artifact). Config left explicit for
+  clarity.
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit

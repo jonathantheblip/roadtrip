@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "index.html",
+    "src/main.jsx",
+    "src/workers/*.worker.js",
+    "vite.config.js",
+    "playwright.config.js",
+    "tests/**/*.{js,mjs}",
+    "scripts/**/*.{js,mjs}"
+  ],
+  "project": ["src/**/*.{js,jsx}"]
+}

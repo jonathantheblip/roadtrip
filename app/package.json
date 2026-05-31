@@ -12,6 +12,7 @@
     "fetch-heroes": "node scripts/fetchHeroImages.mjs",
     "fetch-trip-heroes": "node scripts/fetchTripHeroes.mjs",
     "check-duplicates": "node scripts/checkDuplicates.mjs",
+    "deadcode": "knip",
     "test": "node --test scripts/__tests__/*.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -37,6 +38,7 @@
     "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.60.0",
     "@vitejs/plugin-react": "^4.3.3",
+    "knip": "^6.15.0",
     "sharp": "^0.34.5",
     "vite": "^5.4.10",
     "webdriverio": "^9.27.1"
