@@ -300,6 +300,92 @@ specs — C3b **confirms, does not re-litigate** them.
 
 ---
 
+## Phase 3 — Slice C3b: Photos dispatch/upload/encode — the HOT ZONE (O3 Dispatch · S8 write-states) `[capture log]`
+
+**Walked 2026-05-31, HEAD `effb967`.** The dispatch/upload/encode hot zone where R1–R6 +
+the J-series lived — the highest-likelihood-of-findings slice. **Tiers run (existing only):**
+pw (chromium + webkit-mobile dual-engine bug trap), sim (real iOS WebKit — `video-encode`
+WebCodecs + `offline-drain` IDB+Blob), instrument (`instrumentation-harvest` in COLLECT), +
+the **source-of-truth code-read** that reaches what the pw tier structurally cannot.
+
+**Result: NO new `[real]` bug. Latest finding ID unchanged at P3-01.** The finding most likely
+here — a per-persona wrong-theme bleed in the dispatch composer / sync-pill (same mechanism as
+P3-01) — was **cleared at the source**. P3-01 stays bounded to the O1/O2 Claude family; it does
+NOT extend to dispatch/upload (the C3b analogue of the C1-spine + C3a-photos-browse results).
+
+### THE headline — O3 composer + S8 sync-pill theme correctly per-persona (code-read clears the pw tier's blind spot)
+- **Why a code-read was load-bearing:** the six pw write-state specs (`photos-dispatch` /
+  `-offline` / `-video` / `-auto-downscale` / `-screenshots-m2` / `-screenshots-m4`) are
+  **helen-pinned** — every `page.goto()` hardcodes `?person=helen` and selects the
+  `helen-photos-entry` testid, **overriding** the RT_PERSONA-parameterized `withTrip` seed
+  (`?person=` resolves first, `App.jsx:78`). Confirmed empirically (walk-step-0):
+  `RT_PERSONA=aurelia npx playwright test photos-dispatch -g "happy path" --project=chromium`
+  **passed as helen** (matched `helen-photos-entry`, did NOT re-personalize). So a green pw run
+  is **not** evidence of correct per-persona theming — it's the tier being **blind** to J/A/R
+  (same shape as C3a-GAP-2 / C2-GAP-1). **This corrects the C3b carryover**, which claimed these
+  specs ride RT_PERSONA ×4; they do not.
+- **Direct evidence (code = source of truth for what renders):** `AddDispatchModal.jsx` (O3)
+  styles every chrome surface with **CSS theme vars** — `var(--bg)` / `var(--text)` /
+  `var(--accent)` / `var(--muted)` / `var(--border)` / `var(--card)` (e.g. `:430-431`, `:566`,
+  `:823-824`); the only literals are intentional & persona-invariant (`#000` photo/video
+  letterbox `:713`, `#fff` text on the accent button, `#1A1614` native `<option>` text). The
+  **SyncPill** (`PhotosView.jsx:262-295`) is likewise CSS-var-driven (`border var(--accent)`,
+  `color-mix(… var(--accent) …)`, `color var(--text)`). **NO module-level `const T`
+  Helen-palette block** like `ClaudeChat.jsx:43` / `ConfirmCard.jsx:27`.
+- **Verdict:** O3 + S8 write-states **theme correctly per-persona → no P3-02.** The J/A/R
+  write-state walk gap (**C3b-GAP-1**) is **BENIGN** (unwalked, not buggy). Cross-ref **P3-01**
+  (the bounded Claude-family outlier this confirms does NOT generalize to dispatch/upload).
+
+### Confirmations (non-vacuous, real runs)
+- **pw dual-engine — chromium fully green; all inherited gates fire as characterized.**
+  `photos-dispatch` / `-offline` / `-video` / `-auto-downscale` / `-screenshots-m2` /
+  `-screenshots-m4` + `instrumentation-harvest`: **35 passed / 11 skipped / 0 failed** (47s).
+  chromium **22/22 runnable green** (1 skip = `photos-video:43` encode → **R3c** chromium leg).
+  webkit-mobile **13/13 runnable green**, 10 gated skips, each on its documented project for its
+  documented reason: auto-downscale ×3 (**R2**), dispatch sync-pill ×2 (**R6**), offline ×2
+  (**R4**), m2 sync-pill ×1 (**R5**), m4 sync-pill ×1 (**R5**), video encode ×1 (**R3c** webkit
+  leg). **No drift — confirms, does not re-litigate.** Repro: `cd app && npx playwright test
+  photos-dispatch photos-offline photos-video photos-auto-downscale photos-screenshots-m2
+  photos-screenshots-m4 instrumentation-harvest --reporter=list`. Tiers caught: pw.
+- **instrument COLLECT — only the expected by-design trace, no unexpected codes.**
+  `instrumentation-harvest` green both engines: clean walk → empty `rt_upload_log_v1`; a silent
+  video-into-photo-input → `harvestDevLog` captures the **Bucket-A `is-video`** swallow the UI
+  hid. That single trace is `[test/by-design]` (the modal silently resets to the picker per
+  spec §3), NOT a new `[real]` finding; a new finding would be an *unexpected* code — none
+  surfaced. `expectNoSilentFailures` deliberately NOT wired as a gate across the photo specs
+  (COLLECT, not assert). Tiers caught: instrument.
+- **sim real-iOS — both pass on booted iPhone 17 / iOS 26.5.** `video-encode` (1 pass, 13.8s):
+  WebCodecs encode runs end-to-end → `dispatch-preview-video` visible — iOS-real coverage for
+  **R3/R3c**. `offline-drain` (1 pass, 13.4s): sync-pill "1 syncing" from a populated IDB queue
+  — iOS-real coverage for **R4/R5/R6**. Persona helen (RT_PERSONA-parameterizable but assertions
+  persona-invariant — cross-persona spot-check OUT per the approved plan). Repro: vite on :5181
+  (`--strictPort`) + `node --test tests/simulator/video-encode.test.mjs` /
+  `…/offline-drain.test.mjs`. Tiers caught: sim.
+  - **Ops note (NOT an app finding):** the first sequential sim attempt **double-failed** —
+    `video-encode` modal never opened + `offline-drain` IDB-inject `execute/sync` hung ~127s
+    (the leftover-blocked-`indexedDB.open` mode the spec comment `:63-64` warns about). A
+    `simctl shutdown && boot` cleared it; both passed clean. **Takeaway: boot the sim clean per
+    sim-run; don't chain sessions.** The `GET /session/…/context` webdriver ERROR is benign —
+    present on the passing runs too.
+
+### Gaps recorded
+- **C3b-GAP-1 `[gap, O3 / S8-write-states persona]` — J/A/R write-states walked NONE
+  (helen-pinned specs).** The six pw write-state specs hardcode `?person=helen`; RT_PERSONA is a
+  no-op on them, so jonathan/aurelia/rafa dispatch + sync-pill + offline are not separately
+  walked. **BENIGN** per the code-read above (the surfaces are CSS-var-themed, so helen-green
+  generalizes), but the per-persona render is not *empirically* walked. Same shape as
+  **C3a-GAP-2** (O8 helen-only) / **C2-GAP-1**. Close by persona-parameterizing the photos
+  write-state specs (lift the `?person=helen` goto + `helen-photos-entry` testid onto
+  RT_PERSONA, as the sim specs already do) — spec-authoring, **deferred to triage (Jonathan's
+  call)**.
+
+**C3 COMPLETE** (C3a render/browse + C3b dispatch/upload). **Matrix: 10 of 19 surface rows
+captured** (added O3; S8 row now render-states C3a + write-states C3b). Next: **C4 —
+creation/editing** (S5 New-trip · S6 Trip editor · S7 Activities · S10 Share-in), incl. the two
+CONFIRM-not-gap edges Jonathan flagged (new-trip exit affordance + all-photos back-blank).
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit
