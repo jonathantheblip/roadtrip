@@ -9,12 +9,16 @@ capability grid.
 - **Anchors verified against this tree:** client root `app/src/App.jsx`;
   worker `worker/src/index.js`; Claude chat `app/src/components/ClaudeChat.jsx`;
   cards `app/src/components/ConfirmCard.jsx`.
-- **Governing-spec note:** `QA_COVERAGE_SYSTEM_SPEC.md` (the document Phase 1
-  is named for) **does not exist** in the working tree, git history, or stash
-  (verified via name search, content grep, `git log -S`, `git stash list`).
-  This matrix is therefore grounded in the Phase-1 task brief + the parent
-  `TEST_STRATEGY_SPEC.md`. Section references below (§3/§4/§5/§6) are to the
-  brief's restatement of the missing spec.
+- **Phase 2/3 status (2026-05-31):** all five capture tiers are now **built**
+  (Phase 2 — persona `a876757`, security `24a1b7e`/`cf096da`/`fd75e51`, axe
+  `fcf691a`, dead-code `14ab6a0`, instrument `b27b4e0`). The §1 Status column and
+  the governing-spec note are refreshed accordingly; capability columns (§3) are
+  unchanged. Phase 3 fills **Walked / Findings**.
+- **Governing-spec note:** at Phase-1 grounding (HEAD `4b04639`)
+  `QA_COVERAGE_SYSTEM_SPEC.md` did not yet exist, so this matrix was grounded in
+  the Phase-1 task brief + the parent `TEST_STRATEGY_SPEC.md`. The spec was
+  **committed later at `352f752`** and now governs; section references below
+  (§3/§4/§5/§6) correspond to it.
 
 ## How to read / maintain this (living document)
 
@@ -34,13 +38,13 @@ capability grid.
 
 | Tier | Engine / target | Reaches | Status |
 |---|---|---|---|
-| **sim** | Real iOS WebKit via safaridriver + webdriverio (`app/tests/simulator/`) | On-device render, WebCodecs, IDB+Blob, real photo decode | **Built**, but **seeds Helen only** (`?person=helen`) |
-| **playwright** | Bundled Chromium + bundled WebKit, dev server (`app/tests/e2e/`) | Deterministic client logic, card render, mode detection, photo pipeline (non-iOS), journeys, network matrix, visual baselines | **Built**, but fixture **seeds Jonathan only** (`withTrip.js:21`) |
-| **axe** | axe-core a11y scan | WCAG/contrast/roles/labels on any rendered surface | **NOT built** — no `@axe-core` dep |
+| **sim** | Real iOS WebKit via safaridriver + webdriverio (`app/tests/simulator/`) | On-device render, WebCodecs, IDB+Blob, real photo decode | **Built**; now **RT_PERSONA**-parameterized (`a876757`) — drives all 4 personas |
+| **playwright** | Bundled Chromium + bundled WebKit, dev server (`app/tests/e2e/`) | Deterministic client logic, card render, mode detection, photo pipeline (non-iOS), journeys, network matrix, visual baselines | **Built**; now **RT_PERSONA**-parameterized (`a876757`) — drives all 4 personas |
+| **axe** | axe-core a11y scan | WCAG/contrast/roles/labels on any rendered surface | **Built** (Phase 2 #2, `fcf691a`) |
 | **chrome** | Agent-driven real Chrome, **deployed** GitHub Pages build | Post-deploy live-site sanity end-to-end | Manual/agent; not codified as a tier |
-| **instrument** | dev-log + worker-log harvest (`app/src/lib/uploadLog.js` `logUploadEvent`; worker `console.warn/error`) | Asserting on emitted event codes (`storage-quota`, `queue-insert-failed`, `claude_card_apply`, etc.) | **NOT built** as a harness |
-| **dead-code** | static unused-export/file scan (knip / ts-prune) | Orphaned views, hooks, exports | **NOT built** — no scanner dep |
-| **security** | 3 dedicated checks (auth-boundary · no-secret-in-bundle · user-string render) | See §4 | **NOT built** — no security tier exists |
+| **instrument** | dev-log + worker-log harvest (`app/src/lib/uploadLog.js` `logUploadEvent`; worker `console.warn/error`) | Asserting on emitted event codes (`storage-quota`, `queue-insert-failed`, `claude_card_apply`, etc.) | **Built** (Phase 2 #4, `b27b4e0`) |
+| **dead-code** | static unused-export/file scan (knip / ts-prune) | Orphaned views, hooks, exports | **Built** (Phase 2 #3, `14ab6a0`) |
+| **security** | 3 dedicated checks (auth-boundary · no-secret-in-bundle · user-string render) | See §4 | **Built** (Phase 2 #5–7, `24a1b7e`/`cf096da`/`fd75e51`) |
 
 Worker tier (miniflare/vitest, `worker/test/`) exists for worker-layer logic
 (7 specs; TEST_STRATEGY Units 1/2/4/6 built) and is the engine the **security
@@ -122,6 +126,11 @@ Legend: `pw`=playwright `sim`=sim `ax`=axe `sec`=security `inst`=instrument
 | O9 Flight status | – | **H** | – | – | pw | **thin** | | |
 
 ### Persona-coverage reality (critical gap)
+
+> **Update (2026-05-31, Phase 2 #1 `a876757`):** both walking tiers are now
+> `RT_PERSONA`-parameterized — the single-persona limitation described below is
+> **RESOLVED**; all 4 personas are reachable. The analysis is retained as the
+> pre-Phase-2 rationale for why the harness was built.
 
 The two built walking tiers are **single-persona**:
 - **playwright** seeds **Jonathan** (`app/tests/e2e/_fixtures/withTrip.js:21`).

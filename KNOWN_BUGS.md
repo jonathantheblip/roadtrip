@@ -26,7 +26,7 @@ fixed. Per-entry status added below.
 ## A11Y-1 — axe color-contrast: themed eyebrow/muted labels + Claude panel `[real, serious]`
 
 **Source:** the axe-core a11y tier (QA_COVERAGE_SYSTEM_SPEC §4 build-list #2),
-wired 2026-05-31 at HEAD `fd75e51`. axe scans the SETTLED page (the helper
+wired 2026-05-31 at HEAD `fcf691a`. axe scans the SETTLED page (the helper
 collapses entrance animation/transition durations before analyzing), at the
 serious+critical WCAG-2 AA threshold. These are genuine, stable findings — NOT
 the animation-transient `fade-up` artifacts (those were eliminated by the
@@ -65,7 +65,7 @@ commit that added the tier).
 ## DEADCODE-1 — orphaned pre-refactor component/data/hook layer (78 files) `[real, dead-code]`
 
 **Source:** the dead-code tier — knip (QA_COVERAGE_SYSTEM_SPEC §4 build-list #3),
-wired 2026-05-31 at HEAD `fcf691a`. Reproducer: `cd app && npm run deadcode`.
+wired 2026-05-31 at HEAD `14ab6a0`. Reproducer: `cd app && npm run deadcode`.
 knip builds the real module graph from the production entry (index.html →
 src/main.jsx → App.jsx) plus the test/script/worker entries; anything in
 `src/**` not reachable is reported. Non-vacuous: the 3 known orphans appear AND
