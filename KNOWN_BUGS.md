@@ -179,6 +179,58 @@ is the only spine finding — allowlisted, deferred to M6.
 
 ---
 
+## Phase 3 — Slice C2: Claude family (O1 panel · O2 confirm cards, 6 types) `[capture log]`
+
+**Walked 2026-05-31, HEAD `21425f9`, all 4 personas.** Tiers run (existing only): pw
+(claude-* behavior specs), axe (panel, persona-aware), security (render-xss + markdown
+guard), instrument (harvestDevLog — see C2-GAP-1). **C1 proved the rest of the spine
+themes correctly per-persona; C2 confirms the wrong-theme bleed lives HERE, at its source.**
+
+### P3-01 — Claude panel + cards render Helen's hardcoded palette for ALL personas `[real, S2 — deferred M6]`
+- **Surface×persona:** O1 (`ClaudeChatPanel`) + O2 (`ConfirmCard`, all 6 card types) ×
+  **jonathan / aurelia / rafa** (helen renders correct *by coincidence* — it IS her palette).
+- **Direct evidence (code = source of truth for what renders):** both files define a
+  module-level `const T` = Helen's linen/sage palette — `ClaudeChat.jsx:43-54`
+  (`bg #F2EFE7`, `ink #15201A`, `inkMuted rgba(21,32,26,0.62)`, `accent #2E5D3A` sage) and
+  `ConfirmCard.jsx:27-48` ("Helen's linen palette (duplicated from ClaudeChat.jsx)").
+  Applied via **inline styles only**, with **no read of `data-theme`/persona/CSS-vars**.
+  S1/S2 theme via `data-theme` CSS vars (C1, green ×4); O1/O2 bypass that entirely →
+  jonathan/aurelia/rafa get Helen's colors inside their otherwise-correctly-themed app.
+  Comments name it: *"Helen's linen palette is the M1 default for everyone — Jonathan's
+  dark-editorial skin lands in M6."*
+- **What SHOULD render** (the per-persona themes the spine already uses, per A11Y-1):
+  jonathan dark-editorial (oxblood `#A33A2E` on near-black), aurelia hot-pink
+  (`#E8478C`/`#FCE8EE`), rafa his own palette, helen linen. The panel renders helen's for all.
+- **Tiers caught:** code-read (direct render evidence) + **axe** (A11Y-1: panel **4.48:1 =
+  `T.inkMuted` over `T.bg` for ALL personas** — the contrast symptom corroborates the
+  render bug; tier overlap a11y ↔ theme). Cross-ref **A11Y-1**.
+- **Reproducer:** `RT_PERSONA=jonathan npx playwright test a11y-axe --project=chromium -g
+  "Claude-in-app panel"` (drop the `color-contrast` allow to watch Helen's 4.48:1 fire
+  under jonathan); or read `ClaudeChat.jsx:43` / `ConfirmCard.jsx:29`.
+- **Non-vacuous:** C1 proved the rest of the app themes correctly per-persona, so this is a
+  real *localized* outlier, not a global theming failure. **DO NOT FIX — M6** rewires the
+  panel/cards to read `TRAVELERS[persona].theme` instead of the hardcoded `T`.
+
+### Confirmations (green, real runs)
+- **O1/O2 behavior — 22 passed** (pw, chromium): all 6 card types + panel states (entry,
+  stream, past-convo list, error, mode-shift, apply-failure-plain-language). Behavior is
+  persona-invariant by design — the bug is purely visual/theme, **not logic**. Tiers: pw.
+- **Render sanitization PASSES on its home surface:** `security-render-xss` green (model
+  HTML renders inert — no element, no execution, escaped); `markdown-path-guard` 4/4 (no
+  XSS-capable imports, react-markdown present, no `rehype-raw`). Tiers: security(render).
+- **axe panel ×4 — all green** (serious+critical, contrast allowlisted). Panel was
+  axe-scanned jonathan-only pre-Phase-2; **helen/aurelia/rafa panel a11y now scanned, clean.**
+  Tiers: axe.
+
+### Gaps recorded
+- **C2-GAP-1 `[gap, O2 instrument]`** — instrument-harvest not wired on the Claude card
+  surface. `ConfirmCard` logs to the dev-log on apply-failure (`ConfirmCard.jsx:1063`), but
+  the only existing harvest spec (`instrumentation-harvest.spec.js`) walks photos, not cards.
+  On the successful behavior walk the failure-only dev-log stayed empty (no silent failures).
+  Close by harvesting during a card-apply-failure walk (spec-authoring — deferred per Q2).
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit

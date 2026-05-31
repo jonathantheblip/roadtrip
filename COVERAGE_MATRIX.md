@@ -115,8 +115,8 @@ Legend: `pw`=playwright `sim`=sim `ax`=axe `sec`=security `inst`=instrument
 | S8 Photos (per-trip) | ✓ | ✓ | ✓ | ✓ | pw, **sim**, ax, inst, chrome | overlap | | |
 | S9 All photos | ✓ | ✓ | ✓ | ✓ | pw, ax, chrome | overlap | | |
 | S10 Share-in | ✓ | ✓ | ✓ | ✓ | pw, ax, chrome | overlap | | |
-| O1 Claude chat panel | ✓ | ✓ | ✓ | ✓ | pw, ax, sec(render) | overlap | | |
-| O2 Confirm cards | ✓ | ✓ | ✓ | ✓ | pw (replay), ax, sec(render) | overlap | | |
+| O1 Claude chat panel | ✓ | ✓ | ✓ | ✓ | pw, ax, sec(render) | overlap | **pw 22✓ · axe ×4 · sec(render)** | **P3-01** wrong-theme bleed (Helen palette, all personas); XSS-inert ✓; axe clean (A11Y-1 contrast); H/A/R newly scanned |
+| O2 Confirm cards | ✓ | ✓ | ✓ | ✓ | pw (replay), ax, sec(render) | overlap | **pw 6 card types ✓ · sec(render)** | **P3-01** (cards hardcode Helen T); behavior 22✓; **C2-GAP-1** (instrument not wired on cards) |
 | O3 Dispatch composer | ✓ | ✓ | ✓ | ✓ | pw, **sim**(WebCodecs), inst | overlap | | |
 | O4 Leave-when | ✓ | ✓ | ✓ | ✓ | pw, sec(api-proxy) | thin→overlap | | |
 | O5 Nearby results | **J only** | – | – | – | pw | **thin** | | |
