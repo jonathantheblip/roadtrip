@@ -1,5 +1,10 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // Claude-in-App M2 — mode-transition cue. The thin "MODE · …" tag that
 // renders ABOVE the assistant bubble only on the turn where Claude
@@ -112,7 +117,7 @@ test.describe('Claude-in-App M2 — mode-transition cue', () => {
       EXECUTE_REPLY,
       GUIDANCE_REPLY_3,
     ])
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
     await page.getByRole('button', { name: /Modify this trip with Claude/i }).click()
     const dialog = page.getByRole('dialog', { name: /Chat with Claude/i })

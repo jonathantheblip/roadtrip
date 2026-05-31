@@ -1,5 +1,12 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before. PERSONA_NAME is the
+// capitalized form the app greets with ("Hi {Name}." — ClaudeChat.jsx:1172).
+const PERSONA = resolvePersona('helen')
+const PERSONA_NAME = PERSONA.charAt(0).toUpperCase() + PERSONA.slice(1)
 
 // Claude-in-App M1 — chat surface acceptance. Covers:
 //   1. Empty state on the trips index (no trip context)
@@ -111,7 +118,7 @@ test.describe('Claude-in-App M1', () => {
     // Force the trips index by clearing the active-trip query so
     // pickActiveTrip lands nowhere — but the seeded fixture is
     // "today's" trip, so we navigate explicitly to index.
-    await page.goto('/?person=helen&nosw=1')
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
     // Land on trip view (today's). Then go back to the trips index.
     // The fixed top bar's back button shows "← Trips" (mixed case in
     // the DOM; uppercase only via CSS). Match case-insensitively or
@@ -126,7 +133,7 @@ test.describe('Claude-in-App M1', () => {
     // Panel header — no trip eyebrow when opened from the index.
     await expect(page.getByRole('dialog', { name: /Chat with Claude/i })).toBeVisible()
     const dialog = page.getByRole('dialog', { name: /Chat with Claude/i })
-    await expect(dialog.getByText(/Hi Helen\./i)).toBeVisible()
+    await expect(dialog.getByText(new RegExp(`Hi ${PERSONA_NAME}\\.`, 'i'))).toBeVisible()
     await expect(dialog.getByText(/help you think through a trip/i)).toBeVisible()
     // The trip-loaded subtitle is the one we DON'T want here.
     await expect(dialog.getByText(/I have .* loaded/i)).toHaveCount(0)
@@ -137,7 +144,7 @@ test.describe('Claude-in-App M1', () => {
     const state = await mockClaudeWorker(page, {
       chatText: 'Saturday is Court 3 at Mohegan. Pool play starts at 9 AM.',
     })
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
     // Top-bar in-header entry.
     await page.getByRole('button', { name: /Modify this trip with Claude/i }).click()
@@ -166,7 +173,7 @@ test.describe('Claude-in-App M1', () => {
     // Worker received the right shape — conversation_id + trip_id.
     expect(state.chats).toBe(1)
     expect(state.lastChatBody.trip_id).toBe('volleyball-2026')
-    expect(state.lastChatBody.user_id).toBe('helen')
+    expect(state.lastChatBody.user_id).toBe(PERSONA)
     expect(state.lastChatBody.message).toContain('Saturday')
 
     await page.screenshot({
@@ -181,7 +188,7 @@ test.describe('Claude-in-App M1', () => {
       chatText: 'Yes — pool play opens at 9 AM Saturday on Court 3.',
       initialConversations: [],
     })
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     await page.getByRole('button', { name: /Modify this trip with Claude/i }).click()
     const dialog = page.getByRole('dialog', { name: /Chat with Claude/i })
 
@@ -197,7 +204,7 @@ test.describe('Claude-in-App M1', () => {
     state.conversations = [
       {
         id: state.lastChatBody.conversation_id,
-        user_id: 'helen',
+        user_id: PERSONA,
         trip_id: 'volleyball-2026',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -222,7 +229,7 @@ test.describe('Claude-in-App M1', () => {
   test('failed chat surfaces Helen-readable error string, not technical detail', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await mockClaudeWorker(page, { chatError: true })
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     await page.getByRole('button', { name: /Modify this trip with Claude/i }).click()
     const dialog = page.getByRole('dialog', { name: /Chat with Claude/i })
     await dialog.getByRole('textbox', { name: /Message Claude/i }).fill('hi')

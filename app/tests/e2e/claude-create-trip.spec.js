@@ -1,5 +1,10 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // Claude-in-App — trip creation (create_trip card) on the trips-index
 // surface. Mirrors the mocked-SSE pattern from claude-card-shapes.spec.js
@@ -139,7 +144,7 @@ test.describe('Claude-in-App — create_trip', () => {
     mockIndexChat(page, [
       replyWithCard(ashevilleCard('ct-ash-1', 'River Arts District'), 'I drafted a long weekend in Asheville.'),
     ])
-    await page.goto('/?person=helen&nosw=1')
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
 
     const dialog = await openIndexChat(page)
     await sendMessage(dialog, 'Plan a long weekend in Asheville in October, art and a hike')
@@ -187,7 +192,7 @@ test.describe('Claude-in-App — create_trip', () => {
     mockIndexChat(page, [
       replyWithCard(ashevilleCard('ct-ash-1', 'River Arts District'), 'Drafted.'),
     ])
-    await page.goto('/?person=helen&nosw=1')
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
 
     const dialog = await openIndexChat(page)
     await sendMessage(dialog, 'Plan Asheville in October')
@@ -218,7 +223,7 @@ test.describe('Claude-in-App — create_trip', () => {
       replyWithCard(ashevilleCard('ct-ash-1', 'Craggy Gardens hike'), 'First draft for Asheville.'),
       replyWithCard(ashevilleCard('ct-ash-2', 'Burntshirt Vineyards'), 'Swapped the hike for a winery.'),
     ])
-    await page.goto('/?person=helen&nosw=1')
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
 
     const dialog = await openIndexChat(page)
     await sendMessage(dialog, 'Plan a long weekend in Asheville with a hike')
