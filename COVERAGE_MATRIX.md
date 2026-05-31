@@ -112,8 +112,8 @@ Legend: `pw`=playwright `sim`=sim `ax`=axe `sec`=security `inst`=instrument
 | S5 New trip | ✓ | ✓ | ✓ | ✓ | pw, ax | overlap | | |
 | S6 Trip editor | ✓ | ✓ | ✓ | ✓ | pw, ax | overlap | | |
 | S7 Activities | ✓ | ✓ | ✓ | ✓ | pw, ax, chrome | overlap | | |
-| S8 Photos (per-trip) | ✓ | ✓ | ✓ | ✓ | pw, **sim**, ax, inst, chrome | overlap | | |
-| S9 All photos | ✓ | ✓ | ✓ | ✓ | pw, ax, chrome | overlap | | |
+| S8 Photos (per-trip) | ✓ | ✓ | ✓ | ✓ | pw, **sim**, ax, inst, chrome | overlap | **pw ×4 both engines** (chromium 45✓ / webkit 45✓) · visual album ×4 · **sim** photo-render (real iOS, helen) | **C3a: clean** — album themes correctly ×4 (no bleed; bounds P3-01 to Claude); sim render **non-black** (founding bug no-repro); **C3a-GAP-1** (no axe). *Render-states only — write-states → C3b.* |
+| S9 All photos | ✓ | ✓ | ✓ | ✓ | pw, ax, chrome | overlap | **pw ×4 both engines** (all-photos 4✓) · visual all-photos ×4 | **C3a: themes correctly ×4** (no bleed); aggregation green. Back→blank nav edge **→ C4** (not walked, Jonathan's call); **C3a-GAP-1** (no axe) |
 | S10 Share-in | ✓ | ✓ | ✓ | ✓ | pw, ax, chrome | overlap | | |
 | O1 Claude chat panel | ✓ | ✓ | ✓ | ✓ | pw, ax, sec(render) | overlap | **pw 22✓ · axe ×4 · sec(render)** | **P3-01** wrong-theme bleed (Helen palette, all personas); XSS-inert ✓; axe clean (A11Y-1 contrast); H/A/R newly scanned |
 | O2 Confirm cards | ✓ | ✓ | ✓ | ✓ | pw (replay), ax, sec(render) | overlap | **pw 6 card types ✓ · sec(render)** | **P3-01** (cards hardcode Helen T); behavior 22✓; **C2-GAP-1** (instrument not wired on cards) |
@@ -121,8 +121,8 @@ Legend: `pw`=playwright `sim`=sim `ax`=axe `sec`=security `inst`=instrument
 | O4 Leave-when | ✓ | ✓ | ✓ | ✓ | pw, sec(api-proxy) | thin→overlap | | |
 | O5 Nearby results | **J only** | – | – | – | pw | **thin** | | |
 | O6 Postcard composer | – | – | **A only** | – | pw | **thin** | | |
-| O7 Photo lightbox | ✓ | ✓ | ✓ | ✓ | pw (swipe), **sim** | overlap | | |
-| O8 Photo backfill triage | ✓ | ✓ | ✓ | ✓ | pw | thin | | |
+| O7 Photo lightbox | ✓ | ✓ | ✓ | ✓ | pw (swipe), **sim** | overlap | **pw both engines** (swipe + visual) · sim (photo-render decode) | **C3a: clean** — R1 [resolved] swipe holds on webkit; lightbox visual green; **C3a-GAP-1** (no axe) |
+| O8 Photo backfill triage | ✓ | ✓ | ✓ | ✓ | pw | thin | **pw both engines** (reconcile-archive → PhotoBackfillTriage, helen) | **C3a: clean, NOT a gap** — triage list/applying walked (overturns Phase-1 "no coverage"); **C3a-GAP-2** (helen-only); **C3a-GAP-1** (no axe) |
 | O9 Flight status | – | **H** | – | – | pw | **thin** | | |
 
 ### Persona-coverage reality (critical gap)

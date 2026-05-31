@@ -231,6 +231,75 @@ themes correctly per-persona; C2 confirms the wrong-theme bleed lives HERE, at i
 
 ---
 
+## Phase 3 — Slice C3a: Photos browse & triage (S8 Photos · S9 All-photos · O7 Lightbox · O8 Backfill) `[capture log]`
+
+**Walked 2026-05-31, HEAD `dc5fc3b`, all 4 personas** (jonathan/helen/aurelia/rafa).
+**Tiers run (existing only):** pw (chromium + webkit-mobile — the dual-engine bug trap),
+**sim** (real iOS WebKit, `photo-render`), visual baselines (per-persona). axe = GAP (see
+C3a-GAP-1). instrument N/A — render surfaces perform no upload, so the failure-only
+`rt_upload_log_v1` emits nothing by construction (the instrument hot zone is the dispatch/
+upload flow → C3b). This is the **render/display half** of C3; the dispatch/upload/encode
+half (O3 + S8 write-states) is **C3b** (not yet walked).
+
+**Result: NO new `[real]` bugs on the photos browse/render half.** S8 album + S9 all-photos
+**theme correctly across all four personas** (per-persona visual baselines ×4 green on BOTH
+engines) — the Claude-in-app wrong-theme bug (**P3-01**) stays **bounded to O1/O2**, it does
+NOT extend to the photos surfaces (the C3a analogue of C1's spine result). O7 lightbox + O8
+backfill-triage green both engines. Latest finding ID unchanged at **P3-01**; C3b (the
+upload/encode hot zone, where R1–R6 / J-series lived) is where **P3-02+** is likely.
+
+**Confirmations (non-vacuous, real runs):**
+- **S8 Photos — pw both engines green.** chromium **45/45** + webkit-mobile **45/45** across
+  the render specs (`photos-view`, `-lazy-load`, `-multi-photo-tile`, `-capturedAt`,
+  `-lightbox-swipe`). **Per-persona theme: `album-{jonathan,helen,aurelia,rafa}` visual
+  baselines ×4 green on chromium AND webkit-mobile** → the album themes correctly per
+  persona, no hardcoded-palette bleed. Repro: `cd app && npx playwright test photos-view
+  visual-baselines -g "photos album" --project=chromium` (and `--project=webkit-mobile`).
+  Tiers caught: pw(behavior+visual).
+- **S8 Photos — sim real-iOS render NON-BLACK.** `photo-render.test.mjs` injected the real
+  2.8 MB / 4032×3024 iPhone JPEG into the dispatch preview on booted **iPhone 17 / iOS 26.5**;
+  the luma readback cleared the non-black thresholds → the **founding black-photo bug class
+  does NOT reproduce**. Repro: vite on :5181 + `node --test
+  tests/simulator/photo-render.test.mjs` (~10s). Persona helen (RT_PERSONA-parameterizable;
+  the non-black readback is persona-invariant). Tiers caught: sim.
+- **S9 All-photos — pw ×4 green both engines.** Cross-trip aggregation (`all-photos.spec.js`,
+  4 tests) + **per-persona theme `all-photos-{persona}` visual ×4 green** both engines.
+  Repro: `npx playwright test all-photos visual-baselines -g "all-photos cross-trip"`.
+  Tiers caught: pw(behavior+visual). **Scope fence:** the back→trip-blank nav edge
+  (`COVERAGE_MATRIX` §5) is **C4's to confirm** (Jonathan's standing call) — NOT walked here.
+- **O7 Lightbox — pw green both engines.** `photos-lightbox-swipe.spec.js` (swipe L/R/down +
+  jiggle-rejection) green on **webkit-mobile too** → confirms **R1 [resolved]** holds (the
+  base-Event swipe bypass still works on the iOS engine); `lightbox-multi` visual green.
+  Tiers caught: pw(swipe+visual); sim (via the photo-render decode/preview path).
+- **O8 Backfill triage — pw green both engines, NOT a gap.** `reconcile-archive.spec.js`
+  renders the real `PhotoBackfillTriage` (Trip settings → import → triage list:
+  Happened / No-photos / Added / interstitial → refine → didn't-happen → save → archive →
+  re-edit); only the EXIF data seam (`__RT_BACKFILL_EXIF` → `readExifWithTestOverride`) is
+  stubbed. **3/3 green chromium + webkit-mobile** (no R4 skip needed — its mocked-200 save
+  path doesn't trip the IDB+Blob enqueue). This **overturns the Phase-1 audit's "O8 has no
+  coverage"** — an existing spec reaches it. Repro: `npx playwright test reconcile-archive`.
+  Tiers caught: pw. Persona: **helen-pinned** (see C3a-GAP-2).
+
+**Gaps recorded (capability ≠ walked — these ARE Phase-3 outputs per spec §3):**
+- **C3a-GAP-1 `[gap, S8/S9/O7/O8 axe]`** — **axe reaches no photos surface.**
+  `a11y-axe.spec.js` scans only trips-index (S1) + the Claude panel (O1); per-persona WCAG
+  contrast across the entire photos cluster is unmeasured (the visual ×4 covers theme/layout,
+  not contrast ratios). Same shape as **C1-GAP-2** (S2). Close by extending a11y-axe to the
+  photos surfaces (spec-authoring — deferred to triage).
+- **C3a-GAP-2 `[gap, O8 persona]`** — O8 `PhotoBackfillTriage` is walked **helen-only**:
+  `reconcile-archive.spec.js` hardcodes `?person=helen` (it does NOT ride the
+  RT_PERSONA-parameterized `withTrip` fixture). J/A/R triage is not separately walked. The
+  triage logic is persona-invariant (like the cards), so low-risk, but the per-persona theme
+  of the triage UI is unverified. Close by persona-parameterizing reconcile-archive (deferred).
+
+**Deferred to C3b (the hot zone — NOT walked here):** O3 Dispatch composer; S8 write-states
+(uploading / offline / dispatch-open); sim `video-encode` (WebCodecs) + `offline-drain`
+(IDB+Blob); **instrument `instrumentation-harvest` in COLLECT** (the upload-log hot zone). The
+inherited WebKit gates (R3/R3c WebCodecs, R4/R5/R6/R2/J-series IDB+Blob) live on those C3b
+specs — C3b **confirms, does not re-litigate** them.
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit
