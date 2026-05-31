@@ -105,9 +105,9 @@ Legend: `pw`=playwright `sim`=sim `ax`=axe `sec`=security `inst`=instrument
 
 | Surface | J | H | A | R | Tiers that CAN reach (any persona) | Class | Walked (Phase 3) | Findings (Phase 3) |
 |---|---|---|---|---|---|---|---|---|
-| S1 Trips index | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | | |
-| S2 Trip home (themed) | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | | |
-| S3 Stop detail | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | | |
+| S1 Trips index | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | **axe ×4** (J/H/A/R) · pw smoke+visual | **clean** — no new serious/critical; A11Y-1 contrast (allowlisted, M6); **A/R newly scanned** |
+| S2 Trip home (themed) | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | **pw visual ×4** (J/H/A/R) | **themes correctly ×4** (bounds wrong-theme bug to Claude/C2); C1-GAP-2 (no axe contrast on S2) |
+| S3 Stop detail | ✓ | ✓ | ✓ | ✓ | pw, sim, ax, chrome | overlap | — none — | **C1-GAP-1** — zero walked coverage (no existing stop-detail spec); deferred |
 | S4 Settings | ✓ | ✓ | ✓ | ✓ | pw, sim, ax | overlap | | |
 | S5 New trip | ✓ | ✓ | ✓ | ✓ | pw, ax | overlap | | |
 | S6 Trip editor | ✓ | ✓ | ✓ | ✓ | pw, ax | overlap | | |

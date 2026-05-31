@@ -140,6 +140,45 @@ photoPipeline.js `PHOTO_MAX_EDGE`, `PHOTO_JPEG_QUALITY`, `validatePhotoFile`,
 
 ---
 
+## Phase 3 — Slice C1: themed spine (S1 Trips index · S2 Trip home · S3 Stop detail) `[capture log]`
+
+**Walked 2026-05-31, HEAD `d107f77`, all 4 personas** (jonathan/helen/aurelia/rafa).
+**Tiers run (existing only, per the Phase-3 scope call):** pw (smoke + visual-baselines),
+axe. instrument N/A — read-only surfaces emit no `rt_upload_log_v1` entries. sim:
+existing specs don't walk the spine per-persona (see C1-GAP-3).
+
+**Result: NO new `[real]` bugs on the themed spine.** S1 + S2 theme correctly across
+all four personas; the Claude-in-app wrong-theme bug stays bounded to its surface
+family (C2 — O1/O2), NOT the trip view. Inherited **A11Y-1** (contrast) reproduces and
+is the only spine finding — allowlisted, deferred to M6.
+
+**Confirmations (non-vacuous, real runs):**
+- **S1 axe ×4 — all green** at serious+critical (color-contrast allowlisted to A11Y-1).
+  Closes a real hole: **Aurelia + Rafa trips-index a11y were zero-coverage pre-Phase-2**
+  (axe defaulted jonathan); now scanned, nothing serious/critical beyond known contrast.
+  Repro: `RT_PERSONA=<p> npx playwright test a11y-axe --project=chromium -g "trips index"`.
+  Tiers caught: axe.
+- **S2 visual ×4 — all green** vs committed per-persona baselines (`trip-{persona}.png`)
+  → the themed trip view renders correctly per persona. Repro: `npx playwright test
+  visual-baselines --project=chromium -g "themed trip view"`. Tiers caught: pw(visual).
+- **S1 boot** (smoke, jonathan: app boots → lands on `volleyball-2026` → 4-traveler
+  switcher renders) + **S1 trips-list** visual (helen) — green.
+
+**Gaps recorded (capability ≠ walked — these ARE Phase-3 outputs per spec §3):**
+- **C1-GAP-1 `[gap, S3 Stop detail]`** — **zero walked coverage.** No existing spec
+  renders the `stop` view (`StopDetail`); axe/visual/sim none wired. Capability says
+  pw/sim/ax/chrome can reach it; nothing does. Close with a stop-detail render+axe walk
+  (spec-authoring — deferred to triage per the Q2 scope call).
+- **C1-GAP-2 `[gap, S2 contrast]`** — axe is wired on trips-index + the Claude panel
+  ONLY, not the trip-view body; per-persona WCAG contrast on S2 is unmeasured (the
+  visual ×4 covers layout/theme, not contrast ratios). Close by extending a11y-axe to S2.
+- **C1-GAP-3 `[gap, sim spine]`** — existing sim specs don't render the spine
+  per-persona on real iOS (`smoke.test.mjs` is persona-agnostic plumbing at `:5181`;
+  photo-render/offline-drain/video-encode are photos/C3). Booted iPhone 17 / iOS 26.5
+  is available; a persona-parameterized spine sim spec would close it (deferred).
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit
