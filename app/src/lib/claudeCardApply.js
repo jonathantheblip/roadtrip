@@ -19,6 +19,37 @@ function fieldMap(card) {
   return out
 }
 
+// Trip-level / settings field names. A card carrying any of these is
+// editing the TRIP record (destination, dates, title…), not a stop. Such
+// a card belongs to applySettings (action "trip-settings") and must never
+// reach a stop applier. `applyAdd` only needs a dayN, so a settings-shaped
+// card mis-tagged `add` would otherwise SILENTLY write the trip-level edit
+// as a junk stop — the corruption the dispatcher guards against below.
+// `title` is intentionally absent: it doubles as a stop's own title on a
+// legitimate `add` card, so it can't serve as a trip-level signal.
+const TRIP_LEVEL_FIELDS = new Set([
+  'endCity',
+  'destination',
+  'startCity',
+  'subtitle',
+  'locationLabel',
+  'dates',
+  'dateRange',
+  'dateRangeStart',
+  'dateRangeEnd',
+])
+
+// Return the trip-level field names present on a card (empty when none).
+function tripLevelFieldsPresent(card) {
+  const names = []
+  for (const f of card?.fields || []) {
+    if (f && typeof f.name === 'string' && TRIP_LEVEL_FIELDS.has(f.name)) {
+      names.push(f.name)
+    }
+  }
+  return names
+}
+
 // Resolve a target dayN (1-based) into the day's array index. Returns -1
 // when not found. Days arrays may not be 1:1 with index — `n` is the
 // authoritative day number even if reordering ever happens.
@@ -211,8 +242,24 @@ export function applyCardToTrip(trip, card) {
     throw new Error('applyCardToTrip: trip and card required')
   }
   switch (card.action) {
-    case 'add':
+    case 'add': {
+      // Guard: a settings-shaped card (carrying trip-level fields like
+      // endCity / dates) mis-tagged `add` must NOT fall through to
+      // applyAdd — which only needs a dayN and would silently write the
+      // trip-level edit as a junk stop. Fail loud instead; trip-level
+      // edits route through applySettings ("trip-settings"). This stays
+      // as defense even after that applier ships, against a mis-tagged
+      // card. (Commit 3 wraps this raw message in plain language.)
+      const strayTripFields = tripLevelFieldsPresent(card)
+      if (strayTripFields.length) {
+        throw new Error(
+          `applyCardToTrip: card tagged "add" carries trip-level field(s) ` +
+            `[${strayTripFields.join(', ')}] — this is a trip-settings edit, ` +
+            `not a stop add; refusing to create a stop`
+        )
+      }
       return applyAdd(trip, card)
+    }
     case 'move':
       return applyMove(trip, card)
     case 'cancel':

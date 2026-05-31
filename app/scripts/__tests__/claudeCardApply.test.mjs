@@ -223,3 +223,52 @@ test('applyCardToTrip — works against trip.data.days shape (D1 row format)', (
   assert.ok(next.data, 'data branch preserved')
   assert.equal(next.data.days.find((d) => d.n === 1).stops.length, 0)
 })
+
+// ─── Commit 1 — trip-level misroute guard ─────────────────────────────
+// A trip-level edit (set destination, rename, change dates) that arrives
+// mis-tagged `add` must FAIL LOUD, never silently create a junk stop.
+// applyAdd only needs a dayN, so without the dispatcher guard a card
+// carrying endCity/dates/etc. would fall through into stop creation.
+test('applyCardToTrip — a trip-level-field card tagged "add" throws instead of creating a stop', () => {
+  const trip = fixtureTrip()
+  const before = JSON.stringify(trip)
+  const card = {
+    action: 'add',
+    id: 'c-set-dest',
+    title: 'Set destination to Boston',
+    target: { tripId: 'volleyball-2026', dayN: 1 },
+    fields: [{ name: 'endCity', value: 'Boston, MA' }],
+  }
+  assert.throws(() => applyCardToTrip(trip, card), /trip-level field/)
+  // No stop was created and the trip is untouched (pure — no mutation
+  // even on the throw path).
+  assert.equal(trip.days[0].stops.length, 1, 'no junk stop appended to day 1')
+  assert.equal(JSON.stringify(trip), before, 'trip object not mutated')
+})
+
+test('applyCardToTrip — guard catches date-change tagged "add" yet leaves a real stop-add working', () => {
+  const trip = fixtureTrip()
+  // A date-change card mis-tagged add.
+  assert.throws(
+    () =>
+      applyCardToTrip(trip, {
+        action: 'add',
+        id: 'c-dates',
+        target: { tripId: 'volleyball-2026', dayN: 2 },
+        fields: [
+          { name: 'dateRangeStart', value: '2026-05-22' },
+          { name: 'dateRangeEnd', value: '2026-05-25' },
+        ],
+      }),
+    /trip-level field/
+  )
+  // A real stop add (only stop fields) still works — guard is precise.
+  const ok = applyCardToTrip(trip, {
+    action: 'add',
+    id: 'c-real-add',
+    title: 'Morning coffee',
+    target: { tripId: 'volleyball-2026', dayN: 1 },
+    fields: [{ name: 'time', value: '8:00 AM' }],
+  })
+  assert.equal(ok.days[0].stops.length, 2, 'legitimate stop-add unaffected by guard')
+})
