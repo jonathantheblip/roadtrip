@@ -44,11 +44,16 @@ import {
   assertSimulatorBooted,
 } from './_driver.mjs'
 import { dateStableTripSeed } from './_seed.mjs'
+import { resolvePersona } from '../e2e/_fixtures/persona.js'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
 // Date-stable seed (see _seed.mjs) — the sim tier has no clockStub.js, so
 // the raw May-2026 fixture would bounce to the trips index on today's clock.
 const SEED_TRIP = dateStableTripSeed()
+
+// Persona for this sim run: RT_PERSONA env override, default 'helen' so
+// existing sim behavior is unchanged. See app/tests/e2e/_fixtures/persona.js.
+const PERSONA = resolvePersona('helen')
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_PATH = resolve(
   HERE,
@@ -87,7 +92,7 @@ test('WebCodecs encode pipeline runs end-to-end on iOS Simulator Safari', async 
   // has no Playwright-style addInitScript, so we navigate once to
   // establish origin, write localStorage, then re-navigate.
   await browser.url(BASE_URL + '/?nosw=1')
-  await browser.execute((trip) => {
+  await browser.execute((trip, persona) => {
     const KEYS_TO_CLEAR = [
       'rt_trips_cache_v1',
       'rt_memories_shared_v1',
@@ -98,10 +103,10 @@ test('WebCodecs encode pipeline runs end-to-end on iOS Simulator Safari', async 
     ]
     for (const k of KEYS_TO_CLEAR) localStorage.removeItem(k)
     localStorage.setItem('rt_trips_cache_v1', JSON.stringify([trip]))
-    localStorage.setItem('rt_person_v2', 'helen')
-  }, SEED_TRIP)
+    localStorage.setItem('rt_person_v2', persona)
+  }, SEED_TRIP, PERSONA)
 
-  await browser.url(BASE_URL + '/?person=helen&trip=volleyball-2026&nosw=1')
+  await browser.url(BASE_URL + `/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
   // Drive into the dispatch modal via JS-level clicks (not WebDriver
   // pointer clicks). iOS Safari + safaridriver dispatches a real touch

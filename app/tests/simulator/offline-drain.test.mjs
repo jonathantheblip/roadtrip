@@ -34,11 +34,16 @@ import {
   assertSimulatorBooted,
 } from './_driver.mjs'
 import { dateStableTripSeed } from './_seed.mjs'
+import { resolvePersona } from '../e2e/_fixtures/persona.js'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
 // Date-stable seed (see _seed.mjs) — the sim tier has no clockStub.js, so
 // the raw May-2026 fixture would bounce to the trips index on today's clock.
 const SEED_TRIP = dateStableTripSeed()
+
+// Persona for this sim run: RT_PERSONA env override, default 'helen' so
+// existing sim behavior is unchanged. See app/tests/e2e/_fixtures/persona.js.
+const PERSONA = resolvePersona('helen')
 
 test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', async (t) => {
   await assertSimulatorBooted()
@@ -59,7 +64,7 @@ test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', as
   // indexedDB.open hang waiting for a blocked transaction.
   await browser.url(BASE_URL + '/?nosw=1')
   await browser.execute(
-    async (trip) =>
+    async (trip, persona) =>
       new Promise((resolve, reject) => {
         const KEYS_TO_CLEAR = [
           'rt_trips_cache_v1',
@@ -72,16 +77,17 @@ test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', as
         ]
         for (const k of KEYS_TO_CLEAR) localStorage.removeItem(k)
         localStorage.setItem('rt_trips_cache_v1', JSON.stringify([trip]))
-        localStorage.setItem('rt_person_v2', 'helen')
+        localStorage.setItem('rt_person_v2', persona)
         const req = indexedDB.deleteDatabase('roadtrip-upload-queue')
         req.onsuccess = () => resolve()
         req.onerror = () => reject(req.error || new Error('IDB delete failed'))
         req.onblocked = () => resolve() // accept blocked; we'll proceed
       }),
-    SEED_TRIP
+    SEED_TRIP,
+    PERSONA
   )
 
-  await browser.url(BASE_URL + '/?person=helen&trip=volleyball-2026&nosw=1')
+  await browser.url(BASE_URL + `/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
   // Wait for React hydration before we touch IDB.
   await browser.$('[data-testid="helen-photos-entry"]').then((el) =>

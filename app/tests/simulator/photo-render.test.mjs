@@ -67,6 +67,7 @@ import {
   assertSimulatorBooted,
 } from './_driver.mjs'
 import { dateStableTripSeed } from './_seed.mjs'
+import { resolvePersona } from '../e2e/_fixtures/persona.js'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -85,6 +86,10 @@ const ARTIFACT_DIR = resolve(HERE, '__artifacts__')
 // the trips index and helen-photos-entry never renders. FIXTURE_TRIP itself
 // stays pinned for the clock-stubbed e2e suite + its visual baselines.
 const SEED_TRIP = dateStableTripSeed()
+
+// Persona for this sim run: RT_PERSONA env override, default 'helen' so
+// existing sim behavior is unchanged. See app/tests/e2e/_fixtures/persona.js.
+const PERSONA = resolvePersona('helen')
 
 // Non-black thresholds (luma on a 0-255 Rec.601 scale). A blacked-out
 // render reads max≈0 / range≈0; a real photo clears these with wide
@@ -120,7 +125,7 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
   // no Playwright-style addInitScript, so we navigate once to establish
   // origin, write localStorage, then re-navigate. (Mirrors the video gate.)
   await browser.url(BASE_URL + '/?nosw=1')
-  await browser.execute((trip) => {
+  await browser.execute((trip, persona) => {
     const KEYS_TO_CLEAR = [
       'rt_trips_cache_v1',
       'rt_memories_shared_v1',
@@ -131,10 +136,10 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
     ]
     for (const k of KEYS_TO_CLEAR) localStorage.removeItem(k)
     localStorage.setItem('rt_trips_cache_v1', JSON.stringify([trip]))
-    localStorage.setItem('rt_person_v2', 'helen')
-  }, SEED_TRIP)
+    localStorage.setItem('rt_person_v2', persona)
+  }, SEED_TRIP, PERSONA)
 
-  await browser.url(BASE_URL + '/?person=helen&trip=volleyball-2026&nosw=1')
+  await browser.url(BASE_URL + `/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
   // JS-level clicks (see header): pointer clicks hit the sticky header.
   const clickByTestId = async (testid) => {

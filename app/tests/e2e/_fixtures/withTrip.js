@@ -3,8 +3,14 @@
 // assert against a known trip without the live D1 record overwriting
 // the seed.
 
+import { resolvePersona } from './persona.js'
+
 export async function seedTripIntoCache(page, tripSeed) {
-  await page.addInitScript(({ trip }) => {
+  // Persona seed honors RT_PERSONA (Phase 2 build-list item 1) and defaults
+  // to 'jonathan' when unset, so this fixture's historical behavior — and the
+  // visual baselines that depend on it — stay byte-for-byte unchanged.
+  const persona = resolvePersona('jonathan')
+  await page.addInitScript(({ trip, persona }) => {
     // Hard-reset all roadtrip-related localStorage so production data
     // from a prior session can't leak in. Then seed only what the test
     // wants the app to see.
@@ -18,8 +24,8 @@ export async function seedTripIntoCache(page, tripSeed) {
     ]
     for (const k of KEYS_TO_CLEAR) localStorage.removeItem(k)
     localStorage.setItem('rt_trips_cache_v1', JSON.stringify([trip]))
-    localStorage.setItem('rt_person_v2', 'jonathan')
-  }, { trip: tripSeed })
+    localStorage.setItem('rt_person_v2', persona)
+  }, { trip: tripSeed, persona })
 
   // Suppress every worker endpoint so cold-load pulls + auto-sync
   // can't repopulate state behind the test's back. Tests that need a
