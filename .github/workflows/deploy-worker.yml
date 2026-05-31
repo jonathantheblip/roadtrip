@@ -1,0 +1,80 @@
+name: Deploy Worker
+
+# Gate: a push to main that touches worker/** runs the worker test suite
+# AND the full e2e suite (both projects); the worker is deployed ONLY if
+# both are green. Client-only pushes don't match the paths filter, so they
+# never trigger a worker deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+  # Manual trigger for the first deploy / re-runs (ignores the paths filter).
+  workflow_dispatch:
+
+# Never run two deploys at once; queue rather than cancel a deploy mid-flight.
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+# Least privilege: the job only reads the repo and deploys to Cloudflare.
+permissions:
+  contents: read
+
+jobs:
+  test-and-deploy:
+    # MUST be macOS: the committed Playwright visual baselines are
+    # platform-suffixed -darwin (36 of them, zero -linux). Playwright
+    # resolves baselines by OS, so on ubuntu it would look for non-existent
+    # -linux baselines and the e2e gate would fail. macos-latest matches
+    # the baselines (and is the OS they were captured on).
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            app/package-lock.json
+            worker/package-lock.json
+      - name: Install worker deps
+        working-directory: worker
+        run: npm ci
+      - name: Install app deps
+        working-directory: app
+        run: npm ci
+      - name: Install Playwright browsers (chromium + webkit)
+        working-directory: app
+        run: npx playwright install chromium webkit
+      # ── Gate step 1: worker unit/integration suite (vitest + miniflare).
+      #    Local D1 + R2 emulation — no Cloudflare auth, no network.
+      - name: Worker test suite
+        working-directory: worker
+        run: npm test
+      # ── Gate step 2: full e2e suite, BOTH projects (chromium + webkit-mobile).
+      #    GitHub Actions sets CI=true, so playwright.config.js uses
+      #    reuseExistingServer:false (fresh vite each run), retries:1,
+      #    forbidOnly:true. The suite is self-contained — the dev server's
+      #    VITE_WORKER_URL / VITE_FAMILY_TOKEN_HELEN are set inline in the
+      #    config (fake token; all network is page.route-mocked), so no .env
+      #    or secret is needed for tests.
+      - name: Full e2e suite (chromium + webkit-mobile)
+        working-directory: app
+        run: npm run test:e2e
+      # ── Deploy ONLY if both gate steps above passed. A failed step fails
+      #    the job and skips this one; if: success() makes that explicit.
+      #    wrangler reads worker/wrangler.toml (name, D1/R2 bindings). The
+      #    account is NOT in wrangler.toml, so CLOUDFLARE_ACCOUNT_ID is
+      #    supplied here to guarantee account resolution regardless of token
+      #    scope. Both values come from repo Actions secrets — never hardcoded.
+      - name: Deploy worker
+        if: success()
+        working-directory: worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
