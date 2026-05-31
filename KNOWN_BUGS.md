@@ -386,6 +386,91 @@ CONFIRM-not-gap edges Jonathan flagged (new-trip exit affordance + all-photos ba
 
 ---
 
+## Phase 3 — Slice C4: Creation / editing (S5 New-trip · S6 Trip editor · S7 Activities · S10 Share-in) `[capture log]`
+
+**Walked 2026-05-31, HEAD `434e480`.** The lightest remaining cluster, but it carried the two
+**confirm-not-gap edges** (Jonathan's standing call). **Tiers run (existing only):** pw (both
+engines) + a **source-of-truth code-read** and a **live exploratory drive** (`/tmp`, not a
+committed spec) for the two edges, since the manual creation/editing surfaces have no committed
+spec. axe = GAP (scans neither S5–S10); sim / instrument = N/A (no creation/editing surface is an
+upload/iOS-render surface).
+
+**Result: NO `[real]` stranding bug. Both edges confirmed ADEQUATE (not a strand).** C4 issues
+**P3-02 / P3-03 at trivial / latent severity** to track the edges' minor/latent residue — neither
+reproduces as a user-facing strand.
+
+### THE TWO EDGES (the headline)
+
+**P3-02 — NewTrip / TripEditor single-exit affordance `[real, S4 trivial — M6 polish; NOT a strand]`**
+- **Surface×persona:** S5 `NewTrip` + S6 `TripEditor`, all personas (theme-invariant).
+- **Confirmed present + functional.** `NewTrip` renders a `‹ Trips` link → `onBack=openIndex`
+  (`NewTrip.jsx:110-118`, `App.jsx:727`); `TripEditor` the same (`TripEditor.jsx:254-261`,
+  `App.jsx:728/734`) + it autosaves on unmount so leaving never drops edits. **Live drive:** index
+  → New trip → form → click `‹ Trips` → **returned to index** (exit functional).
+- **The minor residue:** App.jsx suppresses the global top-bar back **and** the bottom Switcher on
+  `view==='new'|'edit'` (`:590` + `:798`), so the exit is a **single small top-left link with no
+  symmetric Cancel** beside the bottom Create/Publish CTA (live drive: Trips-buttons=1, symmetric
+  Cancel=0). Deliberate minimal-chrome — the user is **not stranded**, but the affordance is
+  asymmetric. Polish, M6.
+- **Tiers caught:** code-read + live drive. **Reproducer:** index → "New trip" → observe the lone
+  top-left `‹ Trips` link, no Cancel by "Create trip"; the link works. **Non-vacuous:** the live
+  drive reached the form AND exited via the link.
+
+**P3-03 — AllPhotosView back can blank, but is not user-reachable `[real, latent — add guard; NOT a strand]`**
+- **Surface×persona:** S9 `all-photos` back edge (Jonathan's standing call, confirmed in C4).
+- **Confirmed NON-reproducing in normal flow.** `AllPhotosView` is the **only** deep view rendered
+  **without** the `&& trip` guard (`App.jsx:775`, vs `:739/:750/:758/:767/:782` which all gate on
+  `trip`); its back is `() => setView({name:'trip'})` (`:779`), and the `trip` view blanks on a
+  null/draft trip (`:738` + `renderTripView` null-returns at `:563`). **BUT** the trip-less state
+  is unreachable: the all-photos entry is itself trip-gated (lives on the themed trip view), `trip`
+  has an `activeTrip` fallback (`:363-364`), cold-load forces `view='index'` when nothing is active
+  (`:395-400`), and all-photos is **not deep-linkable** (`initialViewFromUrl` emits only
+  `import`/`trip`, `:33-46`). **Live drive:** entered all-photos → Back → **returned to the trip
+  (NOT blank)**.
+- **The latent residue:** the missing `&& trip` guard on `:775` is a real inconsistency — IF a
+  future change makes all-photos reachable trip-less (a deep link, a delete-active-trip path), the
+  back would blank. Add `&& trip` (or guard the back handler) when convenient.
+- **Tiers caught:** code-read + live drive. **Reproducer (current = safe):** seed a today-active
+  trip, `?person=helen&trip=…`, tap All-photos entry → Back → lands on the trip, not blank.
+  **Non-vacuous:** the guard asymmetry is verified in source; the live back returned trip content.
+
+### Standard-walk confirmations (existing tiers, helen authoritative)
+- **pw both engines — 18 passed / 0 failed / 0 skipped.** `claude-create-trip` (3×2: the Claude
+  `create_trip` **card** path → trip lands + navigates; **note:** this is the O2-card creation
+  path, it does NOT render the manual `NewTrip` form) + `share-in` (5×2: ImportView paste-prefill /
+  enrich / de-dup / save-validation / web-share-target / short-link-resolve) + `journey-05-share-in`
+  (1×2: Things-to-do → Share-In journey). All `?person=helen`-pinned; both chromium + webkit-mobile
+  green (no IDB/WebCodecs → no gated skips). Repro: `cd app && npx playwright test
+  claude-create-trip share-in --reporter=list`. Tiers caught: pw.
+- **Theme (J/A/R helen-pinned gap is benign):** code-read confirms the creation/editing/import
+  surfaces are **CSS-var / `surface-*` themed, no hardcoded palette** — `NewTrip.jsx` (var/surface;
+  a *prior* hardcode bug was already fixed, comment `:99-104`), `TripEditor.jsx` (surface-*/var),
+  `ImportView.jsx` (33 `var(--*)` vs 4 persona-invariant literals: `#1A1614` native-option text,
+  `#FBF8F2` / `TRAVELER_DOT` identity colors). So J/A/R theme correctly — **P3-01 stays bounded to
+  the O1/O2 Claude family** (the C4 analogue of the C1/C3 results).
+
+### Gaps recorded
+- **C4-GAP-1 `[gap, S6 editor]`** — `TripEditor` has **no committed spec** (zero automated walk;
+  live/code-confirmed functional). Close by authoring an editor spec (deferred).
+- **C4-GAP-2 `[gap, S7 activities]`** — `ActivitiesView` is reached only as the **share-in funnel
+  entry** (Things-to-do → open-share-in, helen); its **own content** (activities list, add / edit /
+  remove) is not asserted. Thin. Deferred.
+- **C4-GAP-3 `[gap, S5 manual form]`** — the manual `NewTrip` form has no spec (the Claude
+  `create_trip` card path IS covered; the manual form is not). Live-confirmed functional. Deferred.
+- **C4-GAP-4 `[gap, S5–S10 axe]`** — axe reaches no creation/editing surface (`a11y-axe.spec.js`
+  scans only trips-index + the Claude panel). Same shape as C1-GAP-2 / C3a-GAP-1. Deferred.
+- **C4-GAP-5 `[gap, S5/S6/S7/S10 persona]`** — all C4 specs are `?person=helen`-pinned (RT_PERSONA
+  no-op, same as the C3b photos specs); J/A/R creation/editing/import not separately walked.
+  **Benign** per the theme code-read above. Same shape as C3b-GAP-1. Deferred.
+
+**C4 COMPLETE.** Both confirm-not-gap edges **confirmed adequate (no strand)**; P3-02 / P3-03 track
+the trivial / latent residue. **Matrix: 14 of 19 surface rows captured** (added S5/S6/S7/S10; S9
+annotated with the back-blank confirmation). **Only C5 remains** (S4 Settings · O4 Leave-when · O5
+Nearby J-only · O6 Postcard A-only · O9 Flight H-only — the thin / persona-specific cells), then
+Phase-3 capture is complete.
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit
