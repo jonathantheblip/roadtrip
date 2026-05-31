@@ -21,3 +21,13 @@ worker/.wrangler
 .env
 .env.local
 .env.*.local
+
+# Built client artifact — published to GitHub Pages via Actions
+# (.github/workflows/deploy-client.yml), NOT committed. See
+# .github/DEPLOY_CLIENT_SETUP.md.
+# CRITICAL: untrack docs/ (git rm --cached) ONLY AFTER Pages Source is
+# switched to "GitHub Actions". Untracking while Pages still serves the
+# docs/ FOLDER takes the live site down.
+# Root-anchored (/docs/) so it matches ONLY the repo-root build output, NOT
+# app/docs/ (tracked source + design specs).
+/docs/
