@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "postbuild": "node scripts/checkNoSecrets.mjs",
     "preview": "vite preview",
     "set-secret": "node scripts/setSecret.mjs",
     "fetch-heroes": "node scripts/fetchHeroImages.mjs",
