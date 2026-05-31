@@ -23,7 +23,8 @@ bucket_name = "roadtrip-assets"
 
 # Non-secret config. Secrets (set via `wrangler secret put`, NOT listed
 # here): the 4 FAMILY_TOKEN_* values, GOOGLE_PLACES_API_KEY (geocoding +
-# /leave-when + /places/nearby), and CALENDAR_IMPORT_TOKEN — a dedicated
+# /leave-when + /places/nearby + trip-hero resolution on GET /trips),
+# and CALENDAR_IMPORT_TOKEN — a dedicated
 # least-privilege bearer the Apple Shortcut uses for POST /calendar/import
 # so no family token rides along in the iCloud-distributed Shortcut.
 [vars]

@@ -89,7 +89,7 @@ export default {
       }
 
       if (path === '/trips' && request.method === 'GET') {
-        return await getTrips(env, url, cors)
+        return await getTrips(env, url, cors, ctx)
       }
       if (path === '/trips' && request.method === 'POST') {
         return await postTrip(env, request, cors)
@@ -407,7 +407,7 @@ function toEpochMs(v) {
 
 // ─── Trips ────────────────────────────────────────────────────────────
 
-async function getTrips(env, url, cors) {
+async function getTrips(env, url, cors, ctx) {
   const since = parseInt(url.searchParams.get('since') || '0', 10) || 0
   const { results } = await env.DB.prepare(
     `SELECT * FROM trips
@@ -425,6 +425,23 @@ async function getTrips(env, url, cors) {
       return null
     }
   }).filter(Boolean)
+
+  // §2/§6 — kick off worker-side hero resolution in the BACKGROUND for
+  // runtime trips that have no explicit hero and no resolved hero yet.
+  // Deliberately never blocks the pull (plan §5: "never on the hot render
+  // path"): the response returns immediately and the card shows the §4
+  // floor until the NEXT pull brings the resolved key. Gated so a trip
+  // with an explicit hero (volleyball) is never sent to Places, never
+  // written to R2, never has its data_json/updated_at touched. ctx is
+  // absent on some non-fetch call paths — guard waitUntil.
+  if (ctx?.waitUntil) {
+    const origin = workerOrigin(env, url)
+    for (const trip of out) {
+      if (hasExplicitHero(trip)) continue
+      if (trip.heroResolved?.key) continue
+      ctx.waitUntil(resolveTripHero(env, trip, origin))
+    }
+  }
   return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
@@ -460,6 +477,136 @@ async function deleteTrip(env, id, cors) {
     'UPDATE trips SET deleted_at = ?, updated_at = ? WHERE id = ?'
   ).bind(now, now, id).run()
   return json({ ok: true, id }, 200, cors)
+}
+
+// ─── Trip-hero resolution (§0/§2/§3/§5/§6) ────────────────────────────
+//
+// Shared §0 guard — MUST stay byte-identical to the client copy at
+// app/src/lib/tripHero.js. "Already has a hero" = heroImage is a
+// non-empty trimmed string. A trip for which this is true is UNTOUCHABLE:
+// never sent to Places, never written to R2, its data_json/updated_at
+// never mutated. Both copies are unit-tested against the same §0 table
+// (app/scripts/__tests__/tripHero.test.mjs + test/trip-hero-resolve.test.js).
+export function hasExplicitHero(trip) {
+  const h = trip && trip.heroImage
+  return typeof h === 'string' && h.trim().length > 0
+}
+
+// Best-effort in-isolate dedupe so two near-simultaneous /trips pulls
+// don't both fetch the same trip's hero before the first write lands.
+// Durable idempotence is the heroResolved.key check against D1; this just
+// trims the rare concurrent-first-pull double-fetch within one isolate.
+const inFlightHeroResolves = new Set()
+
+// Resolve ONE runtime trip's hero from its destination, store to R2, and
+// write heroResolved back into data_json (bumping updated_at so the next
+// pull upgrades the card off the floor). Fully self-contained and
+// failure-tolerant: any miss — key absent, no destination, no Places
+// match, fetch/HTTP error — logs a skip reason and returns WITHOUT
+// mutating the trip, so the client stays on the §4 floor (never a
+// placeholder, hang, or crash). Caller gates on
+// !hasExplicitHero(trip) && !trip.heroResolved?.key; we re-check here too.
+export async function resolveTripHero(env, trip, origin) {
+  const id = trip?.id
+  if (!id) return { skip: 'no-id' }
+  if (hasExplicitHero(trip)) return { skip: 'has-hero' } // defense in depth
+  if (trip.heroResolved?.key) return { skip: 'already-resolved' }
+
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    console.warn(`trip-hero ${id}: GOOGLE_PLACES_API_KEY missing — staying on floor`)
+    return { skip: 'no-key' }
+  }
+  const query = (trip.locationLabel || trip.endCity || '').trim()
+  if (!query) {
+    console.warn(`trip-hero ${id}: no destination (locationLabel/endCity empty) — floor`)
+    return { skip: 'no-destination' }
+  }
+  if (inFlightHeroResolves.has(id)) return { skip: 'in-flight' }
+  inFlightHeroResolves.add(id)
+  try {
+    // 1. Places Text Search → first match's photo (fieldmask places.photos),
+    //    mirroring the existing /places/nearby + build-time pipeline shape.
+    const searchRes = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
+        'x-goog-fieldmask': 'places.id,places.displayName,places.photos',
+      },
+      body: JSON.stringify({ textQuery: query, maxResultCount: 1 }),
+    })
+    if (!searchRes.ok) {
+      console.warn(`trip-hero ${id}: places search ${searchRes.status} — floor`)
+      return { skip: `places-${searchRes.status}` }
+    }
+    const searchData = await searchRes.json().catch(() => ({}))
+    const place = (searchData?.places || [])[0]
+    const photo = place?.photos?.[0]
+    if (!photo?.name) {
+      console.warn(`trip-hero ${id}: no Places photo for "${query}" — floor`)
+      return { skip: 'no-photo' }
+    }
+    const credit = photo.authorAttributions?.[0]?.displayName || null
+
+    // 2. Photo media → signed photoUri → bytes (already ≤1200px from Places).
+    const mediaRes = await fetch(
+      `https://places.googleapis.com/v1/${photo.name}/media?maxWidthPx=1200&skipHttpRedirect=true`,
+      { headers: { 'x-goog-api-key': env.GOOGLE_PLACES_API_KEY } }
+    )
+    if (!mediaRes.ok) {
+      console.warn(`trip-hero ${id}: photo media ${mediaRes.status} — floor`)
+      return { skip: `media-${mediaRes.status}` }
+    }
+    const media = await mediaRes.json().catch(() => ({}))
+    const photoUri = media?.photoUri
+    if (!photoUri) {
+      console.warn(`trip-hero ${id}: media had no photoUri — floor`)
+      return { skip: 'no-photoUri' }
+    }
+    const photoRes = await fetch(photoUri)
+    if (!photoRes.ok) {
+      console.warn(`trip-hero ${id}: photo fetch ${photoRes.status} — floor`)
+      return { skip: `photo-${photoRes.status}` }
+    }
+    const contentType = photoRes.headers.get('content-type') || 'image/jpeg'
+    const bytes = new Uint8Array(await photoRes.arrayBuffer())
+    if (!bytes.length) {
+      console.warn(`trip-hero ${id}: empty photo bytes — floor`)
+      return { skip: 'empty-photo' }
+    }
+
+    // 3. Store to R2 (§5). The key contains '/photo-' so the existing
+    //    GET /assets/<key>?w=<n> route serves resized, edge-cached card
+    //    variants. Places already capped width at 1200, so no server-side
+    //    re-encode is needed — store the bytes as delivered.
+    const ext = contentType.includes('png') ? 'png' : 'jpg'
+    const key = `trip-hero/${id}/photo-hero.${ext}`
+    await env.ASSETS.put(key, bytes, { httpMetadata: { contentType } })
+
+    // 4. Write heroResolved back + bump updated_at, under a FRESH re-read so
+    //    we never clobber a concurrent edit and never touch a trip that
+    //    became explicit / was resolved by another isolate meanwhile.
+    const row = await env.DB.prepare(
+      'SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL'
+    ).bind(id).first()
+    if (!row) return { skip: 'row-gone' }
+    let data
+    try { data = JSON.parse(row.data_json) } catch { return { skip: 'bad-json' } }
+    if (hasExplicitHero(data)) return { skip: 'became-explicit' }
+    if (data.heroResolved?.key) return { skip: 'raced-resolved' }
+    data.heroResolved = { key, url: `${assetUrl(key, origin)}?w=600`, source: 'places', credit }
+    const updatedAt = Date.now()
+    await env.DB.prepare(
+      'UPDATE trips SET data_json = ?, updated_at = ? WHERE id = ?'
+    ).bind(JSON.stringify(data), updatedAt, id).run()
+    console.log(`trip-hero ${id}: resolved "${query}" → ${key}`)
+    return { resolved: key, credit }
+  } catch (err) {
+    console.error(`trip-hero ${id}: resolve failed — floor`, err?.stack || err)
+    return { skip: `error: ${err?.message || String(err)}` }
+  } finally {
+    inFlightHeroResolves.delete(id)
+  }
 }
 
 // ─── Assets (R2) ──────────────────────────────────────────────────────
