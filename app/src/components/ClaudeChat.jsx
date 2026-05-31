@@ -40,18 +40,10 @@ const MARKDOWN_REHYPE_PLUGINS = [
   [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }],
 ]
 
-// ─── Tokens — Helen's linen palette ───────────────────────────────────
-const T = {
-  bg: '#F2EFE7',
-  surface: '#FFFFFF',
-  surfaceAlt: '#E6E1D2',
-  ink: '#15201A',
-  inkMuted: 'rgba(21,32,26,0.62)',
-  inkFaint: 'rgba(21,32,26,0.32)',
-  accent: '#2E5D3A',
-  accentInk: '#FFFFFF',
-  hairline: 'rgba(21,32,26,0.13)',
-}
+// ─── Theme — no local palette snapshot (M6). The panel inherits the
+// active persona's tokens from body[data-theme] via var(--…); the source
+// of truth is app/src/styles/themes.css. Every surface below themes
+// per-persona by CSS-variable cascade (bg/card/text/muted/accent/border).
 const FONT = {
   serif: '"Fraunces", "Iowan Old Style", Georgia, serif',
   sans: '"Inter Tight", -apple-system, system-ui, sans-serif',
@@ -130,7 +122,7 @@ function ChevronRightIcon({ size = 12, color = 'currentColor' }) {
 // Brand wordmark — "Claude" in Fraunces followed by the spark. iconSize
 // defaults to 20 so the chat panel header reads the same size the spec
 // names for the header surface; callers can override for compact uses.
-export function ClaudeLockup({ size = 14, color = T.ink, accent = T.accent, iconSize = 20 }) {
+export function ClaudeLockup({ size = 14, color = 'var(--text)', accent = 'var(--accent)', iconSize = 20 }) {
   return (
     <span
       style={{
@@ -175,8 +167,8 @@ export function ClaudeEntryButton({
         width: size,
         height: size,
         borderRadius: size,
-        background: floating ? T.surface : 'rgba(46,93,58,0.10)',
-        border: floating ? `1px solid ${T.hairline}` : 'none',
+        background: floating ? 'var(--card)' : 'rgba(46,93,58,0.10)',
+        border: floating ? `1px solid var(--border)` : 'none',
         cursor: 'pointer',
         padding: 0,
         display: 'inline-flex',
@@ -187,9 +179,9 @@ export function ClaudeEntryButton({
         // index, docked in the trip top bar), so the spark takes that
         // surface's accent per the spec — sage on Helen's, oxblood on
         // Jonathan's, hot pink on Aurelia's, ochre on Rafa's. Falls
-        // back to Helen's forest where no theme var is set. The chat
-        // panel's internal marks stay T.accent (the panel is linen-
-        // themed in M1).
+        // back to Helen's forest where no theme var is set. As of M6 the
+        // entire panel themes per-persona the same way — every surface
+        // reads inherited var(--…) tokens from body[data-theme].
         color: 'var(--accent, #2E5D3A)',
         flexShrink: 0,
       }}
@@ -206,15 +198,15 @@ export function ClaudeEntryButton({
             height: 16,
             padding: '0 4px',
             borderRadius: 8,
-            background: T.accent,
-            color: T.accentInk,
+            background: 'var(--accent)',
+            color: 'var(--accent-ink)',
             fontFamily: FONT.mono,
             fontSize: 9,
             fontWeight: 700,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: `1.5px solid ${T.surface}`,
+            border: `1.5px solid var(--card)`,
             letterSpacing: 0.4,
           }}
         >
@@ -241,8 +233,8 @@ function UserBubble({ children }) {
           padding: '10px 14px',
           borderRadius: 16,
           borderTopRightRadius: 4,
-          background: T.ink,
-          color: T.bg,
+          background: 'var(--text)',
+          color: 'var(--bg)',
           fontFamily: FONT.sans,
           fontSize: 14.5,
           lineHeight: 1.45,
@@ -268,11 +260,11 @@ const CLAUDE_MD_CSS = `
 .claude-md strong {
   font-weight: 700;
   font-style: normal;
-  color: ${T.ink};
+  color: var(--text);
 }
 .claude-md em { font-style: italic; font-weight: 500; }
 .claude-md a {
-  color: ${T.accent};
+  color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -280,13 +272,13 @@ const CLAUDE_MD_CSS = `
   font-family: ${FONT.mono};
   font-size: 0.86em;
   font-style: normal;
-  background: ${T.surfaceAlt};
+  background: var(--bg2);
   padding: 1px 5px;
   border-radius: 4px;
 }
 .claude-md pre {
-  background: ${T.surface};
-  border: 1px solid ${T.hairline};
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
   margin: 8px 0 12px;
@@ -320,7 +312,7 @@ const CLAUDE_MD_CSS = `
   font-size: 18px;
   line-height: 1.2;
   letter-spacing: -0.3px;
-  color: ${T.ink};
+  color: var(--text);
   margin: 14px 0 6px;
 }
 .claude-md h3 {
@@ -330,7 +322,7 @@ const CLAUDE_MD_CSS = `
   font-size: 16px;
   line-height: 1.25;
   letter-spacing: -0.2px;
-  color: ${T.ink};
+  color: var(--text);
   margin: 12px 0 4px;
 }
 .claude-md h4, .claude-md h5, .claude-md h6 {
@@ -340,19 +332,19 @@ const CLAUDE_MD_CSS = `
   font-size: 12px;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  color: ${T.inkMuted};
+  color: var(--muted);
   margin: 10px 0 4px;
 }
 .claude-md blockquote {
   margin: 8px 0;
   padding: 4px 0 4px 12px;
-  border-left: 2px solid ${T.hairline};
-  color: ${T.inkMuted};
+  border-left: 2px solid var(--border);
+  color: var(--muted);
 }
 .claude-md hr {
   border: none;
   height: 1px;
-  background: ${T.hairline};
+  background: var(--border);
   margin: 14px 0;
 }
 .claude-md table {
@@ -360,16 +352,16 @@ const CLAUDE_MD_CSS = `
   font-size: 13px;
   font-style: normal;
   font-family: ${FONT.sans};
-  color: ${T.ink};
+  color: var(--text);
   margin: 8px 0;
 }
 .claude-md th, .claude-md td {
   padding: 4px 8px;
-  border-bottom: 1px solid ${T.hairline};
+  border-bottom: 1px solid var(--border);
   text-align: left;
 }
 .claude-md th { font-weight: 600; }
-.claude-md del { color: ${T.inkFaint}; }
+.claude-md del { color: var(--faint); }
 `
 
 // Inject the CSS once at module load. Idempotent — guards against
@@ -516,7 +508,7 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
           flexShrink: 0,
           borderRadius: '50%',
           background: 'rgba(46,93,58,0.10)',
-          color: T.accent,
+          color: 'var(--accent)',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -533,7 +525,7 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
           fontFamily: FONT.serif,
           fontSize: 15,
           fontStyle: 'italic',
-          color: T.ink,
+          color: 'var(--text)',
           lineHeight: 1.55,
           wordBreak: 'break-word',
         }}
@@ -557,7 +549,7 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
               width: 6,
               height: 14,
               marginLeft: 3,
-              background: T.accent,
+              background: 'var(--accent)',
               verticalAlign: 'text-bottom',
               animation: 'rt-claude-caret 1s steps(2) infinite',
             }}
@@ -597,8 +589,8 @@ function ChatComposer({ disabled, onSend, placeholder = 'ask claude…' }) {
   return (
     <div
       style={{
-        borderTop: `1px solid ${T.hairline}`,
-        background: T.bg,
+        borderTop: `1px solid var(--border)`,
+        background: 'var(--bg)',
         padding: '10px 12px calc(12px + env(safe-area-inset-bottom))',
         display: 'flex',
         gap: 8,
@@ -619,14 +611,14 @@ function ChatComposer({ disabled, onSend, placeholder = 'ask claude…' }) {
           minHeight: 38,
           maxHeight: 140,
           resize: 'none',
-          border: `1px solid ${T.hairline}`,
+          border: `1px solid var(--border)`,
           borderRadius: 18,
           padding: '8px 14px',
           fontFamily: FONT.sans,
           fontSize: 15,
           lineHeight: 1.45,
-          background: T.surface,
-          color: T.ink,
+          background: 'var(--card)',
+          color: 'var(--text)',
           outline: 'none',
         }}
       />
@@ -640,7 +632,7 @@ function ChatComposer({ disabled, onSend, placeholder = 'ask claude…' }) {
           height: 38,
           borderRadius: 19,
           border: 'none',
-          background: disabled || !text.trim() ? T.hairline : T.accent,
+          background: disabled || !text.trim() ? 'var(--border)' : 'var(--accent)',
           color: '#fff',
           cursor: disabled || !text.trim() ? 'default' : 'pointer',
           display: 'inline-flex',
@@ -666,7 +658,7 @@ function PastConversations({ items, onResume, onNew, loading }) {
           fontSize: 10,
           letterSpacing: 1.2,
           textTransform: 'uppercase',
-          color: T.inkMuted,
+          color: 'var(--muted)',
         }}
       >
         Past conversations
@@ -678,7 +670,7 @@ function PastConversations({ items, onResume, onNew, loading }) {
             fontFamily: FONT.serif,
             fontSize: 13,
             fontStyle: 'italic',
-            color: T.inkMuted,
+            color: 'var(--muted)',
           }}
         >
           Loading…
@@ -691,7 +683,7 @@ function PastConversations({ items, onResume, onNew, loading }) {
             fontFamily: FONT.serif,
             fontSize: 13,
             fontStyle: 'italic',
-            color: T.inkMuted,
+            color: 'var(--muted)',
           }}
         >
           No conversations yet.
@@ -708,7 +700,7 @@ function PastConversations({ items, onResume, onNew, loading }) {
                 textAlign: 'left',
                 background: 'transparent',
                 border: 'none',
-                borderBottom: `1px solid ${T.hairline}`,
+                borderBottom: `1px solid var(--border)`,
                 padding: '12px 18px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -721,7 +713,7 @@ function PastConversations({ items, onResume, onNew, loading }) {
                   style={{
                     fontFamily: FONT.serif,
                     fontSize: 14,
-                    color: T.ink,
+                    color: 'var(--text)',
                     lineHeight: 1.4,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -738,14 +730,14 @@ function PastConversations({ items, onResume, onNew, loading }) {
                     fontSize: 9,
                     letterSpacing: 1,
                     textTransform: 'uppercase',
-                    color: T.inkFaint,
+                    color: 'var(--faint)',
                     marginTop: 4,
                   }}
                 >
                   {formatWhen(c.updated_at)}
                 </div>
               </div>
-              <ChevronRightIcon size={14} color={T.inkFaint} />
+              <ChevronRightIcon size={14} color={'var(--faint)'} />
             </button>
           </li>
         ))}
@@ -758,9 +750,9 @@ function PastConversations({ items, onResume, onNew, loading }) {
             width: '100%',
             padding: '10px 14px',
             borderRadius: 12,
-            border: `1px solid ${T.hairline}`,
-            background: T.surface,
-            color: T.ink,
+            border: `1px solid var(--border)`,
+            background: 'var(--card)',
+            color: 'var(--text)',
             cursor: 'pointer',
             fontFamily: FONT.sans,
             fontSize: 13.5,
@@ -1020,8 +1012,8 @@ export function ClaudeChatPanel({
           bottom: 0,
           top: 'max(28px, env(safe-area-inset-top))',
           zIndex: 101,
-          background: T.bg,
-          color: T.ink,
+          background: 'var(--bg)',
+          color: 'var(--text)',
           borderTopLeftRadius: 22,
           borderTopRightRadius: 22,
           overflow: 'hidden',
@@ -1032,7 +1024,7 @@ export function ClaudeChatPanel({
       >
         {/* drag handle */}
         <div style={{ padding: '8px 0 0', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: T.hairline }} />
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)' }} />
         </div>
         {/* header */}
         <div
@@ -1065,7 +1057,7 @@ export function ClaudeChatPanel({
                   fontSize: 10,
                   letterSpacing: 1.2,
                   textTransform: 'uppercase',
-                  color: T.inkMuted,
+                  color: 'var(--muted)',
                   maxWidth: 160,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -1082,7 +1074,7 @@ export function ClaudeChatPanel({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: T.inkMuted,
+                color: 'var(--muted)',
                 cursor: 'pointer',
                 padding: 4,
                 display: 'inline-flex',
@@ -1092,7 +1084,7 @@ export function ClaudeChatPanel({
             </button>
           </div>
         </div>
-        <div style={{ height: 1, background: T.hairline, margin: '0 18px' }} />
+        <div style={{ height: 1, background: 'var(--border)', margin: '0 18px' }} />
 
         {phase === 'loading' && (
           <div
@@ -1103,7 +1095,7 @@ export function ClaudeChatPanel({
               justifyContent: 'center',
               fontFamily: FONT.serif,
               fontStyle: 'italic',
-              color: T.inkMuted,
+              color: 'var(--muted)',
             }}
           >
             Loading…
@@ -1179,7 +1171,7 @@ function ClaudeFirstHint({ userId, tripTitle }) {
           height: 48,
           borderRadius: '50%',
           background: 'rgba(46,93,58,0.10)',
-          color: T.accent,
+          color: 'var(--accent)',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1204,7 +1196,7 @@ function ClaudeFirstHint({ userId, tripTitle }) {
           fontFamily: FONT.serif,
           fontSize: 14.5,
           fontStyle: 'italic',
-          color: T.inkMuted,
+          color: 'var(--muted)',
           marginTop: 8,
           lineHeight: 1.5,
         }}
@@ -1229,7 +1221,7 @@ function ErrorBubble({ message }) {
         fontFamily: FONT.serif,
         fontSize: 13.5,
         lineHeight: 1.5,
-        color: T.ink,
+        color: 'var(--text)',
       }}
     >
       {message}
@@ -1280,7 +1272,7 @@ function ModeShiftCue({ toMode }) {
           fontSize: 9,
           letterSpacing: 1.4,
           textTransform: 'uppercase',
-          color: T.accent,
+          color: 'var(--accent)',
           fontWeight: 700,
           padding: '2px 6px',
           borderRadius: 4,
@@ -1294,7 +1286,7 @@ function ModeShiftCue({ toMode }) {
         style={{
           fontFamily: FONT.mono,
           fontSize: 10,
-          color: T.inkFaint,
+          color: 'var(--faint)',
           letterSpacing: 1,
         }}
       >

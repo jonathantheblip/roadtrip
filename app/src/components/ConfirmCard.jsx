@@ -24,18 +24,13 @@ import { travelerNameToId, humanDateRange } from '../lib/createTripCard'
 import { userFacingApplyError } from '../lib/claudeCardApply'
 import { logUploadEvent } from '../lib/uploadLog'
 
-// ─── Tokens — Helen's linen palette (duplicated from ClaudeChat.jsx) ──
-// Kept local rather than DRY'd so this file is a self-contained M2 unit.
+// ─── Card-framing tokens — UNIVERSAL / persona-invariant (interim) ────
+// The base palette (bg/surface/ink/accent/…) is NOT snapshotted here: as
+// of M6 it cascades from body[data-theme] via var(--…) (themes.css). What
+// remains are the draft (amber) + destructive (oxblood) card framings,
+// intentionally the SAME across all four travelers for now — pending the
+// per-user skin redesign (Jonathan's call), not leftover Helen palette.
 const T = {
-  bg: '#F2EFE7',
-  surface: '#FFFFFF',
-  surfaceAlt: '#E6E1D2',
-  ink: '#15201A',
-  inkMuted: 'rgba(21,32,26,0.62)',
-  inkFaint: 'rgba(21,32,26,0.32)',
-  accent: '#2E5D3A',
-  accentInk: '#FFFFFF',
-  hairline: 'rgba(21,32,26,0.13)',
   // Card-specific draft framing
   draftBg: '#F8F4E9',
   draftBorder: 'rgba(178,128,40,0.22)',
@@ -77,7 +72,7 @@ function Eyebrow({ children, color, style }) {
         fontSize: 9,
         letterSpacing: 1.4,
         textTransform: 'uppercase',
-        color: color || T.inkMuted,
+        color: color || 'var(--muted)',
         fontWeight: 600,
         ...style,
       }}
@@ -98,7 +93,7 @@ function FieldRow({ field, onChange, last }) {
     <div
       style={{
         padding: '8px 0',
-        borderBottom: last ? 'none' : `1px solid ${T.hairline}`,
+        borderBottom: last ? 'none' : `1px solid var(--border)`,
         display: 'flex',
         alignItems: 'baseline',
         gap: 10,
@@ -110,7 +105,7 @@ function FieldRow({ field, onChange, last }) {
           fontSize: 9,
           letterSpacing: 1.2,
           textTransform: 'uppercase',
-          color: T.inkFaint,
+          color: 'var(--faint)',
           width: 86,
           flexShrink: 0,
         }}
@@ -123,7 +118,7 @@ function FieldRow({ field, onChange, last }) {
             style={{
               fontFamily: FONT.sans,
               fontSize: 12,
-              color: T.inkFaint,
+              color: 'var(--faint)',
               textDecoration: 'line-through',
               marginRight: 6,
             }}
@@ -141,10 +136,10 @@ function FieldRow({ field, onChange, last }) {
               fontFamily: FONT.sans,
               fontSize: 13,
               fontWeight: 600,
-              color: T.ink,
+              color: 'var(--text)',
               background: 'transparent',
               border: 'none',
-              borderBottom: `1px dashed ${T.hairline}`,
+              borderBottom: `1px dashed var(--border)`,
               padding: '2px 0',
               width: '100%',
               outline: 'none',
@@ -156,7 +151,7 @@ function FieldRow({ field, onChange, last }) {
               fontFamily: FONT.sans,
               fontSize: 13,
               fontWeight: readonly ? 500 : 600,
-              color: readonly ? T.inkMuted : T.ink,
+              color: readonly ? 'var(--muted)' : 'var(--text)',
             }}
           >
             {value}
@@ -211,7 +206,7 @@ function CardHeader({ tone, actionLabel, scopeLabel }) {
           style={{
             fontFamily: FONT.mono,
             fontSize: 9,
-            color: T.inkFaint,
+            color: 'var(--faint)',
             letterSpacing: 1,
             textTransform: 'uppercase',
           }}
@@ -224,7 +219,7 @@ function CardHeader({ tone, actionLabel, scopeLabel }) {
 }
 
 function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, secondary }) {
-  const saveBg = saveTone === 'destructive' ? T.oxblood : T.accent
+  const saveBg = saveTone === 'destructive' ? T.oxblood : 'var(--accent)'
   return (
     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
       <button
@@ -238,7 +233,7 @@ function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, seconda
           borderRadius: 10,
           border: 'none',
           cursor: disabled ? 'default' : 'pointer',
-          background: disabled ? T.hairline : saveBg,
+          background: disabled ? 'var(--border)' : saveBg,
           color: '#fff',
           fontFamily: FONT.sans,
           fontWeight: 600,
@@ -262,8 +257,8 @@ function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, seconda
             borderRadius: 10,
             cursor: 'pointer',
             background: 'transparent',
-            color: T.ink,
-            border: `1px solid ${T.hairline}`,
+            color: 'var(--text)',
+            border: `1px solid var(--border)`,
             fontFamily: FONT.sans,
             fontWeight: 500,
             fontSize: 12,
@@ -282,8 +277,8 @@ function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, seconda
           borderRadius: 10,
           cursor: 'pointer',
           background: 'transparent',
-          color: T.inkMuted,
-          border: `1px solid ${T.hairline}`,
+          color: 'var(--muted)',
+          border: `1px solid var(--border)`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -467,11 +462,11 @@ function CancelCard({ card, onSave, onDiscard, committing }) {
             fontFamily: FONT.serif,
             fontSize: 12.5,
             fontStyle: 'italic',
-            color: T.inkMuted,
+            color: 'var(--muted)',
             marginBottom: 10,
             lineHeight: 1.4,
             textDecoration: 'line-through',
-            textDecorationColor: T.inkFaint,
+            textDecorationColor: 'var(--faint)',
           }}
         >
           {card.subtitle}
@@ -538,7 +533,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
             key={i}
             style={{
               padding: '8px 10px',
-              borderBottom: i < edits.length - 1 ? `1px solid ${T.hairline}` : 'none',
+              borderBottom: i < edits.length - 1 ? `1px solid var(--border)` : 'none',
               display: 'flex',
               alignItems: 'flex-start',
               gap: 10,
@@ -578,15 +573,15 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
                   style={{
                     fontFamily: FONT.sans,
                     fontSize: 11.5,
-                    color: T.inkMuted,
+                    color: 'var(--muted)',
                     marginTop: 2,
                   }}
                 >
-                  <span style={{ textDecoration: 'line-through', color: T.inkFaint }}>
+                  <span style={{ textDecoration: 'line-through', color: 'var(--faint)' }}>
                     {e.from}
                   </span>
                   <span style={{ margin: '0 5px' }}>→</span>
-                  <span style={{ color: T.ink, fontWeight: 600 }}>{e.to}</span>
+                  <span style={{ color: 'var(--text)', fontWeight: 600 }}>{e.to}</span>
                 </div>
               ) : e.note ? (
                 <div
@@ -594,7 +589,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
                     fontFamily: FONT.serif,
                     fontSize: 11.5,
                     fontStyle: 'italic',
-                    color: T.inkMuted,
+                    color: 'var(--muted)',
                     marginTop: 2,
                     lineHeight: 1.4,
                   }}
@@ -609,7 +604,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: T.inkMuted,
+                color: 'var(--muted)',
                 fontFamily: FONT.mono,
                 fontSize: 9,
                 letterSpacing: 1,
@@ -689,7 +684,7 @@ function WhoDots({ who, max = 4 }) {
         <span
           key={id}
           title={id}
-          style={{ width: 7, height: 7, borderRadius: '50%', background: TRAVELER_DOT[id] || T.inkFaint }}
+          style={{ width: 7, height: 7, borderRadius: '50%', background: TRAVELER_DOT[id] || 'var(--faint)' }}
         />
       ))}
     </span>
@@ -701,7 +696,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
   return (
     <div
       style={{
-        borderBottom: `1px solid ${T.hairline}`,
+        borderBottom: `1px solid var(--border)`,
         opacity: skipped ? 0.4 : 1,
       }}
     >
@@ -728,7 +723,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
             style={{
               fontFamily: FONT.mono,
               fontSize: 9.5,
-              color: T.inkFaint,
+              color: 'var(--faint)',
               width: 52,
               flexShrink: 0,
               letterSpacing: 0.4,
@@ -743,7 +738,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
                 fontSize: 13.5,
                 fontWeight: 600,
                 letterSpacing: -0.1,
-                color: T.ink,
+                color: 'var(--text)',
                 textDecoration: skipped ? 'line-through' : 'none',
               }}
             >
@@ -754,7 +749,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
                 style={{
                   fontFamily: FONT.mono,
                   fontSize: 9,
-                  color: T.inkFaint,
+                  color: 'var(--faint)',
                   marginLeft: 6,
                 }}
               >
@@ -770,7 +765,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
           style={{
             background: 'transparent',
             border: 'none',
-            color: T.inkMuted,
+            color: 'var(--muted)',
             fontFamily: FONT.mono,
             fontSize: 9,
             letterSpacing: 1,
@@ -791,7 +786,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
             fontSize: 12,
             fontStyle: 'italic',
             lineHeight: 1.45,
-            color: T.inkMuted,
+            color: 'var(--muted)',
           }}
         >
           {stop.description}
@@ -801,7 +796,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
                 fontFamily: FONT.mono,
                 fontStyle: 'normal',
                 fontSize: 9.5,
-                color: T.inkFaint,
+                color: 'var(--faint)',
                 marginTop: 4,
                 letterSpacing: 0.3,
               }}
@@ -877,7 +872,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
           fontWeight: 700,
           letterSpacing: -0.3,
           lineHeight: 1.1,
-          color: T.ink,
+          color: 'var(--text)',
         }}
       >
         {trip.title || 'New trip'}
@@ -888,7 +883,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
             fontFamily: FONT.serif,
             fontStyle: 'italic',
             fontSize: 12.5,
-            color: T.inkMuted,
+            color: 'var(--muted)',
             marginTop: 3,
             lineHeight: 1.4,
           }}
@@ -904,7 +899,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
               fontSize: 9,
               letterSpacing: 0.8,
               textTransform: 'uppercase',
-              color: T.inkFaint,
+              color: 'var(--faint)',
             }}
           >
             {trip.startCity === trip.endCity || !trip.endCity
@@ -924,7 +919,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
           maxHeight: 360,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
-          borderTop: `1px solid ${T.hairline}`,
+          borderTop: `1px solid var(--border)`,
         }}
       >
         {days.map((d, di) => {
@@ -965,7 +960,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
                     fontFamily: FONT.serif,
                     fontSize: 12.5,
                     fontWeight: 600,
-                    color: T.ink,
+                    color: 'var(--text)',
                     letterSpacing: -0.1,
                   }}
                 >
@@ -976,7 +971,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
                     marginLeft: 'auto',
                     fontFamily: FONT.mono,
                     fontSize: 9,
-                    color: T.inkFaint,
+                    color: 'var(--faint)',
                   }}
                 >
                   {dayLive} stop{dayLive === 1 ? '' : 's'}
@@ -1210,14 +1205,14 @@ function CardSavedNote({ action, title }) {
         gap: 8,
       }}
     >
-      <CheckIcon size={12} color={T.accent} />
+      <CheckIcon size={12} color={'var(--accent)'} />
       <span
         style={{
           fontFamily: FONT.mono,
           fontSize: 9,
           letterSpacing: 1.4,
           textTransform: 'uppercase',
-          color: T.accent,
+          color: 'var(--accent)',
           fontWeight: 600,
         }}
       >
@@ -1228,7 +1223,7 @@ function CardSavedNote({ action, title }) {
           style={{
             fontFamily: FONT.serif,
             fontSize: 13,
-            color: T.ink,
+            color: 'var(--text)',
             fontWeight: 500,
           }}
         >
@@ -1248,7 +1243,7 @@ function StaleTripNote({ title }) {
         padding: '8px 12px',
         borderRadius: 10,
         background: 'rgba(21,32,26,0.04)',
-        border: `1px solid ${T.hairline}`,
+        border: `1px solid var(--border)`,
         display: 'flex',
         alignItems: 'center',
         gap: 8,
@@ -1260,7 +1255,7 @@ function StaleTripNote({ title }) {
           fontSize: 9,
           letterSpacing: 1.4,
           textTransform: 'uppercase',
-          color: T.inkFaint,
+          color: 'var(--faint)',
           fontWeight: 600,
         }}
       >
@@ -1272,7 +1267,7 @@ function StaleTripNote({ title }) {
             fontFamily: FONT.serif,
             fontStyle: 'italic',
             fontSize: 12.5,
-            color: T.inkMuted,
+            color: 'var(--muted)',
           }}
         >
           {title} — see the updated version below.
@@ -1298,7 +1293,7 @@ function CardErrorNote({ message }) {
         border: `1px solid ${T.oxbloodBorderSoft}`,
         fontFamily: FONT.serif,
         fontSize: 13,
-        color: T.ink,
+        color: 'var(--text)',
         lineHeight: 1.4,
       }}
     >
