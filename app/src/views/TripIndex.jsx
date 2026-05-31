@@ -4,6 +4,7 @@ import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { effectiveStatus } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { thumbUrl } from '../lib/thumbUrl'
+import { hasExplicitHero } from '../lib/tripHero'
 import { AvatarStack } from '../components/Avatar'
 
 // Trip index — the platform's home. Direct port of the Design bundle's
@@ -47,7 +48,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
   const heroPhotoUrls = useMemo(() => {
     const map = new Map()
     for (const t of trips) {
-      if (t.heroImage) continue // explicit hero wins
+      if (hasExplicitHero(t)) continue // explicit hero wins (shared §0 guard)
       const mems = listMemoriesForTrip(t.id, traveler).filter(
         (m) => m.kind === 'photo'
       )
@@ -317,6 +318,78 @@ function groupTrips(trips) {
   return { current, archives }
 }
 
+// Shared hero <img> styling. Extracted verbatim from the original
+// inline literal so the explicit-hero arm renders byte-identical DOM to
+// before (its visual baseline must NOT move — the §0 protected path),
+// and the heroPhotoUrl / heroResolved arms match it exactly.
+const HERO_IMG_STYLE = {
+  width: '100%',
+  aspectRatio: '16 / 9',
+  borderRadius: 10,
+  marginTop: 12,
+  objectFit: 'cover',
+  display: 'block',
+}
+
+// Stable per-trip hash → deterministic floor gradient angle. NOT
+// Math.random: a per-render random would reflow the floor on every
+// paint and flap the visual baselines. Same id → same angle, forever.
+function hashTripId(s) {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+
+// §4 FLOOR — the guaranteed last-resort hero. A themed, in-DOM block
+// (zero network, can never 404) keyed off the active traveler palette:
+// --card/--bg/--accent/--text are already per-traveler themed in
+// themes.css, so the floor reads correctly on Helen's linen and
+// Jonathan's Kottke-dark alike. Renders only when a trip has no explicit
+// hero, no memory photo, and no worker-resolved photo (pending / failed /
+// no-match per §6). This is what replaced the old `: null` branch, so a
+// trip card is NEVER blank and the deleted diagonal placeholder can
+// never return. See CARRYOVER_TRIP_HERO_PLAN §4/§6.
+function TripCardFloor({ trip }) {
+  // Deterministic gradient angle + a single faint serif monogram (the
+  // trip title's first letter, drop-cap style). DELIBERATELY no title or
+  // location text: the card already renders the title (above the hero)
+  // and the location (below it), so repeating either here would (a) be
+  // redundant, and (b) duplicate queryable text — getByText('<title>')
+  // would resolve to two nodes and break strict-mode locators
+  // (reconcile-archive.spec relies on exactly one). The block is purely
+  // decorative, so it's aria-hidden — the enclosing card button already
+  // carries the title for assistive tech.
+  const angle = 115 + (hashTripId(trip.id || trip.title || '') % 5) * 12
+  const monogram = ((trip.title || 'T').trim().charAt(0) || 'T').toUpperCase()
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        ...HERO_IMG_STYLE,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `linear-gradient(${angle}deg, var(--card) 0%, var(--bg) 100%)`,
+        overflow: 'hidden',
+      }}
+    >
+      <span
+        style={{
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 92,
+          fontWeight: 700,
+          lineHeight: 1,
+          color: 'var(--text)',
+          opacity: 0.14,
+          userSelect: 'none',
+        }}
+      >
+        {monogram}
+      </span>
+    </div>
+  )
+}
+
 function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay }) {
   // Date-derived status so a 'planning' trip auto-flips to 'live' on
   // its start date and 'archived' after its end date — no need to
@@ -406,21 +479,23 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
         </div>
       )}
 
-      {trip.heroImage || heroPhotoUrl ? (
-        <img
-          src={trip.heroImage || heroPhotoUrl}
-          alt={trip.title}
-          loading="lazy"
-          style={{
-            width: '100%',
-            aspectRatio: '16 / 9',
-            borderRadius: 10,
-            marginTop: 12,
-            objectFit: 'cover',
-            display: 'block',
-          }}
-        />
-      ) : null}
+      {/* Hero precedence (highest → lowest), CARRYOVER_TRIP_HERO_PLAN §0/§4:
+          1. explicit heroImage  — Jonathan's choice, PROTECTED, untouched
+          2. heroPhotoUrl        — the family's own photo tagged to the
+                                    trip's heroStopId (existing editorial anchor)
+          3. heroResolved.url    — the worker-resolved Places destination hero
+          4. <TripCardFloor>     — the themed floor (replaces the old `: null`;
+                                    can never 404, so a card is never blank).
+          The placeholder is gone: there is no branch that renders nothing. */}
+      {hasExplicitHero(trip) ? (
+        <img src={trip.heroImage} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+      ) : heroPhotoUrl ? (
+        <img src={heroPhotoUrl} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+      ) : trip.heroResolved?.url ? (
+        <img src={trip.heroResolved.url} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+      ) : (
+        <TripCardFloor trip={trip} />
+      )}
 
       <div
         style={{

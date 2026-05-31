@@ -25,6 +25,11 @@ export const JACKSON_TRIP = {
     "Eight days, seven cabins and Airbnbs, one ceremony at the Jackson Family Cemetery in Elizabethton, and a closing visit to the Rothko Chapel. The arc is intentional: ashes scattered at the start, a quiet room of paintings at the end.",
   sharedAlbumURL: '',
   heroStopId: 'j8-1', // Rothko Chapel — Helen's view leads with this
+  // Cold-start hero baked from Places ("Houston") via
+  // scripts/fetchTripHeroes.mjs (CARRYOVER_TRIP_HERO_PLAN §3). The D1
+  // record carries no heroImage, so the live card resolves its hero
+  // worker-side; this is the pre-first-pull fallback. © Julio FERNANDEZ CASANOVA.
+  heroImage: './images/jackson-2026.webp',
   days: [
     {
       n: 1,
@@ -435,6 +440,11 @@ export const NYC_TRIP = {
     "Three days in Manhattan for Rafa's fifth, capped with a monster truck show in Bridgeport on the way home. Jonathan flies in from Indianapolis Friday evening; Helen, Aurelia, and Rafa drive down from Belmont after school pickup. Family converges at the Murray Hill Airbnb.",
   sharedAlbumURL: '',
   heroStopId: 'n3-4', // Hot Wheels Monster Trucks — Rafa's anchor, the closing big moment
+  // Cold-start hero baked from Places ("New York") via
+  // scripts/fetchTripHeroes.mjs (CARRYOVER_TRIP_HERO_PLAN §3). The D1
+  // record carries no heroImage, so the live card resolves its hero
+  // worker-side; this is the pre-first-pull fallback. © Richard T.
+  heroImage: './images/nyc-rafa-2026.webp',
   packingList: [
     '4× over-ear earmuffs, NRR 25–28 dB (Bridgeport monster truck show)',
     'Sharpie + small Hot Wheels truck (driver autographs at the pre-show party)',

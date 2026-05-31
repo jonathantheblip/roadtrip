@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "set-secret": "node scripts/setSecret.mjs",
     "fetch-heroes": "node scripts/fetchHeroImages.mjs",
+    "fetch-trip-heroes": "node scripts/fetchTripHeroes.mjs",
     "check-duplicates": "node scripts/checkDuplicates.mjs",
     "test": "node --test scripts/__tests__/*.test.mjs",
     "test:e2e": "playwright test",
