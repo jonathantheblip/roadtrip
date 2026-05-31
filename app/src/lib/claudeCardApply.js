@@ -9,6 +9,10 @@
 // subsequent chunks but are stubbed below so the dispatcher fails
 // loudly (rather than silently no-oping) when called early.
 
+// Reuse the canonical human-date-range formatter so a date edited via a
+// trip-settings card renders identically to one set at trip creation.
+import { humanDateRange } from './createTripCard.js'
+
 // Convert a card.fields array into a flat { name → value } object,
 // keeping the *user-edited* values from the draft (not the originals).
 function fieldMap(card) {
@@ -236,6 +240,57 @@ function applyMulti(trip, card) {
   return next
 }
 
+// Merge trip-level field updates into the record at the correct level —
+// the seed shape keeps fields at the root, the D1 row shape nests them
+// under `.data` (same split withDays handles for days). Never touches
+// days/stops: those keys are absent from `patch`, so the existing array
+// passes through by reference, untouched.
+function withTripFields(trip, patch) {
+  if (trip.data) return { ...trip, data: { ...trip.data, ...patch } }
+  return { ...trip, ...patch }
+}
+
+// Apply a `trip-settings` card — edit TRIP-LEVEL fields (destination,
+// title, dates, start city, subtitle, location label) on the trip
+// record. Touches ONLY trip-level keys; days and stops pass through
+// untouched. Field logic mirrors cardToTrip at trip creation
+// (createTripCard.js:131–141) so a setting edited here matches one set
+// at creation. Only keys the card actually carries are written, so a
+// one-field edit leaves every other field intact.
+function applySettings(trip, card) {
+  const fields = fieldMap(card)
+  const cur = trip.data || trip // current trip-level values live here
+  const patch = {}
+
+  if ('title' in fields) patch.title = fields.title || cur.title || 'Untitled trip'
+  if ('subtitle' in fields) {
+    patch.subtitle = fields.subtitle || ''
+    // cardToTrip mirrors subtitle → overview; keep them in lockstep.
+    patch.overview = fields.subtitle || ''
+  }
+  // endCity is the canonical "destination"; accept `destination` as the
+  // worker-prompt alias, writing both to endCity.
+  if ('endCity' in fields) patch.endCity = fields.endCity || ''
+  if ('destination' in fields) patch.endCity = fields.destination || ''
+  if ('startCity' in fields) patch.startCity = fields.startCity || ''
+  if ('locationLabel' in fields) patch.locationLabel = fields.locationLabel || ''
+
+  // Dates: ISO yyyy-mm-dd start/end. When either changes, recompute the
+  // human-readable dateRange string the themed views render — exactly as
+  // cardToTrip does — carrying the unchanged endpoint forward.
+  if ('dateRangeStart' in fields || 'dateRangeEnd' in fields) {
+    const ds =
+      'dateRangeStart' in fields ? fields.dateRangeStart || null : cur.dateRangeStart ?? null
+    const de =
+      'dateRangeEnd' in fields ? fields.dateRangeEnd || null : cur.dateRangeEnd ?? null
+    patch.dateRangeStart = ds
+    patch.dateRangeEnd = de
+    patch.dateRange = humanDateRange(ds, de)
+  }
+
+  return withTripFields(trip, patch)
+}
+
 // Dispatcher — picks the action handler.
 export function applyCardToTrip(trip, card) {
   if (!trip || !card || typeof card !== 'object') {
@@ -266,6 +321,8 @@ export function applyCardToTrip(trip, card) {
       return applyCancel(trip, card)
     case 'multi':
       return applyMulti(trip, card)
+    case 'trip-settings':
+      return applySettings(trip, card)
     default:
       throw new Error(`applyCardToTrip: unknown action "${card.action}"`)
   }

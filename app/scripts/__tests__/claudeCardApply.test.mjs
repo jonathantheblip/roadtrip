@@ -9,6 +9,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { applyCardToTrip } from '../../src/lib/claudeCardApply.js'
+import { humanDateRange } from '../../src/lib/createTripCard.js'
 
 // A fixture trip with the same shape as the production seed: id, days
 // array with .n + .stops. Keep it minimal — three days, one stop each —
@@ -271,4 +272,83 @@ test('applyCardToTrip — guard catches date-change tagged "add" yet leaves a re
     fields: [{ name: 'time', value: '8:00 AM' }],
   })
   assert.equal(ok.days[0].stops.length, 2, 'legitimate stop-add unaffected by guard')
+})
+
+// ─── Commit 2 — trip-settings applier ─────────────────────────────────
+// applySettings writes ONLY trip-level fields (destination, title,
+// dates, …) and leaves days/stops untouched (same reference).
+test('applyCardToTrip — trip-settings sets endCity + title without touching stops', () => {
+  const trip = fixtureTrip()
+  const stopCountsBefore = trip.days.map((d) => d.stops.length)
+  const card = {
+    action: 'trip-settings',
+    id: 'c-settings-1',
+    title: 'Trip settings',
+    target: { tripId: 'volleyball-2026' },
+    fields: [
+      { name: 'endCity', value: 'Boston, MA' },
+      { name: 'title', value: 'Beach Weekend' },
+    ],
+  }
+  const next = applyCardToTrip(trip, card)
+  assert.equal(next.endCity, 'Boston, MA')
+  assert.equal(next.title, 'Beach Weekend')
+  // Stops are untouched: same days array reference, same stop counts.
+  assert.equal(next.days, trip.days, 'days array passed through by reference — stops untouched')
+  assert.deepEqual(next.days.map((d) => d.stops.length), stopCountsBefore)
+})
+
+test('applyCardToTrip — trip-settings accepts `destination` alias for endCity', () => {
+  const next = applyCardToTrip(fixtureTrip(), {
+    action: 'trip-settings',
+    id: 'c-settings-dest',
+    target: { tripId: 'volleyball-2026' },
+    fields: [{ name: 'destination', value: 'Portland, ME' }],
+  })
+  assert.equal(next.endCity, 'Portland, ME')
+})
+
+test('applyCardToTrip — trip-settings sets dates and recomputes the human dateRange', () => {
+  const next = applyCardToTrip(fixtureTrip(), {
+    action: 'trip-settings',
+    id: 'c-settings-dates',
+    target: { tripId: 'volleyball-2026' },
+    fields: [
+      { name: 'dateRangeStart', value: '2026-05-22' },
+      { name: 'dateRangeEnd', value: '2026-05-25' },
+    ],
+  })
+  assert.equal(next.dateRangeStart, '2026-05-22')
+  assert.equal(next.dateRangeEnd, '2026-05-25')
+  // Same formatter cardToTrip uses — reuse, not a reimplementation.
+  assert.equal(next.dateRange, humanDateRange('2026-05-22', '2026-05-25'))
+})
+
+test('applyCardToTrip — trip-settings is a precise patch: untouched fields survive, one field changes', () => {
+  const trip = fixtureTrip()
+  trip.endCity = 'Old City'
+  trip.startCity = 'Belmont, MA'
+  const next = applyCardToTrip(trip, {
+    action: 'trip-settings',
+    id: 'c-settings-precise',
+    target: { tripId: 'volleyball-2026' },
+    fields: [{ name: 'subtitle', value: 'A long weekend at the shore' }],
+  })
+  assert.equal(next.subtitle, 'A long weekend at the shore')
+  assert.equal(next.overview, 'A long weekend at the shore', 'subtitle mirrors to overview')
+  assert.equal(next.startCity, 'Belmont, MA', 'unrelated field untouched')
+  assert.equal(next.endCity, 'Old City', 'unrelated field untouched')
+})
+
+test('applyCardToTrip — trip-settings writes to .data level on the D1 row shape, stops untouched', () => {
+  const trip = { id: 'volleyball-2026', data: fixtureTrip() }
+  const next = applyCardToTrip(trip, {
+    action: 'trip-settings',
+    id: 'c-settings-d1',
+    target: { tripId: 'volleyball-2026' },
+    fields: [{ name: 'endCity', value: 'Mystic, CT' }],
+  })
+  assert.ok(next.data, 'data branch preserved')
+  assert.equal(next.data.endCity, 'Mystic, CT', 'field written at .data level')
+  assert.equal(next.data.days, trip.data.days, 'days passed through by reference — stops untouched')
 })

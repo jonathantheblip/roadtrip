@@ -364,6 +364,77 @@ function AddOrMoveCard({ card, draft, setDraftField, onSave, onDiscard, committi
   )
 }
 
+// Trip-level settings edit (action "trip-settings"). Same draft visual
+// language as AddOrMoveCard — header, title, editable field rows, optional
+// note, Save/Discard — but framed as a trip-level change rather than a
+// stop edit. Reuses CardHeader / FieldRow / CardActions so it stays in
+// lockstep with the other cards' look.
+function SettingsCard({ card, draft, setDraftField, onSave, onDiscard, committing }) {
+  return (
+    <div
+      style={{
+        background: T.draftBg,
+        border: `1px solid ${T.draftBorder}`,
+        borderRadius: 14,
+        padding: 12,
+        marginBottom: 14,
+      }}
+      data-testid="confirm-card-trip-settings"
+    >
+      <CardHeader tone="draft" actionLabel="Draft · trip settings" scopeLabel={card.eyebrow} />
+      {card.title && (
+        <div
+          style={{
+            fontFamily: FONT.serif,
+            fontSize: 15,
+            fontWeight: 600,
+            letterSpacing: -0.2,
+            marginBottom: 8,
+          }}
+        >
+          {card.title}
+        </div>
+      )}
+      {Array.isArray(draft.fields) && draft.fields.length > 0 && (
+        <div style={{ marginBottom: 4 }}>
+          {draft.fields.map((f, i) => (
+            <FieldRow
+              key={f.name || i}
+              field={f}
+              onChange={setDraftField}
+              last={i === draft.fields.length - 1}
+            />
+          ))}
+        </div>
+      )}
+      {card.note && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: '6px 8px',
+            borderRadius: 8,
+            background: 'rgba(178,128,40,0.10)',
+            color: T.draftEyebrow,
+            fontFamily: FONT.serif,
+            fontStyle: 'italic',
+            fontSize: 11.5,
+            lineHeight: 1.4,
+          }}
+        >
+          {card.note}
+        </div>
+      )}
+      <CardActions
+        saveLabel={committing ? 'Saving…' : 'Save'}
+        saveTone="draft"
+        onSave={onSave}
+        onDiscard={onDiscard}
+        disabled={committing}
+      />
+    </div>
+  )
+}
+
 function CancelCard({ card, onSave, onDiscard, committing }) {
   return (
     <div
@@ -1076,6 +1147,20 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
           {commit.error && <CardErrorNote message={commit.error} />}
         </>
       )
+    case 'trip-settings':
+      return (
+        <>
+          <SettingsCard
+            card={card}
+            draft={draft}
+            setDraftField={setDraftField}
+            onSave={handleSave}
+            onDiscard={handleDiscard}
+            committing={isCommitting}
+          />
+          {commit.error && <CardErrorNote message={commit.error} />}
+        </>
+      )
     default:
       return null
   }
@@ -1091,6 +1176,8 @@ function CardSavedNote({ action, title }) {
       ? 'Saved'
       : action === 'create_trip'
       ? 'Created'
+      : action === 'trip-settings'
+      ? 'Updated'
       : 'Added'
   return (
     <div

@@ -322,3 +322,47 @@ test.describe('Claude-in-App M2 — MULTI card', () => {
     expect(trip.days.find((d) => d.n === 3).stops.find((s) => s.id === 'vb3-4').time).toBe('2:00 PM')
   })
 })
+
+test.describe('Claude-in-App — TRIP-SETTINGS card', () => {
+  test('renames the trip + sets the destination, leaving every stop untouched', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockChat(
+      page,
+      replyWithCard(
+        {
+          action: 'trip-settings',
+          id: 'c-settings-shore',
+          eyebrow: 'TRIP SETTINGS',
+          title: 'Rename to Shore Weekend, destination Boston',
+          fields: [
+            { name: 'title', label: 'Title', value: 'Shore Weekend', previousValue: 'Fun @ the Sun', editable: true },
+            { name: 'endCity', label: 'Destination', value: 'Boston, MA', previousValue: 'Belmont, MA', editable: true },
+          ],
+          target: { tripId: 'volleyball-2026' },
+          note: 'Trip-level change — your stops stay put.',
+        },
+        'Renamed and pointed at Boston. Your stops are unchanged.'
+      )
+    )
+    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    const dialog = await openInTripChat(page)
+    await sendMessage(dialog, 'rename this trip to Shore Weekend and set the destination to Boston')
+
+    const card = dialog.getByTestId('confirm-card-trip-settings')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await expect(card.getByText(/Rename to Shore Weekend/)).toBeVisible()
+
+    await card.getByRole('button', { name: /^Save$/i }).click()
+    await expect(dialog.getByTestId('confirm-card-saved')).toBeVisible({ timeout: 3000 })
+
+    const trip = await readCachedTrip(page)
+    // Trip-level fields updated…
+    expect(trip.title).toBe('Shore Weekend')
+    expect(trip.endCity).toBe('Boston, MA')
+    // …and every stop survives, on every day (the corruption guard's whole point).
+    expect(trip.days.length).toBe(3)
+    expect(trip.days.find((d) => d.n === 1).stops.find((s) => s.id === 'vb1-3')).toBeTruthy()
+    expect(trip.days.find((d) => d.n === 2).stops.find((s) => s.id === 'vb2-3')).toBeTruthy()
+    expect(trip.days.find((d) => d.n === 3).stops.find((s) => s.id === 'vb3-4')).toBeTruthy()
+  })
+})

@@ -1585,7 +1585,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   lines.push('Shape:')
   lines.push('```card')
   lines.push('{')
-  lines.push('  "action": "add" | "move" | "cancel" | "multi",')
+  lines.push('  "action": "add" | "move" | "cancel" | "multi" | "trip-settings",')
   lines.push('  "id": "<short stable id for this card, e.g. c-sift-add>",')
   lines.push('  "eyebrow": "<context label, e.g. DAY 3 · SUN MAY 3>",')
   lines.push('  "title": "<short title — what is happening>",')
@@ -1615,8 +1615,28 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   lines.push('- Editable fields are what the reader can tweak before saving. Derived or readonly fields (e.g. "detour from route") use `"editable": false`.')
   lines.push('- For `move` and `cancel`, you MUST identify the target stop by its `stopId` from the trip context block below. Never guess a stopId.')
   lines.push('- For `add`, the target needs `tripId` + `dayN`; `position` defaults to the end of the day.')
+  lines.push('- For `trip-settings`, the target needs ONLY `tripId` (no `dayN`, no `stopId`). Emit it — never `add`/`move` — for any edit to the TRIP ITSELF rather than a stop: renaming the trip, setting/changing the destination, moving the dates, changing the start city, or editing the subtitle or location label. See the Trip settings section below.')
   lines.push("- Never invent venues, hours, or addresses you weren't told. If a detail is unknown, use the field with the reader's words verbatim, mark `\"editable\": true`, and let the reader fill it in on the card.")
   lines.push('- Emit-don\'t-ask is the default — see the Authority block above. Tensions (packed day, conflict, past Rafa\'s 9 PM cutoff) go in the card\'s `note`, not as a blocking question. Ask only when the target itself is unconstructable.')
+
+  lines.push('')
+  lines.push('## Trip settings (action "trip-settings")')
+  lines.push(
+    'A `trip-settings` card edits the TRIP RECORD itself — not a stop. Use it, and NEVER `add`/`move`, when the reader wants to change a trip-level property: rename the trip, set or change the destination, shift the dates, change the start city, or edit the subtitle or location label. A trip-level edit emitted as `add` would corrupt the trip with a junk stop, so it MUST route here.'
+  )
+  lines.push('Editable trip-level fields — use these exact `name`s, and include ONLY the ones actually changing:')
+  lines.push("  - `title` — the trip's name")
+  lines.push('  - `subtitle` — the one-line description under the title')
+  lines.push('  - `endCity` — the destination (the alias `destination` is also accepted)')
+  lines.push('  - `startCity` — where the trip departs from')
+  lines.push('  - `dateRangeStart` / `dateRangeEnd` — ISO dates, YYYY-MM-DD')
+  lines.push('  - `locationLabel` — the short place label shown on the trip card (optional override)')
+  lines.push(
+    'The `target` carries only `tripId`. Each field uses the normal field shape with `"editable": true`. Worked example: "rename this trip to Shore Weekend and push it to the first weekend of June" → ONE `trip-settings` card with fields [{ "name": "title", "label": "Title", "value": "Shore Weekend", "editable": true }, { "name": "dateRangeStart", "label": "Start", "value": "2026-06-05", "editable": true }, { "name": "dateRangeEnd", "label": "End", "value": "2026-06-07", "editable": true }] and target { "tripId": "<id>" }.'
+  )
+  lines.push(
+    'A trip-settings card NEVER carries stop fields and never touches days or stops. If the reader wants both a trip-level change and a stop change, that is two separate cards across two turns.'
+  )
 
   lines.push('')
   lines.push('## Who is talking to you right now')
