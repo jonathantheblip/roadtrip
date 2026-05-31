@@ -3,6 +3,13 @@ app/test-results/
 app/playwright-report/
 # Simulator-gate failure evidence (screenshots saved only on test failure)
 app/tests/simulator/__artifacts__/
+# Custom page.screenshot() captures — written by photos/claude specs for
+# manual verify-in-DOM review, NOT asserted by any test. A full e2e run
+# rewrites them with environment-dependent bytes (render + PNG encoding
+# differ across machines / OS minor versions), so tracking them guarantees
+# a dirty tree in CI. Untracked so the deploy gate stays clean. (journeys/
+# step-captures live under here too and are likewise local-only.)
+app/tests/e2e/screenshots/
 app/node_modules
 app/dist
 app/.vite
