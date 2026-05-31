@@ -1,5 +1,10 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs + the user_id assertion below are byte-identical.
+const PERSONA = resolvePersona('helen')
 
 // Claude-in-App M2 — ADD card end-to-end (first wired shape per the
 // kickoff carryover §10.3). Covers:
@@ -110,7 +115,7 @@ test.describe('Claude-in-App M2 — ADD card', () => {
   test('renders ConfirmCard inline, Save commits a new stop to Day 3', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     const state = await mockClaudeWorker(page)
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
     // Open the in-trip chat.
     await page.getByRole('button', { name: /Modify this trip with Claude/i }).click()
@@ -164,7 +169,7 @@ test.describe('Claude-in-App M2 — ADD card', () => {
     // Worker received the message with the right context.
     expect(state.chats).toBe(1)
     expect(state.lastChatBody.trip_id).toBe('volleyball-2026')
-    expect(state.lastChatBody.user_id).toBe('helen')
+    expect(state.lastChatBody.user_id).toBe(PERSONA)
 
     await page.screenshot({
       path: `${SHOT_DIR}/m2-card-add-saved.png`,

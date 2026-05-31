@@ -1,5 +1,10 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // M3 acceptance — exercise the WebCodecs + mp4-muxer encode pipeline
 // against headless Chromium. The headless build ships WebCodecs, so
@@ -18,8 +23,8 @@ test.describe('AddDispatchModal — video path (M3)', () => {
 
   test('video picker only renders when WebCodecs is supported', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
 
     const modal = page.getByTestId('add-dispatch-modal')
@@ -33,8 +38,8 @@ test.describe('AddDispatchModal — video path (M3)', () => {
       delete window.VideoEncoder
       delete window.VideoFrame
     })
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     await expect(modal.getByTestId('open-picker')).toBeVisible()
     await expect(modal.getByTestId('open-video-picker')).toHaveCount(0)
@@ -104,13 +109,13 @@ test.describe('AddDispatchModal — video path (M3)', () => {
       (route) => route.fulfill({ status: 200, body: '{}' })
     )
 
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
     // Drive the UI into the modal FIRST, before the long synthesize
     // block. React state changes during the 1-second MediaRecorder
     // sample have been observed to drop click events on slower CI
     // workers, so we stabilize the modal up-front.
-    await page.getByTestId('helen-photos-entry').click()
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await expect(modal.getByTestId('open-video-picker')).toBeVisible()
@@ -194,8 +199,8 @@ test.describe('AddDispatchModal — video path (M3)', () => {
     await page.addInitScript(() => {
       window.__RT_FORCE_BUCKETC = 'video-too-long'
     })
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const panel = page.getByTestId('dispatch-bucketC')
     await expect(panel).toBeVisible()

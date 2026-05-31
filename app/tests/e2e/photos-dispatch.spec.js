@@ -9,6 +9,11 @@ import {
   tiffFileForRejection,
 } from './_fixtures/photoFixtures.js'
 import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // M2 acceptance — the AddDispatchModal exercises the real photo
 // pipeline (Canvas decode, EXIF read, downscale, upload, IndexedDB
@@ -30,8 +35,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     const uploads = await mockSuccessfulUpload(page)
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
 
     const modal = page.getByTestId('add-dispatch-modal')
@@ -76,8 +81,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     const uploads = await mockSuccessfulUpload(page)
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(mp4FileForRejection())
@@ -93,8 +98,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await mockSuccessfulUpload(page)
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(tiffFileForRejection())
@@ -119,8 +124,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
         })
     )
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
@@ -161,8 +166,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
       }
     )
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
@@ -186,8 +191,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
     await page.addInitScript(() => {
       window.__RT_FORCE_BUCKETC = 'photo-too-large'
     })
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const panel = page.getByTestId('dispatch-bucketC')
     await expect(panel).toBeVisible()
@@ -248,8 +253,8 @@ test.describe('AddDispatchModal — photo path (M2)', () => {
       localStorage.setItem('rt_memories_shared_v1', JSON.stringify(memories))
     })
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
 
     const exifTile = page
       .getByTestId('photo-tile')

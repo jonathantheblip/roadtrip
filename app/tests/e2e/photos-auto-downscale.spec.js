@@ -2,6 +2,11 @@ import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { bigPhotoFile } from './_fixtures/photoFixtures.js'
 import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // Pri 1 structural fix — saveAsset auto-runs preparePhotoForUpload for
 // photo kind. Pre-fix, ThreadedMemories.savePhotoAlbum bypassed the
@@ -31,7 +36,7 @@ test('saveAsset auto-downscales photo input to JPEG at PHOTO_MAX_EDGE', async ({
 }) => {
   test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+  await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
   // Wait for the app to mount.
   await expect(page.getByRole('button', { name: /Modify this trip with Claude/i })).toBeVisible()
@@ -91,7 +96,7 @@ test('saveAsset({ raw: true }) preserves input bytes for opt-out callers', async
 }) => {
   test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+  await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
   await expect(page.getByRole('button', { name: /Modify this trip with Claude/i })).toBeVisible()
 
   const big = bigPhotoFile({ width: 3000, height: 2250 })
@@ -130,7 +135,7 @@ test('saveAsset still works for audio kind without modification', async ({
 }) => {
   test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+  await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
   await expect(page.getByRole('button', { name: /Modify this trip with Claude/i })).toBeVisible()
 
   const result = await page.evaluate(async () => {

@@ -1,6 +1,11 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // Trip reconciliation + archiving — the full motion, end to end, against
 // the REAL pipeline (matcher → reconcileDraft → reconcileEdits →
@@ -108,7 +113,7 @@ async function openReconcileTriage(page) {
   await page.addInitScript((map) => {
     window.__RT_BACKFILL_EXIF = map
   }, BACKFILL_EXIF)
-  await page.goto('/?person=helen&trip=recon-roadtrip-2026&nosw=1')
+  await page.goto(`/?person=${PERSONA}&trip=recon-roadtrip-2026&nosw=1`)
 
   await page.getByRole('button', { name: 'Trip settings' }).click()
   await page.getByTestId('import-file-input').setInputFiles(RECON_FILES)
@@ -240,7 +245,7 @@ test.describe('TripIndex archive grouping', () => {
     await page.addInitScript((trips) => {
       localStorage.setItem('rt_trips_cache_v1', JSON.stringify(trips))
     }, MONTH_TRIPS)
-    await page.goto('/?person=helen&nosw=1')
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
 
     // No date-current trip → the index renders directly.
     await expect(page.getByText('ARCHIVE · 2026')).toBeVisible({ timeout: 7000 })

@@ -1,5 +1,10 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // Claude-in-App M2 — the remaining three card shapes wired end-to-end:
 //   • MOVE   — in-place edit of an existing stop, target.stopId required
@@ -115,7 +120,7 @@ test.describe('Claude-in-App M2 — MOVE card', () => {
         "Moved. That's the only Saturday match affected."
       )
     )
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     const dialog = await openInTripChat(page)
     await sendMessage(dialog, "Aurelia's match is at 3pm on court 3")
 
@@ -156,7 +161,7 @@ test.describe('Claude-in-App M2 — CANCEL card', () => {
         'Got it.'
       )
     )
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     const dialog = await openInTripChat(page)
     await sendMessage(dialog, "Cancel Sunday's match — Aurelia's not feeling well")
 
@@ -194,7 +199,7 @@ test.describe('Claude-in-App M2 — CANCEL card', () => {
         ''
       )
     )
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     const dialog = await openInTripChat(page)
     await sendMessage(dialog, 'actually cancel the Beach Bungalow')
 
@@ -246,7 +251,7 @@ test.describe('Claude-in-App M2 — MULTI card', () => {
         'Two changes drafted. Save all or skip the ones you want to keep.'
       )
     )
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     const dialog = await openInTripChat(page)
     await sendMessage(dialog, 'pull saturday up to 11am and cut sunday')
 
@@ -308,7 +313,7 @@ test.describe('Claude-in-App M2 — MULTI card', () => {
         ''
       )
     )
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     const dialog = await openInTripChat(page)
     await sendMessage(dialog, 'pull both matches earlier')
 
@@ -344,7 +349,7 @@ test.describe('Claude-in-App — TRIP-SETTINGS card', () => {
         'Renamed and pointed at Boston. Your stops are unchanged.'
       )
     )
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     const dialog = await openInTripChat(page)
     await sendMessage(dialog, 'rename this trip to Shore Weekend and set the destination to Boston')
 
@@ -387,7 +392,7 @@ test.describe('Claude-in-App — apply failure surfaces plain language', () => {
         'Moving it.'
       )
     )
-    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
     const dialog = await openInTripChat(page)
     await sendMessage(dialog, 'move the match to 5pm')
 

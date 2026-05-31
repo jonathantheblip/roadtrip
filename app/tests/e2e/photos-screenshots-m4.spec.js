@@ -2,6 +2,11 @@ import { test } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
 import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // Visual captures for M4 + the dev-mode upload log. Each screenshot
 // proves a specific surface renders as designed — the carryover's
@@ -36,8 +41,8 @@ test.describe('M4 + dev-mode — visual capture', () => {
       }
     )
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
@@ -116,7 +121,7 @@ test.describe('M4 + dev-mode — visual capture', () => {
       ]
       localStorage.setItem('rt_upload_log_v1', JSON.stringify(entries))
     })
-    await page.goto('/?person=helen&trip=volleyball-2026')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
     // Open Settings via the ⋯ button in the top bar.
     await page.getByRole('button', { name: 'Trip settings' }).click()
     await page.waitForSelector('[data-testid="dev-upload-log"]')

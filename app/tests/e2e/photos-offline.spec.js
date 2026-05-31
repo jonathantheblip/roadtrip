@@ -5,6 +5,11 @@ import {
 } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
 import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // M4 acceptance — Background Sync fallback (Page Visibility +
 // interval + online event). Plays the actual end-to-end story:
@@ -56,7 +61,7 @@ test.describe('Photos upload — offline drain (M4)', () => {
       }
     )
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
 
     // Take the upload offline (simulated via 500 from the Worker
     // mock). context.setOffline would also work but the network
@@ -64,7 +69,7 @@ test.describe('Photos upload — offline drain (M4)', () => {
     // attempted but failed."
     nextResponseStatus = 503
 
-    await page.getByTestId('helen-photos-entry').click()
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
@@ -138,8 +143,8 @@ test.describe('Photos upload — offline drain (M4)', () => {
       }
     )
 
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     const modal = page.getByTestId('add-dispatch-modal')
     await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())

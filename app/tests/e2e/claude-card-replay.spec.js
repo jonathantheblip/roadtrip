@@ -2,6 +2,11 @@ import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // ─────────────────────────────────────────────────────────────────────────
 // Claude-in-App — Unit 3: browser-layer RECORD/REPLAY harness (card semantics)
@@ -114,7 +119,7 @@ async function sendMessage(dialog, text) {
 async function replay(page, fixtureName, requestMessage) {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   replayFixture(page, loadFixture(fixtureName))
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+  await page.goto(`/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
   const dialog = await openInTripChat(page)
   await sendMessage(dialog, requestMessage)
   return dialog

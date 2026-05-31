@@ -2,6 +2,11 @@ import { test } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
 import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
+import { resolvePersona } from './_fixtures/persona.js'
+
+// Honors RT_PERSONA (Phase 2 build-list item 1); defaults to 'helen' when
+// unset so existing runs stay byte-identical to before.
+const PERSONA = resolvePersona('helen')
 
 // Capture M2 surfaces after the §3 error-surface collapse: dispatch
 // composer (pick / preview / done) + the sync pill in the album header
@@ -18,8 +23,8 @@ test.describe('M2 photo path — visual capture (post §3)', () => {
 
   test('dispatch composer — pick state', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     await page.waitForSelector('[data-testid="open-picker"]')
     await page.screenshot({ path: `${SHOT_DIR}/m2-dispatch-pick.png`, fullPage: true })
@@ -31,8 +36,8 @@ test.describe('M2 photo path — visual capture (post §3)', () => {
       /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/(memories|assets)/,
       (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
     )
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     await page.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
     await page.waitForSelector('[data-testid="prep-metadata"]')
@@ -54,8 +59,8 @@ test.describe('M2 photo path — visual capture (post §3)', () => {
       // when window.__RT_FORCE_BUCKETC is set. See AddDispatchModal.
       window.__RT_FORCE_BUCKETC = 'photo-too-large'
     })
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     await page.waitForSelector('[data-testid="dispatch-bucketC"]')
     await page.screenshot({ path: `${SHOT_DIR}/m2-dispatch-bucketC.png`, fullPage: true })
@@ -73,8 +78,8 @@ test.describe('M2 photo path — visual capture (post §3)', () => {
       /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/memories/,
       (route) => route.fulfill({ status: 200, body: '{}' })
     )
-    await page.goto('/?person=helen&trip=volleyball-2026')
-    await page.getByTestId('helen-photos-entry').click()
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('add-dispatch').click()
     await page.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
     await page.getByTestId('dispatch-caption').fill('Queued for retry')
