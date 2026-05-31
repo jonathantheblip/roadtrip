@@ -23,6 +23,45 @@ fixed. Per-entry status added below.
 
 ---
 
+## A11Y-1 — axe color-contrast: themed eyebrow/muted labels + Claude panel `[real, serious]`
+
+**Source:** the axe-core a11y tier (QA_COVERAGE_SYSTEM_SPEC §4 build-list #2),
+wired 2026-05-31 at HEAD `fd75e51`. axe scans the SETTLED page (the helper
+collapses entrance animation/transition durations before analyzing), at the
+serious+critical WCAG-2 AA threshold. These are genuine, stable findings — NOT
+the animation-transient `fade-up` artifacts (those were eliminated by the
+settle step).
+
+**Status: [real, recorded — do NOT fix now].** Folds into the M6 theme pass —
+the same cycle that fixes the Claude-in-app wrong-theme bug. The axe tests
+allowlist `color-contrast` on these two surfaces (referencing this entry) so the
+gate stays green and still catches every OTHER serious/critical rule; Phase 3 /
+M6 removes the allowlist to re-gate contrast once the palettes are fixed.
+
+**Findings (chromium; WCAG AA needs 4.5:1 normal / 3:1 large text):**
+- **Claude-in-app panel — ALL personas** (2 nodes): muted ink `#696F68` on
+  linen `#F2EFE7` = **4.48:1** (just under 4.5). This is Helen's M1 panel
+  palette (`T.inkMuted` in `ClaudeChat.jsx`), which every persona inherits
+  because the panel is hardcoded Helen (the wrong-theme bug). axe thus
+  **corroborates the theme bug from the contrast angle** — a real tier overlap
+  (a11y ↔ the known Claude-in-app theme finding). Nodes: the trip-title eyebrow
+  (JetBrains Mono 10px) + a message-bubble line.
+- **Trips index — persona-variant** (themed mono "eyebrow" labels + muted italic):
+  - **jonathan**: oxblood `#A33A2E` on near-black `#0E0F11` = **2.92:1**.
+  - **aurelia**: hot-pink `#E8478C` on pale-pink `#FCE8EE` = **3.13:1**.
+  - **helen**: muted `#696F68` on linen `#F2EFE7` = **4.48:1**.
+  - **rafa**: clean (no serious/critical).
+
+**Reproducer:** `cd app && npx playwright test a11y-axe --project=chromium`
+(temporarily drop `allow: ['color-contrast']` in `tests/e2e/a11y-axe.spec.js`,
+and/or `RT_PERSONA=<traveler>` to scan a specific theme).
+
+**Non-vacuous:** the tier is proven to catch real violations (these) and an
+injected `button-name` (critical) survives the contrast allowlist (see the
+commit that added the tier).
+
+---
+
 ## R1 — Lightbox touch gestures don't run on WebKit `[test, S2 → resolved]`
 
 **Status (2026-05-25): [resolved]** — Pure test fix. WebKit
