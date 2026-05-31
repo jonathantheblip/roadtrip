@@ -1,0 +1,120 @@
+name: Deploy Client
+
+# Gate + deploy for the PWA client (the Vite app under app/, served by GitHub
+# Pages). A push to main that touches app/** runs the client's full e2e suite
+# (both projects); the built site is published to Pages ONLY if the suite is
+# green. Worker-only pushes don't match the paths filter, so they never
+# trigger a client deploy (the worker has its own pipeline).
+#
+# Deploy model: Pages "Source = GitHub Actions" (NOT branch / docs-folder).
+# The build output (docs/) is uploaded as a Pages artifact and published by
+# actions/deploy-pages — it is NOT committed to the repo. That is what
+# structurally prevents the stale-committed-artifact bug (the Vermont
+# incident): there is no committed build artifact left to go stale.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+  # Manual trigger for the first deploy / re-runs (ignores the paths filter).
+  workflow_dispatch:
+
+# One client deploy at a time; queue rather than cancel a publish mid-flight.
+concurrency:
+  group: deploy-client
+  cancel-in-progress: false
+
+# Least privilege. contents:read to checkout; pages:write + id-token:write are
+# required by actions/deploy-pages (OIDC-authenticated Pages publish).
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  test-build-deploy:
+    # MUST be macOS: the committed Playwright visual baselines are
+    # platform-suffixed -darwin (zero -linux). Playwright resolves baselines
+    # by OS, so ubuntu would look for non-existent -linux baselines and the
+    # e2e gate would fail. Same constraint as the worker pipeline — it runs
+    # the same suite.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    # Pages deployment environment (required by actions/deploy-pages); the
+    # published URL surfaces on the run and in the environment.
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+      - name: Install app deps
+        working-directory: app
+        run: npm ci
+      - name: Install Playwright browsers (chromium + webkit)
+        working-directory: app
+        run: npx playwright install chromium webkit
+      # ── GATE: the client's own e2e suite, BOTH projects (chromium +
+      #    webkit-mobile). Self-contained — playwright.config.js sets a fake
+      #    VITE_WORKER_URL / VITE_FAMILY_TOKEN_HELEN on the dev server and all
+      #    network is page.route-mocked, so NO secret/.env is needed here.
+      #    This is the client's test suite; the worker's vitest suite is
+      #    intentionally NOT run (irrelevant to a client deploy).
+      - name: Full e2e suite (chromium + webkit-mobile)
+        working-directory: app
+        run: npm run test:e2e
+      # ── BUILD: bake the client-public VITE_* constants into the bundle.
+      #    vite.config.js loadEnv(mode, cwd/.., '') merges process.env, so
+      #    setting them here is enough — no repo-root .env exists in CI. The
+      #    URL is a repo Variable, the 4 family tokens are repo Secrets (free
+      #    log-masking). Without them the app builds sync-disabled.
+      - name: Build client
+        working-directory: app
+        run: npm run build
+        env:
+          VITE_WORKER_URL: ${{ vars.VITE_WORKER_URL }}
+          VITE_FAMILY_TOKEN_JONATHAN: ${{ secrets.VITE_FAMILY_TOKEN_JONATHAN }}
+          VITE_FAMILY_TOKEN_HELEN: ${{ secrets.VITE_FAMILY_TOKEN_HELEN }}
+          VITE_FAMILY_TOKEN_AURELIA: ${{ secrets.VITE_FAMILY_TOKEN_AURELIA }}
+          VITE_FAMILY_TOKEN_RAFA: ${{ secrets.VITE_FAMILY_TOKEN_RAFA }}
+      # ── ASSERT (anti-sync-disabled guard): the Vermont incident was a
+      #    bundle built without the worker vars → isWorkerConfigured() false →
+      #    sync silently off. Fail the deploy if the worker URL didn't make it
+      #    into the entry bundle. Only docs/assets/index-*.js (the entry
+      #    chunk) carries the URL; other chunks legitimately don't.
+      - name: Assert worker URL baked into bundle
+        run: |
+          hits=$(grep -oh "roadtrip-sync.jonathan-d-jackson.workers.dev" docs/assets/index-*.js 2>/dev/null | wc -l | tr -d ' ' || true)
+          echo "worker-URL occurrences in entry bundle: ${hits:-0}"
+          if [ "${hits:-0}" -lt 1 ]; then
+            echo "::error::Worker URL absent from client bundle — built sync-disabled (VITE_WORKER_URL / family tokens missing at build time). Refusing to deploy."
+            exit 1
+          fi
+          echo "anti-sync-disabled guard passed"
+      # ── STAMP: give the service worker a unique cache generation per deploy
+      #    (commit SHA) so its activate handler purges old caches without a
+      #    manual CACHE_NAME bump. Built artifact only — source is untouched.
+      #    macOS/BSD sed needs the empty -i '' backup-suffix argument.
+      - name: Stamp service-worker cache name with commit SHA
+        run: |
+          short="${GITHUB_SHA:0:7}"
+          sed -i '' "s/jackson-trip-react-v[0-9][0-9]*/jackson-trip-react-${short}/" docs/sw.js
+          echo "stamped CACHE_NAME ->"
+          grep -n "const CACHE_NAME" docs/sw.js | head -1 || true
+      # ── DEPLOY (only if every step above passed).
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - name: Deploy to GitHub Pages
+        id: deploy
+        if: success()
+        uses: actions/deploy-pages@v4
