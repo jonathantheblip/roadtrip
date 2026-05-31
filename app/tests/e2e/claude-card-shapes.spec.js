@@ -366,3 +366,43 @@ test.describe('Claude-in-App — TRIP-SETTINGS card', () => {
     expect(trip.days.find((d) => d.n === 3).stops.find((s) => s.id === 'vb3-4')).toBeTruthy()
   })
 })
+
+test.describe('Claude-in-App — apply failure surfaces plain language', () => {
+  test('a genuinely failing apply shows a reader-facing line, never the raw internal error', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    // A move card whose stopId is not on the trip → applyMove throws
+    // "applyMove: stop … not found". The reader must see plain language,
+    // not that raw string.
+    mockChat(
+      page,
+      replyWithCard(
+        {
+          action: 'move',
+          id: 'c-move-bad',
+          eyebrow: 'DAY 2 · SAT MAY 23',
+          title: 'Move the match to 5:00 PM',
+          fields: [{ name: 'time', label: 'Time', value: '5:00 PM', previousValue: '3:45 PM', editable: true }],
+          target: { tripId: 'volleyball-2026', stopId: 'does-not-exist', dayN: 2 },
+        },
+        'Moving it.'
+      )
+    )
+    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    const dialog = await openInTripChat(page)
+    await sendMessage(dialog, 'move the match to 5pm')
+
+    const card = dialog.getByTestId('confirm-card-move')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.getByRole('button', { name: /^Save$/i }).click()
+
+    const err = dialog.getByTestId('confirm-card-error')
+    await expect(err).toBeVisible({ timeout: 3000 })
+    // Plain reader-facing line…
+    await expect(err).toContainText(/find that day or stop/i)
+    // …and NOT the raw internal applier string.
+    await expect(err).not.toContainText(/applyMove/i)
+    await expect(err).not.toContainText(/not found/i)
+    // The bad change did not save.
+    await expect(dialog.getByTestId('confirm-card-saved')).toHaveCount(0)
+  })
+})

@@ -8,7 +8,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { applyCardToTrip } from '../../src/lib/claudeCardApply.js'
+import { applyCardToTrip, userFacingApplyError } from '../../src/lib/claudeCardApply.js'
 import { humanDateRange } from '../../src/lib/createTripCard.js'
 
 // A fixture trip with the same shape as the production seed: id, days
@@ -351,4 +351,42 @@ test('applyCardToTrip — trip-settings writes to .data level on the D1 row shap
   assert.ok(next.data, 'data branch preserved')
   assert.equal(next.data.endCity, 'Mystic, CT', 'field written at .data level')
   assert.equal(next.data.days, trip.data.days, 'days passed through by reference — stops untouched')
+})
+
+// ─── Commit 3 — plain-language apply-error mapping ────────────────────
+// The reader never sees a raw internal error from the apply path — only
+// one of three plain strings. The raw detail goes to the dev log at the
+// call site (ConfirmCard.handleSave), not into the UI.
+test('userFacingApplyError — not-found errors map to a plain line, no raw internals leak', () => {
+  for (const raw of [
+    'applyMove: stop vb9-9 not found',
+    'applyAdd: day 9 not found in trip',
+    'applyMove: target day 5 not found',
+    'applyCancel: stop vbX not found',
+  ]) {
+    const s = userFacingApplyError(new Error(raw))
+    assert.match(s, /find that day or stop/i)
+    assert.doesNotMatch(s, /apply(Move|Add|Cancel)|vb9|day 9/i, 'no raw internal text leaks')
+  }
+})
+
+test('userFacingApplyError — the trip-level guard error maps to a plain trip-change line', () => {
+  const raw =
+    'applyCardToTrip: card tagged "add" carries trip-level field(s) [endCity] — this is a trip-settings edit, not a stop add; refusing to create a stop'
+  const s = userFacingApplyError(new Error(raw))
+  assert.match(s, /trip change/i)
+  assert.doesNotMatch(s, /applyCardToTrip|endCity|refusing/i, 'no raw internal text leaks')
+})
+
+test('userFacingApplyError — unknown errors fall back to a generic plain line, never the raw message', () => {
+  const s = userFacingApplyError(
+    new TypeError("Cannot read properties of undefined (reading 'days')")
+  )
+  assert.match(s, /something went wrong applying that change/i)
+  assert.doesNotMatch(s, /TypeError|undefined|reading/i, 'no raw internal text leaks')
+})
+
+test('userFacingApplyError — tolerates a non-Error argument (string / null)', () => {
+  assert.match(userFacingApplyError('stop xyz not found'), /find that day or stop/i)
+  assert.match(userFacingApplyError(null), /something went wrong/i)
 })

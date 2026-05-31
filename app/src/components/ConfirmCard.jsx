@@ -21,6 +21,8 @@
 import { useState } from 'react'
 import { TRAVELER_DOT } from '../data/travelers'
 import { travelerNameToId, humanDateRange } from '../lib/createTripCard'
+import { userFacingApplyError } from '../lib/claudeCardApply'
+import { logUploadEvent } from '../lib/uploadLog'
 
 // ─── Tokens — Helen's linen palette (duplicated from ClaudeChat.jsx) ──
 // Kept local rather than DRY'd so this file is a self-contained M2 unit.
@@ -1053,7 +1055,22 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
       await onSave?.(applyDraft(card, draft))
       setCommit({ phase: 'saved', error: null })
     } catch (err) {
-      setCommit({ phase: 'error', error: err?.message || 'Could not save.' })
+      // Plain-language only: the reader never sees a raw apply error
+      // (internal message, code, or stack). The raw detail is preserved
+      // for devs on the upload-log trace surface. Mirrors the streaming
+      // path's userFacingClaudeError.
+      try {
+        logUploadEvent({
+          code: 'claude_card_apply',
+          outcome: 'surfaced',
+          message: err?.message || String(err),
+          stack: err?.stack || null,
+          context: { action: card?.action || card?.type || null, cardId: card?.id || null },
+        })
+      } catch {
+        // Never let logging break the error path.
+      }
+      setCommit({ phase: 'error', error: userFacingApplyError(err) })
     }
   }
   function handleDiscard() {
@@ -1265,6 +1282,10 @@ function StaleTripNote({ title }) {
   )
 }
 
+// `message` is ALWAYS a pre-wrapped, reader-facing string — handleSave
+// runs every caught apply error through userFacingApplyError before it
+// reaches commit.error, so a raw internal message / code / stack can
+// never land here. Render it verbatim.
 function CardErrorNote({ message }) {
   return (
     <div

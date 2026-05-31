@@ -327,3 +327,24 @@ export function applyCardToTrip(trip, card) {
       throw new Error(`applyCardToTrip: unknown action "${card.action}"`)
   }
 }
+
+// Map a thrown apply/commit error to a plain, reader-facing line. The
+// reader NEVER sees a raw internal message, a code, or a stack — only one
+// of these three plain strings. The raw error is preserved for devs by
+// the caller (ConfirmCard.handleSave logs it to the upload-log trace
+// surface). Mirrors ClaudeChat's userFacingClaudeError for the streaming
+// path. Pure + exported so the mapping is unit-tested directly.
+export function userFacingApplyError(err) {
+  const msg = String(err?.message || err || '').toLowerCase()
+  // A day or stop the card targeted is no longer where it was — the most
+  // common genuine failure (the trip changed under the draft).
+  if (/not found/.test(msg)) {
+    return "I couldn't find that day or stop in the trip — it may have changed since. Tap back in and try again."
+  }
+  // A trip-level / settings-shaped edit the apply path refused (the guard,
+  // or a malformed trip-settings card).
+  if (/trip-level field|trip-settings/.test(msg)) {
+    return "I couldn't apply that as a trip change. Try rephrasing what you'd like to update."
+  }
+  return 'Something went wrong applying that change. Try again, or rephrase what you were asking.'
+}
