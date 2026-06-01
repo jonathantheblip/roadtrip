@@ -832,44 +832,61 @@ async function postPlacesNearby(env, request, cors) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return json({ error: 'missing or invalid location {lat,lng}' }, 400, cors)
   }
-  const radius = Number.isFinite(Number(body?.radius)) ? Number(body.radius) : 1500
-  const clampedRadius = Math.max(100, Math.min(50000, radius))
-  const limit = Math.max(1, Math.min(10, Number(body?.limit) || 5))
-
-  const reqBody = {
-    textQuery: query,
-    maxResultCount: limit,
-    rankPreference: 'DISTANCE',
-    locationBias: {
-      circle: {
-        center: { latitude: lat, longitude: lng },
-        radius: clampedRadius,
-      },
-    },
-  }
-
-  let res
   try {
-    res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
-        'x-goog-fieldmask':
-          'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber',
-      },
-      body: JSON.stringify(reqBody),
+    const out = await placesTextSearch(env, {
+      query,
+      lat,
+      lng,
+      radius: body?.radius,
+      limit: body?.limit,
     })
+    return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
   } catch (e) {
-    return json({ error: `places fetch failed: ${e?.message || String(e)}` }, 502, cors)
+    return json({ error: e?.message || String(e) }, 502, cors)
   }
+}
+
+// Core Places (New) text search with optional distance bias. Shared by
+// the /places/nearby HTTP endpoint (always centered — it validates
+// lat/lng first) and the find_places chat tool (centered when `near`
+// geocodes, text-only fallback otherwise). The API key never leaves the
+// worker. Returns the {results, radiusMeters} shape both callers consume.
+// Throws on a non-2xx Places response (error carries .status) so the
+// caller can map it to its own error surface.
+async function placesTextSearch(env, { query, lat, lng, radius, limit }) {
+  const hasCenter = Number.isFinite(lat) && Number.isFinite(lng)
+  const clampedRadius = Math.max(
+    100,
+    Math.min(50000, Number.isFinite(Number(radius)) ? Number(radius) : 1500)
+  )
+  const cappedLimit = Math.max(1, Math.min(10, Number(limit) || 5))
+
+  const reqBody = { textQuery: query, maxResultCount: cappedLimit }
+  if (hasCenter) {
+    // DISTANCE ranking + a circular bias is what powers the "nearest one
+    // right now" ordering. Without a center (tool fallback) we let Places
+    // rank by relevance; the caller folds the location into the query text.
+    reqBody.rankPreference = 'DISTANCE'
+    reqBody.locationBias = {
+      circle: { center: { latitude: lat, longitude: lng }, radius: clampedRadius },
+    }
+  }
+
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
+      'x-goog-fieldmask':
+        'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber',
+    },
+    body: JSON.stringify(reqBody),
+  })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    return json(
-      { error: `places ${res.status}: ${text.slice(0, 200)}` },
-      502,
-      cors
-    )
+    const err = new Error(`places ${res.status}: ${text.slice(0, 200)}`)
+    err.status = res.status
+    throw err
   }
   const data = await res.json().catch(() => ({}))
   const places = Array.isArray(data?.places) ? data.places : []
@@ -885,9 +902,9 @@ async function postPlacesNearby(env, request, cors) {
         address: p.formattedAddress || null,
         lat: pLat,
         lng: pLng,
-        distanceMeters: Math.round(
-          haversineMeters(lat, lng, pLat, pLng)
-        ),
+        distanceMeters: hasCenter
+          ? Math.round(haversineMeters(lat, lng, pLat, pLng))
+          : null,
         openNow:
           p?.currentOpeningHours?.openNow ??
           p?.regularOpeningHours?.openNow ??
@@ -900,12 +917,10 @@ async function postPlacesNearby(env, request, cors) {
     // Filter out NOT operational; CLOSED_TEMPORARILY/PERMANENTLY_CLOSED
     // are useless for "I need this NOW" queries.
     .filter((r) => !r.businessStatus || r.businessStatus === 'OPERATIONAL')
-    .sort((a, b) => a.distanceMeters - b.distanceMeters)
 
-  return json({ results, radiusMeters: clampedRadius }, 200, {
-    ...cors,
-    'Cache-Control': 'no-store',
-  })
+  if (hasCenter) results.sort((a, b) => a.distanceMeters - b.distanceMeters)
+
+  return { results, radiusMeters: hasCenter ? clampedRadius : null }
 }
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -1198,6 +1213,288 @@ export function chatModel(env) {
   return override || DEFAULT_CHAT_MODEL
 }
 
+// ─── Chat tools (READ/COMPUTE path) ───────────────────────────────────
+//
+// The planning chat's WRITE path is the fenced `card` protocol (the
+// client applies it). These tools are the READ/COMPUTE path: they wrap
+// compute that already exists as UI endpoints but that the chat could
+// not previously reach, so the model stopped ESTIMATING drive times and
+// stopped being told to never invent venues — it CALLS these instead and
+// feeds the real numbers into the card it emits.
+//
+//   compute_drive_time → real traffic-aware Routes duration (wraps the
+//                        callRoutesDriveDuration primitive in leaveWhen.js).
+//   find_places        → real Google Places venues (wraps placesTextSearch).
+//
+// Both receive place NAMES (the system prompt never exposes lat/lng to
+// the model — see formatTrip), so each geocodes its inputs first via the
+// same Places searchText call /places/nearby + resolveTripHero use.
+const CHAT_TOOLS = [
+  {
+    name: 'compute_drive_time',
+    description:
+      'Compute the REAL, traffic-aware one-way driving time between two places using Google Routes. CALL THIS instead of estimating a drive time yourself — both for the drive-vs-fly decision when planning a new trip (apply the 6-hour threshold to the number this returns) and for the driving time between two stops. `origin` and `destination` are place names or addresses (e.g. "Belmont, MA", "The Foundry Hotel, Asheville, NC"); the tool geocodes them. Returns durationMinutes plus a human-readable label. If a place cannot be found it returns an { error } string — relay that plainly rather than guessing a number.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        origin: { type: 'string', description: 'Start place — a name or address. e.g. "Belmont, MA".' },
+        destination: { type: 'string', description: 'End place — a name or address. e.g. "Portland, ME".' },
+        depart_at: {
+          type: 'string',
+          description:
+            'Optional ISO-8601 departure time for traffic modeling. Omit for a future trip — current traffic is a fine proxy for the 6-hour drive-vs-fly threshold.',
+        },
+      },
+      required: ['origin', 'destination'],
+    },
+  },
+  {
+    name: 'find_places',
+    description:
+      'Find REAL venues near a location using Google Places — restaurants, cafes, activities, lodging — with real names, addresses, phone numbers, and open-now status, ranked by distance. CALL THIS instead of naming a venue from memory; never invent a place, its hours, or its address. Returns up to `limit` results.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What to look for. e.g. "vegetarian dinner", "playground", "specialty coffee".' },
+        near: {
+          type: 'string',
+          description:
+            'Anchor location to search around — a place name, address, or city. e.g. "Asheville, NC" or "The Foundry Hotel, Asheville". The tool geocodes this into a search center.',
+        },
+        radius_m: { type: 'number', description: 'Optional search radius in meters (100–50000). Defaults to 1500.' },
+        limit: { type: 'number', description: 'Optional max number of results (1–10). Defaults to 5.' },
+      },
+      required: ['query', 'near'],
+    },
+  },
+]
+
+// Bound the tool round-trip so a model that keeps calling tools can't
+// spin the worker forever. Planning asks resolve in 1–3 calls; this is a
+// backstop, not a target.
+const MAX_TOOL_TURNS = 6
+
+function humanizeMinutes(min) {
+  const m = Math.max(0, Math.round(Number(min) || 0))
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  const r = m % 60
+  return r ? `${h}h ${r}m` : `${h}h`
+}
+
+// Resolve free text (a place name, address, or city) to coordinates via
+// Places (New) text search — the seam that lets the chat tools accept the
+// names the model has instead of the lat/lng it never sees. Returns null
+// on no match (the caller turns that into an { error } the model relays).
+async function geocodePlace(env, query) {
+  const q = typeof query === 'string' ? query.trim() : ''
+  if (!q) return null
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
+      'x-goog-fieldmask': 'places.id,places.displayName,places.formattedAddress,places.location',
+    },
+    body: JSON.stringify({ textQuery: q, maxResultCount: 1 }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    const err = new Error(`geocode ${res.status}: ${text.slice(0, 160)}`)
+    err.status = res.status
+    throw err
+  }
+  const data = await res.json().catch(() => ({}))
+  const p = (data?.places || [])[0]
+  const lat = p?.location?.latitude
+  const lng = p?.location?.longitude
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng, name: p.displayName?.text || q, address: p.formattedAddress || null }
+}
+
+async function toolComputeDriveTime(env, input) {
+  if (!env.GOOGLE_PLACES_API_KEY) return { error: 'Routes API not configured on worker.' }
+  const origin = typeof input?.origin === 'string' ? input.origin.trim() : ''
+  const destination = typeof input?.destination === 'string' ? input.destination.trim() : ''
+  if (!origin || !destination) return { error: 'compute_drive_time needs both an origin and a destination.' }
+
+  const o = await geocodePlace(env, origin)
+  if (!o) return { error: `Couldn't find a place called "${origin}".` }
+  const d = await geocodePlace(env, destination)
+  if (!d) return { error: `Couldn't find a place called "${destination}".` }
+
+  // Routes rejects past departure times. Use the model's depart_at when
+  // it parses to a future instant; otherwise leave-now (+30s of slack).
+  const parsed = input?.depart_at ? Date.parse(input.depart_at) : NaN
+  const departureISO =
+    Number.isFinite(parsed) && parsed > Date.now()
+      ? new Date(parsed).toISOString()
+      : new Date(Date.now() + 30_000).toISOString()
+
+  const { durationMinutes } = await callRoutesDriveDuration({
+    apiKey: env.GOOGLE_PLACES_API_KEY,
+    origin: { lat: o.lat, lng: o.lng },
+    destination: { lat: d.lat, lng: d.lng },
+    departureISO,
+  })
+
+  return {
+    durationMinutes,
+    durationText: humanizeMinutes(durationMinutes),
+    origin: { name: o.name, address: o.address },
+    destination: { name: d.name, address: d.address },
+    departISO: departureISO,
+  }
+}
+
+async function toolFindPlaces(env, input) {
+  if (!env.GOOGLE_PLACES_API_KEY) return { error: 'Places API not configured on worker.' }
+  const query = typeof input?.query === 'string' ? input.query.trim() : ''
+  const near = typeof input?.near === 'string' ? input.near.trim() : ''
+  if (!query) return { error: 'find_places needs a query (what to look for).' }
+  if (!near) return { error: 'find_places needs a `near` location to search around.' }
+
+  const center = await geocodePlace(env, near)
+  if (!center) {
+    // Couldn't pin the anchor — fall back to a text-only search that
+    // folds the location into the query, so we still return real venues.
+    const out = await placesTextSearch(env, { query: `${query} near ${near}`, limit: input?.limit })
+    return { center: null, note: `Couldn't geocode "${near}"; searched by text instead.`, ...out }
+  }
+  const out = await placesTextSearch(env, {
+    query,
+    lat: center.lat,
+    lng: center.lng,
+    radius: input?.radius_m,
+    limit: input?.limit,
+  })
+  return { center: { name: center.name, address: center.address }, ...out }
+}
+
+// Dispatch a single tool_use to its executor. Never throws — a thrown
+// executor error becomes an { error } tool_result so the model can recover
+// (relay it, retry with different inputs) rather than the stream dying.
+async function executeChatTool(env, name, input) {
+  try {
+    if (name === 'compute_drive_time') return await toolComputeDriveTime(env, input || {})
+    if (name === 'find_places') return await toolFindPlaces(env, input || {})
+    return { error: `Unknown tool: ${name}` }
+  } catch (e) {
+    return { error: e?.message || String(e) }
+  }
+}
+
+// Parse ONE streamed Anthropic turn off `upstream`, translating text into
+// the client's minimal dialect as it lands and accumulating the structured
+// assistant content (text + tool_use blocks). Does NOT close `writer` — the
+// caller owns the loop and the terminal done frame.
+//
+// Returns:
+//   assistantBlocks — ordered content array to echo back as the assistant
+//                     turn (so a follow-up's tool_result ids line up).
+//   toolUses        — the tool_use blocks to execute this turn.
+//   stopReason      — 'tool_use' means "run the tools and call me again".
+//   usage           — { input_tokens, output_tokens } for this turn.
+//
+// This is the round-trip the old transform couldn't do: it reads
+// content_block_start(tool_use) → input_json_delta* → content_block_stop and
+// reassembles the tool input JSON, alongside the existing text_delta path.
+async function streamAnthropicTurn(upstream, writer, encoder, onText) {
+  const reader = upstream.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buf = ''
+  let stopReason = null
+  const usage = { input_tokens: null, output_tokens: null }
+  // Blocks tracked by SSE index while streaming. Text blocks accumulate
+  // .text; tool_use blocks accumulate .jsonBuf (the partial_json fragments)
+  // to JSON.parse once the block closes.
+  const open = new Map()
+  const assistantBlocks = []
+  const toolUses = []
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += value
+      const lines = buf.split('\n')
+      buf = lines.pop() || ''
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const dataStr = line.slice(5).trim()
+        if (!dataStr) continue
+        let event
+        try {
+          event = JSON.parse(dataStr)
+        } catch {
+          continue
+        }
+
+        if (event.type === 'content_block_start') {
+          const cb = event.content_block || {}
+          if (cb.type === 'tool_use') {
+            open.set(event.index, { type: 'tool_use', id: cb.id, name: cb.name, jsonBuf: '' })
+          } else if (cb.type === 'text') {
+            open.set(event.index, { type: 'text', text: '' })
+          }
+        } else if (event.type === 'content_block_delta') {
+          const d = event.delta || {}
+          if (d.type === 'text_delta' && typeof d.text === 'string') {
+            const blk = open.get(event.index)
+            if (blk && blk.type === 'text') blk.text += d.text
+            onText(d.text)
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ type: 'text_delta', text: d.text })}\n\n`)
+            )
+          } else if (d.type === 'input_json_delta' && typeof d.partial_json === 'string') {
+            const blk = open.get(event.index)
+            if (blk && blk.type === 'tool_use') blk.jsonBuf += d.partial_json
+          }
+        } else if (event.type === 'content_block_stop') {
+          const blk = open.get(event.index)
+          if (blk?.type === 'text') {
+            // Skip empty text blocks — Anthropic rejects them in a follow-up.
+            if (blk.text) assistantBlocks.push({ type: 'text', text: blk.text })
+          } else if (blk?.type === 'tool_use') {
+            let parsed = {}
+            try {
+              parsed = blk.jsonBuf ? JSON.parse(blk.jsonBuf) : {}
+            } catch {
+              parsed = {}
+            }
+            const toolBlock = { type: 'tool_use', id: blk.id, name: blk.name, input: parsed }
+            assistantBlocks.push(toolBlock)
+            toolUses.push(toolBlock)
+          }
+          open.delete(event.index)
+        } else if (event.type === 'message_delta') {
+          // stop_reason + final output usage ride here, exactly as before.
+          if (event.delta && typeof event.delta.stop_reason === 'string') {
+            stopReason = event.delta.stop_reason
+          }
+          if (event.usage && typeof event.usage.input_tokens === 'number') {
+            usage.input_tokens = event.usage.input_tokens
+          }
+          if (event.usage && typeof event.usage.output_tokens === 'number') {
+            usage.output_tokens = event.usage.output_tokens
+          }
+        } else if (event.type === 'message_start' && event.message?.usage) {
+          if (typeof event.message.usage.input_tokens === 'number') {
+            usage.input_tokens = event.message.usage.input_tokens
+          }
+        }
+      }
+    }
+  } finally {
+    try {
+      reader.releaseLock()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { assistantBlocks, toolUses, stopReason, usage }
+}
+
 async function postClaudeChat(env, traveler, request, cors) {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: 'Anthropic key not configured on worker' }, 500, cors)
@@ -1239,11 +1536,14 @@ async function postClaudeChat(env, traveler, request, cors) {
   // Build the system prompt from family + active trip + reader identity.
   const systemPrompt = await buildClaudeSystemPrompt(env, { readerUserId: userId, tripId })
 
-  // Call Anthropic with stream:true. We translate their SSE format into
-  // our own minimal shape before sending bytes to the client.
-  let upstream
-  try {
-    upstream = await fetch(anthropicMessagesUrl(env), {
+  // Call Anthropic with stream:true + tools. The model may emit tool_use
+  // blocks (compute_drive_time / find_places); when it does we execute the
+  // tool, append the tool_result, and call again — a multi-turn loop inside
+  // this one chat response. Each turn's text is translated into the client's
+  // minimal dialect (text_delta / done / error) as it streams, so the client
+  // contract is unchanged: it never sees the tool round-trip, only the text.
+  const callAnthropic = (messages) =>
+    fetch(anthropicMessagesUrl(env), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -1255,9 +1555,18 @@ async function postClaudeChat(env, traveler, request, cors) {
         max_tokens: CLAUDE_CHAT_MAX_TOKENS,
         stream: true,
         system: systemPrompt,
-        messages: apiMessages,
+        messages,
+        tools: CHAT_TOOLS,
       }),
     })
+
+  // The FIRST call stays outside the pump so an upstream failure surfaces as
+  // a clean 502 JSON (the pre-stream contract) rather than an SSE error
+  // frame. Follow-up tool-turn calls happen inside the pump and surface as
+  // error frames (we're already mid-stream by then).
+  let upstream
+  try {
+    upstream = await callAnthropic(apiMessages)
   } catch (e) {
     return json(
       { error: `anthropic fetch failed: ${e?.message || String(e)}` },
@@ -1274,74 +1583,71 @@ async function postClaudeChat(env, traveler, request, cors) {
     )
   }
 
-  // Pipe through a transform stream. We accumulate the assistant text +
-  // final usage and write it back to D1 once the upstream stream closes.
+  // Pipe through a transform stream. We accumulate the assistant text
+  // (across every tool turn) + usage and write it back to D1 once the final
+  // turn closes.
   const { readable, writable } = new TransformStream()
   const writer = writable.getWriter()
   const encoder = new TextEncoder()
 
   ;(async () => {
     let assembled = ''
-    let usage = { input_tokens: null, output_tokens: null }
-    // Unit 4: capture the upstream stop_reason so a max_tokens cutoff can
-    // be surfaced to the client. It appears only on the message_delta frame.
+    const usage = { input_tokens: null, output_tokens: null }
     let stopReason = null
-    const reader = upstream.body
-      .pipeThrough(new TextDecoderStream())
-      .getReader()
-    let buf = ''
+    let messages = apiMessages
+    let current = upstream
     try {
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buf += value
-        // Anthropic SSE frames are separated by blank lines; each frame
-        // is an `event:` line followed by a `data:` JSON line. Parse
-        // line-by-line, holding the trailing partial in `buf`.
-        const lines = buf.split('\n')
-        buf = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue
-          const dataStr = line.slice(5).trim()
-          if (!dataStr) continue
-          let event
-          try {
-            event = JSON.parse(dataStr)
-          } catch {
-            continue
-          }
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta?.type === 'text_delta' &&
-            typeof event.delta.text === 'string'
-          ) {
-            assembled += event.delta.text
-            await writer.write(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: 'text_delta', text: event.delta.text })}\n\n`
-              )
-            )
-          } else if (event.type === 'message_delta') {
-            // stop_reason lives on event.delta (NOT event.usage). Anthropic
-            // emits "max_tokens" here when the 8192-token ceiling cut the
-            // reply off mid-stream — the gap this unit closes.
-            if (event.delta && typeof event.delta.stop_reason === 'string') {
-              stopReason = event.delta.stop_reason
-            }
-            if (event.usage && typeof event.usage.input_tokens === 'number') {
-              usage.input_tokens = event.usage.input_tokens
-            }
-            if (event.usage && typeof event.usage.output_tokens === 'number') {
-              usage.output_tokens = event.usage.output_tokens
-            }
-          } else if (event.type === 'message_start' && event.message?.usage) {
-            if (typeof event.message.usage.input_tokens === 'number') {
-              usage.input_tokens = event.message.usage.input_tokens
-            }
-          }
+      for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+        const result = await streamAnthropicTurn(current, writer, encoder, (t) => {
+          assembled += t
+        })
+        stopReason = result.stopReason
+        // Sum usage across turns (input = each call's prompt tokens, output
+        // = each call's generated tokens). Single-turn replies stay exactly
+        // { input, output } as before.
+        if (Number.isFinite(result.usage.input_tokens)) {
+          usage.input_tokens = (usage.input_tokens || 0) + result.usage.input_tokens
+        }
+        if (Number.isFinite(result.usage.output_tokens)) {
+          usage.output_tokens = (usage.output_tokens || 0) + result.usage.output_tokens
+        }
+
+        // Done: the model stopped for any reason other than wanting a tool
+        // (end_turn / max_tokens / stop_sequence) — exit the loop.
+        if (result.stopReason !== 'tool_use' || result.toolUses.length === 0) break
+
+        // Backstop: out of turns but the model still wants tools. Stop here
+        // rather than start another round (or leak an unparsed stream).
+        if (turn === MAX_TOOL_TURNS - 1) {
+          console.warn('claude chat: hit MAX_TOOL_TURNS with pending tool_use')
+          break
+        }
+
+        // Echo the assistant turn (text + tool_use blocks, in emission
+        // order) so the follow-up's tool_result ids line up, then run each
+        // tool and feed the results back as a user turn.
+        messages = messages.concat([{ role: 'assistant', content: result.assistantBlocks }])
+        const toolResults = []
+        for (const tu of result.toolUses) {
+          const out = await executeChatTool(env, tu.name, tu.input)
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: tu.id,
+            content: JSON.stringify(out),
+          })
+        }
+        messages = messages.concat([{ role: 'user', content: toolResults }])
+
+        current = await callAnthropic(messages)
+        if (!current.ok || !current.body) {
+          const text = await current.text().catch(() => '')
+          throw new Error(`anthropic ${current.status}: ${text.slice(0, 300)}`)
         }
       }
-      // Persist the full assistant message + usage, then signal done.
+
+      // Persist the full assembled assistant message (all turns' text) +
+      // usage, then signal done. `truncated` only when the LAST turn was cut
+      // by the 8192-token ceiling — byte-identical done frame otherwise.
       await insertMessage(
         env,
         conversationId,
@@ -1350,10 +1656,6 @@ async function postClaudeChat(env, traveler, request, cors) {
         usage.input_tokens,
         usage.output_tokens
       )
-      // Surface a max_tokens cutoff so the client can flag a truncated
-      // reply. Conservative: the done frame is byte-identical to before for
-      // a normal reply; `truncated: true` is added ONLY when the upstream
-      // stop_reason was max_tokens (the 8192-ceiling cut).
       const donePayload = { type: 'done', usage }
       if (stopReason === 'max_tokens') donePayload.truncated = true
       await writer.write(
@@ -1500,10 +1802,28 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     'You are Claude, a thinking partner helping the Jackson family plan and live their trips inside their family trip app.'
   )
   lines.push(
-    'Be warm, specific, and grounded. Speak naturally — not in bullet lists unless the question begs for one. Never invent venues, hours, addresses, or other specifics; if you do not know a concrete detail, say so and point the reader back to the app or to checking directly.'
+    'Be warm, specific, and grounded. Speak naturally — not in bullet lists unless the question begs for one. When you need a concrete real-world fact — a driving time, or a venue and its address/hours — get it from a tool (see Tools below); do not estimate or invent it. If a tool cannot answer, say so plainly rather than guessing.'
   )
   lines.push(
     "Your job is to help with trip-planning, surfacing tradeoffs, and answering questions about the family's trips — and to propose specific changes when the reader wants one made."
+  )
+
+  lines.push('')
+  lines.push('## Tools — compute the real numbers, never estimate them')
+  lines.push(
+    'You have two tools that reach the same real compute the app itself uses. They are the READ/COMPUTE path; the confirmation card (below) is the WRITE path. The pattern is always: call a tool to get a real number, then put THAT number in the card you emit — never an estimate.'
+  )
+  lines.push(
+    '- compute_drive_time(origin, destination) — the REAL traffic-aware one-way driving time between two places. Call it for the drive-vs-fly decision and for the driving time between two stops. Do NOT work out a drive time in your head; call this and use what it returns.'
+  )
+  lines.push(
+    '- find_places(query, near) — REAL venues near a location (name, address, phone, open-now), ranked by distance. Call it whenever you would otherwise name a restaurant, cafe, activity, or hotel. Do NOT invent a venue, its hours, or its address; call this and use the results.'
+  )
+  lines.push(
+    'Both take plain place names (e.g. "Belmont, MA", "The Foundry Hotel, Asheville") — you never need coordinates. A tool may return an { error } (place not found, not configured); when it does, relay it plainly and ask the reader rather than falling back to a guess.'
+  )
+  lines.push(
+    'Calendar export (.ics) is NOT a tool — it is a button the reader taps in the app (Settings → Export .ics). If they want the trip on their calendar, point them there; do not try to do it from chat.'
   )
 
   lines.push('')
@@ -1519,6 +1839,9 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   )
   lines.push(
     'When the reader pivots ("ok do that", "yeah let\'s lock it in"), shift to EXECUTE and propose the card that locks in the prior turn\'s suggestion.'
+  )
+  lines.push(
+    'HOLD — leave open what the reader is leaving open. A gap on the itinerary is often deliberate: "leave Saturday afternoon loose", "we\'ll figure out dinner there", "keep the morning free". When the reader signals that, RESPECT it — do not fill it, do not emit a card for it, do not call a tool to backfill it into a plan. Offer once ("say the word and I\'ll find options nearby"), then stay quiet. Be opinionated and tool-driven when she asks for options; silent when she is deliberately driving. Having tools does not make you an autocomplete that packs every empty slot — the reader sets the pace, not the tools.'
   )
 
   lines.push('')
@@ -1616,7 +1939,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   lines.push('- For `move` and `cancel`, you MUST identify the target stop by its `stopId` from the trip context block below. Never guess a stopId.')
   lines.push('- For `add`, the target needs `tripId` + `dayN`; `position` defaults to the end of the day.')
   lines.push('- For `trip-settings`, the target needs ONLY `tripId` (no `dayN`, no `stopId`). Emit it — never `add`/`move` — for any edit to the TRIP ITSELF rather than a stop: renaming the trip, setting/changing the destination, moving the dates, changing the start city, or editing the subtitle or location label. See the Trip settings section below.')
-  lines.push("- Never invent venues, hours, or addresses you weren't told. If a detail is unknown, use the field with the reader's words verbatim, mark `\"editable\": true`, and let the reader fill it in on the card.")
+  lines.push("- For a venue, its address, or its hours, CALL find_places and use a real result — never invent one. For a driving time or detour, CALL compute_drive_time and use the real number. Only if a tool genuinely cannot resolve a detail, fall back to the reader's words verbatim with `\"editable\": true` so they can fill it in on the card.")
   lines.push('- Emit-don\'t-ask is the default — see the Authority block above. Tensions (packed day, conflict, past Rafa\'s 9 PM cutoff) go in the card\'s `note`, not as a blocking question. Ask only when the target itself is unconstructable.')
 
   lines.push('')
@@ -1696,11 +2019,11 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     )
     lines.push('')
     lines.push(
-      'DRIVE VS FLY — do not guess. Estimate the real one-way driving time from the start city (Belmont, MA unless told otherwise) to the destination, then apply the threshold strictly: 6 hours or less = drive; MORE than 6 hours = fly. When it flies, the first day\'s stops are LOGISTICS (flight out, rental car or airport transfer) and the last day\'s end is the return flight — do not open a long-haul trip with a "depart Belmont by car" stop. Worked examples: Belmont→Asheville, NC is ~16 hours of driving — that FLIES. Belmont→Portland, ME is ~2 hours — that DRIVES. Belmont→Montreal is ~5 hours — that DRIVES. Belmont→Charleston, SC is ~15 hours — that FLIES.'
+      'DRIVE VS FLY — do not guess. CALL compute_drive_time(origin = the start city [Belmont, MA unless told otherwise], destination = the trip destination) to get the REAL one-way driving time, then apply the threshold strictly: 6 hours or less = drive; MORE than 6 hours = fly. When it flies, the first day\'s stops are LOGISTICS (flight out, rental car or airport transfer) and the last day\'s end is the return flight — do not open a long-haul trip with a "depart Belmont by car" stop. (Intuition only — always confirm with the tool: Belmont→Asheville, NC ~16h FLIES; Belmont→Portland, ME ~2h DRIVES; Belmont→Montreal ~5h DRIVES; Belmont→Charleston, SC ~15h FLIES.)'
     )
     lines.push('')
     lines.push(
-      'Once the mode is set, the in-trip driving times must be realistic. Stretches over 2.5 hours get a note. Days must breathe — unscheduled time is not wasted time.'
+      'Once the mode is set, the in-trip driving times must be realistic — call compute_drive_time for any leg whose duration you are unsure of, and put its result in driveFromPrevious. Stretches over 2.5 hours get a note. Days must breathe — unscheduled time is not wasted time.'
     )
     lines.push('')
     lines.push(
@@ -1768,7 +2091,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     '- Both adults drive. Do not call Jonathan "the driver" or describe Helen as "being driven." Refer to the family\'s travel without gendered driving framing.'
   )
   lines.push(
-    '- Treat any uncertainty as a place to ask a question, not to fabricate. If the family member could verify in the app, say so.'
+    '- Treat any uncertainty as a place to call a tool or ask a question, not to fabricate. If a tool can resolve it (a drive time, a venue), call the tool; if only the reader can, ask.'
   )
 
   return lines.join('\n')

@@ -222,3 +222,228 @@ describe('Unit 4 — /claude/chat native-SSE translation + D1 persistence', () =
     expect(done.truncated).toBeUndefined()
   })
 })
+
+// ── Native Anthropic tool_use stream: a text block (index 0) followed by a
+// tool_use block (index 1) whose input arrives as input_json_delta fragments,
+// closing with stop_reason:"tool_use". This is the frame shape the OLD
+// transform could not handle (it only knew text_delta) — the round-trip this
+// unit proves.
+function nativeToolUseSse({ text, toolName, toolId, inputChunks, inputTokens = 60, outputTokens = 30 }) {
+  const frame = (type, data) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`
+  let out = ''
+  out += frame('message_start', {
+    type: 'message_start',
+    message: {
+      id: 'msg_tool', type: 'message', role: 'assistant', model: 'claude-sonnet-4-6',
+      content: [], stop_reason: null, stop_sequence: null,
+      usage: { input_tokens: inputTokens, output_tokens: 1 },
+    },
+  })
+  out += frame('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
+  if (text) out += frame('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } })
+  out += frame('content_block_stop', { type: 'content_block_stop', index: 0 })
+  out += frame('content_block_start', {
+    type: 'content_block_start', index: 1,
+    content_block: { type: 'tool_use', id: toolId, name: toolName, input: {} },
+  })
+  for (const partial_json of inputChunks) {
+    out += frame('content_block_delta', { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json } })
+  }
+  out += frame('content_block_stop', { type: 'content_block_stop', index: 1 })
+  out += frame('message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: outputTokens } })
+  out += frame('message_stop', { type: 'message_stop' })
+  return out
+}
+
+describe('Unit 4b — /claude/chat tool round-trip (tool_use → execute → continue)', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // URL-routing fetch stub: the Anthropic stub base returns turn1 then turn2
+  // in order; Places searchText geocodes any query to a fixed point; Routes
+  // returns a 7200s (= 120 min) duration. Captures every request body so the
+  // test can prove what flowed back into the model.
+  function stubToolRoundTrip({ turn1, turn2 }) {
+    const calls = []
+    const bodies = []
+    let anthropicCall = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input, init) => {
+        const url = typeof input === 'string' ? input : input.url
+        calls.push(url)
+        bodies.push(init?.body ? JSON.parse(init.body) : null)
+        if (url.startsWith(STUB_BASE)) {
+          anthropicCall += 1
+          const sse = anthropicCall === 1 ? turn1 : turn2
+          return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+        }
+        if (url.includes('places.googleapis.com')) {
+          return new Response(
+            JSON.stringify({
+              places: [{
+                id: 'p1', displayName: { text: 'Stub Place' }, formattedAddress: 'Stub Addr',
+                location: { latitude: 43.6591, longitude: -70.2568 },
+              }],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        }
+        if (url.includes('routes.googleapis.com')) {
+          return new Response(
+            JSON.stringify({ routes: [{ duration: '7200s' }] }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        }
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+      })
+    )
+    return { calls, bodies }
+  }
+
+  async function runToolChat({ conversationId, message, withPlacesKey = true }) {
+    const testEnv = {
+      ...env, DB: env.DB,
+      ANTHROPIC_API_KEY: 'test-key', ANTHROPIC_BASE_URL: STUB_BASE,
+      FAMILY_TOKEN_HELEN: 'test-token',
+      ...(withPlacesKey ? { GOOGLE_PLACES_API_KEY: 'g-key' } : {}),
+    }
+    const req = new Request('https://worker.test/claude/chat', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-token', 'content-type': 'application/json', Origin: 'http://localhost:5173' },
+      body: JSON.stringify({ conversation_id: conversationId, message }),
+    })
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(req, testEnv, ctx)
+    const text = await res.text()
+    await waitOnExecutionContext(ctx)
+    return { res, ...parseClientSse(text) }
+  }
+
+  it('parses tool_use, executes compute_drive_time, feeds the REAL number back, and streams the final text', async () => {
+    const turn1 = nativeToolUseSse({
+      text: 'Let me check that drive. ',
+      toolName: 'compute_drive_time',
+      toolId: 'toolu_1',
+      // Input split mid-JSON across two input_json_delta fragments — proves
+      // the worker reassembles partial_json before parsing.
+      inputChunks: ['{"origin":"Belmont, MA",', '"destination":"Portland, ME"}'],
+    })
+    const turn2 = nativeSse({ chunks: ['Belmont→Portland is ', 'about 2h — that DRIVES.'], stopReason: 'end_turn' })
+    const { calls, bodies } = stubToolRoundTrip({ turn1, turn2 })
+
+    const { res, assembled, done, errorFrame } = await runToolChat({
+      conversationId: 'u4b-drive',
+      message: 'should we drive to Portland or fly?',
+    })
+
+    expect(res.status).toBe(200)
+    expect(errorFrame).toBeNull()
+
+    // Exactly two Anthropic calls (the round-trip), with the geocode + routes
+    // compute happening between them.
+    expect(calls.filter((u) => u.startsWith(STUB_BASE)).length).toBe(2)
+    expect(calls.filter((u) => u.includes('places.googleapis.com')).length).toBe(2) // 2 geocodes
+    expect(calls.some((u) => u.includes('routes.googleapis.com'))).toBe(true)
+
+    // The client sees ONLY text — the tool round-trip is invisible. Text from
+    // BOTH turns assembles in order.
+    expect(assembled).toBe('Let me check that drive. Belmont→Portland is about 2h — that DRIVES.')
+    expect(done).not.toBeNull()
+
+    // First Anthropic call carried the tool definitions.
+    const firstBody = bodies.find((b) => b && Array.isArray(b.tools))
+    expect(firstBody).toBeTruthy()
+    expect(firstBody.tools.map((t) => t.name).sort()).toEqual(['compute_drive_time', 'find_places'])
+
+    // The SECOND Anthropic call carried (a) the echoed assistant tool_use turn
+    // and (b) a tool_result with the REAL computed number (7200s → 120 min).
+    const secondBody = bodies.filter((b) => b && b.messages).pop()
+    const asst = secondBody.messages.find(
+      (m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_use')
+    )
+    expect(asst).toBeTruthy()
+    expect(asst.content.find((c) => c.type === 'tool_use').name).toBe('compute_drive_time')
+    const toolMsg = secondBody.messages.find(
+      (m) => m.role === 'user' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_result')
+    )
+    expect(toolMsg).toBeTruthy()
+    const tr = toolMsg.content.find((c) => c.type === 'tool_result')
+    expect(tr.tool_use_id).toBe('toolu_1')
+    expect(tr.content).toContain('"durationMinutes":120')
+
+    // Persisted assistant row = the full assembled text across both turns.
+    const row = await readAssistantRow('u4b-drive')
+    expect(row.content).toBe('Let me check that drive. Belmont→Portland is about 2h — that DRIVES.')
+  })
+
+  it('survives a tool error: executor returns { error }, the loop feeds it back and still streams a final reply', async () => {
+    const turn1 = nativeToolUseSse({
+      text: '',
+      toolName: 'compute_drive_time',
+      toolId: 'toolu_err',
+      inputChunks: ['{"origin":"A","destination":"B"}'],
+    })
+    const turn2 = nativeSse({ chunks: ['I could not compute that drive right now.'], stopReason: 'end_turn' })
+    // No GOOGLE_PLACES_API_KEY → toolComputeDriveTime returns { error } without
+    // calling Google. The stream must NOT die; the error becomes a tool_result.
+    const { calls, bodies } = stubToolRoundTrip({ turn1, turn2 })
+
+    const { res, assembled, done, errorFrame } = await runToolChat({
+      conversationId: 'u4b-toolerr',
+      message: 'drive time?',
+      withPlacesKey: false,
+    })
+
+    expect(res.status).toBe(200)
+    expect(errorFrame).toBeNull() // executor errors do NOT surface as stream errors
+    expect(calls.filter((u) => u.startsWith(STUB_BASE)).length).toBe(2) // still round-trips
+    expect(calls.some((u) => u.includes('googleapis.com'))).toBe(false) // no key → no Google call
+    expect(assembled).toBe('I could not compute that drive right now.')
+    expect(done).not.toBeNull()
+
+    const secondBody = bodies.filter((b) => b && b.messages).pop()
+    const tr = secondBody.messages
+      .find((m) => m.role === 'user' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_result'))
+      .content.find((c) => c.type === 'tool_result')
+    expect(tr.content).toContain('not configured')
+  })
+
+  it('parses tool_use, executes find_places, and feeds REAL venues back (not model-invented)', async () => {
+    const turn1 = nativeToolUseSse({
+      text: '',
+      toolName: 'find_places',
+      toolId: 'toolu_fp',
+      inputChunks: ['{"query":"vegetarian dinner","near":"Asheville, NC"}'],
+    })
+    const turn2 = nativeSse({ chunks: ['Found a few spots near Asheville.'], stopReason: 'end_turn' })
+    const { calls, bodies } = stubToolRoundTrip({ turn1, turn2 })
+
+    const { res, assembled, done, errorFrame } = await runToolChat({
+      conversationId: 'u4b-places',
+      message: 'where should we eat in Asheville?',
+    })
+
+    expect(res.status).toBe(200)
+    expect(errorFrame).toBeNull()
+    expect(calls.filter((u) => u.startsWith(STUB_BASE)).length).toBe(2)
+    // find_places = geocode(near) + the search itself → 2 Places calls, no Routes.
+    expect(calls.filter((u) => u.includes('places.googleapis.com')).length).toBe(2)
+    expect(calls.some((u) => u.includes('routes.googleapis.com'))).toBe(false)
+    expect(assembled).toBe('Found a few spots near Asheville.')
+    expect(done).not.toBeNull()
+
+    const secondBody = bodies.filter((b) => b && b.messages).pop()
+    const tr = secondBody.messages
+      .find((m) => m.role === 'user' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_result'))
+      .content.find((c) => c.type === 'tool_result')
+    expect(tr.tool_use_id).toBe('toolu_fp')
+    // Real venue data (from the stubbed Places response), not model-invented.
+    expect(tr.content).toContain('"results"')
+    expect(tr.content).toContain('Stub Place')
+  })
+})
