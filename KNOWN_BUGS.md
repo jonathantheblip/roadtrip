@@ -23,7 +23,7 @@ fixed. Per-entry status added below.
 
 ---
 
-## A11Y-1 — axe color-contrast: themed eyebrow/muted labels + Claude panel `[real, serious]`
+## A11Y-1 — axe color-contrast: themed eyebrow/muted labels + Claude panel
 
 **Source:** the axe-core a11y tier (QA_COVERAGE_SYSTEM_SPEC §4 build-list #2),
 wired 2026-05-31 at HEAD `fcf691a`. axe scans the SETTLED page (the helper
@@ -32,33 +32,73 @@ serious+critical WCAG-2 AA threshold. These are genuine, stable findings — NOT
 the animation-transient `fade-up` artifacts (those were eliminated by the
 settle step).
 
-**Status: [real, recorded — do NOT fix now].** Folds into the M6 theme pass —
-the same cycle that fixes the Claude-in-app wrong-theme bug. The axe tests
-allowlist `color-contrast` on these two surfaces (referencing this entry) so the
-gate stays green and still catches every OTHER serious/critical rule; Phase 3 /
-M6 removes the allowlist to re-gate contrast once the palettes are fixed.
-
-**Findings (chromium; WCAG AA needs 4.5:1 normal / 3:1 large text):**
-- **Claude-in-app panel — ALL personas** (2 nodes): muted ink `#696F68` on
-  linen `#F2EFE7` = **4.48:1** (just under 4.5). This is Helen's M1 panel
-  palette (`T.inkMuted` in `ClaudeChat.jsx`), which every persona inherits
-  because the panel is hardcoded Helen (the wrong-theme bug). axe thus
-  **corroborates the theme bug from the contrast angle** — a real tier overlap
-  (a11y ↔ the known Claude-in-app theme finding). Nodes: the trip-title eyebrow
-  (JetBrains Mono 10px) + a message-bubble line.
-- **Trips index — persona-variant** (themed mono "eyebrow" labels + muted italic):
-  - **jonathan**: oxblood `#A33A2E` on near-black `#0E0F11` = **2.92:1**.
-  - **aurelia**: hot-pink `#E8478C` on pale-pink `#FCE8EE` = **3.13:1**.
-  - **helen**: muted `#696F68` on linen `#F2EFE7` = **4.48:1**.
-  - **rafa**: clean (no serious/critical).
-
-**Reproducer:** `cd app && npx playwright test a11y-axe --project=chromium`
-(temporarily drop `allow: ['color-contrast']` in `tests/e2e/a11y-axe.spec.js`,
-and/or `RT_PERSONA=<traveler>` to scan a specific theme).
-
 **Non-vacuous:** the tier is proven to catch real violations (these) and an
 injected `button-name` (critical) survives the contrast allowlist (see the
 commit that added the tier).
+
+---
+
+### A11Y-1a — Claude panel (O1/O2): **RE-GATED** `[resolved for j/a/r — helen residual OPEN]`
+
+**Status (as of 7146701):** The O1/O2 color-contrast allowlist (`a11y-axe.spec.js:54`)
+has been **removed**. M6 fixed the wrong-theme bug (`ebc4a0e` + `697d4de`), so
+the panel now themes per-persona via `body[data-theme]` — the 4.48:1 symptom that
+appeared on ALL personas (because they all got Helen's palette) is resolved for
+**jonathan / aurelia / rafa** (gate green ×3). **CI default (jonathan) is green.**
+
+**Residual: helen-panel FAILS 4.48:1** — see **A11Y-1b** below. This is a
+separate finding in Helen's own base tokens, exposed by M6, not the same bug.
+
+**Original finding (now resolved for j/a/r):** Claude-in-app panel — ALL personas
+(2 nodes): muted ink `#696F68` on linen `#F2EFE7` = **4.48:1** (just under 4.5).
+Was Helen's M1 palette (`T.inkMuted` in `ClaudeChat.jsx`), which every persona
+inherited because the panel was hardcoded Helen (P3-01). axe corroborated the
+theme bug from the contrast angle — a real tier overlap (a11y ↔ theme).
+**Nodes:** the trip-title eyebrow (JetBrains Mono 10px) + a message-bubble line.
+
+**Reproducer:** `RT_PERSONA=helen npx playwright test a11y-axe -g "Claude-in-app panel" --project=chromium`
+(no allowlist since `7146701`; jonathan/aurelia/rafa pass clean).
+
+---
+
+### A11Y-1b — Helen `--muted` token, 4.48:1 on `--bg` `[real, OPEN — themes.css]`
+
+**Status: `[real, serious — OPEN]`.** New finding surfaced by M6 (previously masked
+because all personas got Helen's palette; now isolated to Helen only).
+
+**Finding:** Helen's `--muted: rgba(21,32,26,0.62)` flattens to `#696f68` on her
+`--bg: #F2EFE7` = **4.48:1** — 0.02 under WCAG AA 4.5:1. 10px mono text,
+serious impact. Source: `app/src/styles/themes.css` `[data-theme='helen']` block.
+**App-wide** (not just the Claude panel — any component using `var(--muted)` on
+helen's background has this margin). Gate: `RT_PERSONA=helen npx playwright test
+a11y-axe -g "Claude-in-app panel" --project=chromium` **fails on this** by design;
+CI default (jonathan) stays green.
+
+**Fix:** darken helen `--muted` in `themes.css` to achieve ≥4.5:1 with margin.
+`rgba(21,32,26,0.62)` → approximately `rgba(21,32,26,0.65)` (~`#626862`); compute
+and verify via the axe gate, don't accept a hex blind. Check `[data-theme='helen-dark']`
+separately — it defines its own `--muted`; report whether it has its own contrast
+issue before fixing. **Deliberate visual change** (unlike M6's byte-identical Helen)
+→ Helen `toHaveScreenshot` baselines WILL move; re-bless required and expected.
+`themes.css` is `app/**` → real e2e-gated client deploy.
+
+---
+
+### A11Y-1c — Trips index eyebrow/muted labels `[real, serious — OPEN, allowlisted]`
+
+**Status: `[real, serious — OPEN]`.** Allowlisted at `a11y-axe.spec.js:35` (S2
+trips-index scan). Separate from the Claude-panel finding; NOT touched by M6.
+
+**Findings (chromium; WCAG AA needs 4.5:1 normal):**
+- **jonathan**: oxblood `#A33A2E` on near-black `#0E0F11` = **2.92:1**.
+- **aurelia**: hot-pink `#E8478C` on pale-pink `#FCE8EE` = **3.13:1**.
+- **helen**: muted `#696F68` on linen `#F2EFE7` = **4.48:1** (same token as A11Y-1b).
+- **rafa**: clean.
+
+**Reproducer:** `cd app && npx playwright test a11y-axe -g "trips index" --project=chromium`
+(temporarily drop `allow: ['color-contrast']` at `a11y-axe.spec.js:35`).
+
+Fix = per-user skin redesign (eyebrow/label token decisions per theme). Deferred.
 
 ---
 
@@ -186,7 +226,7 @@ is the only spine finding — allowlisted, deferred to M6.
 guard), instrument (harvestDevLog — see C2-GAP-1). **C1 proved the rest of the spine
 themes correctly per-persona; C2 confirms the wrong-theme bleed lives HERE, at its source.**
 
-### P3-01 — Claude panel + cards render Helen's hardcoded palette for ALL personas `[real, S2 — deferred M6]`
+### P3-01 — Claude panel + cards render Helen's hardcoded palette for ALL personas `[RESOLVED — ebc4a0e + 697d4de + 7146701]`
 - **Surface×persona:** O1 (`ClaudeChatPanel`) + O2 (`ConfirmCard`, all 6 card types) ×
   **jonathan / aurelia / rafa** (helen renders correct *by coincidence* — it IS her palette).
 - **Direct evidence (code = source of truth for what renders):** both files define a
@@ -207,9 +247,24 @@ themes correctly per-persona; C2 confirms the wrong-theme bleed lives HERE, at i
 - **Reproducer:** `RT_PERSONA=jonathan npx playwright test a11y-axe --project=chromium -g
   "Claude-in-app panel"` (drop the `color-contrast` allow to watch Helen's 4.48:1 fire
   under jonathan); or read `ClaudeChat.jsx:43` / `ConfirmCard.jsx:29`.
-- **Non-vacuous:** C1 proved the rest of the app themes correctly per-persona, so this is a
-  real *localized* outlier, not a global theming failure. **DO NOT FIX — M6** rewires the
-  panel/cards to read `TRAVELERS[persona].theme` instead of the hardcoded `T`.
+- **Non-vacuous:** C1 proved the rest of the app themes correctly per-persona, so this was a
+  real *localized* outlier, not a global theming failure.
+
+**RESOLVED — M6 (2026-06-01):**
+- `ebc4a0e` — base palette migrated: `const T` deleted from `ClaudeChat.jsx` (fully gone);
+  `ConfirmCard.jsx` `const T` trimmed to the 7 card-specific `draft*`/`oxblood*` tokens only.
+  The 9 base keys replaced with CSS vars via the per-persona `body[data-theme]` cascade
+  (name-mapped: `T.surface→var(--card)`, `T.ink→var(--text)`, `T.hairline→var(--border)`, etc.).
+  Helen renders byte-identical (var values == old literals); jonathan/aurelia/rafa now in-palette.
+- `697d4de` — A-full hotfix: confirm cards sit on **opaque cream** (`draftBg`), which hides
+  the panel — so `ink/inkMuted/inkFaint` are back in `const T` as **universal "draft-slip"**
+  literals (same basis as `draft*`/`oxblood*`, persona-invariant interim). `color: T.ink` added
+  to the 4 cream roots (fixes inherited-title legibility). `CardHeader`/`CardActions` got
+  `onCream` prop — dark literal on cream, `var()` on transparent-tint surfaces (cancel/saved/
+  superseded/error). **Opacity-split rule** (authority for future ConfirmCard edits): opaque
+  surfaces need universal dark text; transparent tints are per-persona-paired and keep `var()`.
+- `7146701` — A11Y re-gate: O1/O2 panel color-contrast allowlist removed. j/a/r green; helen
+  fails on her own `--muted` token (see **A11Y-1b**, a separate themes.css finding).
 
 ### Confirmations (green, real runs)
 - **O1/O2 behavior — 22 passed** (pw, chromium): all 6 card types + panel states (entry,
@@ -218,9 +273,10 @@ themes correctly per-persona; C2 confirms the wrong-theme bleed lives HERE, at i
 - **Render sanitization PASSES on its home surface:** `security-render-xss` green (model
   HTML renders inert — no element, no execution, escaped); `markdown-path-guard` 4/4 (no
   XSS-capable imports, react-markdown present, no `rehype-raw`). Tiers: security(render).
-- **axe panel ×4 — all green** (serious+critical, contrast allowlisted). Panel was
-  axe-scanned jonathan-only pre-Phase-2; **helen/aurelia/rafa panel a11y now scanned, clean.**
-  Tiers: axe.
+- **axe panel ×4 — jonathan/aurelia/rafa GREEN** (serious+critical, allowlist REMOVED `7146701`).
+  Panel was axe-scanned jonathan-only pre-Phase-2; all 4 now scanned. Helen fails 4.48:1 on her
+  own `--muted` token (see **A11Y-1b**) — expected and surfaced honestly. CI default (jonathan)
+  is green. Tiers: axe.
 
 ### Gaps recorded
 - **C2-GAP-1 `[gap, O2 instrument]`** — instrument-harvest not wired on the Claude card
@@ -540,17 +596,19 @@ multi-persona surfaces reached only helen/incidentally.)*
 (creation/editing) · C5 (this commit, settings/overlays).
 
 **Findings catalog (Phase 3):**
-- **P3-01 `[real, S2 — deferred M6]`** — O1 panel + O2 cards render Helen's hardcoded `T` palette for
-  ALL personas (`ClaudeChat.jsx:43` + `ConfirmCard.jsx:27`, inline styles, no `data-theme`). **C5
-  proved this is bounded to exactly O1/O2** — no other surface hardcodes. M6 rewires to
-  `TRAVELERS[persona].theme`.
+- **P3-01 `[RESOLVED — ebc4a0e + 697d4de + 7146701]`** — O1 panel + O2 cards rendered Helen's
+  hardcoded `T` palette for ALL personas. C5 proved bounded to O1/O2. **Fixed M6 2026-06-01:**
+  base palette → per-persona CSS vars (cascade-only); confirm-card text → universal "draft-slip"
+  literals on opaque cream (A-full hotfix, opacity-split rule); panel a11y re-gated j/a/r green.
+  Helen `--muted` residual (4.48:1) is a separate themes.css finding (**A11Y-1b**), not P3-01.
 - **P3-02 `[real, S4 trivial — M6 polish; not a strand]`** — NewTrip/TripEditor single-exit affordance
   (lone top-left `‹ Trips` link, no symmetric Cancel, chrome suppressed). Exit functional (live-confirmed).
 - **P3-03 `[real, latent — not user-reachable]`** — `AllPhotosView` is the only deep view missing the
   `&& trip` guard (`App.jsx:775`); back would blank IF reached trip-less, but normal nav can't (live:
   back returns to the trip). Add the guard.
-- **Inherited (pre-Phase-3, re-confirmed):** **A11Y-1** `[real, serious — M6]` themed contrast
-  (corroborates P3-01 from the contrast angle); **DEADCODE-1** `[real, dead-code]` 78 orphan files +
+- **Inherited (pre-Phase-3, re-confirmed):** **A11Y-1** `[split — see A11Y-1a/1b/1c]` themed
+  contrast (corroborated P3-01 from the contrast angle; O1/O2 re-gated, j/a/r green, helen residual
+  open as A11Y-1b); **DEADCODE-1** `[real, dead-code]` 78 orphan files +
   2 dead deps + 21 dead exports. The R/J/N WebKit pile (R1–R6, J1–J4, N1) is all `[resolved]`,
   re-confirmed firing-as-characterized in C3b.
 
@@ -565,7 +623,8 @@ reproduce (C3a sim, non-black on real iOS).**
   modal UIs (C5-GAP-1..5).
 - **axe extension:** wire a11y-axe beyond trips-index + Claude panel (C1-GAP-2 / C3a-GAP-1 / C4-GAP-4 /
   C5-GAP-1 — S2/S3, photos, creation/editing, settings).
-- **M6 fixes:** P3-01 (+ re-gate A11Y-1 contrast), P3-02 polish, P3-03 guard.
+- **M6 fixes:** ~~P3-01~~ **DONE** (`ebc4a0e`+`697d4de`+`7146701`); A11Y-1 O1/O2 **re-gated** (`7146701`);
+  **A11Y-1b helen `--muted`** OPEN (themes.css, ITEM 1 — darken + re-bless baselines); P3-02 polish; P3-03 guard.
 - **DEADCODE-1:** delete-vs-restore triage (useTheme restore? map cluster + leaflet/react-leaflet delete?).
 - **Real-device (Jonathan's):** hardware iOS memory-pressure (the founding trigger, sim-structurally
   uncatchable), `wrangler tail` worker traces, real-cellular at the arena.
