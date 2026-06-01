@@ -24,13 +24,20 @@ import { travelerNameToId, humanDateRange } from '../lib/createTripCard'
 import { userFacingApplyError } from '../lib/claudeCardApply'
 import { logUploadEvent } from '../lib/uploadLog'
 
-// ─── Card-framing tokens — UNIVERSAL / persona-invariant (interim) ────
-// The base palette (bg/surface/ink/accent/…) is NOT snapshotted here: as
-// of M6 it cascades from body[data-theme] via var(--…) (themes.css). What
-// remains are the draft (amber) + destructive (oxblood) card framings,
-// intentionally the SAME across all four travelers for now — pending the
-// per-user skin redesign (Jonathan's call), not leftover Helen palette.
+// ─── Card-framing + draft-slip text tokens — UNIVERSAL / persona-invariant
+// (interim) ──────────────────────────────────────────────────────────
+// These do NOT cascade from body[data-theme]. The confirm card's OPAQUE
+// cream surfaces (draftBg) hide the panel, so their text must be a fixed
+// dark ink — per-persona light text would vanish on cream (the M6 hotfix).
+// ink/inkMuted/inkFaint = universal "draft-slip" text; draft*/oxblood* =
+// framing. Same basis: persona-invariant pending the skin redesign.
+// (Transparent-tint surfaces — cancel/saved/superseded/error — keep their
+// per-persona var(--…) text, which is correctly paired on the panel.)
 const T = {
+  // Universal draft-slip text — opaque-cream cards only
+  ink: '#15201A',
+  inkMuted: 'rgba(21,32,26,0.62)',
+  inkFaint: 'rgba(21,32,26,0.32)',
   // Card-specific draft framing
   draftBg: '#F8F4E9',
   draftBorder: 'rgba(178,128,40,0.22)',
@@ -105,7 +112,7 @@ function FieldRow({ field, onChange, last }) {
           fontSize: 9,
           letterSpacing: 1.2,
           textTransform: 'uppercase',
-          color: 'var(--faint)',
+          color: T.inkFaint,
           width: 86,
           flexShrink: 0,
         }}
@@ -118,7 +125,7 @@ function FieldRow({ field, onChange, last }) {
             style={{
               fontFamily: FONT.sans,
               fontSize: 12,
-              color: 'var(--faint)',
+              color: T.inkFaint,
               textDecoration: 'line-through',
               marginRight: 6,
             }}
@@ -136,7 +143,7 @@ function FieldRow({ field, onChange, last }) {
               fontFamily: FONT.sans,
               fontSize: 13,
               fontWeight: 600,
-              color: 'var(--text)',
+              color: T.ink,
               background: 'transparent',
               border: 'none',
               borderBottom: `1px dashed var(--border)`,
@@ -151,7 +158,7 @@ function FieldRow({ field, onChange, last }) {
               fontFamily: FONT.sans,
               fontSize: 13,
               fontWeight: readonly ? 500 : 600,
-              color: readonly ? 'var(--muted)' : 'var(--text)',
+              color: readonly ? T.inkMuted : T.ink,
             }}
           >
             {value}
@@ -162,7 +169,7 @@ function FieldRow({ field, onChange, last }) {
   )
 }
 
-function CardHeader({ tone, actionLabel, scopeLabel }) {
+function CardHeader({ tone, actionLabel, scopeLabel, onCream }) {
   const dotColor =
     tone === 'destructive'
       ? T.oxblood
@@ -206,7 +213,7 @@ function CardHeader({ tone, actionLabel, scopeLabel }) {
           style={{
             fontFamily: FONT.mono,
             fontSize: 9,
-            color: 'var(--faint)',
+            color: onCream ? T.inkFaint : 'var(--faint)',
             letterSpacing: 1,
             textTransform: 'uppercase',
           }}
@@ -218,7 +225,7 @@ function CardHeader({ tone, actionLabel, scopeLabel }) {
   )
 }
 
-function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, secondary }) {
+function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, secondary, onCream }) {
   const saveBg = saveTone === 'destructive' ? T.oxblood : 'var(--accent)'
   return (
     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
@@ -257,7 +264,7 @@ function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, seconda
             borderRadius: 10,
             cursor: 'pointer',
             background: 'transparent',
-            color: 'var(--text)',
+            color: onCream ? T.ink : 'var(--text)',
             border: `1px solid var(--border)`,
             fontFamily: FONT.sans,
             fontWeight: 500,
@@ -277,7 +284,7 @@ function CardActions({ saveLabel, saveTone, onSave, onDiscard, disabled, seconda
           borderRadius: 10,
           cursor: 'pointer',
           background: 'transparent',
-          color: 'var(--muted)',
+          color: onCream ? T.inkMuted : 'var(--muted)',
           border: `1px solid var(--border)`,
           display: 'flex',
           alignItems: 'center',
@@ -300,6 +307,7 @@ function AddOrMoveCard({ card, draft, setDraftField, onSave, onDiscard, committi
     <div
       style={{
         background: T.draftBg,
+        color: T.ink,
         border: `1px solid ${T.draftBorder}`,
         borderRadius: 14,
         padding: 12,
@@ -307,7 +315,7 @@ function AddOrMoveCard({ card, draft, setDraftField, onSave, onDiscard, committi
       }}
       data-testid={`confirm-card-${card.action}`}
     >
-      <CardHeader tone={tone} actionLabel={actionLabel} scopeLabel={card.eyebrow} />
+      <CardHeader tone={tone} actionLabel={actionLabel} scopeLabel={card.eyebrow} onCream={true} />
       {card.title && (
         <div
           style={{
@@ -353,6 +361,7 @@ function AddOrMoveCard({ card, draft, setDraftField, onSave, onDiscard, committi
       <CardActions
         saveLabel={committing ? 'Saving…' : 'Save'}
         saveTone="draft"
+        onCream={true}
         onSave={onSave}
         onDiscard={onDiscard}
         disabled={committing}
@@ -371,6 +380,7 @@ function SettingsCard({ card, draft, setDraftField, onSave, onDiscard, committin
     <div
       style={{
         background: T.draftBg,
+        color: T.ink,
         border: `1px solid ${T.draftBorder}`,
         borderRadius: 14,
         padding: 12,
@@ -378,7 +388,7 @@ function SettingsCard({ card, draft, setDraftField, onSave, onDiscard, committin
       }}
       data-testid="confirm-card-trip-settings"
     >
-      <CardHeader tone="draft" actionLabel="Draft · trip settings" scopeLabel={card.eyebrow} />
+      <CardHeader tone="draft" actionLabel="Draft · trip settings" scopeLabel={card.eyebrow} onCream={true} />
       {card.title && (
         <div
           style={{
@@ -424,6 +434,7 @@ function SettingsCard({ card, draft, setDraftField, onSave, onDiscard, committin
       <CardActions
         saveLabel={committing ? 'Saving…' : 'Save'}
         saveTone="draft"
+        onCream={true}
         onSave={onSave}
         onDiscard={onDiscard}
         disabled={committing}
@@ -444,7 +455,7 @@ function CancelCard({ card, onSave, onDiscard, committing }) {
       }}
       data-testid="confirm-card-cancel"
     >
-      <CardHeader tone="destructive" actionLabel="Draft · cancel" scopeLabel="Not saved" />
+      <CardHeader tone="destructive" actionLabel="Draft · cancel" scopeLabel="Not saved" onCream={false} />
       <div
         style={{
           fontFamily: FONT.serif,
@@ -492,6 +503,7 @@ function CancelCard({ card, onSave, onDiscard, committing }) {
       <CardActions
         saveLabel={committing ? 'Removing…' : 'Cancel stop'}
         saveTone="destructive"
+        onCream={false}
         onSave={onSave}
         onDiscard={onDiscard}
         secondary={{ label: 'Keep it', onClick: onDiscard }}
@@ -513,6 +525,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
     <div
       style={{
         background: T.draftBg,
+        color: T.ink,
         border: `1px solid ${T.draftBorder}`,
         borderRadius: 14,
         padding: 12,
@@ -524,6 +537,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
         tone="draft"
         actionLabel={`Draft · ${liveCount} edit${liveCount === 1 ? '' : 's'} batched`}
         scopeLabel={card.eyebrow}
+        onCream={true}
       />
       {edits.map((e, i) => {
         const tagColor = e.action === 'cancel' ? T.oxblood : T.draftEyebrow
@@ -573,15 +587,15 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
                   style={{
                     fontFamily: FONT.sans,
                     fontSize: 11.5,
-                    color: 'var(--muted)',
+                    color: T.inkMuted,
                     marginTop: 2,
                   }}
                 >
-                  <span style={{ textDecoration: 'line-through', color: 'var(--faint)' }}>
+                  <span style={{ textDecoration: 'line-through', color: T.inkFaint }}>
                     {e.from}
                   </span>
                   <span style={{ margin: '0 5px' }}>→</span>
-                  <span style={{ color: 'var(--text)', fontWeight: 600 }}>{e.to}</span>
+                  <span style={{ color: T.ink, fontWeight: 600 }}>{e.to}</span>
                 </div>
               ) : e.note ? (
                 <div
@@ -589,7 +603,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
                     fontFamily: FONT.serif,
                     fontSize: 11.5,
                     fontStyle: 'italic',
-                    color: 'var(--muted)',
+                    color: T.inkMuted,
                     marginTop: 2,
                     lineHeight: 1.4,
                   }}
@@ -604,7 +618,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: 'var(--muted)',
+                color: T.inkMuted,
                 fontFamily: FONT.mono,
                 fontSize: 9,
                 letterSpacing: 1,
@@ -643,6 +657,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
             : `Save ${liveCount === edits.length ? 'all ' : ''}${liveCount}`
         }
         saveTone="draft"
+        onCream={true}
         onSave={onSave}
         onDiscard={onDiscard}
         disabled={liveCount === 0 || committing}
@@ -684,7 +699,7 @@ function WhoDots({ who, max = 4 }) {
         <span
           key={id}
           title={id}
-          style={{ width: 7, height: 7, borderRadius: '50%', background: TRAVELER_DOT[id] || 'var(--faint)' }}
+          style={{ width: 7, height: 7, borderRadius: '50%', background: TRAVELER_DOT[id] || T.inkFaint }}
         />
       ))}
     </span>
@@ -723,7 +738,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
             style={{
               fontFamily: FONT.mono,
               fontSize: 9.5,
-              color: 'var(--faint)',
+              color: T.inkFaint,
               width: 52,
               flexShrink: 0,
               letterSpacing: 0.4,
@@ -738,7 +753,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
                 fontSize: 13.5,
                 fontWeight: 600,
                 letterSpacing: -0.1,
-                color: 'var(--text)',
+                color: T.ink,
                 textDecoration: skipped ? 'line-through' : 'none',
               }}
             >
@@ -749,7 +764,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
                 style={{
                   fontFamily: FONT.mono,
                   fontSize: 9,
-                  color: 'var(--faint)',
+                  color: T.inkFaint,
                   marginLeft: 6,
                 }}
               >
@@ -765,7 +780,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
           style={{
             background: 'transparent',
             border: 'none',
-            color: 'var(--muted)',
+            color: T.inkMuted,
             fontFamily: FONT.mono,
             fontSize: 9,
             letterSpacing: 1,
@@ -786,7 +801,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
             fontSize: 12,
             fontStyle: 'italic',
             lineHeight: 1.45,
-            color: 'var(--muted)',
+            color: T.inkMuted,
           }}
         >
           {stop.description}
@@ -796,7 +811,7 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
                 fontFamily: FONT.mono,
                 fontStyle: 'normal',
                 fontSize: 9.5,
-                color: 'var(--faint)',
+                color: T.inkFaint,
                 marginTop: 4,
                 letterSpacing: 0.3,
               }}
@@ -855,6 +870,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
     <div
       style={{
         background: T.draftBg,
+        color: T.ink,
         border: `1px solid ${T.draftBorder}`,
         borderRadius: 14,
         padding: 12,
@@ -862,7 +878,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
       }}
       data-testid="confirm-card-create_trip"
     >
-      <CardHeader tone="draft" actionLabel="Draft · new trip" scopeLabel={dateLabel} />
+      <CardHeader tone="draft" actionLabel="Draft · new trip" scopeLabel={dateLabel} onCream={true} />
 
       {/* Header block */}
       <div
@@ -872,7 +888,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
           fontWeight: 700,
           letterSpacing: -0.3,
           lineHeight: 1.1,
-          color: 'var(--text)',
+          color: T.ink,
         }}
       >
         {trip.title || 'New trip'}
@@ -883,7 +899,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
             fontFamily: FONT.serif,
             fontStyle: 'italic',
             fontSize: 12.5,
-            color: 'var(--muted)',
+            color: T.inkMuted,
             marginTop: 3,
             lineHeight: 1.4,
           }}
@@ -899,7 +915,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
               fontSize: 9,
               letterSpacing: 0.8,
               textTransform: 'uppercase',
-              color: 'var(--faint)',
+              color: T.inkFaint,
             }}
           >
             {trip.startCity === trip.endCity || !trip.endCity
@@ -960,7 +976,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
                     fontFamily: FONT.serif,
                     fontSize: 12.5,
                     fontWeight: 600,
-                    color: 'var(--text)',
+                    color: T.ink,
                     letterSpacing: -0.1,
                   }}
                 >
@@ -971,7 +987,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
                     marginLeft: 'auto',
                     fontFamily: FONT.mono,
                     fontSize: 9,
-                    color: 'var(--faint)',
+                    color: T.inkFaint,
                   }}
                 >
                   {dayLive} stop{dayLive === 1 ? '' : 's'}
@@ -1000,6 +1016,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
       <CardActions
         saveLabel={committing ? 'Saving…' : `Save trip · ${liveCount} stop${liveCount === 1 ? '' : 's'}`}
         saveTone="draft"
+        onCream={true}
         onSave={onSave}
         onDiscard={onDiscard}
         disabled={liveCount === 0 || committing}
