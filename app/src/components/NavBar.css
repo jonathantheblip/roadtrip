@@ -63,7 +63,7 @@
 
 .next-stop-arrow {
   font-size: 20px;
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1;
 }
 
@@ -129,7 +129,7 @@
 }
 
 .next-stop-flag {
-  color: var(--accent2, var(--accent));
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -191,7 +191,7 @@
 }
 
 .quick-btn.emergency .quick-label {
-  color: var(--accent2, #e53935);
+  color: var(--accent-text);
   font-weight: 700;
 }
 
@@ -217,7 +217,7 @@
 }
 
 [data-theme='helen'] .next-stop-arrow {
-  color: var(--accent2); /* brass */
+  color: var(--accent-text); /* brass */
 }
 
 [data-theme='helen'] .next-stop-name {

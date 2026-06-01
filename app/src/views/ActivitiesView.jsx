@@ -148,7 +148,7 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
               textTransform: 'uppercase',
             }}
           >
-            <Link2 size={14} style={{ color: 'var(--accent)' }} />
+            <Link2 size={14} style={{ color: 'var(--accent-text)' }} />
             Add from link
           </button>
           {pasteOpen && (
@@ -517,7 +517,7 @@ function ActivityCard({ activity, traveler, homeBase }) {
               fontSize: 9,
               letterSpacing: '0.12em',
               textTransform: 'uppercase',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               opacity: 0.85,
             }}
           >
@@ -622,7 +622,7 @@ function TypographicHeader({ activity }) {
           fontSize: 9,
           letterSpacing: '0.22em',
           textTransform: 'uppercase',
-          color: 'var(--accent)',
+          color: 'var(--accent-text)',
           fontWeight: 600,
           marginBottom: 8,
         }}
@@ -707,7 +707,7 @@ function HoursLine({ activity }) {
             fontSize: 9,
             letterSpacing: '0.12em',
             textTransform: 'uppercase',
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             fontWeight: 600,
           }}
         >

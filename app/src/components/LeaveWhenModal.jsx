@@ -330,7 +330,7 @@ function ResultBlock({ loading, error, result, countdown }) {
   }
   if (error) {
     return (
-      <div style={{ ...resultBlockStyle, color: 'var(--accent)' }}>
+      <div style={{ ...resultBlockStyle, color: 'var(--accent-text)' }}>
         <div style={{ ...headlineStyle, fontSize: 22 }}>—</div>
         <div style={subTextStyle}>{error}</div>
       </div>

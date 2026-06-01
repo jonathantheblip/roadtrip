@@ -19,7 +19,7 @@
   font-family: var(--font-display);
   font-size: 19px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.2;
   margin-bottom: 4px;
 }
@@ -95,7 +95,7 @@
 .schedule-time {
   width: 64px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   white-space: nowrap;
   padding-right: 10px !important;
   font-variant-numeric: tabular-nums;
@@ -183,7 +183,7 @@
   font-style: italic;
   font-weight: 400;
   font-size: 22px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .kennedale-subtitle {
   font-family: var(--font-display);
@@ -218,7 +218,7 @@
   text-transform: none;
   letter-spacing: 0;
   font-size: 14px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* Rafa — command-center headings + clip-path team boxes */
@@ -228,7 +228,7 @@
   border-radius: 0;
 }
 [data-theme='rafa'] .kennedale-title {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-transform: uppercase;
   font-weight: 900;
   font-size: 17px;
@@ -250,25 +250,25 @@
   border-left: 4px solid var(--person-jonathan);
 }
 [data-theme='rafa'] .team-title {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-transform: uppercase;
   font-weight: 900;
   letter-spacing: 0.03em;
   font-size: 12px;
 }
 [data-theme='rafa'] .schedule-time {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 900;
 }
 [data-theme='rafa'] .evening-label {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 900;
 }
 
 /* Aurelia — softer team boxes, rose-accent headings */
 [data-theme='aurelia'] .kennedale-title {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 18px;
 }
 [data-theme='aurelia'] .team-girls {
@@ -308,7 +308,7 @@
   margin-bottom: 5px;
 }
 .kd-bail strong {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .kd-note {
   font-size: 12px;

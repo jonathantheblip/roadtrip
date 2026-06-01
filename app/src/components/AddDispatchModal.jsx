@@ -583,7 +583,7 @@ function PickPanel({ onPickPhoto, onPickVideo }) {
         onClick={onPickPhoto}
         style={buttonStyle}
       >
-        <ImageIcon size={18} style={{ color: 'var(--accent)' }} />
+        <ImageIcon size={18} style={{ color: 'var(--accent-text)' }} />
         Pick a photo
       </button>
       {onPickVideo && (
@@ -593,7 +593,7 @@ function PickPanel({ onPickPhoto, onPickVideo }) {
           onClick={onPickVideo}
           style={buttonStyle}
         >
-          <Film size={18} style={{ color: 'var(--accent)' }} />
+          <Film size={18} style={{ color: 'var(--accent-text)' }} />
           Pick a video
         </button>
       )}
@@ -842,7 +842,7 @@ function Status({ icon, text, tone }) {
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        color: tone === 'ok' ? 'var(--accent)' : 'var(--text)',
+        color: tone === 'ok' ? 'var(--accent-text)' : 'var(--text)',
         fontFamily: 'Fraunces, Georgia, serif',
         fontSize: 14.5,
       }}

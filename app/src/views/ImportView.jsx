@@ -458,7 +458,7 @@ function Field({ label, value, onChange, testId, required, placeholder }) {
       <label style={labelStyle()}>
         {label}
         {required && (
-          <span aria-hidden="true" style={{ color: 'var(--accent)', marginLeft: 4 }}>
+          <span aria-hidden="true" style={{ color: 'var(--accent-text)', marginLeft: 4 }}>
             *
           </span>
         )}
@@ -509,7 +509,7 @@ function CategoryField({ value, onChange }) {
     <div style={{ marginBottom: 12 }}>
       <label style={labelStyle()}>
         Category
-        <span aria-hidden="true" style={{ color: 'var(--accent)', marginLeft: 4 }}>*</span>
+        <span aria-hidden="true" style={{ color: 'var(--accent-text)', marginLeft: 4 }}>*</span>
       </label>
       <select
         data-testid="import-category"
@@ -535,7 +535,7 @@ function TagsField({ selected, onToggle }) {
     <div style={{ marginBottom: 12 }}>
       <label style={labelStyle()}>
         Who would enjoy this
-        <span aria-hidden="true" style={{ color: 'var(--accent)', marginLeft: 4 }}>*</span>
+        <span aria-hidden="true" style={{ color: 'var(--accent-text)', marginLeft: 4 }}>*</span>
       </label>
       <div data-testid="import-tags" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {FAMILY.map((id) => {
@@ -584,7 +584,7 @@ function DescriptionsField({
         <label style={labelStyle()}>
           Descriptions
           {tags.length > 0 && (
-            <span aria-hidden="true" style={{ color: 'var(--accent)', marginLeft: 4 }}>*</span>
+            <span aria-hidden="true" style={{ color: 'var(--accent-text)', marginLeft: 4 }}>*</span>
           )}
         </label>
         {canEnrich && (
@@ -596,7 +596,7 @@ function DescriptionsField({
             style={{
               background: 'transparent',
               border: '1px solid var(--accent)',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               cursor: enriching ? 'wait' : 'pointer',
               padding: '4px 10px',
               borderRadius: 12,

@@ -257,7 +257,7 @@ export function ThreadedMemories({ trip, stop, traveler }) {
       {error && (
         <p
           className="f-sans"
-          style={{ marginTop: 10, fontSize: 12, color: 'var(--accent)' }}
+          style={{ marginTop: 10, fontSize: 12, color: 'var(--accent-text)' }}
         >
           {error}
         </p>

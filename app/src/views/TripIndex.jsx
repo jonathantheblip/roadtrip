@@ -402,7 +402,7 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
       : status === 'archived'
         ? 'ARCHIVED'
         : '● IN PLANNING'
-  const statusColor = status === 'archived' ? 'var(--muted)' : 'var(--accent)'
+  const statusColor = status === 'archived' ? 'var(--muted)' : 'var(--accent-text)'
   const startCity = (trip.startCity || '').toUpperCase()
   const endCity = (trip.endCity || '').toUpperCase()
   // For genuine A→B road trips, render the route. For trips that
@@ -519,7 +519,7 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
             {locationLabel}
           </Eyebrow>
         </div>
-        <Eyebrow color="var(--accent)" weight={600}>
+        <Eyebrow color="var(--accent-text)" weight={600}>
           {memoryCount} {memoryCount === 1 ? 'MEMORY' : 'MEMORIES'}
           {!isFirst && dayCount > 0 ? ` · ${dayCount} DAYS` : ''}
         </Eyebrow>

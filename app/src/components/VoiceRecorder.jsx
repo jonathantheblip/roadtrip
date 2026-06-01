@@ -293,7 +293,7 @@ export function VoiceRecorder({ onCancel, onStop }) {
               borderRadius: 19,
               border: 'none',
               background: '#fff',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               fontFamily: 'Inter Tight, system-ui, sans-serif',
               fontWeight: 700,
               fontSize: 12,

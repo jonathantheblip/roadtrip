@@ -44,7 +44,7 @@
   font-family: var(--font-display);
   font-size: 28px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.08;
   margin-bottom: 12px;
   letter-spacing: -0.01em;
@@ -73,7 +73,7 @@
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   margin-bottom: 12px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
@@ -142,7 +142,7 @@
   background: transparent;
   border: 1px solid var(--accent2);
   border-radius: 1px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ============================================
@@ -154,12 +154,12 @@
 }
 
 [data-theme='rafa'] .discover-eyebrow {
-  color: var(--accent3);
+  color: var(--accent-text);
   letter-spacing: 0.2em;
 }
 
 [data-theme='rafa'] .discover-title {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-transform: uppercase;
   font-weight: 900;
   font-size: 26px;
@@ -171,7 +171,7 @@
 }
 
 [data-theme='rafa'] .discover-state-title {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-transform: uppercase;
   font-weight: 900;
   font-size: 17px;
@@ -186,7 +186,7 @@
 
 [data-theme='rafa'] .discover-state-count {
   background: rgba(21, 101, 192, 0.15);
-  color: var(--accent3);
+  color: var(--accent-text);
   border-radius: 0;
   clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
   padding: 3px 14px;
@@ -198,7 +198,7 @@
    ============================================ */
 [data-theme='aurelia'] .discover-state-count {
   background: #faf0f4;
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid color-mix(in srgb, var(--border) 60%, var(--accent));
 }
 
@@ -229,7 +229,7 @@
 }
 .dismiss-undo {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   background: none;
   border: none;
   cursor: pointer;
@@ -266,7 +266,7 @@
 .restore-btn {
   font-size: 0.7rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   background: none;
   border: 1px solid var(--accent);
   border-radius: var(--radius);

@@ -192,7 +192,7 @@ export function PostcardComposer({ trip, traveler, onClose, initialStopId }) {
               style={{
                 background: 'transparent',
                 border: 0,
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 cursor: saving ? 'default' : 'pointer',
                 fontFamily: 'JetBrains Mono, monospace',
                 fontSize: 10,
@@ -274,7 +274,7 @@ export function PostcardComposer({ trip, traveler, onClose, initialStopId }) {
               style={{
                 margin: '14px 18px 0',
                 fontSize: 12,
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
               }}
             >
               {error}
@@ -412,7 +412,7 @@ function PostcardPreview({ stop, photoUrl, caption, traveler, mood }) {
             fontFamily: 'Fraunces, Georgia, serif',
             fontStyle: 'italic',
             fontSize: 11,
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             textAlign: 'right',
           }}
         >

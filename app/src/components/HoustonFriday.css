@@ -19,7 +19,7 @@
   font-family: var(--font-display);
   font-size: 19px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.2;
   margin-bottom: 4px;
 }
@@ -123,7 +123,7 @@
 .flight-row {
   text-align: center;
   font-weight: 800;
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 12px 0 !important;
   border-top: 1px solid var(--border) !important;
   border-bottom: none !important;
@@ -182,7 +182,7 @@
   font-family: var(--font-display);
   font-style: italic;
   font-size: 13px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .houston-footer {
   font-family: var(--font-display);
@@ -206,14 +206,14 @@
   top: -10px;
   left: 18px;
   background: var(--bg);
-  color: var(--accent3);
+  color: var(--accent-text);
   padding: 3px 12px;
   font-size: 9.5px;
   font-weight: 900;
   letter-spacing: 0.2em;
 }
 [data-theme='rafa'] .houston-title {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-transform: uppercase;
   font-weight: 900;
   font-size: 17px;
@@ -236,7 +236,7 @@
   letter-spacing: 0.08em;
 }
 [data-theme='rafa'] .flight-row {
-  color: var(--accent3);
+  color: var(--accent-text);
 }
 [data-theme='rafa'] .houston-footer {
   background: rgba(21, 101, 192, 0.08);

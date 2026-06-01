@@ -31,7 +31,7 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
 }
@@ -54,7 +54,7 @@
 }
 [data-theme='helen'] .gas-headline {
   font-family: var(--font-body);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
 }
 [data-theme='helen'] .gas-note {
@@ -74,7 +74,7 @@
   border-radius: 0;
 }
 [data-theme='rafa'] .gas-headline {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 900;
   letter-spacing: 0.1em;
 }

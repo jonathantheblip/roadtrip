@@ -36,7 +36,7 @@
   font-family: var(--font-display);
   font-size: 30px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.08;
   margin-bottom: 12px;
   letter-spacing: -0.01em;
@@ -69,7 +69,7 @@
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   letter-spacing: -0.005em;
   line-height: 1.15;
 }
@@ -151,7 +151,7 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.09em;
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.3;
 }
 
@@ -184,7 +184,7 @@
   letter-spacing: 0.09em;
   padding: 3px 9px;
   background: var(--bg2);
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid var(--accent);
   border-radius: 4px;
   margin-bottom: 8px;
@@ -219,7 +219,7 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--accent-text);
   margin-right: 4px;
   font-size: 9.5px;
 }
@@ -229,7 +229,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--accent-text);
   white-space: nowrap;
 }
 
@@ -279,7 +279,7 @@
   font-style: italic;
   font-weight: 400;
   font-size: 22px;
-  color: var(--accent);
+  color: var(--accent-text);
   white-space: nowrap;
 }
 
@@ -314,7 +314,7 @@
 }
 
 [data-theme='helen'] .podcast-show {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
 }
 
@@ -329,7 +329,7 @@
 [data-theme='helen'] .podcast-series-badge {
   background: #faf6ef;
   border-radius: 1px;
-  color: var(--accent2);
+  color: var(--accent-text);
   border-color: var(--accent2);
 }
 
@@ -346,7 +346,7 @@
 }
 
 [data-theme='helen'] .podcast-cta {
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--font-body);
 }
 
@@ -357,7 +357,7 @@
 [data-theme='helen'] .podcast-duration {
   border-color: var(--accent2);
   border-radius: 1px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* Compact card on narrow screens */

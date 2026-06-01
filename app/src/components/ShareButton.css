@@ -32,7 +32,7 @@
 /* Helen — sage outline, icon only */
 .share-btn-helen {
   border-color: var(--accent2, #b8956a);
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 6px 10px;
 }
 [data-theme='helen'] .share-btn-helen {
@@ -42,7 +42,7 @@
 /* Jonathan — minimal copper icon */
 .share-btn-jonathan {
   border: none;
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 6px 8px;
   opacity: 0.8;
 }
@@ -59,7 +59,7 @@
 }
 
 .share-btn-everyone {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
 }
 

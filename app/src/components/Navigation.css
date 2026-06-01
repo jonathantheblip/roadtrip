@@ -27,7 +27,7 @@
 }
 
 .tab-btn.active {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .tab-btn.active::after {
@@ -72,7 +72,7 @@
   letter-spacing: 0.12em;
 }
 [data-theme='rafa'] .tab-btn.active {
-  color: var(--accent3);
+  color: var(--accent-text);
 }
 [data-theme='rafa'] .tab-btn.active::after {
   height: 4px;

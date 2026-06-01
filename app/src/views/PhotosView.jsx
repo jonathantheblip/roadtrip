@@ -286,7 +286,7 @@ function SyncPill({ count, draining, onTap }) {
         size={11}
         style={{
           animation: draining ? 'pulseShimmer 1s linear infinite' : 'none',
-          color: 'var(--accent)',
+          color: 'var(--accent-text)',
         }}
       />
       {count} syncing
@@ -316,7 +316,7 @@ function AddDispatchButton({ onClick }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Plus size={18} style={{ color: 'var(--accent)' }} />
+        <Plus size={18} style={{ color: 'var(--accent-text)' }} />
         <div>
           <div
             style={{
@@ -324,7 +324,7 @@ function AddDispatchButton({ onClick }) {
               fontSize: 10,
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               fontWeight: 700,
             }}
           >
@@ -348,7 +348,7 @@ function AddDispatchButton({ onClick }) {
           fontFamily: 'Fraunces, Georgia, serif',
           fontSize: 26,
           fontStyle: 'italic',
-          color: 'var(--accent)',
+          color: 'var(--accent-text)',
         }}
       >
         →

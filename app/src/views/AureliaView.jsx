@@ -153,7 +153,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
                 borderRadius: 20,
                 border: '1px solid var(--accent)',
                 background: 'transparent',
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 cursor: 'pointer',
                 textAlign: 'left',
                 display: 'flex',
@@ -189,7 +189,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
               borderRadius: 20,
               border: '1px solid var(--accent)',
               background: 'transparent',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               cursor: 'pointer',
               textAlign: 'left',
               display: 'flex',
@@ -353,7 +353,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
           marginTop: 28,
         }}
       >
-        <Eyebrow color="var(--accent)" style={{ fontWeight: 600 }}>
+        <Eyebrow color="var(--accent-text)" style={{ fontWeight: 600 }}>
           POSTCARDS
         </Eyebrow>
         <Eyebrow color="var(--muted)">
@@ -695,7 +695,7 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
             fontFamily: 'Fraunces, Georgia, serif',
             fontStyle: 'italic',
             fontSize: 11,
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
           }}
         >
           felt {mood}

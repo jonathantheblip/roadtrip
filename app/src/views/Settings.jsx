@@ -512,7 +512,7 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
                 onClick={runForcePushSeed}
                 disabled={forcePushing}
                 title="Overwrite every trip on the Worker with the bundled seed. Use after the seed picks up an update (keypad code, schedule change). Confirms first."
-                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                style={{ borderColor: 'var(--accent)', color: 'var(--accent-text)' }}
               >
                 <Upload size={12} /> {forcePushing ? 'Pushing…' : 'Push seed updates'}
               </button>
@@ -548,14 +548,14 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
               {(tripsApi?.trips?.length || 0) === 1 ? '' : 's'} loaded.
             </p>
             {tripsApi?.error && (
-              <p className="f-dm text-[11px] mt-1 max-w-prose" style={{ color: 'var(--accent)' }}>
+              <p className="f-dm text-[11px] mt-1 max-w-prose" style={{ color: 'var(--accent-text)' }}>
                 Trip pull error: {tripsApi.error}
               </p>
             )}
           </>
         )}
         {workerStatus.status === 'unconfigured' && (
-          <p className="f-dm text-sm" style={{ color: 'var(--accent)' }}>
+          <p className="f-dm text-sm" style={{ color: 'var(--accent-text)' }}>
             Worker URL or family token missing from the bundle.
           </p>
         )}
@@ -630,7 +630,7 @@ function DevModeUploadLog() {
           type="button"
           className="btn-pill"
           onClick={clearAll}
-          style={{ color: 'var(--accent)' }}
+          style={{ color: 'var(--accent-text)' }}
         >
           <Trash2 size={12} /> Clear
         </button>
@@ -671,7 +671,7 @@ function DevModeUploadLog() {
                   style={{
                     fontSize: 11,
                     letterSpacing: '0.04em',
-                    color: e.bucket === 'C' ? 'var(--accent)' : 'inherit',
+                    color: e.bucket === 'C' ? 'var(--accent-text)' : 'inherit',
                     opacity: 0.85,
                   }}
                 >

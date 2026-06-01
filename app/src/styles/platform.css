@@ -311,10 +311,10 @@ button { font: inherit; }
 .rafa-bg { background: var(--bg); color: var(--text); }
 .rafa-card { background: var(--bg2); }
 .rafa-card-2 { background: var(--card); }
-.rafa-yellow { color: var(--accent); }    /* ochre */
-.rafa-red { color: var(--accent2); }      /* oxblood */
+.rafa-yellow { color: var(--accent-text); }    /* ochre */
+.rafa-red { color: var(--accent-text); }      /* oxblood */
 .rafa-blue { color: var(--text); }
-.rafa-green { color: var(--accent); }
+.rafa-green { color: var(--accent-text); }
 .rafa-bg-red { background: var(--accent2); color: var(--text); }
 .rafa-bg-blue { background: var(--card); color: var(--text); }
 .rafa-bg-yellow { background: var(--accent); color: var(--accent-ink); }

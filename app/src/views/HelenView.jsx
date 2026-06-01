@@ -179,7 +179,7 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Sparkles size={14} style={{ color: 'var(--accent)' }} />
+            <Sparkles size={14} style={{ color: 'var(--accent-text)' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span
                 style={{
@@ -204,7 +204,7 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
               </span>
             </div>
           </div>
-          <span style={{ color: 'var(--accent)', fontSize: 18 }}>→</span>
+          <span style={{ color: 'var(--accent-text)', fontSize: 18 }}>→</span>
         </button>
       )}
 
@@ -352,7 +352,7 @@ function StopWithThread({ stop, traveler, last, onOpen }) {
                 marginBottom: 8,
               }}
             >
-              <Eyebrow color="var(--accent)" style={{ fontWeight: 600 }}>
+              <Eyebrow color="var(--accent-text)" style={{ fontWeight: 600 }}>
                 {mems.length} {mems.length === 1 ? 'MEMORY' : 'MEMORIES'}
               </Eyebrow>
               <AvatarStack ids={authors} size={16} />
@@ -509,7 +509,7 @@ function ThreadPreviewTile({ mem }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
           }}
         >
           <Mic size={18} />
@@ -590,7 +590,7 @@ function HelenPhotosEntry({ trip, traveler, onOpen }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <ImageIcon size={14} style={{ color: 'var(--accent)' }} />
+        <ImageIcon size={14} style={{ color: 'var(--accent-text)' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span
             style={{
@@ -615,7 +615,7 @@ function HelenPhotosEntry({ trip, traveler, onOpen }) {
           </span>
         </div>
       </div>
-      <span style={{ color: 'var(--accent)', fontSize: 18 }}>→</span>
+      <span style={{ color: 'var(--accent-text)', fontSize: 18 }}>→</span>
     </button>
   )
 }

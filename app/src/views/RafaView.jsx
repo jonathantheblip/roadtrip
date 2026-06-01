@@ -70,7 +70,7 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
           justifyContent: 'space-between',
         }}
       >
-        <Eyebrow color="var(--accent)">● MISSION {status}</Eyebrow>
+        <Eyebrow color="var(--accent-text)">● MISSION {status}</Eyebrow>
         <Eyebrow color="var(--muted)">
           DAY {activeDayN} / {dayCount}
         </Eyebrow>
@@ -155,7 +155,7 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
             fontSize: 52,
             fontWeight: 900,
             lineHeight: 0.85,
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             letterSpacing: '-0.02em',
           }}
         >
@@ -362,9 +362,9 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
                 padding: '10px 16px',
                 marginTop: 8,
                 borderRadius: 12,
-                border: '2px solid #3D6FB8',
+                border: '2px solid var(--accent-text)',
                 background: 'transparent',
-                color: '#3D6FB8',
+                color: 'var(--accent-text)',
                 cursor: 'pointer',
                 textAlign: 'left',
                 display: 'flex',
@@ -392,9 +392,9 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
               width: '100%',
               padding: '12px 16px',
               borderRadius: 14,
-              border: '2px solid #3D6FB8',
+              border: '2px solid var(--accent-text)',
               background: 'transparent',
-              color: '#3D6FB8',
+              color: 'var(--accent-text)',
               cursor: 'pointer',
               textAlign: 'left',
               display: 'flex',

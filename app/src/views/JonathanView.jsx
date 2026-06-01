@@ -331,7 +331,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 fontSize: 11,
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
               }}
             >
               →
@@ -418,7 +418,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 fontSize: 11,
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
               }}
             >
               →
@@ -482,7 +482,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
                             animation: 'rt-blink 1.2s infinite',
                           }}
                         />
-                        <JLabel color="var(--accent)" weight={600}>LIVE</JLabel>
+                        <JLabel color="var(--accent-text)" weight={600}>LIVE</JLabel>
                       </div>
                     )}
                   </div>
@@ -497,7 +497,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
                     >
                       <JLabel color="var(--faint)">[{s.kind}]</JLabel>
                       {memCount > 0 && (
-                        <JLabel color="var(--accent)" weight={600}>
+                        <JLabel color="var(--accent-text)" weight={600}>
                           {memCount} {memCount === 1 ? 'ENTRY' : 'ENTRIES'} ↗
                         </JLabel>
                       )}
@@ -573,7 +573,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
               }}
             >
               <div style={{ width: 56, flexShrink: 0 }}>
-                <JLabel color="var(--accent)" weight={600}>{l.tag}</JLabel>
+                <JLabel color="var(--accent-text)" weight={600}>{l.tag}</JLabel>
               </div>
               <div
                 style={{
@@ -649,7 +649,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
             <span style={{ color: 'var(--faint)', letterSpacing: '0.08em' }}>
               ARR · {arrival.stop.flightDest || ''}
             </span>
-            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>ON TIME</span>
+            <span style={{ color: 'var(--accent-text)', fontWeight: 600 }}>ON TIME</span>
           </div>
         </JSection>
       )}

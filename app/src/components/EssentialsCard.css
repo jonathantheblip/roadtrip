@@ -126,7 +126,7 @@
 
 .essentials-note strong {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .essentials-911 .essentials-label {
@@ -146,14 +146,14 @@
 }
 [data-theme='helen'] .essentials-eyebrow {
   font-family: var(--font-body);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .essentials-title {
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 400;
   font-size: 14px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .essentials-label {
   font-family: var(--font-display);
@@ -162,7 +162,7 @@
   text-transform: none;
   letter-spacing: 0;
   font-size: 12.5px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .essentials-note {
   color: #4a4540;
@@ -181,23 +181,23 @@
   border-left: 3px solid var(--accent3);
 }
 [data-theme='rafa'] .essentials-eyebrow {
-  color: var(--accent3);
+  color: var(--accent-text);
   letter-spacing: 0.16em;
 }
 [data-theme='rafa'] .essentials-title {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 900;
   text-transform: uppercase;
 }
 [data-theme='rafa'] .essentials-label {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 900;
 }
 [data-theme='rafa'] .essentials-chev {
-  color: var(--accent3);
+  color: var(--accent-text);
 }
 [data-theme='rafa'] .essentials-911 .essentials-label {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ============================================

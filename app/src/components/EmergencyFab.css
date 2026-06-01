@@ -62,7 +62,7 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--accent);
+  color: var(--accent-text);
   margin: 14px 0 8px;
 }
 .emergency-section-title:first-child {

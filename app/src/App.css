@@ -42,7 +42,7 @@
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.1;
   letter-spacing: -0.01em;
   transition: color 0.4s ease, font-size 0.4s ease;
@@ -158,7 +158,7 @@
   border-radius: 1.5px;
 }
 [data-theme='rafa'] .top-bar-sub {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -171,7 +171,7 @@
    Yellow glow on the title, subtle red wash below
    ============================================ */
 [data-theme='jonathan'] .top-bar-title h1 {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-shadow: 0 0 22px rgba(253, 216, 53, 0.32);
 }
 [data-theme='jonathan'] .top-bar {

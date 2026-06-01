@@ -27,7 +27,7 @@
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.15;
   margin-bottom: 16px;
   letter-spacing: -0.005em;
@@ -75,7 +75,7 @@
 
 .media-link:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .media-link:active {
@@ -100,13 +100,13 @@
 }
 [data-theme='aurelia'] .media-title {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 24px;
 }
 [data-theme='aurelia'] .media-category-title {
   text-transform: none;
   letter-spacing: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
   font-size: 15px;
 }
@@ -133,7 +133,7 @@
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, transparent 100%);
 }
 [data-theme='rafa'] .media-title {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-transform: uppercase;
   font-weight: 900;
   font-size: 22px;
@@ -152,7 +152,7 @@
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   margin-bottom: 12px;
 }
@@ -174,7 +174,7 @@
   color: #fff;
 }
 [data-theme='rafa'] .media-note {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-style: normal;
   font-weight: 700;
   font-size: 11.5px;
@@ -195,7 +195,7 @@
   font-style: italic;
   font-weight: 400;
   font-size: 17px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .media-link {
   background: #faf6ef;

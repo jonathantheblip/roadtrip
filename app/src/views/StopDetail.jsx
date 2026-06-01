@@ -383,7 +383,7 @@ function CopyField({ icon, label, value, placeholder }) {
           letterSpacing: '0.14em',
           textTransform: 'uppercase',
           opacity: hasValue ? 0.8 : 0.35,
-          color: copied ? 'var(--accent)' : 'inherit',
+          color: copied ? 'var(--accent-text)' : 'inherit',
         }}
       >
         {copied ? <ClipboardCheck size={12} /> : <Copy size={12} />}

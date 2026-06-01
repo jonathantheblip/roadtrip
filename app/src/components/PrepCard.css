@@ -46,7 +46,7 @@
   font-family: var(--font-display);
   font-size: 15px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.2;
   letter-spacing: -0.005em;
 }
@@ -156,13 +156,13 @@
 }
 [data-theme='helen'] .prep-eyebrow {
   font-family: var(--font-body);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .prep-forday {
   font-style: italic;
   font-weight: 400;
   font-size: 18px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .prep-audience {
   font-family: var(--font-display);
@@ -171,7 +171,7 @@
   text-transform: none;
   letter-spacing: 0;
   font-size: 14px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme='helen'] .prep-item {
   font-size: 13.5px;
@@ -195,26 +195,26 @@
   border-left: 4px solid var(--accent3);
 }
 [data-theme='rafa'] .prep-eyebrow {
-  color: var(--accent3);
+  color: var(--accent-text);
   letter-spacing: 0.18em;
 }
 [data-theme='rafa'] .prep-forday {
-  color: var(--accent3);
+  color: var(--accent-text);
   text-transform: uppercase;
   font-weight: 900;
   letter-spacing: 0.02em;
   font-size: 14px;
 }
 [data-theme='rafa'] .prep-audience {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 900;
 }
 [data-theme='rafa'] .prep-audience-warning .prep-audience,
 [data-theme='rafa'] .prep-audience-warning .prep-item {
-  color: var(--accent3);
+  color: var(--accent-text);
 }
 [data-theme='rafa'] .prep-chev {
-  color: var(--accent3);
+  color: var(--accent-text);
 }
 [data-theme='rafa'] .prep-body {
   border-top-color: var(--accent2);

@@ -79,7 +79,7 @@
   text-transform: none;
   letter-spacing: 0.01em;
   font-size: 15px;
-  color: var(--accent);
+  color: var(--accent-text);
   min-width: 56px;
 }
 [data-theme='helen'] .filter-btn {
@@ -96,7 +96,7 @@
 }
 [data-theme='helen'] .filter-btn.active {
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   border-bottom-color: var(--accent2);
 }
 
@@ -115,14 +115,14 @@
   top: -9px;
   left: 18px;
   background: var(--bg);
-  color: var(--accent3);
+  color: var(--accent-text);
   padding: 2px 12px;
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.18em;
 }
 [data-theme='rafa'] .filter-label {
-  color: var(--accent3);
+  color: var(--accent-text);
   font-weight: 900;
   letter-spacing: 0.1em;
 }

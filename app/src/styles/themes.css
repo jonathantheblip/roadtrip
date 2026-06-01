@@ -27,9 +27,10 @@
   --text: #EDE6D6;
   --muted: rgba(237, 230, 214, 0.58);
   --faint: rgba(237, 230, 214, 0.30);
-  --accent: #A33A2E;          /* oxblood link */
+  --accent: #A33A2E;          /* oxblood link (FILL — unchanged) */
   --accent2: #A33A2E;
-  --accent3: #EDE6D6;         /* used as bright dot */
+  --accent3: #EDE6D6;         /* used as bright dot (decorative — unchanged) */
+  --accent-text: #D26C60;     /* C1: readable-on-bg emphasis sibling of --accent; AA ≥4.8:1 on bg/bg2/card */
   --accent-ink: #FFF6E8;
   --border: rgba(237, 230, 214, 0.16);
   --tag: #A33A2E;
@@ -58,6 +59,7 @@
   --accent: #2E5D3A;          /* forest */
   --accent2: #2E5D3A;
   --accent3: #2E5D3A;
+  --accent-text: #2E5D3A;     /* C1: == --accent; forest already clears AA on all grounds */
   --accent-ink: #FFFFFF;
   --border: rgba(21, 32, 26, 0.13);
   --tag: #2E5D3A;
@@ -82,9 +84,10 @@
   --text: #F2EBDA;
   --muted: rgba(242, 235, 218, 0.62);
   --faint: rgba(242, 235, 218, 0.32);
-  --accent: #B0463F;          /* oxblood, a touch warm so photos pop */
+  --accent: #B0463F;          /* oxblood, a touch warm so photos pop (FILL — unchanged) */
   --accent2: #B0463F;
   --accent3: #B0463F;
+  --accent-text: #CD7973;     /* C1: readable-on-bg emphasis sibling of --accent; AA ≥4.8:1 on bg/bg2/card */
   --accent-ink: #F2EBDA;
   --border: rgba(242, 235, 218, 0.13);
   --tag: #B0463F;
@@ -109,13 +112,14 @@
   --text: #3D0E22;
   --muted: rgba(61, 14, 34, 0.62);
   --faint: rgba(61, 14, 34, 0.32);
-  --accent: #E8478C;          /* hot pink */
+  --accent: #E8478C;          /* hot pink (FILL — unchanged) */
   --accent2: #E8478C;
   --accent3: #E8478C;
-  --accent-ink: #FFFFFF;
+  --accent-text: #B3165A;     /* C1: readable-on-bg emphasis sibling of --accent; AA ≥4.8:1 on bg/bg2/card */
+  --accent-ink: #2A0816;      /* C1: was #FFFFFF (white-on-pink 3.68); dark plum on --accent fill = 4.99:1 */
   --border: rgba(61, 14, 34, 0.14);
   --tag: #E8478C;
-  --tag-text: #FFFFFF;
+  --tag-text: #2A0816;        /* C1: was #FFFFFF (white-on-pink 3.68); dark plum on --tag fill = 4.99:1 */
   --radius: 14px;
   --shadow-card: 0 1px 3px rgba(232, 71, 140, 0.10),
     0 10px 28px rgba(232, 71, 140, 0.14);
@@ -137,8 +141,9 @@
   --muted: rgba(255, 246, 232, 0.70);
   --faint: rgba(255, 246, 232, 0.38);
   --accent: #FFB833;          /* ochre warning */
-  --accent2: #C9342A;         /* oxblood */
+  --accent2: #C9342A;         /* oxblood (FILL — unchanged; as TEXT it unifies to --accent-text) */
   --accent3: #FFB833;
+  --accent-text: #FFB833;     /* C1: == --accent (ochre); readable. Oxblood --accent2 as text unifies here */
   --accent-ink: #1A0A0B;
   --border: rgba(255, 246, 232, 0.18);
   --tag: #FFB833;

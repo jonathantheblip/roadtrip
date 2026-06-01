@@ -26,13 +26,15 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
     // renders there).
     await page.getByRole('button', { name: /trips/i }).first().click()
     await expect(page.getByRole('button', { name: /Plan with Claude/i })).toBeVisible()
-    // color-contrast is a KNOWN, recorded finding on the themed views' small
-    // mono "eyebrow" + muted-italic labels — KNOWN_BUGS A11Y-1 (jonathan
-    // oxblood-on-dark 2.92:1, aurelia pink-on-pink 3.13:1, helen muted 4.48:1;
-    // rafa clean). Deferred to the M6 theme pass; allowlisted so the tier stays
-    // green and still gates every OTHER serious/critical rule. Phase 3 / M6
-    // removes this to re-gate contrast.
-    await expectNoSeriousA11y(page, { label: `trips index (${persona})`, allow: ['color-contrast'] })
+    // color-contrast was a KNOWN finding on the themed views' small mono
+    // "eyebrow" + muted-italic labels — KNOWN_BUGS A11Y-1c (jonathan
+    // oxblood-on-dark 2.92:1, aurelia pink-on-pink 2.67–3.13:1). RESOLVED by C1:
+    // accent-as-text now uses the readable per-persona --accent-text token
+    // (jonathan #D26C60, aurelia #B3165A, helen-dark #CD7973 — all ≥4.8:1; helen
+    // forest / rafa ochre already passed). The allowlist is REMOVED to re-gate
+    // contrast here. Any remaining flag is a site the C1 migration missed — fix
+    // it, don't re-allowlist.
+    await expectNoSeriousA11y(page, { label: `trips index (${persona})` })
   })
 
   test('Claude-in-app panel — no serious/critical violations', async ({ page }) => {

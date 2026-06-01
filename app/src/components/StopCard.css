@@ -249,7 +249,7 @@
   word-break: break-word;
 }
 .card-fact-row dd a {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
   text-decoration: none;
 }
@@ -408,7 +408,7 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--accent);
+  color: var(--accent-text);
   flex-shrink: 0;
   padding-top: 1px;
 }
@@ -429,7 +429,7 @@
 [data-theme='helen'] .bring-label {
   font-family: var(--font-body);
   font-style: normal;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 [data-theme='rafa'] .card-bring {
@@ -438,7 +438,7 @@
   border-radius: 0;
 }
 [data-theme='rafa'] .bring-label {
-  color: var(--accent3);
+  color: var(--accent-text);
   letter-spacing: 0.14em;
 }
 
@@ -512,7 +512,7 @@
   font-size: 11px;
   font-weight: 700;
   text-decoration: none;
-  color: var(--accent);
+  color: var(--accent-text);
   background: transparent;
   border: 1px solid var(--accent);
   text-transform: uppercase;
@@ -615,7 +615,7 @@
 [data-theme='helen'] .extra-btn {
   border-radius: 1px;
   border: 1px solid var(--accent2);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--font-body);
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -700,7 +700,7 @@
     0 0 50px -10px rgba(253, 216, 53, 0.45);
 }
 [data-theme='rafa'] .card-name {
-  color: var(--accent3);
+  color: var(--accent-text);
   border-bottom: 1px solid rgba(224, 232, 255, 0.1);
   padding-bottom: 9px;
   margin-bottom: 10px;

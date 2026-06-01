@@ -35,7 +35,7 @@
   font-family: var(--font-display);
   font-size: 28px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.1;
   letter-spacing: -0.01em;
   margin-bottom: 10px;
@@ -54,7 +54,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--accent);
+  color: var(--accent-text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -69,7 +69,7 @@
   font-family: var(--font-display);
   font-size: 16px;
   font-weight: var(--heading-weight);
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1.2;
   margin-bottom: 10px;
   padding-bottom: 6px;
@@ -143,7 +143,7 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.09em;
-  color: var(--accent);
+  color: var(--accent-text);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -182,13 +182,13 @@
 [data-theme='rafa'] .jq-title {
   text-transform: uppercase;
   font-weight: 900;
-  color: var(--accent3);
+  color: var(--accent-text);
   font-size: 26px;
 }
 [data-theme='rafa'] .jq-section-title {
   text-transform: uppercase;
   font-weight: 900;
-  color: var(--accent3);
+  color: var(--accent-text);
   border-bottom: 2px solid var(--accent);
 }
 [data-theme='rafa'] .jq-row {

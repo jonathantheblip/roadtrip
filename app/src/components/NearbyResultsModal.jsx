@@ -204,7 +204,7 @@ export function NearbyResultsModal({
               padding: '10px 12px',
               border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
               borderRadius: 8,
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               fontFamily: 'Fraunces, Georgia, serif',
               fontSize: 14,
               fontStyle: 'italic',
@@ -383,12 +383,12 @@ function ResultRow({ result, traveler }) {
         >
           <span>{formatDistance(result.distanceMeters)}</span>
           {result.openNow === false && (
-            <span style={{ color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ color: 'var(--accent-text)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
               <AlertCircle size={10} /> Closed now
             </span>
           )}
           {result.openNow === true && (
-            <span style={{ color: 'var(--accent)', opacity: 0.85 }}>Open</span>
+            <span style={{ color: 'var(--accent-text)', opacity: 0.85 }}>Open</span>
           )}
         </div>
       </div>
