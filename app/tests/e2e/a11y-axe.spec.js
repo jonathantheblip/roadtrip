@@ -46,11 +46,13 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
     // persona this is the most likely contrast offender (tier overlap with the
     // theme bug). If axe flags contrast here, it corroborates the theme bug
     // from the WCAG angle — record in KNOWN_BUGS, don't fix (M6).
-    // color-contrast is a KNOWN, recorded finding here too — the panel's
-    // muted-ink-on-linen is 4.48:1 (just under AA 4.5:1) for ALL personas (it's
-    // Helen's M1 palette; KNOWN_BUGS A11Y-1). axe corroborates the wrong-theme
-    // bug from the WCAG angle. Allowlisted + deferred to M6; all other rules
-    // (focus, names, ARIA) still gate the panel.
-    await expectNoSeriousA11y(page, { include: '[role="dialog"]', label: `claude panel (${persona})`, allow: ['color-contrast'] })
+    // M6 un-froze the panel: it now themes per-persona via body[data-theme]
+    // var(--…) (no hardcoded Helen palette), and the confirm cards read dark on
+    // their cream "draft slip" (M6 + A-full hotfix). The color-contrast allowlist
+    // is REMOVED here to re-gate contrast on O1/O2. A remaining flag is now a TRUE
+    // per-persona finding — e.g. a base --muted just under AA on its own --bg —
+    // not the old wrong-theme bug. (S2 trips-index above stays allowlisted: its
+    // A11Y-1 eyebrow/label contrast is a separate, still-open redesign item.)
+    await expectNoSeriousA11y(page, { include: '[role="dialog"]', label: `claude panel (${persona})` })
   })
 })
