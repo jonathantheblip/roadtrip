@@ -38,7 +38,7 @@ commit that added the tier).
 
 ---
 
-### A11Y-1a — Claude panel (O1/O2): **RE-GATED** `[resolved for j/a/r — helen residual OPEN]`
+### A11Y-1a — Claude panel (O1/O2): **RESOLVED** `[all 4 personas green — helen closed via A11Y-1b, c62715d]`
 
 **Status (as of 7146701):** The O1/O2 color-contrast allowlist (`a11y-axe.spec.js:54`)
 has been **removed**. M6 fixed the wrong-theme bug (`ebc4a0e` + `697d4de`), so
@@ -46,8 +46,10 @@ the panel now themes per-persona via `body[data-theme]` — the 4.48:1 symptom t
 appeared on ALL personas (because they all got Helen's palette) is resolved for
 **jonathan / aurelia / rafa** (gate green ×3). **CI default (jonathan) is green.**
 
-**Residual: helen-panel FAILS 4.48:1** — see **A11Y-1b** below. This is a
-separate finding in Helen's own base tokens, exposed by M6, not the same bug.
+**Residual RESOLVED (c62715d):** helen-panel cleared via **A11Y-1b** below — Helen's
+`--muted` darkened to 4.97:1, so the panel gate is now green for **helen too** (×4, all
+personas). This was a separate finding in Helen's own base tokens, exposed by M6, not the
+same wrong-theme bug.
 
 **Original finding (now resolved for j/a/r):** Claude-in-app panel — ALL personas
 (2 nodes): muted ink `#696F68` on linen `#F2EFE7` = **4.48:1** (just under 4.5).
@@ -61,26 +63,31 @@ theme bug from the contrast angle — a real tier overlap (a11y ↔ theme).
 
 ---
 
-### A11Y-1b — Helen `--muted` token, 4.48:1 on `--bg` `[real, OPEN — themes.css]`
+### A11Y-1b — Helen `--muted` token, 4.48:1 on `--bg` `[RESOLVED — c62715d]`
 
-**Status: `[real, serious — OPEN]`.** New finding surfaced by M6 (previously masked
-because all personas got Helen's palette; now isolated to Helen only).
+**Status: `[RESOLVED 2026-06-01, c62715d]`.** Was a new finding surfaced by M6
+(previously masked because all personas got Helen's palette; isolated to Helen only).
 
-**Finding:** Helen's `--muted: rgba(21,32,26,0.62)` flattens to `#696f68` on her
-`--bg: #F2EFE7` = **4.48:1** — 0.02 under WCAG AA 4.5:1. 10px mono text,
+**Finding (as filed):** Helen's `--muted: rgba(21,32,26,0.62)` flattened to `#696f68`
+on her `--bg: #F2EFE7` = **4.48:1** — 0.02 under WCAG AA 4.5:1. 10px mono text,
 serious impact. Source: `app/src/styles/themes.css` `[data-theme='helen']` block.
 **App-wide** (not just the Claude panel — any component using `var(--muted)` on
-helen's background has this margin). Gate: `RT_PERSONA=helen npx playwright test
-a11y-axe -g "Claude-in-app panel" --project=chromium` **fails on this** by design;
-CI default (jonathan) stays green.
+helen's background had this margin).
 
-**Fix:** darken helen `--muted` in `themes.css` to achieve ≥4.5:1 with margin.
-`rgba(21,32,26,0.62)` → approximately `rgba(21,32,26,0.65)` (~`#626862`); compute
-and verify via the axe gate, don't accept a hex blind. Check `[data-theme='helen-dark']`
-separately — it defines its own `--muted`; report whether it has its own contrast
-issue before fixing. **Deliberate visual change** (unlike M6's byte-identical Helen)
-→ Helen `toHaveScreenshot` baselines WILL move; re-bless required and expected.
-`themes.css` is `app/**` → real e2e-gated client deploy.
+**Fix (DONE, c62715d):** darkened `rgba(21,32,26,0.62)` → `rgba(21,32,26,0.65)`,
+which flattens to `#626862` = **4.97:1** on `--bg #F2EFE7` (computed + gate-verified,
+not a blind hex; margin chosen so a later tweak won't re-break it). Scope:
+`[data-theme='helen']` light block only.
+
+`[data-theme='helen-dark']` checked + left untouched: its `--muted`
+`rgba(242,235,218,0.62)` on `--bg #14110D` = **6.56:1**, already well clear — no finding.
+
+**Verification:** `RT_PERSONA=helen` Claude-panel gate **fail→pass**;
+jonathan/aurelia/rafa stay green (×4). Full chromium suite 110 pass / 2 skip / 0 fail.
+**Re-bless was a no-op:** the ~7-level/channel darkening is below Playwright's
+`threshold:0.2` pixel-diff cutoff, so all 18 visual baselines pass unchanged on BOTH
+projects (chromium + webkit-mobile) — sub-threshold for the screenshot diff yet fully
+effective for axe's exact-contrast check. (The spec predicted a re-bless; it wasn't needed.)
 
 ---
 
@@ -92,7 +99,9 @@ trips-index scan). Separate from the Claude-panel finding; NOT touched by M6.
 **Findings (chromium; WCAG AA needs 4.5:1 normal):**
 - **jonathan**: oxblood `#A33A2E` on near-black `#0E0F11` = **2.92:1**.
 - **aurelia**: hot-pink `#E8478C` on pale-pink `#FCE8EE` = **3.13:1**.
-- **helen**: muted `#696F68` on linen `#F2EFE7` = **4.48:1** (same token as A11Y-1b).
+- **helen**: ~~muted `#696F68` = 4.48:1~~ → now `#626862` = **4.97:1** — the shared
+  `--muted` token was darkened in **A11Y-1b** (c62715d), so helen's portion is cleared.
+  A11Y-1c stays OPEN for jonathan + aurelia (their accent tokens, not `--muted`).
 - **rafa**: clean.
 
 **Reproducer:** `cd app && npx playwright test a11y-axe -g "trips index" --project=chromium`
@@ -600,15 +609,16 @@ multi-persona surfaces reached only helen/incidentally.)*
   hardcoded `T` palette for ALL personas. C5 proved bounded to O1/O2. **Fixed M6 2026-06-01:**
   base palette → per-persona CSS vars (cascade-only); confirm-card text → universal "draft-slip"
   literals on opaque cream (A-full hotfix, opacity-split rule); panel a11y re-gated j/a/r green.
-  Helen `--muted` residual (4.48:1) is a separate themes.css finding (**A11Y-1b**), not P3-01.
+  Helen `--muted` residual (was 4.48:1) was a separate themes.css finding (**A11Y-1b**), not
+  P3-01 — **RESOLVED c62715d** (darkened to 4.97:1).
 - **P3-02 `[real, S4 trivial — M6 polish; not a strand]`** — NewTrip/TripEditor single-exit affordance
   (lone top-left `‹ Trips` link, no symmetric Cancel, chrome suppressed). Exit functional (live-confirmed).
 - **P3-03 `[real, latent — not user-reachable]`** — `AllPhotosView` is the only deep view missing the
   `&& trip` guard (`App.jsx:775`); back would blank IF reached trip-less, but normal nav can't (live:
   back returns to the trip). Add the guard.
 - **Inherited (pre-Phase-3, re-confirmed):** **A11Y-1** `[split — see A11Y-1a/1b/1c]` themed
-  contrast (corroborated P3-01 from the contrast angle; O1/O2 re-gated, j/a/r green, helen residual
-  open as A11Y-1b); **DEADCODE-1** `[real, dead-code]` 78 orphan files +
+  contrast (corroborated P3-01 from the contrast angle; O1/O2 re-gated, all 4 green, helen residual
+  RESOLVED as A11Y-1b, c62715d); **DEADCODE-1** `[real, dead-code]` 78 orphan files +
   2 dead deps + 21 dead exports. The R/J/N WebKit pile (R1–R6, J1–J4, N1) is all `[resolved]`,
   re-confirmed firing-as-characterized in C3b.
 
@@ -624,7 +634,7 @@ reproduce (C3a sim, non-black on real iOS).**
 - **axe extension:** wire a11y-axe beyond trips-index + Claude panel (C1-GAP-2 / C3a-GAP-1 / C4-GAP-4 /
   C5-GAP-1 — S2/S3, photos, creation/editing, settings).
 - **M6 fixes:** ~~P3-01~~ **DONE** (`ebc4a0e`+`697d4de`+`7146701`); A11Y-1 O1/O2 **re-gated** (`7146701`);
-  **A11Y-1b helen `--muted`** OPEN (themes.css, ITEM 1 — darken + re-bless baselines); P3-02 polish; P3-03 guard.
+  ~~**A11Y-1b helen `--muted`**~~ **DONE** (`c62715d` — darkened to 4.97:1; re-bless was a no-op, sub-threshold); P3-02 polish; P3-03 guard.
 - **DEADCODE-1:** delete-vs-restore triage (useTheme restore? map cluster + leaflet/react-leaflet delete?).
 - **Real-device (Jonathan's):** hardware iOS memory-pressure (the founding trigger, sim-structurally
   uncatchable), `wrangler tail` worker traces, real-cellular at the arena.
