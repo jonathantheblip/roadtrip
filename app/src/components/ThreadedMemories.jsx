@@ -155,11 +155,19 @@ export function ThreadedMemories({ trip, stop, traveler }) {
       const refs = []
       for (const p of pendingPhotos) {
         const key = makeAssetKey('photo')
-        // saveAsset auto-downscales photos via preparePhotoForUpload.
-        // We read the returned mime so the photoRef tracks the actual
-        // stored bytes (image/jpeg), not the input file's mime.
-        const { mime } = await saveAsset('photo', key, p.file, p.file.type)
-        refs.push({ storage: 'idb', key, mime })
+        // saveAsset auto-downscales photos via preparePhotoForUpload and
+        // returns `prepared` (the pipeline result, incl. exif). We read the
+        // mime so the photoRef tracks the actual stored bytes (image/jpeg),
+        // and — the fix — the capture date the pipeline already extracted
+        // from the original file's EXIF. It was dropped here, which is why
+        // album photos sorted by upload time. Mirrors AddDispatchModal's
+        // single-photo path (capturedAt: prep.exif?.capturedAt). Per-ref so
+        // memoryStore derives the memory-level capturedAt as the earliest
+        // frame; left undefined (not null) when EXIF is absent so the store
+        // falls back to upload time instead of short-circuiting.
+        const { mime, prepared } = await saveAsset('photo', key, p.file, p.file.type)
+        const capturedAt = prepared?.exif?.capturedAt
+        refs.push({ storage: 'idb', key, mime, ...(capturedAt ? { capturedAt } : {}) })
       }
       saveMemory({
         tripId: trip.id,
