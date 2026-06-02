@@ -92,8 +92,16 @@ test.describe('themed trip view per traveler', () => {
   for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
     test(`${traveler}`, async ({ page }) => {
       await setupTraveler(page, traveler)
+      // Mask the fixed top bar: it's shared chrome whose action buttons
+      // accrue as features land (Settings → Claude → Replay → Map), and
+      // its light-theme button text renders differently across macOS
+      // versions — so every top-bar button forced a webkit re-bless and
+      // some cases (aurelia) can't be blessed off-runner at all. These
+      // baselines exist to guard the themed trip CONTENT; the top bar is
+      // covered by functional + a11y tests. Masking ends the churn.
       await expect(page).toHaveScreenshot(`trip-${traveler}.png`, {
         fullPage: true,
+        mask: [page.getByTestId('trip-topbar')],
       })
     })
   }

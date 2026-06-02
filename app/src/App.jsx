@@ -606,6 +606,7 @@ export default function App() {
       {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && (
         <div
           className="px-6"
+          data-testid="trip-topbar"
           style={{
             position: 'fixed',
             top: 0,
