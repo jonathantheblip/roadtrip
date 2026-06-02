@@ -1,0 +1,178 @@
+/* Immersive full-bleed map surface (chrome is suppressed in App, like
+   replay). Map fills the screen; the back button and the five-piece panel
+   float over it. All color via theme tokens so it themes to the active
+   traveler. */
+
+.mapview {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg);
+}
+
+.mapview-map {
+  position: absolute;
+  inset: 0;
+}
+
+.mapview-map .route-map-wrap,
+.mapview-map .route-map-inner {
+  height: 100%;
+}
+
+.mapview-back {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1000; /* above leaflet panes/controls */
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 7px 13px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+
+.mapview-panel {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-body);
+  color: var(--text);
+}
+
+.mapview-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mapview-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.mapview-dot.on {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.mapview-dot.off {
+  background: var(--muted);
+  opacity: 0.5;
+}
+
+.mapview-sel {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.mapview-row,
+.mapview-progress {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.mapview-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mapview-label {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mapview-cell strong {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: var(--heading-weight, 600);
+  line-height: 1.15;
+}
+
+.mapview-next-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapview-muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.mapview-done,
+.mapview-trip {
+  flex: 0 0 auto;
+  text-align: right;
+}
+.mapview-trip {
+  flex: 1;
+  text-align: left;
+}
+
+.mapview-visit {
+  align-self: flex-start;
+  margin-top: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text, var(--accent));
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mapview-leg-ends {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapview-bar {
+  margin-top: 5px;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  overflow: hidden;
+}
+.mapview-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.mapview-progress-muted {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}

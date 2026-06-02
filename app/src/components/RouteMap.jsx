@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Polyline, CircleMarker, Circle, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { ROUTE_WAYPOINTS, PIN_COLORS, TILE_URLS, THEME_TILE } from '../data/route'
+import { PIN_COLORS, TILE_URLS, THEME_TILE } from '../data/route'
 import { useGeolocation } from '../hooks/useGeolocation'
 import './RouteMap.css'
 
@@ -18,12 +18,38 @@ function isMobile() {
   return window.matchMedia('(pointer: coarse)').matches
 }
 
-function pinColor(stop) {
+// Map a trip stop's `kind` (trips.js schema) onto the existing pin
+// palette. Curated road-trip stops carry `types[]` instead; both are
+// handled below. Anything unrecognized falls back to the active accent —
+// never a silent gray pin.
+const KIND_COLORS = {
+  lodging: PIN_COLORS.poi,
+  breakfast: PIN_COLORS.food,
+  lunch: PIN_COLORS.food,
+  dinner: PIN_COLORS.food,
+  snack: PIN_COLORS.food,
+  food: PIN_COLORS.food,
+  museum: PIN_COLORS.photo,
+  art: PIN_COLORS.photo,
+  gallery: PIN_COLORS.photo,
+  drive: PIN_COLORS.gas,
+  travel: PIN_COLORS.gas,
+  logistics: PIN_COLORS.gas,
+  arrival: PIN_COLORS.gas,
+  departure: PIN_COLORS.gas,
+}
+
+function pinColor(stop, accent) {
   if (stop.name?.toLowerCase().includes('buc-ee')) return '#fdd835'
-  for (const t of ['viral', 'energy', 'food', 'photo', 'poi', 'gas']) {
-    if (stop.types?.includes(t)) return PIN_COLORS[t]
+  // Curated stops: types[] against the original palette.
+  if (Array.isArray(stop.types)) {
+    for (const t of ['viral', 'energy', 'food', 'photo', 'poi', 'gas']) {
+      if (stop.types.includes(t)) return PIN_COLORS[t]
+    }
   }
-  return '#6b7280'
+  // Trip stops: single `kind` string.
+  if (stop.kind && KIND_COLORS[stop.kind]) return KIND_COLORS[stop.kind]
+  return accent
 }
 
 function FitBounds({ stops, selectedId }) {
@@ -37,7 +63,8 @@ function FitBounds({ stops, selectedId }) {
       return
     }
     if (stops.length === 0) {
-      map.fitBounds(ROUTE_WAYPOINTS.map((w) => [w[0], w[1]]), { padding: [30, 30] })
+      // No coords to frame — leave the current view rather than snap to a
+      // hardcoded route (the old ROUTE_WAYPOINTS fallback was Jackson-only).
       return
     }
     const bounds = L.latLngBounds(stops.map((s) => [s.lat, s.lng]))
@@ -122,7 +149,15 @@ function podcastIcon(accent) {
   })
 }
 
-export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStopId }) {
+export function RouteMap({
+  mode,
+  stops,
+  activePerson,
+  onStopSelect,
+  selectedStopId,
+  routeLine = [],
+  traveledLine = [],
+}) {
   const tileStyle = THEME_TILE[activePerson] || 'light'
   const tileUrl = TILE_URLS[tileStyle]
   const accent = ACCENT_COLORS[activePerson] || '#6b8f8f'
@@ -136,11 +171,21 @@ export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStop
     [stops]
   )
 
+  // Initial center derived from the route/stops (FitBounds adjusts on
+  // mount). US centroid as a last resort — never the Jackson hardcode.
+  const center = useMemo(() => {
+    const pts = routeLine.length ? routeLine : validStops.map((s) => [s.lat, s.lng])
+    if (!pts.length) return [39.5, -98.35]
+    const lat = pts.reduce((a, p) => a + p[0], 0) / pts.length
+    const lng = pts.reduce((a, p) => a + p[1], 0) / pts.length
+    return [lat, lng]
+  }, [routeLine, validStops])
+
   const headphoneIcon = useMemo(() => podcastIcon(accent), [accent])
 
   return (
     <MapContainer
-      center={[36.5, -84]}
+      center={center}
       zoom={5}
       scrollWheelZoom={!mobile}
       zoomControl={!mobile}
@@ -150,10 +195,18 @@ export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStop
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
         url={tileUrl}
       />
-      <Polyline
-        positions={ROUTE_WAYPOINTS}
-        pathOptions={{ color: accent, weight: 3, opacity: 0.7 }}
-      />
+      {routeLine.length >= 2 && (
+        <Polyline
+          positions={routeLine}
+          pathOptions={{ color: accent, weight: 3, opacity: 0.35 }}
+        />
+      )}
+      {traveledLine.length >= 2 && (
+        <Polyline
+          positions={traveledLine}
+          pathOptions={{ color: accent, weight: 4, opacity: 0.9 }}
+        />
+      )}
       <FitBounds stops={validStops} selectedId={selectedStopId} />
       {validStops.map((stop) => {
         if (isMedia) {
@@ -168,7 +221,7 @@ export function RouteMap({ mode, stops, activePerson, onStopSelect, selectedStop
             />
           )
         }
-        const color = pinColor(stop)
+        const color = pinColor(stop, accent)
         const isBucees = stop.name?.toLowerCase().includes('buc-ee')
         const isSelected = stop.id === selectedStopId
         const r = isBucees ? 9 : stop.star ? 8 : 6

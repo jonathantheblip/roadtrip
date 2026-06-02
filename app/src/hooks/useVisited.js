@@ -1,48 +1,61 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-const STORAGE_KEY = 'rt_visited'
+// Visited-stop state, persisted per trip. The key is trip-namespaced
+// (`rt_visited_<tripId>`) so visited marks from one trip never bleed into
+// another — the pre-refactor hook used a single global `rt_visited` key,
+// which collided the moment the app went multi-trip.
+function storageKey(tripId) {
+  return `rt_visited_${tripId || 'default'}`
+}
 
-function readVisited() {
+function readVisited(key) {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []
+    return JSON.parse(localStorage.getItem(key)) || []
   } catch {
     return []
   }
 }
 
-function writeVisited(ids) {
+function writeVisited(key, ids) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
+    localStorage.setItem(key, JSON.stringify(ids))
   } catch { /* quota */ }
 }
 
-export function useVisited() {
-  const [visited, setVisited] = useState(readVisited)
+export function useVisited(tripId) {
+  const key = storageKey(tripId)
+  const [visited, setVisited] = useState(() => readVisited(key))
+
+  // Reload when the active trip changes so the hook always reflects the
+  // current trip's list rather than the one it mounted with.
+  useEffect(() => {
+    setVisited(readVisited(key))
+  }, [key])
 
   const toggle = useCallback((id) => {
     setVisited((prev) => {
       const next = prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]
-      writeVisited(next)
+      writeVisited(key, next)
       return next
     })
-  }, [])
+  }, [key])
 
   const markVisited = useCallback((id) => {
     setVisited((prev) => {
       if (prev.includes(id)) return prev
       const next = [...prev, id]
-      writeVisited(next)
+      writeVisited(key, next)
       return next
     })
-  }, [])
+  }, [key])
 
   const resetDay = useCallback((stopIds) => {
     setVisited((prev) => {
       const next = prev.filter((id) => !stopIds.includes(id))
-      writeVisited(next)
+      writeVisited(key, next)
       return next
     })
-  }, [])
+  }, [key])
 
   const isVisited = useCallback((id) => visited.includes(id), [visited])
 

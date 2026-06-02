@@ -58,9 +58,12 @@ function ensureWatch() {
         emit()
       },
       {
-        enableHighAccuracy: false,
-        maximumAge: 30000,
-        timeout: 10000,
+        // High accuracy + no cache so the live dot tracks the car rather
+        // than lagging ~30s / ~0.6mi behind (the pre-refactor map's worst
+        // "sorta worked" flaw). Still one shared watcher for battery.
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 15000,
       }
     )
   } catch {
