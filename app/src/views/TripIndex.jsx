@@ -174,7 +174,7 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
               <Eyebrow color="var(--muted)" weight={700}>
                 ARCHIVE · {year}
               </Eyebrow>
-              <Eyebrow color="var(--faint, var(--muted))">
+              <Eyebrow color="var(--muted)">
                 {count} TRIP{count === 1 ? '' : 'S'}
               </Eyebrow>
             </div>

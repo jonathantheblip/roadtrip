@@ -56,7 +56,7 @@ function JSection({ label, meta, children, style }) {
         }}
       >
         <JLabel color="var(--text)" weight={600}>{label}</JLabel>
-        {meta && <JLabel color="var(--faint)">{meta}</JLabel>}
+        {meta && <JLabel color="var(--muted)">{meta}</JLabel>}
       </div>
       <JRule color="var(--text)" style={{ opacity: 0.28 }} />
       <div style={{ paddingTop: 10 }}>{children}</div>
@@ -163,7 +163,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
         }}
       >
         <JLabel color="var(--muted)" weight={700}>FAMILY OPS</JLabel>
-        <JLabel color="var(--faint)">
+        <JLabel color="var(--muted)">
           VOL · 1 · NO · {String((day?.n || 1) + 16)} · {(day?.date || '').toUpperCase()}
         </JLabel>
       </div>
@@ -276,7 +276,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
               borderLeft: i ? '1px solid var(--border)' : 'none',
             }}
           >
-            <JLabel color="var(--faint)">{k}</JLabel>
+            <JLabel color="var(--muted)">{k}</JLabel>
             <div
               style={{
                 fontFamily: 'JetBrains Mono, ui-monospace, monospace',
@@ -495,7 +495,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
                         gap: 8,
                       }}
                     >
-                      <JLabel color="var(--faint)">[{s.kind}]</JLabel>
+                      <JLabel color="var(--muted)">[{s.kind}]</JLabel>
                       {memCount > 0 && (
                         <JLabel color="var(--accent-text)" weight={600}>
                           {memCount} {memCount === 1 ? 'ENTRY' : 'ENTRIES'} ↗
@@ -541,7 +541,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
                       }}
                     >
                       <AvatarStack ids={s.for || []} size={14} gap={-3} />
-                      <JLabel color="var(--faint)">
+                      <JLabel color="var(--muted)">
                         · {(s.address || '').split(',')[0] || ''}
                       </JLabel>
                     </div>
@@ -612,14 +612,14 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>
               {arrival.stop.scheduledDepartureLocal || ''}
             </span>
-            <span style={{ color: 'var(--faint)', letterSpacing: '0.08em' }}>
+            <span style={{ color: 'var(--muted)', letterSpacing: '0.08em' }}>
               DEP · {arrival.stop.flightOrigin || ''}
             </span>
-            <span style={{ color: 'var(--faint)' }}>SCHEDULED</span>
+            <span style={{ color: 'var(--muted)' }}>SCHEDULED</span>
 
             <span style={{ gridColumn: '1 / -1', height: 0 }} />
             <span style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: 'var(--faint)', letterSpacing: '0.08em' }}>EN ROUTE</span>
+              <span style={{ color: 'var(--muted)', letterSpacing: '0.08em' }}>EN ROUTE</span>
               <div
                 style={{
                   flex: 1,
@@ -646,7 +646,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>
               {arrival.stop.scheduledArrivalLocal || arrival.stop.time}
             </span>
-            <span style={{ color: 'var(--faint)', letterSpacing: '0.08em' }}>
+            <span style={{ color: 'var(--muted)', letterSpacing: '0.08em' }}>
               ARR · {arrival.stop.flightDest || ''}
             </span>
             <span style={{ color: 'var(--accent-text)', fontWeight: 600 }}>ON TIME</span>
@@ -665,7 +665,7 @@ export function JonathanView({ trip, traveler, onOpenStop, onOpenSettings, onOpe
 
       {/* COLOPHON */}
       <div style={{ padding: '16px 16px 4px', textAlign: 'center' }}>
-        <JLabel color="var(--faint)">· FAMILY OPS · EDITORIAL CONSOLE · EST. 2026 ·</JLabel>
+        <JLabel color="var(--muted)">· FAMILY OPS · EDITORIAL CONSOLE · EST. 2026 ·</JLabel>
       </div>
     </div>
   )
@@ -767,7 +767,7 @@ function QueueButtons({ trip, traveler }) {
                 fontFamily: 'Fraunces, Georgia, serif',
                 fontSize: 12,
                 fontStyle: 'italic',
-                color: 'var(--faint)',
+                color: 'var(--muted)',
               }}
             >
               — {cat.hint}

@@ -1,7 +1,7 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { mockClaudeChatWorker } from './_fixtures/mockUpload.js'
-import { resolvePersona } from './_fixtures/persona.js'
+import { resolvePersona, TRAVELERS } from './_fixtures/persona.js'
 import { expectNoSeriousA11y } from './_fixtures/axe.js'
 
 // Automated accessibility (axe-core) tier — QA_COVERAGE_SYSTEM_SPEC.md §4 #2.
@@ -57,4 +57,34 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
     // A11Y-1 eyebrow/label contrast is a separate, still-open redesign item.)
     await expectNoSeriousA11y(page, { include: '[role="dialog"]', label: `claude panel (${persona})` })
   })
+})
+
+// C2: S2 trip-view contrast gate. The Phase-1 ledger correction proved S2 (the
+// four themed View components + the FamilyDock switcher) had ZERO axe contrast
+// coverage — the describe above scans trips-index (where the switcher is hidden,
+// App.jsx "everywhere except the index") + the Claude panel only. The pervasive
+// --faint-as-text labels (recon's "~1 decorative <del>" was actually ~22 readable
+// labels) and the switcher pill labels (opacity:.5 → effective 0.425) failed here
+// unseen. C2 fixes them; THIS keeps them fixed. It loops ALL FOUR personas
+// internally (not RT_PERSONA-gated) so every traveler's trip view — its active
+// pill (aurelia's pink dot needs dark ink) AND the three inactive pills AND the
+// --muted labels — is gated on EVERY CI run. A contrast fix on an ungated surface
+// regresses silently; this is the deliverable that prevents that.
+test.describe('a11y (axe, serious+critical) — S2 trip-view ×4 personas', () => {
+  for (const p of TRAVELERS) {
+    test(`trip view — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await mockClaudeChatWorker(page)
+      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
+      // The FamilyDock switcher renders on S2 (hidden only on index/new/edit) —
+      // wait for it so the scan sees the active + inactive pills in final state.
+      await expect(page.locator('.switcher')).toBeVisible()
+      // CONTRAST gate (C2's job): only color-contrast. Other serious/critical
+      // rules on S2 (e.g. a pre-existing unlabeled control) are separate findings,
+      // not masked here — they're tracked + fixed on their own (the trip-switcher
+      // <select> got an aria-label in this pass). This keeps the contrast gate from
+      // going red for a non-contrast reason a future S2 edit might introduce.
+      await expectNoSeriousA11y(page, { label: `trip view (${p})`, only: ['color-contrast'] })
+    })
+  }
 })

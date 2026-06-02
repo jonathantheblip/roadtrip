@@ -661,6 +661,7 @@ export default function App() {
             <select
               value={trip?.id || ''}
               onChange={(e) => openTrip(e.target.value)}
+              aria-label="Switch trip"
               style={{
                 background: 'transparent',
                 border: 0,

@@ -89,7 +89,8 @@ export function HelenView({ trip, traveler, onOpenStop, onOpenSettings, onOpenAc
                   fontFamily: 'JetBrains Mono, monospace',
                   fontSize: 9,
                   letterSpacing: '0.1em',
-                  opacity: 0.7,
+                  /* C2: removed opacity:0.7 — it sank the day label to 2.79:1 (#8d918a).
+                     Differentiated by size + spacing; full --muted/ink clears. */
                 }}
               >
                 DAY {d.n}
@@ -294,7 +295,7 @@ function StopWithThread({ stop, traveler, last, onOpen }) {
               }}
             >
               <Eyebrow color="var(--muted)">{stop.time}</Eyebrow>
-              <Eyebrow color="var(--faint)">{(stop.kind || '').toUpperCase()}</Eyebrow>
+              <Eyebrow color="var(--muted)">{(stop.kind || '').toUpperCase()}</Eyebrow>
             </div>
             <div
               style={{
@@ -366,7 +367,7 @@ function StopWithThread({ stop, traveler, last, onOpen }) {
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 fontSize: 9,
-                color: 'var(--faint)',
+                color: 'var(--muted)',
                 letterSpacing: '0.1em',
                 textAlign: 'center',
                 borderTop: '1px dashed var(--border)',
@@ -475,7 +476,7 @@ function ThreadPreviewTile({ mem }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           <ImageOff size={18} strokeWidth={1.5} />

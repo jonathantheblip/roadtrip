@@ -239,7 +239,8 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
                   fontFamily: 'JetBrains Mono, monospace',
                   fontSize: 9,
                   letterSpacing: '0.1em',
-                  opacity: 0.75,
+                  /* C2: removed opacity:0.75 — it sank the day label (inactive 3.14:1
+                     #a0838f; active dragged C1's dark-ink to 3.53). Full --muted / #2A0816 clears. */
                 }}
               >
                 DAY {d.n}
@@ -305,7 +306,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
               }}
             >
               <Eyebrow color="var(--muted)">{s.time}</Eyebrow>
-              <Eyebrow color="var(--faint, var(--muted))">
+              <Eyebrow color="var(--muted)">
                 {(s.kind || '').toUpperCase()}
               </Eyebrow>
             </div>
@@ -640,7 +641,7 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           <ImageOff size={22} strokeWidth={1.5} />
@@ -716,7 +717,7 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
             style={{
               fontFamily: 'JetBrains Mono, monospace',
               fontSize: 8,
-              color: 'var(--faint)',
+              color: 'var(--muted)',
               letterSpacing: '0.1em',
             }}
           >
@@ -728,7 +729,7 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
           style={{
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 8,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
             letterSpacing: '0.1em',
           }}
         >

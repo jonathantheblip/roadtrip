@@ -557,7 +557,7 @@ function PhotoBubble({ mem, onOpenLightbox }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           <ImageOff size={22} strokeWidth={1.5} />
@@ -810,7 +810,7 @@ function Composer({
             borderRadius: '50%',
             border: 0,
             background: 'transparent',
-            color: canPickMore ? 'var(--muted)' : 'var(--faint)',
+            color: canPickMore ? 'var(--muted)' : 'var(--muted)',
             cursor: canPickMore ? 'pointer' : 'default',
             display: 'flex',
             alignItems: 'center',
@@ -947,7 +947,7 @@ function PhotoAlbumTray({
             border: 0,
             padding: 0,
             cursor: saving ? 'default' : 'pointer',
-            color: 'var(--faint)',
+            color: 'var(--muted)',
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 10,
             letterSpacing: '0.14em',

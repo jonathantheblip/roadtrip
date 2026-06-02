@@ -110,8 +110,8 @@
   --bg-nav: rgba(252, 232, 238, 0.86);
   --card: #FFF2F6;
   --text: #3D0E22;
-  --muted: rgba(61, 14, 34, 0.62);
-  --faint: rgba(61, 14, 34, 0.32);
+  --muted: rgba(61, 14, 34, 0.65);  /* C2: 0.62→0.65 (#7E5364 = 4.62:1 on --bg2); C2 routes ~22 faint-labels onto --muted, this clears aurelia's bg2 edge (was 4.26) */
+  --faint: rgba(61, 14, 34, 0.32);  /* decorative-only token (strikethrough/dividers); readable labels use --muted per C2 */
   --accent: #E8478C;          /* hot pink (FILL — unchanged) */
   --accent2: #E8478C;
   --accent3: #E8478C;

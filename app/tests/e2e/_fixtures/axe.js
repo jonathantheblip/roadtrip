@@ -70,9 +70,14 @@ export function summarize(violations) {
 // tracked elsewhere (e.g. KNOWN_BUGS) and deliberately not failing the gate yet
 // — pass them so the tier stays green while the finding is documented, never to
 // silently bury a fresh one.
-export async function expectNoSeriousA11y(page, { include, label = 'surface', allow = [] } = {}) {
+// `only` SCOPES the gate to specific rule ids (e.g. ['color-contrast']) — use
+// when a gate's purpose is one dimension (the C2 S2 trip-view gate is a CONTRAST
+// gate; other serious/critical rules on S2, like a pre-existing unlabeled control,
+// are separate findings tracked elsewhere, not this gate's job).
+export async function expectNoSeriousA11y(page, { include, label = 'surface', allow = [], only = null } = {}) {
   const results = await runAxe(page, { include })
-  const blocking = blockingViolations(results).filter((v) => !allow.includes(v.id))
+  let blocking = blockingViolations(results).filter((v) => !allow.includes(v.id))
+  if (only) blocking = blocking.filter((v) => only.includes(v.id))
   expect(
     blocking,
     `axe found ${blocking.length} serious/critical a11y violation(s) on ${label}:\n${summarize(blocking)}`
