@@ -119,8 +119,46 @@ by the `#CD7973`=4.81 math (mode, not param-walkable). Full e2e **209/209** both
 Reproducer: `cd app && RT_PERSONA=aurelia npx playwright test a11y-axe -g "trips index" --project=chromium`.
 
 **Deferred (separate findings, NOT accent-as-text):** ClaudeChat/ConfirmCard accent-as-text
-(chat domain, F1 parallel); `--faint`-as-text (`#51504c` 2.37) + person-switcher pill labels
-on the trip-view (surfaced by the C1 empirical scan; candidate for a follow-up contrast pass).
+(chat domain, F1's surface). The `--faint`-as-text + person-switcher pill labels (surfaced by
+the C1 empirical scan) → **RESOLVED by C2 — see A11Y-2 below.**
+
+---
+
+## A11Y-2 — prop-form contrast gap: `--faint`-as-text + switcher + day-chips (S2) `[RESOLVED — C2, 3236be3]`
+
+**Status: `[RESOLVED — C2, 3236be3]`.** The contrast-ledger correction. The original theme
+recon (REDESIGN_GROUND_TRUTH_THEME.md) + C1 enumerated text via `color:` CSS and missed
+token-as-text in **`color=` PROPS** (`<Eyebrow|JLabel color="var(--x)">`), **ternaries**,
+**var-fallbacks** (`var(--faint, …)`), and **inline `style={{ color }}`**. That hid three
+failing surfaces, all on **S2 trip-view** — which had ZERO axe contrast coverage (the gate
+scanned only trips-index + the Claude panel):
+
+- **`--faint` as text** — recon claimed "~1 decorative `<del>`"; actually **~22 readable
+  small-caps label sites** (JonathanView masthead/status/kind tags, HelenView, AureliaView,
+  TripIndex, ThreadedMemories). Fails all 5 (2.38 / 1.98 / 2.62 / 1.99 / 3.38). **Fix:** routed
+  to `var(--muted)` (existing readable token); `--faint` left as the decorative token. Also
+  fixed the latent `var(--faint, var(--muted))` bug (rendered faint, meant muted).
+- **aurelia `--muted` bg2 4.26** (the "muted edge A") — had to clear because the 22 labels now
+  depend on `--muted`. Darkened 0.62→0.65 (`#7E5364` = 4.62), same one-token move as A11Y-1b.
+- **FamilyDock switcher** — `.inactive{opacity:.5}` × `rgba(255,255,255,0.85)` = effective
+  0.425 (label 3.72–4.18, sub 2.57–2.64 ×5); active aurelia pink pill white-on-pink 3.68.
+  **Fix:** dropped the inactive + sub opacities; inactive → readable-secondary
+  `rgba(255,255,255,0.6)` (5.85 worst); active aurelia → dark ink `#2A0816` (4.99, = C1's fix).
+- **Day-picker chips** — `opacity:0.7/0.75` on the "DAY N" label sank it (helen 2.79; aurelia
+  inactive 3.14, active dragged C1's dark-ink to 3.53). **Fix:** removed the opacity.
+- **Bonus:** the trip-switcher `<select>` (App.jsx) was an unlabeled control (`select-name`,
+  critical) — added `aria-label`.
+
+**Gate:** new **S2 trip-view axe test ×4 personas** (`a11y-axe.spec.js`), looping internally so
+every traveler is gated each CI run, scoped to `color-contrast` (the helper gained an `only`
+param; non-contrast S2 rules are separate findings, not this gate's job). a11y CLEAN ×4 (all
+rules); full e2e 217/217 both projects; visual baselines unmoved (sub-threshold).
+
+**Root cause — 3rd instance of the enumeration gap.** After M6 (opacity-split) and C1
+(prop-trap), the `color:`-grep undercounts this codebase's rendered text surface a third time.
+Durable fix = the S2 gate + the rule: characterize contrast by the RENDERED surface (axe
+×persona), not the source `color:`. Token-as-text hides in props / ternaries / fallbacks /
+inline / opacity.
 
 ---
 

@@ -15,6 +15,22 @@ Current-state THEME / COLOR model for the per-user skin redesign. **Read-only re
 
 Ratios computed at this HEAD. `XX` = fails even the 3.0 large/UI floor. `↓N` = fails normal 4.5 but clears 3.0 (ok only if rendered ≥24px / ≥18.66px-bold / as a UI component). `ok` = ≥4.5.
 
+> **⚠ LEDGER CORRECTION (C2, `3236be3`).** The enumeration below originally read only
+> `color:` CSS — it UNDERCOUNTED the rendered text surface. Token-as-text also hides in
+> `color=` PROPS to text primitives (`<Eyebrow|JLabel color="var(--x)">`), color ternaries
+> (`cond ? 'var(--x)' : …`), var-fallbacks (`var(--faint, …)` — the fallback renders only if
+> the var is unset, which it never is), and inline `style={{ color }}` objects — none matched
+> by a `color:` grep. Corrected below: the **`--faint`** row ("~1 decorative `<del>`") was wrong
+> — it's **~22 readable label sites**; the **switcher pill labels** and **day-picker chips** were
+> ABSENT — they fail via `opacity` compounding a token color (switcher label 3.72–4.18 / sub
+> 2.57–2.64; day-chip helen 2.79 / aurelia 3.14–3.53; switcher *active* aurelia white-on-pink
+> 3.68). **All RESOLVED by C2** (faint→`--muted`; aurelia `--muted` 0.62→0.65; switcher +
+> day-chip opacity rework; aurelia active-pill dark-ink `#2A0816`; trip-switcher `<select>`
+> aria-label). The corrected ledger is complete through **prop / ternary / fallback / inline**
+> forms, and the axe contrast gate now covers **S2 trip-view ×4** (`a11y-axe.spec.js`), which was
+> index+panel-only. 3rd undercount (after M6 opacity-split, C1 prop-trap): on this codebase,
+> gate the RENDERED surface (axe), not the source `color:`.
+
 | Text token → ground | jonathan | helen | helen-dark | aurelia | rafa | Root |
 |---|---|---|---|---|---|---|
 | **accent → bg** | **2.92 XX** | 6.66 ok | 3.40 ↓N | 3.14 ↓N | 11.13 ok | accent-as-text |
@@ -22,8 +38,10 @@ Ratios computed at this HEAD. `XX` = fails even the 3.0 large/UI floor. `↓N` =
 | **accent → card** | **2.54 XX** | 7.66 ok | **2.78 XX** | 3.38 ↓N | 9.26 ok | accent-as-text |
 | **accent2 → bg/bg2/card** | =accent | =accent | =accent | =accent | 3.67/3.39/**3.05** ↓N | rafa oxblood-as-text |
 | **accent3 → bg/bg2/card** | 15.4 ok* | =accent | =accent (3.40/3.10/**2.78**) | =accent (3.14/**2.67**/3.38) | 11.1 ok* | accent3 safe **only J,R** |
-| muted → bg2 | 5.56 ok | 4.66 ok | 6.28 ok | **4.26 ↓N** | 8.52 ok | muted edge (A) |
-| faint → any | 2.38 | 1.98 | 2.62 | 1.99 | 3.38 | all fail, but ~only 1 decorative `<del>` use |
+| muted → bg2 | 5.56 ok | 4.66 ok | 6.28 ok | ~~4.26 ↓N~~ **4.62 ok** | 8.52 ok | muted edge (A) — **RESOLVED C2** (aurelia 0.62→0.65) |
+| faint → any | 2.38 | 1.98 | 2.62 | 1.99 | 3.38 | all fail — **CORRECTED C2:** ~22 READABLE label sites (prop/inline forms), NOT "~1 `<del>`" → RESOLVED, routed to `--muted`; `--faint` now decorative-only |
+| **switcher inactive** label/sub | 4.18/2.64 | 3.72/2.58 | 4.18/2.64 | 3.74/2.57 | 4.15/2.63 | **C2-added** (`opacity:.5`×0.85 = 0.425) — RESOLVED (rework → 0.6, 5.85+ worst) |
+| **day-chip "DAY N"** label | — | 2.79 XX | — | 3.14/3.53 | ok | **C2-added** (`opacity:.7/.75` on token) — RESOLVED (opacity removed) |
 | **FILL: tag/accent-ink on accent** | 6.12 ok | 7.66 ok | 4.66 ok | **3.68 ↓N** | 11.13 ok | white-on-hot-pink fill fails normal |
 
 \* jonathan `--accent3` = `#EDE6D6` (paper) and rafa `--accent3` = `#FFB833` (ochre) are deliberately high-contrast; for helen/aurelia/helen-dark `--accent3` **==** `--accent` (saturated) → same failures. **`--accent3` is a semantically inconsistent token.**
