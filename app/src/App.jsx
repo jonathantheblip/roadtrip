@@ -14,6 +14,7 @@ import { TripEditor } from './views/TripEditor'
 import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
 import { AllPhotosView } from './views/AllPhotosView'
+import { ReplayView } from './views/ReplayView'
 import { ImportView } from './views/ImportView'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
@@ -182,7 +183,7 @@ function pickActiveTrip(trips, today = todayIso()) {
 export default function App() {
   const [traveler, setTraveler] = useState(readTraveler)
   const [tripId, setTripId] = useState(readRequestedTripId)
-  const [view, setView] = useState(() => initialViewFromUrl()) // 'index' | 'trip' | 'stop' | 'settings' | 'new' | 'edit' | 'activities' | 'photos' | 'import'
+  const [view, setView] = useState(() => initialViewFromUrl()) // 'index' | 'trip' | 'stop' | 'settings' | 'new' | 'edit' | 'activities' | 'photos' | 'import' | 'replay'
   const [helenDark, toggleHelenDark] = useHelenDark()
   // Claude-in-App M1: panel state lives at App level so the entry
   // points scattered across views all open the same surface, and the
@@ -533,6 +534,12 @@ export default function App() {
     setView({ name: 'all-photos' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  // REPLAY (increment 1): immersive zoomable spine. Temporary entry point
+  // for the DAY-level slice — opens the active trip in the replay surface.
+  function openReplay() {
+    setView({ name: 'replay' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   function openDispatch() {
     // M2 wires the actual dispatch composer; for now route into Photos
     // so the entry point is reachable. The composer modal mounts inside
@@ -586,8 +593,9 @@ export default function App() {
 
   return (
     <>
-      {/* Top-of-screen trip / index switch — small and editorial, never the focus */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && (
+      {/* Top-of-screen trip / index switch — small and editorial, never the focus.
+          Hidden in replay: that surface is immersive and owns its own chrome. */}
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && (
         <div
           className="px-6"
           style={{
@@ -694,6 +702,29 @@ export default function App() {
           {trip && (
             <ClaudeEntryButton onClick={openClaude} label="Modify this trip with Claude" />
           )}
+          {/* TEMP entry point for the REPLAY day-level slice. Replace with
+              the designed affordance when the four-level engine lands. */}
+          {trip && (
+            <button
+              type="button"
+              onClick={openReplay}
+              aria-label="Replay this trip"
+              style={{
+                background: 'transparent',
+                border: 0,
+                padding: '0 4px',
+                cursor: 'pointer',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 10,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                opacity: topBar.opacity,
+                color: topBar.text,
+              }}
+            >
+              ▶ Replay
+            </button>
+          )}
           <button
             type="button"
             onClick={openSettings}
@@ -780,6 +811,14 @@ export default function App() {
             onBack={() => setView({ name: 'trip' })}
           />
         )}
+        {view.name === 'replay' && trip && !trip.draft && (
+          <ReplayView
+            trip={trip}
+            trips={visibleTrips}
+            traveler={traveler}
+            onExit={() => setView({ name: 'trip' })}
+          />
+        )}
         {view.name === 'settings' && trip && (
           <Settings
             trip={trip}
@@ -795,8 +834,9 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom switcher visible everywhere except the index */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && (
+      {/* Bottom switcher visible everywhere except the index (and replay,
+          which is immersive and owns its own bottom transport bar). */}
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && (
         <Switcher active={traveler} onSwitch={handleTravelerSwitch} />
       )}
 
