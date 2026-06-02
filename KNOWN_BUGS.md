@@ -91,23 +91,36 @@ effective for axe's exact-contrast check. (The spec predicted a re-bless; it was
 
 ---
 
-### A11Y-1c — Trips index eyebrow/muted labels `[real, serious — OPEN, allowlisted]`
+### A11Y-1c — Trips index eyebrow/muted labels → systemic accent-as-text `[RESOLVED — C1, 057612f]`
 
-**Status: `[real, serious — OPEN]`.** Allowlisted at `a11y-axe.spec.js:35` (S2
-trips-index scan). Separate from the Claude-panel finding; NOT touched by M6.
+**Status: `[RESOLVED — C1, 057612f]`.** Fixed by the C1 accent-as-text contrast
+repair (per-user skin redesign). The trips-index finding was ONE instance of a
+PERVASIVE pattern — ~190 `color: var(--accent*)` sites reusing a FILL accent
+(contracted with `--accent-ink`) as TEXT on `--bg/--bg2/--card` with no readable
+contract (REDESIGN_GROUND_TRUTH_THEME.md §0.2/§5).
 
-**Findings (chromium; WCAG AA needs 4.5:1 normal):**
-- **jonathan**: oxblood `#A33A2E` on near-black `#0E0F11` = **2.92:1**.
-- **aurelia**: hot-pink `#E8478C` on pale-pink `#FCE8EE` = **3.13:1**.
-- **helen**: ~~muted `#696F68` = 4.48:1~~ → now `#626862` = **4.97:1** — the shared
-  `--muted` token was darkened in **A11Y-1b** (c62715d), so helen's portion is cleared.
-  A11Y-1c stays OPEN for jonathan + aurelia (their accent tokens, not `--muted`).
-- **rafa**: clean.
+**Fix:** a readable-on-bg emphasis token **`--accent-text`** added per theme block
+(`themes.css`) — a minimal same-hue lightness shift of each accent clearing **≥4.8:1**
+on its worst text ground:
+- **jonathan** `#A33A2E` (was 2.54–2.92) → `#D26C60` (4.81–5.53).
+- **aurelia** `#E8478C` (was 2.67–3.38) → `#B3165A` (4.80–6.07).
+- **helen-dark** `#B0463F` (was 2.78–3.40) → `#CD7973` (4.81–5.90).
+- **helen** forest `#2E5D3A` (5.86–7.66) and **rafa** ochre `#FFB833` (9.26–11.13)
+  already passed → `--accent-text == --accent` (unchanged).
 
-**Reproducer:** `cd app && npx playwright test a11y-axe -g "trips index" --project=chromium`
-(temporarily drop `allow: ['color-contrast']` at `a11y-axe.spec.js:35`).
+~190 `color: var(--accent|2|3)` TEXT sites migrated to `var(--accent-text)`;
+FILL/border/decorative `var(--accent*)` left intact. Same pass also fixed: aurelia
+white-on-pink FILL 3.68→4.99 (`--accent-ink`/`--tag-text` `#FFFFFF`→`#2A0816`, brand
+pink unchanged) and RafaView off-palette blue `#3D6FB8`-as-text → ochre.
 
-Fix = per-user skin redesign (eyebrow/label token decisions per theme). Deferred.
+**Re-gated:** the `allow: ['color-contrast']` allowlist REMOVED from `a11y-axe.spec.js`
+(trips-index scan). Gate **GREEN ×4** (jonathan/helen/aurelia/rafa); helen-dark verified
+by the `#CD7973`=4.81 math (mode, not param-walkable). Full e2e **209/209** both projects.
+Reproducer: `cd app && RT_PERSONA=aurelia npx playwright test a11y-axe -g "trips index" --project=chromium`.
+
+**Deferred (separate findings, NOT accent-as-text):** ClaudeChat/ConfirmCard accent-as-text
+(chat domain, F1 parallel); `--faint`-as-text (`#51504c` 2.37) + person-switcher pill labels
+on the trip-view (surfaced by the C1 empirical scan; candidate for a follow-up contrast pass).
 
 ---
 
