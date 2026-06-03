@@ -85,7 +85,9 @@ export async function uploadBackfillPhotos({
         })
         results.reattached += 1
       } else {
-        // New photo memory.
+        // New photo memory. An interstitial photo keeps stopId = null and
+        // carries its "from A to B" identity as a memory-level field (007);
+        // pass it only when present so non-interstitial photos write nothing.
         saveMemory({
           tripId: trip.id,
           stopId,
@@ -95,6 +97,7 @@ export async function uploadBackfillPhotos({
           caption: '',
           photoRefs: [ref],
           capturedAt,
+          interstitial: entry.interstitial || undefined,
         })
         results.ok += 1
       }

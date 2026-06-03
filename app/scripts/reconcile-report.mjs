@@ -118,6 +118,9 @@ function report(photos, trip) {
     if (!auto.length && !happened.length && !ints.length) continue
     console.log(`  Day ${day.dayN} (${day.dayIsoDate}) ${day.dayTitle}: ${happened.length} stops-with-photos, ${auto.length} auto-added, ${ints.length} interstitial buckets`)
     for (const s of auto) console.log(`      + auto "${s.name}" — ${s.photoIds.length} photos, ${Math.round(s.distanceToRouteMeters)}m off route`)
+    // Step 2: the "from A to B" identity each interstitial bucket will carry
+    // into the album (memory.interstitial → groupByStop section header).
+    for (const i of ints) console.log(`      ~ "${i.title}" — ${i.photoIds.length} photos (interstitial → from-A-to-B)`)
   }
 
   console.log(`\nRESIDUE  : ${draft.unmatched.length} unmatched`)

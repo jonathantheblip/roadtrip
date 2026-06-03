@@ -316,6 +316,88 @@ test('mergeFromRemote does not override coords the remote already carries (LEG-C
   assert.equal(m.photoRefs[0].capturedAt, '2026-05-24T17:02:29.000Z')
 })
 
+// ─── Step 2: interstitial "from A to B" identity (migration 007) ────────────
+
+test('saveMemory persists interstitial {before, after} and preserves it across an omitting update', () => {
+  const rec = saveMemory({
+    id: 'mi', tripId: 't', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+    photoRefs: [{ storage: 'r2', key: 'k' }],
+    interstitial: { before: 's1', after: 's2' },
+  })
+  assert.deepEqual(rec.interstitial, { before: 's1', after: 's2' })
+  // A later caption-only save that omits interstitial must not strip it
+  // (mirrors the capturedAt preserve — a patch shouldn't lose the identity).
+  const next = saveMemory({
+    id: 'mi', tripId: 't', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+    caption: 'added later', photoRefs: [{ storage: 'r2', key: 'k' }],
+  })
+  assert.deepEqual(next.interstitial, { before: 's1', after: 's2' })
+})
+
+test('saveMemory clears interstitial when passed null explicitly (e.g. a promote)', () => {
+  saveMemory({
+    id: 'mc', tripId: 't', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+    photoRefs: [{ storage: 'r2', key: 'k' }], interstitial: { before: 's1', after: 's2' },
+  })
+  const cleared = saveMemory({
+    id: 'mc', tripId: 't', stopId: 's1', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+    photoRefs: [{ storage: 'r2', key: 'k' }], interstitial: null,
+  })
+  assert.equal(cleared.interstitial, undefined)
+})
+
+test('mergeFromRemote preserves a locally-set interstitial when a newer remote drops it', () => {
+  // Non-vacuous: without the merge-guard, the wholesale replace would leave the
+  // merged record with the remote's missing interstitial → assertion goes red.
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'mr', tripId: 't', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+        photoRefs: [{ storage: 'r2', key: 'r2/x' }],
+        interstitial: { before: 's1', after: 's2' },
+        createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T03:00:00.000Z',
+      },
+    ])
+  )
+  // Newer remote (e.g. a pre-007 worker mid-rollout, or a stale device) carries
+  // no interstitial.
+  const added = mergeFromRemote([
+    {
+      id: 'mr', tripId: 't', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+      photoRefs: [{ storage: 'r2', key: 'r2/x' }],
+      createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T04:00:00.000Z',
+    },
+  ])
+  assert.equal(added, 1) // remote was taken (proves the replace fired)
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.deepEqual(m.interstitial, { before: 's1', after: 's2' })
+})
+
+test('mergeFromRemote does not override an interstitial the remote already carries', () => {
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'mr2', tripId: 't', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+        photoRefs: [{ storage: 'r2', key: 'r2/x' }],
+        interstitial: { before: 'OLD-a', after: 'OLD-b' },
+        createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T03:00:00.000Z',
+      },
+    ])
+  )
+  mergeFromRemote([
+    {
+      id: 'mr2', tripId: 't', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+      photoRefs: [{ storage: 'r2', key: 'r2/x' }],
+      interstitial: { before: 'new-a', after: 'new-b' },
+      createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T04:00:00.000Z',
+    },
+  ])
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.deepEqual(m.interstitial, { before: 'new-a', after: 'new-b' }) // remote authoritative
+})
+
 test('mergeFromRemote preserves album photoRefs coords by index when a newer remote drops them', () => {
   globalThis.localStorage.setItem(
     'rt_memories_shared_v1',

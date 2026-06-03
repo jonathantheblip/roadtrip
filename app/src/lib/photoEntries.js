@@ -89,6 +89,13 @@ export function flattenPhotoEntries(memories) {
         exifLng: Number.isFinite(ref?.lng) ? ref.lng : null,
         exifLocation:
           typeof ref?.locationLabel === 'string' ? ref.locationLabel : null,
+        // Memory-level "from A to B" identity (migration 007) — same on
+        // every entry of the memory; null for non-interstitial memories.
+        // groupByStop reads it to render a between-stops section.
+        interstitial:
+          m.interstitial && typeof m.interstitial === 'object'
+            ? m.interstitial
+            : null,
         url,
       })
     })
@@ -114,8 +121,76 @@ export function groupByStop(entries, trip) {
       stopIndex.set(stop.id, { stop, day })
     }
   }
+  // Resolve a between-stops ("from A to B") section's label + position from
+  // its bounding stop ids. Anchors to the BEFORE stop so the section sorts
+  // just after it (order + 0.5); falls back to the AFTER stop at a leading
+  // day edge (order − 0.5, so it sorts just before it). Phrasing matches
+  // reconcileDraft's interstitialTitle so the triage and the album read
+  // identically (migration 007).
+  function interstitialCtx(it) {
+    const beforeCtx = it.before ? stopIndex.get(it.before) : null
+    const afterCtx = it.after ? stopIndex.get(it.after) : null
+    const beforeName = beforeCtx?.stop?.name || null
+    const afterName = afterCtx?.stop?.name || null
+    let label
+    if (beforeName && afterName) label = `From ${beforeName} to ${afterName}`
+    else if (afterName) label = `Before ${afterName}`
+    else if (beforeName) label = `After ${beforeName}`
+    else label = 'In transit'
+    const orderIn = (ctx, id) => (ctx.day?.stops || []).findIndex((s) => s.id === id)
+    if (beforeCtx) {
+      const pos = orderIn(beforeCtx, it.before)
+      return {
+        label,
+        dayN: beforeCtx.day?.n ?? 99,
+        stopOrder: (pos >= 0 ? pos : 99) + 0.5,
+        dayLabel: beforeCtx.day?.date || beforeCtx.day?.title || '',
+      }
+    }
+    if (afterCtx) {
+      const pos = orderIn(afterCtx, it.after)
+      return {
+        label,
+        dayN: afterCtx.day?.n ?? 99,
+        stopOrder: (pos >= 0 ? pos : 0) - 0.5,
+        dayLabel: afterCtx.day?.date || afterCtx.day?.title || '',
+      }
+    }
+    return { label, dayN: 99, stopOrder: 99, dayLabel: '' }
+  }
+
   const buckets = new Map()
   for (const entry of entries) {
+    // A reconciled interstitial photo keeps stopId = null and carries its
+    // "from A to B" identity separately. A real stopId always wins — only a
+    // genuinely stopless photo with an interstitial routes to a between-stops
+    // section; everything else uses the stop path unchanged.
+    const it =
+      !entry.stopId && entry.interstitial && typeof entry.interstitial === 'object'
+        ? entry.interstitial
+        : null
+    if (it) {
+      const ic = interstitialCtx(it)
+      const sid = `__interstitial:${it.before || 'start'}__${it.after || 'end'}`
+      if (!buckets.has(sid)) buckets.set(sid, [])
+      buckets.get(sid).push({
+        ...entry,
+        stopName: ic.label,
+        stopAddress: null,
+        // No stop to file under — the section header already says "from A to
+        // B", so the per-tile label is just a stored label or raw coords.
+        locationLabel:
+          entry.exifLocation ||
+          (entry.exifLat != null && entry.exifLng != null
+            ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
+            : null),
+        _dayN: ic.dayN,
+        _stopOrder: ic.stopOrder,
+        _dayLabel: ic.dayLabel,
+        _timeLabel: '',
+      })
+      continue
+    }
     const sid = entry.stopId || '__unassigned'
     if (!buckets.has(sid)) buckets.set(sid, [])
     const ctx = stopIndex.get(sid) || null

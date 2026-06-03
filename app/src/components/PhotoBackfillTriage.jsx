@@ -261,7 +261,8 @@ export function PhotoBackfillTriage({ trip, traveler, files, tripsApi, onCancel,
 
   async function handleSave() {
     if (!draft) return
-    const { trip: out, photoBindings } = applyReconciliation(draft, trip)
+    const { trip: out, photoBindings, photoInterstitials } =
+      applyReconciliation(draft, trip)
 
     const matchById = new Map(matchResult.matches.map((m) => [m.photoId, m]))
     const payload = []
@@ -272,6 +273,10 @@ export function PhotoBackfillTriage({ trip, traveler, files, tripsApi, onCancel,
         entry.id in photoBindings
           ? photoBindings[entry.id]
           : matchById.get(entry.id)?.stopId ?? null
+      // The "from A to B" identity for a null-bound (interstitial) photo —
+      // null for everything filed to a real stop. Carried through to
+      // saveMemory so the album renders it between the two stops (007).
+      const interstitial = photoInterstitials?.[entry.id] || null
       payload.push({
         file: entry.file,
         exif: entry.exif,
@@ -279,6 +284,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, tripsApi, onCancel,
         reattachOf: dup?.reattach || null,
         duplicateOf: dup?.duplicate || null,
         stopId,
+        interstitial,
       })
     }
 

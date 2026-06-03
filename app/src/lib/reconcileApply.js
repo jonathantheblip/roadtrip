@@ -19,6 +19,10 @@
 //   applyReconciliation(draft, trip) → {
 //     trip: <reconciled trip record>,
 //     photoBindings: { [photoId]: stopId | null },   // null = interstitial
+//     photoInterstitials: { [photoId]: { before, after } },  // the "from A
+//       // to B" identity for the null-bound photos; before/after are stop
+//       // ids in the day (either may be null at a day edge). Rides ALONGSIDE
+//       // the null binding — it does not replace it (see migration 007).
 //   }
 //
 // Rules (from RECONCILIATION_SPEC):
@@ -37,13 +41,14 @@ import { STOP_STATE } from './reconcileDraft.js'
 
 export function applyReconciliation(draft, trip) {
   if (!trip || !Array.isArray(trip.days)) {
-    return { trip, photoBindings: {} }
+    return { trip, photoBindings: {}, photoInterstitials: {} }
   }
   const draftDayByN = new Map(
     (draft?.days || []).map((d) => [d.dayN, d])
   )
 
   const photoBindings = {}
+  const photoInterstitials = {}
 
   const newDays = trip.days.map((origDay) => {
     const draftDay = draftDayByN.get(origDay.n)
@@ -106,11 +111,21 @@ export function applyReconciliation(draft, trip) {
       }
     }
 
-    // Interstitial photos bind to no stop (null) — they're transit
-    // shots that stay in the day without a stop association.
+    // Interstitial photos bind to no stop (null) — they're transit shots
+    // that stay in the day without a stop association. The null binding is
+    // kept as-is; the "from A to B" identity rides ALONGSIDE it as a
+    // separate memory-level field (migration 007), taken from the bucket's
+    // bounding stops. A photo already bound to a real stop (an earlier
+    // draftStop loop) is never given an interstitial — a stop wins.
     for (const bucket of draftDay.interstitials || []) {
       for (const pid of bucket.photoIds || []) {
         if (!(pid in photoBindings)) photoBindings[pid] = null
+        if (!(pid in photoInterstitials)) {
+          photoInterstitials[pid] = {
+            before: bucket.interstitialBefore ?? null,
+            after: bucket.interstitialAfter ?? null,
+          }
+        }
       }
     }
 
@@ -128,7 +143,7 @@ export function applyReconciliation(draft, trip) {
     reconciledAt: new Date().toISOString(),
   }
 
-  return { trip: reconciledTrip, photoBindings }
+  return { trip: reconciledTrip, photoBindings, photoInterstitials }
 }
 
 function numberOr(primary, fallback) {

@@ -106,6 +106,7 @@ export function saveMemory({
   mood,
   reactions,
   capturedAt,
+  interstitial,
 }) {
   const now = new Date().toISOString()
   const key = visibility === 'private' ? PRIVATE_KEY(authorTraveler) : SHARED_KEY
@@ -163,6 +164,23 @@ export function saveMemory({
     }
   }
 
+  // interstitial ("from A to B" identity, migration 007): an explicit object
+  // sets it, explicit null clears it, and undefined PRESERVES whatever was
+  // there — so a later caption- or photo-only patch can't silently strip the
+  // identity (mirrors the capturedAt preserve just above).
+  let resolvedInterstitial
+  if (interstitial && typeof interstitial === 'object') {
+    resolvedInterstitial = {
+      before: interstitial.before ?? null,
+      after: interstitial.after ?? null,
+    }
+  } else if (interstitial === null) {
+    resolvedInterstitial = undefined // explicit clear
+  } else {
+    resolvedInterstitial =
+      existingShared?.interstitial || existingPriv?.interstitial || undefined
+  }
+
   const record = {
     id: id || makeId(),
     tripId,
@@ -183,6 +201,7 @@ export function saveMemory({
     mood,
     reactions: reactions || [],
     capturedAt: resolvedCapturedAt,
+    interstitial: resolvedInterstitial,
     createdAt: existingShared?.createdAt || existingPriv?.createdAt || now,
     updatedAt: now,
   }
@@ -326,6 +345,14 @@ function preserveLocalPhotoMeta(remote, local) {
     remote.photoRefs.length === local.photoRefs.length
   ) {
     remote.photoRefs = remote.photoRefs.map((rRef, i) => fill({ ...rRef }, local.photoRefs[i]))
+  }
+  // Preserve a locally-set "from A to B" interstitial identity (007) when the
+  // incoming record lacks one — same merge-guard rationale as the per-photo
+  // EXIF above. Once the 007 worker deploy lands, the remote carries it; this
+  // guards the rollout window (and any stale pre-007 remote) so a pull can't
+  // erase the capturing device's own classification.
+  if (remote.interstitial == null && local.interstitial) {
+    remote.interstitial = local.interstitial
   }
   return remote
 }

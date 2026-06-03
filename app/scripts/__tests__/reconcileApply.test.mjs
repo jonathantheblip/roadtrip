@@ -156,6 +156,59 @@ test('interstitial photos bind to null (no stop)', () => {
   assert.equal(photoBindings.p1, null)
 })
 
+// ─── Step 2: interstitial photos ALSO carry a "from A to B" identity ───
+
+test('an interstitial photo gets a photoInterstitials {before, after} faithfully copied from its bucket', () => {
+  const trip = makeTrip([{ n: 1, isoDate: '2026-04-17', stops: [ART_OMI, CABIN] }])
+  const photos = [{ id: 'p1', capturedAt: '2026-04-17T13:00:00Z', lat: 41.5, lng: -72.0 }]
+  const draft = buildReconciliationDraft(photos, trip)
+  // The bucket's endpoints are whatever the matcher computed; applyReconciliation
+  // must copy them verbatim. Reading them from the draft keeps this assertion
+  // independent of the runner's timezone (which sets which stop brackets the
+  // 1PM photo) while still proving the matcher→draft→apply field wiring.
+  const bucket = draft.days[0].interstitials.find((b) => b.photoIds.includes('p1'))
+  assert.ok(bucket, 'photo lands in an interstitial bucket')
+  const { photoBindings, photoInterstitials } = applyReconciliation(draft, trip)
+  // The stop binding stays null — the identity rides ALONGSIDE it.
+  assert.equal(photoBindings.p1, null)
+  assert.deepEqual(photoInterstitials.p1, {
+    before: bucket.interstitialBefore,
+    after: bucket.interstitialAfter,
+  })
+})
+
+test('a day-edge interstitial (no `before`) still records the `after` endpoint', () => {
+  // Build the draft inline so before=null is deterministic regardless of TZ.
+  const trip = makeTrip([{ n: 1, isoDate: '2026-04-17', stops: [ART_OMI, CABIN] }])
+  const draft = {
+    tripId: 'recon-trip',
+    days: [
+      {
+        dayN: 1,
+        stops: [
+          { stopId: 's1', source: 'planned', state: STOP_STATE.HAPPENED_NO_PHOTOS, photoIds: [] },
+          { stopId: 's2', source: 'planned', state: STOP_STATE.HAPPENED_NO_PHOTOS, photoIds: [] },
+        ],
+        interstitials: [
+          { interstitialBefore: null, interstitialAfter: 's1', photoIds: ['p0'] },
+        ],
+      },
+    ],
+  }
+  const { photoBindings, photoInterstitials } = applyReconciliation(draft, trip)
+  assert.equal(photoBindings.p0, null)
+  assert.deepEqual(photoInterstitials.p0, { before: null, after: 's1' })
+})
+
+test('a photo bound to a real stop gets NO interstitial entry (a stop wins)', () => {
+  const trip = makeTrip([{ n: 1, isoDate: '2026-04-17', stops: [ART_OMI, CABIN] }])
+  const photos = [{ id: 'p1', capturedAt: '2026-04-17T11:30:00Z', lat: 42.344, lng: -73.606 }]
+  const draft = buildReconciliationDraft(photos, trip)
+  const { photoBindings, photoInterstitials } = applyReconciliation(draft, trip)
+  assert.equal(photoBindings.p1, 's1')
+  assert.equal('p1' in photoInterstitials, false)
+})
+
 // ─── day metadata is preserved ─────────────────────────────────────
 
 test('day metadata (title, date, drive) survives reconciliation', () => {
