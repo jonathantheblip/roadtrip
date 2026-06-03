@@ -98,7 +98,14 @@ export function distanceToPolylineMeters(point, polyline) {
 
 // Tunables. Centralized so the triage UI / future config can override.
 export const MATCH_THRESHOLDS = {
-  gpsMatchMeters: 500, // photo within this of a stop → GPS match
+  // Photo within this of the NEAREST stop in its day → attach to that stop
+  // (GPS-first; the planned time window is NOT a gate). Loosened 500→1000m
+  // after the first real-photo run: real venues (a riverfront park, a museum
+  // campus, a mall) span more than 500m, so 500m dropped clearly-at-the-stop
+  // photos into "interstitial". 1000m attaches the clear cases while leaving
+  // genuinely-off-stop clusters (an unplanned lunch ~2.6km out) to the
+  // deviation→auto_added path. Tunable; measure with scripts/reconcile-report.
+  gpsMatchMeters: 1_000,
   clusterDistanceMeters: 500, // 3+ photos within this of each other = cluster
   routeDeviationMeters: 2_000, // cluster >this from route line = deviation
   clusterMinSize: 3,
@@ -167,31 +174,19 @@ export function buildDayIndex(trip) {
 // `matchType` ∈ {'gps+time', 'time', 'interstitial', 'unmatched'}.
 // `deviation` upgrade happens later, after the cluster pass.
 export function matchPhotoToStop(photo, dayIndex) {
-  if (!photo || !photo.capturedAt) {
-    return {
-      photoId: photo?.id ?? null,
-      dayIsoDate: null,
-      dayN: null,
-      stopId: null,
-      matchType: 'unmatched',
-      interstitialBefore: null,
-      interstitialAfter: null,
-      distanceMeters: null,
-    }
-  }
+  const unmatched = (dayIsoDate = null, dayN = null) => ({
+    photoId: photo?.id ?? null,
+    dayIsoDate,
+    dayN,
+    stopId: null,
+    matchType: 'unmatched',
+    interstitialBefore: null,
+    interstitialAfter: null,
+    distanceMeters: null,
+  })
+  if (!photo || !photo.capturedAt) return unmatched()
   const photoMs = Date.parse(photo.capturedAt)
-  if (!Number.isFinite(photoMs)) {
-    return {
-      photoId: photo.id,
-      dayIsoDate: null,
-      dayN: null,
-      stopId: null,
-      matchType: 'unmatched',
-      interstitialBefore: null,
-      interstitialAfter: null,
-      distanceMeters: null,
-    }
-  }
+  if (!Number.isFinite(photoMs)) return unmatched()
 
   // Pick the day whose [00:00, 23:59] window contains the photo.
   let dayEntry = null
@@ -203,141 +198,97 @@ export function matchPhotoToStop(photo, dayIndex) {
       break
     }
   }
-  if (!dayEntry) {
-    return {
-      photoId: photo.id,
-      dayIsoDate: null,
-      dayN: null,
-      stopId: null,
-      matchType: 'unmatched',
-      interstitialBefore: null,
-      interstitialAfter: null,
-      distanceMeters: null,
-    }
-  }
+  if (!dayEntry) return unmatched()
+  const { day, sortedClockStops, allStops } = dayEntry
 
-  const { day, sortedClockStops } = dayEntry
-  // Locate the stop whose time-window contains the photo. Window:
-  // [stop._parsedAt, nextStop._parsedAt). The last clock stop's
-  // window runs to end-of-day.
-  let containingStop = null
-  let containingIndex = -1
-  for (let i = 0; i < sortedClockStops.length; i++) {
-    const start = sortedClockStops[i]._parsedAt
-    const end =
-      i < sortedClockStops.length - 1
-        ? sortedClockStops[i + 1]._parsedAt
-        : Date.parse(`${day.isoDate}T23:59:59.999Z`)
-    if (photoMs >= start && photoMs < end) {
-      containingStop = sortedClockStops[i]
-      containingIndex = i
+  // Temporal bracket: the clock stops immediately before/after this photo.
+  // Used to LABEL an interstitial ("from A to B") and to bind a no-GPS photo
+  // to the stop whose window it sits in. It is NOT a gate on GPS matches.
+  let before = null
+  let after = null
+  for (const s of sortedClockStops) {
+    if (s._parsedAt <= photoMs) before = s
+    else {
+      after = s
       break
     }
   }
-  // Catch the photo-before-first-stop edge: before the first clock
-  // stop. Interstitial with stopBefore=null.
-  const firstClockStop = sortedClockStops[0]
-  if (!containingStop && firstClockStop && photoMs < firstClockStop._parsedAt) {
-    // No matching window — photo is before any time-bound stop on
-    // this day. Treat as interstitial with no `before` neighbor.
-    const distanceToFirst = photoHasGps(photo)
-      ? haversineMeters(photo.lat, photo.lng, firstClockStop.lat, firstClockStop.lng)
-      : null
-    return {
-      photoId: photo.id,
-      dayIsoDate: day.isoDate,
-      dayN: day.n,
-      stopId: null,
-      matchType: 'interstitial',
-      interstitialBefore: null,
-      interstitialAfter: firstClockStop.id,
-      distanceMeters: distanceToFirst,
+
+  // GPS-FIRST. A photo's coordinates are ground truth for WHERE the family
+  // was, regardless of how the PLAN timed that stop — and reconciliation
+  // exists precisely because the day deviated from the plan. So attach to the
+  // NEAREST stop in the day within gpsMatchMeters, ignoring the planned time
+  // window; only a photo near no stop at all is interstitial. (Replaces the
+  // old time-window-first rule, which mis-filed real stop photos taken at an
+  // off-plan time — the April run put a shot 81m from the Menil Collection in
+  // "interstitial" because the plan timed that hour at a different stop.)
+  if (photoHasGps(photo)) {
+    let best = null
+    for (const s of allStops) {
+      if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng)) continue
+      const d = haversineMeters(photo.lat, photo.lng, s.lat, s.lng)
+      if (!best || d < best.distance) best = { stop: s, distance: d }
     }
-  }
-  if (!containingStop) {
-    // No clock-time stops on this day, or photo is past end-of-day
-    // somehow. Try GPS-only attachment to a loose stop before giving up.
-    const looseGpsMatch = findClosestStopByGps(photo, dayEntry.looseStops)
-    if (looseGpsMatch && looseGpsMatch.distance <= MATCH_THRESHOLDS.gpsMatchMeters) {
+    if (best) {
+      // The day has located stops, so GPS is decisive.
+      if (best.distance <= MATCH_THRESHOLDS.gpsMatchMeters) {
+        return {
+          photoId: photo.id,
+          dayIsoDate: day.isoDate,
+          dayN: day.n,
+          stopId: best.stop.id,
+          matchType: 'gps+time',
+          interstitialBefore: null,
+          interstitialAfter: null,
+          distanceMeters: best.distance,
+        }
+      }
+      // Within a day's located stops but near none → interstitial, bracketed
+      // by the temporally-adjacent stops.
       return {
         photoId: photo.id,
         dayIsoDate: day.isoDate,
         dayN: day.n,
-        stopId: looseGpsMatch.stop.id,
-        matchType: 'gps+time',
-        interstitialBefore: null,
-        interstitialAfter: null,
-        distanceMeters: looseGpsMatch.distance,
+        stopId: null,
+        matchType: 'interstitial',
+        interstitialBefore: before ? before.id : null,
+        interstitialAfter: after ? after.id : null,
+        distanceMeters: best.distance,
       }
     }
+    // No located stop in the day at all → GPS can't place the photo; fall
+    // through to the time-only binding below (treat like a no-GPS photo).
+  }
+
+  // No GPS → time-only. Bind to the clock stop whose window contains the photo
+  // (the bracket's `before`). If it's before the first clock stop, it's an
+  // interstitial with no `before` neighbor.
+  if (before) {
     return {
       photoId: photo.id,
       dayIsoDate: day.isoDate,
       dayN: day.n,
-      stopId: null,
-      matchType: 'unmatched',
+      stopId: before.id,
+      matchType: 'time',
       interstitialBefore: null,
       interstitialAfter: null,
       distanceMeters: null,
     }
   }
-
-  // Photo is inside containingStop's window. Decide via GPS.
-  const stopHasGps = Number.isFinite(containingStop.lat) && Number.isFinite(containingStop.lng)
-  if (photoHasGps(photo) && stopHasGps) {
-    const d = haversineMeters(photo.lat, photo.lng, containingStop.lat, containingStop.lng)
-    if (d <= MATCH_THRESHOLDS.gpsMatchMeters) {
-      return {
-        photoId: photo.id,
-        dayIsoDate: day.isoDate,
-        dayN: day.n,
-        stopId: containingStop.id,
-        matchType: 'gps+time',
-        interstitialBefore: null,
-        interstitialAfter: null,
-        distanceMeters: d,
-      }
-    }
-    // GPS present but doesn't match the time-window stop. Interstitial
-    // between this stop and the next.
-    const nextStop = sortedClockStops[containingIndex + 1] || null
-    return {
-      photoId: photo.id,
-      dayIsoDate: day.isoDate,
-      dayN: day.n,
-      stopId: null,
-      matchType: 'interstitial',
-      interstitialBefore: containingStop.id,
-      interstitialAfter: nextStop ? nextStop.id : null,
-      distanceMeters: d,
-    }
-  }
-  // No GPS on the photo → time-only.
   return {
     photoId: photo.id,
     dayIsoDate: day.isoDate,
     dayN: day.n,
-    stopId: containingStop.id,
-    matchType: 'time',
+    stopId: null,
+    matchType: 'interstitial',
     interstitialBefore: null,
-    interstitialAfter: null,
+    interstitialAfter: after ? after.id : null,
     distanceMeters: null,
   }
 }
 
 function photoHasGps(photo) {
   return Number.isFinite(photo.lat) && Number.isFinite(photo.lng)
-}
-
-function findClosestStopByGps(photo, stops) {
-  if (!photoHasGps(photo)) return null
-  let best = null
-  for (const stop of stops) {
-    if (!Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) continue
-    const d = haversineMeters(photo.lat, photo.lng, stop.lat, stop.lng)
-    if (!best || d < best.distance) best = { stop, distance: d }
-  }
-  return best
 }
 
 // Group interstitial-with-GPS photos into clusters via connected

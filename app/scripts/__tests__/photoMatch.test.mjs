@@ -589,8 +589,33 @@ test('matchPhotosToStops: end-to-end with the canonical Jackson scenario', () =>
   assert.equal(deviationClusters[0].photoIds.length, 3)
 })
 
+test('matchPhotoToStop: GPS-first — a photo AT one stop during a DIFFERENT stop\'s planned window attaches by LOCATION', () => {
+  const dayIndex = buildDayIndex(TRIP)
+  // Taken at the CABIN's coordinates, but at 11:30 — inside ART OMI's planned
+  // time window. The old time-window-first rule called this "interstitial"
+  // (GPS far from the window's stop); GPS-first attaches it to the CABIN,
+  // because that is where the family actually was. This is the April-photo
+  // failure (a shot 81m from the Menil filed as interstitial) in miniature.
+  const photo = { id: 'p', capturedAt: '2026-04-17T11:30:00Z', lat: 42.229, lng: -73.985 }
+  const m = matchPhotoToStop(photo, dayIndex)
+  assert.equal(m.matchType, 'gps+time')
+  assert.equal(m.stopId, 's2') // CABIN — NOT ART OMI (s1), whose window it sat in
+})
+
+test('matchPhotoToStop: GPS-first — a photo near NO stop stays interstitial, bracketed by adjacent stops', () => {
+  const dayIndex = buildDayIndex(TRIP)
+  // Far from both ART OMI and the CABIN, mid-afternoon → a genuine in-between
+  // moment. Interstitials are a wanted category, not a failure.
+  const photo = { id: 'p', capturedAt: '2026-04-17T14:00:00Z', lat: 42.0, lng: -74.5 }
+  const m = matchPhotoToStop(photo, dayIndex)
+  assert.equal(m.matchType, 'interstitial')
+  assert.equal(m.stopId, null)
+  assert.equal(m.interstitialBefore, 's1') // after ART OMI (11am)
+  assert.equal(m.interstitialAfter, 's2') // before the CABIN (6pm)
+})
+
 test('matchPhotosToStops: thresholds are exposed for tuning', () => {
-  assert.equal(MATCH_THRESHOLDS.gpsMatchMeters, 500)
+  assert.equal(MATCH_THRESHOLDS.gpsMatchMeters, 1_000)
   assert.equal(MATCH_THRESHOLDS.clusterDistanceMeters, 500)
   assert.equal(MATCH_THRESHOLDS.routeDeviationMeters, 2_000)
   assert.equal(MATCH_THRESHOLDS.clusterMinSize, 3)

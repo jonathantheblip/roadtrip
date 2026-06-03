@@ -15,9 +15,11 @@
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, extname } from 'node:path'
-import { findTrip } from '../src/data/trips.js'
+import { findTrip, allStops } from '../src/data/trips.js'
 import { readPhotoExif, filterByTripRange } from '../src/lib/photoBackfill.js'
-import { matchPhotosToStops, MATCH_THRESHOLDS } from '../src/lib/photoMatch.js'
+import { matchPhotosToStops, MATCH_THRESHOLDS, haversineMeters } from '../src/lib/photoMatch.js'
+
+const VERBOSE = process.argv.includes('--verbose')
 import {
   buildReconciliationDraft,
   RECONCILE_THRESHOLDS,
@@ -73,6 +75,29 @@ function report(photos, trip) {
   const byType = {}
   for (const m of mr.matches) byType[m.matchType] = (byType[m.matchType] || 0) + 1
   console.log(`MATCH    : ${Object.entries(byType).map(([k, v]) => `${v} ${k}`).join(' · ') || '(none)'}`)
+
+  if (VERBOSE) {
+    const geoStops = allStops(trip).filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng))
+    const nearest = (p) => {
+      let best = null
+      for (const s of geoStops) {
+        const d = haversineMeters(p.lat, p.lng, s.lat, s.lng)
+        if (!best || d < best.d) best = { s, d }
+      }
+      return best
+    }
+    const byPhoto = new Map(mr.matches.map((m) => [m.photoId, m]))
+    console.log(`\nPER-PHOTO (in-window, GPS) — clock · verdict · NEAREST stop (any time):`)
+    for (const p of included) {
+      if (!Number.isFinite(p.lat)) continue
+      const m = byPhoto.get(p.id) || {}
+      const n = nearest(p)
+      const clock = (p.capturedAt || '').slice(11, 16)
+      const near = n ? `${n.s.name} (${Math.round(n.d)}m)` : '—'
+      const flag = n && n.d <= MATCH_THRESHOLDS.gpsMatchMeters && m.matchType !== 'gps+time' ? '  ◀ near a stop but NOT gps+time' : ''
+      console.log(`  ${p.id.padEnd(17)} ${clock}  ${(m.matchType || '?').padEnd(12)} ${near}${flag}`)
+    }
+  }
 
   const photoById = new Map(included.map((p) => [p.id, p]))
   if (mr.deviationClusters.length) {
@@ -148,8 +173,8 @@ function selfTest() {
 }
 
 async function main() {
-  const [arg0, arg1] = process.argv.slice(2)
-  if (!arg0 || arg0 === '--self-test') return selfTest()
+  const [arg0, arg1] = process.argv.slice(2).filter((a) => !a.startsWith('--'))
+  if (!arg0 || process.argv.includes('--self-test')) return selfTest()
   const trip = findTrip(arg1 || 'jackson-2026')
   if (!trip) {
     console.error(`No trip "${arg1 || 'jackson-2026'}" found in src/data/trips.js`)
