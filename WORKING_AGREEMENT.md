@@ -162,20 +162,21 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02. Update as these resolve.
+Verified 2026-06-02; last updated 2026-06-03. Update as these resolve.
 
-- **The master product spec is not version-controlled.** Process essence is here (§7); the full personas /
+- **[OPEN] The master product spec is not version-controlled.** Process essence is here (§7); the full personas /
   product spec are not in any tracked file. Risk: every window depends on a re-pasted doc. *Fix when able:
   commit the master spec, link it here.*
-- **Root-doc sprawl.** ~27 untracked root `.md` files, several with macOS sync-conflict ` 2.md` suffixes
-  (`CARRYOVER_BUG_TRIAGE 2.md`, etc.). Governance is sitting untracked and losable, and something is
-  duplicating files in the working tree. *Fix: triage — commit what's authoritative, gitignore or delete the
-  rest, resolve the sync conflict.*
-- **GPS pass: client-before-worker sequencing.** The uncommitted EXIF/GPS pass extracts correct lat/lng
-  locally, but the worker D1 schema has no lat/lng column and `memoryStore.mergeFromRemote` is a wholesale
-  last-write-wins replace — so a device's own next cross-device sync can erase its locally-correct GPS.
-  Additionally, the album/all-photos label path renders raw `lat,lng` *ahead of* the friendly stop name. Do
-  not ship the client pass alone as "routine"; see the GPS notes in `memory/photo-intake-ground-truth.md`.
+- **[RESOLVED 2026-06-03 · `6e2b5ca`] Root-doc sprawl.** Was ~30 untracked root `.md` files incl. macOS
+  ` 2.md` sync-conflict dupes. Fix: 3 byte-identical dupes deleted; `.gitignore` now covers `* 2.md` +
+  `/CARRYOVER_*.md` + `/PUNCHLIST_*.md` + `/SIDE_ACTIVITIES_PUNCHLIST*.md` (kept on disk, out of status);
+  RECONCILIATION_SPEC / TEST_STRATEGY_SPEC / CHANGE_ORDER_2026-05-17 tracked. `git status` is clean.
+- **[RESOLVED 2026-06-03] GPS durable cross-device sync.** Shipped as one unit: worker LEG-C (`faa299e` —
+  lat/lng/capturedAt inside `photo_r2_keys_json`, no migration) + dispatch single-photo mirror (`151b25f`) +
+  client merge-guard + label precedence (`38ae7a5`). Album GPS + capture date now survive cross-device, and
+  raw coords no longer outrank the friendly stop name. Future (separate): "recognition on the residue /
+  confidence-routing" auto-filing — the GPS+time auto-filer itself is live & verified (`6a9794c`). See
+  `memory/photo-intake-ground-truth.md`.
 
 ---
 
