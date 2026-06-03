@@ -222,8 +222,20 @@ async function postMemory(env, traveler, request, url, cors) {
   }
   let photoR2KeysJson = null
   if (body.photoRefs?.length) {
+    // LEG-C — carry per-photo EXIF location + capture date through the
+    // sync round-trip. Stored INSIDE the existing JSON column, so there
+    // is no schema migration: lat/lng/capturedAt are per-photo (an album
+    // spans places + times), which scalar columns on `memories` could not
+    // represent anyway. Only finite/real values are written, so a ref with
+    // no GPS stays {key, mime} and old rows deserialize unchanged.
     photoR2KeysJson = JSON.stringify(
-      body.photoRefs.map((r) => ({ key: r.key, mime: r.mime || null }))
+      body.photoRefs.map((r) => {
+        const e = { key: r.key, mime: r.mime || null }
+        if (Number.isFinite(r.lat)) e.lat = r.lat
+        if (Number.isFinite(r.lng)) e.lng = r.lng
+        if (typeof r.capturedAt === 'string' && r.capturedAt) e.capturedAt = r.capturedAt
+        return e
+      })
     )
   }
   let audioR2Key = null
@@ -330,12 +342,21 @@ function rowToMemory(r, origin) {
   if (r.photo_r2_keys_json) {
     try {
       const arr = JSON.parse(r.photo_r2_keys_json)
-      photoRefs = arr.map((a) => ({
-        storage: 'r2',
-        key: a.key,
-        url: assetUrl(a.key, origin),
-        mime: a.mime || undefined,
-      }))
+      photoRefs = arr.map((a) => {
+        const ref = {
+          storage: 'r2',
+          key: a.key,
+          url: assetUrl(a.key, origin),
+          mime: a.mime || undefined,
+        }
+        // LEG-C — surface per-photo EXIF location + date when the stored
+        // entry has them; omit when absent so the client falls back
+        // (createdAt / stop address) rather than reading a null.
+        if (Number.isFinite(a.lat)) ref.lat = a.lat
+        if (Number.isFinite(a.lng)) ref.lng = a.lng
+        if (typeof a.capturedAt === 'string' && a.capturedAt) ref.capturedAt = a.capturedAt
+        return ref
+      })
     } catch {}
   }
   const audioRef = r.audio_r2_key
