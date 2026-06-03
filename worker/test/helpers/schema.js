@@ -16,6 +16,7 @@
 //   await applySchema(env.DB)
 import baseSchema from '../../schema.sql?raw'
 import conversationsMigration from '../../migrations/006_claude_conversations.sql?raw'
+import interstitialMigration from '../../migrations/007_memory_interstitial.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -79,5 +80,18 @@ export async function applySchema(db) {
   // idempotent and safe to call more than once.
   for (const stmt of STATEMENTS) {
     await db.prepare(stmt).run()
+  }
+  // 007 is an ALTER TABLE ... ADD COLUMN, which SQLite gives no
+  // IF NOT EXISTS for. applySchema runs once per beforeEach against
+  // persistent miniflare storage, so applying it unconditionally would
+  // throw "duplicate column name" on the second call. Swallow exactly
+  // that error to keep this idempotent like the CREATE IF NOT EXISTS
+  // statements above — any other failure still propagates.
+  for (const stmt of splitStatements(interstitialMigration)) {
+    try {
+      await db.prepare(stmt).run()
+    } catch (e) {
+      if (!/duplicate column name/i.test(String(e?.message || e))) throw e
+    }
   }
 }

@@ -1,0 +1,29 @@
+-- Memory interstitial identity — "From A → B" first-class photo organization.
+--
+-- Auto-filing (RECONCILIATION_SPEC) classifies a photo shot between two
+-- stops as an INTERSTITIAL: it belongs to no single stop, but to the gap
+-- "from stop A to stop B." Before this, the client bound such photos to
+-- stop_id = NULL, so the album rendered them as "Unfiled" — losing the
+-- between-A-and-B identity the matcher had already computed.
+--
+-- This adds a memory-level column holding that identity as JSON:
+--   {"before": "<stopId|null>", "after": "<stopId|null>"}
+-- before/after are stop ids within the same day; either may be null at a
+-- day edge (a shot before the first stop, or after the last). It is
+-- per-MEMORY (an interstitial album is "from A to B" as a whole) — unlike
+-- the per-photo lat/lng/capturedAt that ride INSIDE photo_r2_keys_json
+-- (LEG-C, faa299e). That grain difference is exactly why this one earns a
+-- real top-level column instead of the JSON-extension trick.
+--
+-- Back-compat: NULL for every existing row; rowToMemory omits `interstitial`
+-- when the column is NULL, so old rows deserialize byte-identically and the
+-- worker stays inert until the client starts writing the field.
+--
+-- Idempotency note: SQLite's ALTER TABLE ... ADD COLUMN has no
+-- IF NOT EXISTS, so this migration is meant to run EXACTLY ONCE against
+-- prod D1 (`wrangler d1 migrations apply roadtrip-db`, or a single
+-- `wrangler d1 execute`). Re-running throws "duplicate column name". The
+-- test harness (worker/test/helpers/schema.js) applies it with a
+-- column-existence guard so its per-test setup stays idempotent.
+
+ALTER TABLE memories ADD COLUMN interstitial_json TEXT;

@@ -259,6 +259,20 @@ async function postMemory(env, traveler, request, url, cors) {
     ? JSON.stringify(body.photoExternalURLs)
     : null
 
+  // Memory-level interstitial identity — "from stop A to stop B" (migration
+  // 007). Per-MEMORY, not per-photo: an interstitial album belongs to the
+  // gap between two stops as a whole. Serialize only a real object so a
+  // non-interstitial memory — and any old client that never sends the field
+  // — writes NULL and deserializes unchanged. before/after may each be null
+  // at a day edge.
+  let interstitialJson = null
+  if (body.interstitial && typeof body.interstitial === 'object') {
+    interstitialJson = JSON.stringify({
+      before: body.interstitial.before ?? null,
+      after: body.interstitial.after ?? null,
+    })
+  }
+
   // Defense-in-depth: a 'photo' memory with no R2 keys and no external
   // URLs is unrenderable on every device. Before P0.2's client-side
   // throw in workerSync.pushMemory landed, 21 such half-records leaked
@@ -278,14 +292,14 @@ async function postMemory(env, traveler, request, url, cors) {
        text, caption, transcript, transcript_lang, transcription_status,
        duration_seconds, mood, reactions_json,
        audio_r2_key, audio_mime, photo_r2_key, photo_mime,
-       photo_r2_keys_json, photo_external_urls_json,
+       photo_r2_keys_json, photo_external_urls_json, interstitial_json,
        created_at, updated_at, deleted_at
      ) VALUES (
        ?, ?, ?, ?, ?, ?,
        ?, ?, ?, ?, ?,
        ?, ?, ?,
        ?, ?, ?, ?,
-       ?, ?,
+       ?, ?, ?,
        ?, ?, NULL
      )
      ON CONFLICT(id) DO UPDATE SET
@@ -308,6 +322,7 @@ async function postMemory(env, traveler, request, url, cors) {
        photo_mime = COALESCE(excluded.photo_mime, memories.photo_mime),
        photo_r2_keys_json = COALESCE(excluded.photo_r2_keys_json, memories.photo_r2_keys_json),
        photo_external_urls_json = excluded.photo_external_urls_json,
+       interstitial_json = COALESCE(excluded.interstitial_json, memories.interstitial_json),
        updated_at = excluded.updated_at,
        deleted_at = NULL`
   ).bind(
@@ -321,7 +336,7 @@ async function postMemory(env, traveler, request, url, cors) {
     body.durationSeconds ?? null, body.mood || null,
     reactionsJson,
     audioR2Key, audioMime, photoR2Key, photoMime,
-    photoR2KeysJson, photoExternalUrlsJson,
+    photoR2KeysJson, photoExternalUrlsJson, interstitialJson,
     createdAt, updatedAt
   ).run()
 
@@ -386,6 +401,18 @@ function rowToMemory(r, origin) {
   if (r.photo_external_urls_json) {
     try { photoExternalURLs = JSON.parse(r.photo_external_urls_json) } catch {}
   }
+  // Migration 007 — surface the memory-level "from A to B" interstitial
+  // identity when stored; leave it undefined for the NULL column on every
+  // legacy row so the deserialized object is byte-identical to pre-007.
+  let interstitial
+  if (r.interstitial_json) {
+    try {
+      const parsed = JSON.parse(r.interstitial_json)
+      if (parsed && typeof parsed === 'object') {
+        interstitial = { before: parsed.before ?? null, after: parsed.after ?? null }
+      }
+    } catch {}
+  }
   return {
     id: r.id,
     tripId: r.trip_id || undefined,
@@ -404,6 +431,7 @@ function rowToMemory(r, origin) {
     photoRef,
     photoRefs,
     photoExternalURLs,
+    interstitial,
     audioRef,
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
