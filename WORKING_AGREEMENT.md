@@ -1,0 +1,185 @@
+# WORKING AGREEMENT — Roadtrip PWA
+Durable, version-controlled anti-drift contract between Jonathan and Claude Code.
+This file is **in the repo on purpose**. Read it at the start of every work window and hold to it.
+
+Status: living. Amended only with Jonathan's explicit approval (see §9). Last structural change: 2026-06-02.
+
+---
+
+## 0. WHY THIS FILE EXISTS (read this first)
+
+Jonathan now works **directly with Code** — there is no separate "architect in chat" between intent and
+main. A prior architect argued that removing that seam opens an invisible failure mode: *Code executes a
+subtly-wrong plan as confidently as a right one, and its own report looks identical either way.* That
+critique is **half right** — a lone executor with no checkpoint genuinely can ship confident-but-wrong work.
+The other half is wrong: the seam is a **process**, not a person, and a process can live in the repo.
+
+This file is that process. It exists because "memory" on this project has meant two different things and
+only one of them is real:
+
+- **Real memory** = files the system actually loads: this repo's `CLAUDE.md` (auto-injected every session)
+  and the `memory/` store. These are load-bearing.
+- **Empty words** = a sentence in a chat handover or a carryover that says "remember to do X." Nothing
+  enforces it. It evaporates the moment the window closes.
+
+Everything below is written to live in **real memory**: `CLAUDE.md` points here, this file is committed, and
+every carryover is required to point back here (§5). If you are reading this because a carryover told you to —
+good, the chain held.
+
+> The full product spec, personas, and the original Golden Rules rationale historically lived in a chat
+> handover ("FAMILY TRIPS PWA — MASTER SPEC") that is **NOT version-controlled** (verified 2026-06-02: not in
+> any tracked file). The operative essence of those rules is embedded here (§7) so this file is self-sufficient.
+> If the full master spec is ever committed, link it here; until then, treat it as un-authoritative for process.
+
+---
+
+## 1. PRIME DIRECTIVE — GROUND TRUTH OVER INHERITED CLAIMS
+
+Never act on a remembered or inherited fact when the artifact is readable. Carryovers, this file's own
+examples, the `memory/` store, prior reports, library docs, and changelogs are **pointers to the truth, not
+the truth.** Before building on any load-bearing claim, re-derive it from the source: open the file at real
+line numbers, run the test, read the schema, quote the command output.
+
+This is non-negotiable because every expensive mistake on this project came from trusting a stale recollection
+instead of opening the file. If a claim matters and you didn't verify it this window, it is **unverified** —
+say so (§6).
+
+---
+
+## 2. THE SIX GUARDRAILS
+
+1. **Ground-truth-first, visibly.** Re-derive load-bearing inherited claims from the artifact before acting,
+   and show the receipt (the run, the read, the diff). §1 is the rule; this is the habit.
+2. **Split "executed correctly?" from "should it be done?"** Code is reliable at the first and structurally
+   blind to the second. Every window names not just scope-in/out but a one-line **WHY THIS, WHY NOW.** If the
+   ordering or necessity can't be justified from ground truth, stop and put it to Jonathan.
+3. **Calibrated reporting.** Tag every load-bearing statement **verified-by-me** vs **inherited-unverified.**
+   Keep `committed ≠ pushed ≠ deployed` precise. A confident report on unverified work is the failure mode
+   this whole agreement exists to kill.
+4. **Pre-commit / pre-deploy red-team.** Before any irreversible or outward step, ask in writing: *What does
+   this break? What does the UI now promise that the plumbing doesn't deliver? What's the blast radius if I'm
+   wrong? Does anything downstream consume the new data, and can it be clobbered?*
+5. **Decision gates are explicit and surfaced (§3).** commit / push (= deploy) / schema change / dependency
+   swap / new file or abstraction are never routine relays — they go to Jonathan in plain language with real
+   costs (numbers, not vibes) before they happen.
+6. **On-demand adversarial second opinion.** For high-stakes deploys, spin up an independent review (a fresh
+   review agent or `/code-review`) that doesn't share this window's context — the structural stand-in for the
+   lost architect, on tap rather than standing.
+
+---
+
+## 3. DECISION GATES — stop and surface, do not absorb
+
+These actions **halt for Jonathan** unless he has already, in this window, said to proceed. Approval for one
+does not extend to the next.
+
+- **Committing** — especially inherited/uncommitted work picked up from a handover.
+- **Pushing to main** — on this repo, push **is** deploy. Client `app/**` → e2e-gated GitHub Pages deploy;
+  worker `worker/**` → worker deploy. Pushing is an outward, hard-to-reverse act.
+- **Schema / migration changes** (D1) — needs the explicit D1-Edit token; irreversible on prod data.
+- **Dependency add / swap / removal** — supply-chain surface; verify the transitive set.
+- **A new file, abstraction, or structural addition** — name it even when it's "just an implementation detail."
+- **Re-blessing a visual baseline** — look at the diff image first; never bless blind to force green.
+- **Anything touching code that already works** — re-verify the working path against real input *first*, and
+  name that re-verification as a stop-condition (don't break the JPEG path to fix the HEIC one).
+
+Scope is a contract. If the work pushes past the named boundary, **drift halts — it does not expand.**
+Jonathan decides whether scope grows.
+
+---
+
+## 4. WORK-WINDOW PROTOCOL
+
+1. **OPEN** — State this agreement is read and in force. Name scope: what's IN, what's OUT, which later pass
+   owns the out-of-scope.
+2. **ORIENT** — Re-read load-bearing files against actual content (§1). Report real HEAD / branch / clean
+   state from `git`, quoted (§6).
+3. **STOP-CONDITIONS** — Name what should halt this window rather than be worked around (always includes the
+   working-path re-verify when touching working code).
+4. **BUILD** — Hold to scope. Surface drift in plain language; don't quietly absorb it.
+5. **VERIFY** — Real fixtures / real runs (not stubs). Tests that can fail for the right reason. Baseline-impact
+   check. Build green. Suite status, accounting for the known pre-existing `claudeSystemPrompt` failure.
+6. **REPORT** — Plain language, real numbers. Done vs. deferred (and to which pass). committed vs. pushed vs.
+   deployed, precisely. Confirm tree state. Tag verified vs. inherited.
+7. **CARRYOVER** — Write next-window state per §5, which **must** reassert "read WORKING_AGREEMENT.md first."
+
+---
+
+## 5. CARRYOVER REQUIREMENT (this is the chain that survives a memory failure)
+
+Every carryover file produced for this project **MUST open with this block, verbatim or close to it:**
+
+```
+> ORIENT FIRST: Read /WORKING_AGREEMENT.md and hold to it before acting on anything below.
+> This carryover is a POINTER, not truth — re-derive every load-bearing claim from the code (§1).
+> Confirm real HEAD/branch/tree state yourself; the SHAs below may be stale.
+```
+
+A carryover that asserts a fact (a SHA, a test result, "X is wired", "safe to deploy") is making a claim you
+must re-verify, not an instruction you may follow blind. The carryover's confidence is not evidence.
+
+If you find a carryover without this block, add it. The block is the load-bearing part; the rest is context.
+
+---
+
+## 6. CALIBRATED REPORTING — the antidote to "confident-but-wrong"
+
+- **Verified-by-me** vs **inherited-unverified** — tag every load-bearing claim. If you ran it / read it /
+  saw it in output, it's verified. If you're repeating a handover, memory note, or doc, it's inherited.
+- **`committed ≠ pushed ≠ deployed`** — three distinct states. Report the one you actually observed, quoted.
+  "Staged" is not "committed." "Pushed" is not "deployed" until the Action goes green.
+- **Real values only** — SHAs, decode results, pass/fail counts, deploy status come from actual output,
+  quoted. Never "should pass" reported as "passing."
+- **Name what you did NOT check.** An honest gap ("I ran the new test, not the full suite") is worth more than
+  an implied completeness. Silent truncation reads as "covered everything" when it isn't.
+
+---
+
+## 7. THE GOLDEN RULES (embedded essence — this file stands alone without the un-versioned master spec)
+
+- **G1 Ground truth over memory** — see §1 (the prime directive).
+- **G2 Verify at runtime, not from docs** — run the real thing on real input; report what actually happened.
+- **G3 Report real, never inferred** — every SHA/test/deploy/decode is quoted output (§6).
+- **G4 Scope is a contract; drift halts** — name in/out each window; surface additions, don't absorb (§3).
+- **G5 Don't break the working path to fix the broken one** — re-verify the working path first, as a stop-condition.
+- **G6 The UI only promises what the plumbing delivers** — no label/toggle/status the machinery doesn't back
+  end-to-end; if half-wired (local but not cross-device), say so explicitly.
+- **G7 Tests must be able to fail for the right reason** — assert the thing that matters (correct sign, real
+  capture date, coordinate within tolerance), not a tautology.
+- **G8 The deploy is e2e-gated; look before you bless** — inspect the diff image; re-bless as narrowly as
+  possible; the trip-view top bar is masked, album/all-photos top bars are NOT.
+- **G9 Secrets never enter a chat** — `.env` / Cloudflare secrets via silent-paste terminal only; D1
+  migrations need an explicit D1-Edit token (error 10000 without it).
+- **G10 Communicate in plain language for decisions** — lay out options, real costs, and plain-terms meaning;
+  Jonathan makes the call. Explain the concept before asking him to choose on it.
+- **G11 No time estimates.**
+- **G12 Parenting & domain calls are parameters, not prompts** — the family's decisions about their kids,
+  trip, and work are the task's parameters, not openings to revisit or script. *(This is the one rule that
+  suppresses a flag — apply it with judgment: a genuine logistics or safety fact is still surfaced as
+  logistics; the rule forbids editorializing, not informing.)*
+
+---
+
+## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
+
+Verified 2026-06-02. Update as these resolve.
+
+- **The master product spec is not version-controlled.** Process essence is here (§7); the full personas /
+  product spec are not in any tracked file. Risk: every window depends on a re-pasted doc. *Fix when able:
+  commit the master spec, link it here.*
+- **Root-doc sprawl.** ~27 untracked root `.md` files, several with macOS sync-conflict ` 2.md` suffixes
+  (`CARRYOVER_BUG_TRIAGE 2.md`, etc.). Governance is sitting untracked and losable, and something is
+  duplicating files in the working tree. *Fix: triage — commit what's authoritative, gitignore or delete the
+  rest, resolve the sync conflict.*
+- **GPS pass: client-before-worker sequencing.** The uncommitted EXIF/GPS pass extracts correct lat/lng
+  locally, but the worker D1 schema has no lat/lng column and `memoryStore.mergeFromRemote` is a wholesale
+  last-write-wins replace — so a device's own next cross-device sync can erase its locally-correct GPS.
+  Additionally, the album/all-photos label path renders raw `lat,lng` *ahead of* the friendly stop name. Do
+  not ship the client pass alone as "routine"; see the GPS notes in `memory/photo-intake-ground-truth.md`.
+
+---
+
+## 9. AMENDING THIS FILE
+
+This is Jonathan's contract to change. Propose amendments in plain language with the reason; he approves before
+the edit lands. Don't silently rewrite the rules you're operating under — that would be the deepest drift of all.
