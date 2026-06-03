@@ -31,3 +31,17 @@ worker/.wrangler
 # Root-anchored (/docs/) so it matches ONLY the repo-root build output, NOT
 # app/docs/ (tracked source + design specs).
 /docs/
+
+# Sync-conflict duplicates (macOS/iCloud writes "<name> 2.md" on conflict) —
+# pure noise, never commit. See WORKING_AGREEMENT.md §8.
+* 2.md
+
+# Ephemeral root scratch docs — ad-hoc carryovers + loose punchlists. The
+# durable anchor is WORKING_AGREEMENT.md + the memory/ store; carryovers worth
+# keeping live under app/docs/carryover/ (tracked). These root files stay on
+# disk for local reference but out of git status. NOTE: gitignore does not
+# untrack files already in the index — tracked CARRYOVER_PHASE3_*.md etc. are
+# unaffected; only the untracked root strays are ignored.
+/CARRYOVER_*.md
+/PUNCHLIST_*.md
+/SIDE_ACTIVITIES_PUNCHLIST*.md
