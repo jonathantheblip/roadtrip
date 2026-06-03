@@ -263,13 +263,13 @@ export function mergeFromRemote(remoteRecords) {
       const bucket = getPrivateBucket(author)
       const existing = bucket.get(r.id)
       if (shouldTakeRemote(r, existing)) {
-        bucket.set(r.id, r)
+        bucket.set(r.id, existing ? preserveLocalPhotoMeta(r, existing) : r)
         added += 1
       }
     } else {
       const existing = sharedMap.get(r.id)
       if (shouldTakeRemote(r, existing)) {
-        sharedMap.set(r.id, r)
+        sharedMap.set(r.id, existing ? preserveLocalPhotoMeta(r, existing) : r)
         added += 1
       }
     }
@@ -294,6 +294,40 @@ function shouldTakeRemote(remote, local) {
   if (remote.updatedAt && remote.updatedAt > local.updatedAt) return true
   if (hasR2Asset(remote) && !hasUsableLocalAsset(local)) return true
   return false
+}
+
+// Merge-guard. When a remote record wins last-write-wins and REPLACES the
+// local copy, the server may carry less per-photo EXIF metadata than the
+// device that captured the photo. LEG-C persists lat/lng/capturedAt for album
+// photoRefs[] (photo_r2_keys_json), but the single-photo dispatch path stores
+// its ref in scalar columns the worker keeps no coords on — so a pull could
+// erase the capturing device's own GPS + capture date. Carry the local
+// enrichment forward onto the matching remote ref, filling ONLY the gaps the
+// remote actually lacks (the remote still wins for every field it carries).
+// Match by INDEX, not key: an R2 upload rewrites ref keys, but ref order is
+// stable through push → store → rowToMemory.
+function preserveLocalPhotoMeta(remote, local) {
+  if (!remote || !local) return remote
+  const fill = (rRef, lRef) => {
+    if (!rRef || !lRef) return rRef
+    if (rRef.lat == null && Number.isFinite(lRef.lat)) rRef.lat = lRef.lat
+    if (rRef.lng == null && Number.isFinite(lRef.lng)) rRef.lng = lRef.lng
+    if (!rRef.capturedAt && typeof lRef.capturedAt === 'string' && lRef.capturedAt) {
+      rRef.capturedAt = lRef.capturedAt
+    }
+    return rRef
+  }
+  if (remote.photoRef && local.photoRef) {
+    remote.photoRef = fill({ ...remote.photoRef }, local.photoRef)
+  }
+  if (
+    Array.isArray(remote.photoRefs) &&
+    Array.isArray(local.photoRefs) &&
+    remote.photoRefs.length === local.photoRefs.length
+  ) {
+    remote.photoRefs = remote.photoRefs.map((rRef, i) => fill({ ...rRef }, local.photoRefs[i]))
+  }
+  return remote
 }
 
 function hasR2Asset(m) {

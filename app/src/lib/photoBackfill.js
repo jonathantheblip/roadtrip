@@ -10,29 +10,17 @@
 //     matcher consumes (capturedAt, lat, lng, orientation, offset).
 //   - The trip date-range filter that discards Camera Roll photos
 //     outside the trip window.
-//   - The pure parser that exifr's output is fed into — split out
-//     from the file-reading wrapper so tests can mock EXIF data
+//   - The pure parser that the EXIF reader's output is fed into — split
+//     out from the file-reading wrapper so tests can mock EXIF data
 //     directly without a real File.
 
-// EXIF tags we ask exifr to extract. Narrower than the default mask
-// (which is slow) but wider than photoPipeline.readExif's pick — that
-// one is tuned for the M2 dispatch composer and skips
-// orientation/offset because the composer doesn't need them.
-const EXIF_PICK = [
-  'DateTimeOriginal',
-  'CreateDate',
-  'ModifyDate',
-  'OffsetTimeOriginal',
-  'GPSLatitude',
-  'GPSLongitude',
-  'Orientation',
-]
+import { loadExifTags, exifReaderToRaw } from './exifRead.js'
 
-// Pure parser. Takes whatever exifr's `parse()` returned (an object,
-// undefined, or null) plus the originating file (for lastModified
-// fallback) and produces the normalized shape the rest of the backfill
-// flow consumes. Split from `readPhotoExif` so tests can feed mock
-// data without round-tripping through exifr.
+// Pure parser. Takes the exifr-shaped intermediate the EXIF adapter
+// produces (an object, undefined, or null) plus the originating file
+// (for lastModified fallback) and produces the normalized shape the rest
+// of the backfill flow consumes. Split from `readPhotoExif` so tests can
+// feed mock data without round-tripping through the reader.
 //
 // Returns:
 //   {
@@ -120,12 +108,11 @@ function toIsoString(value) {
 // the "unmatched" bucket where the user can manually assign it.
 export async function readPhotoExif(file) {
   try {
-    // Dynamic import keeps exifr (CJS bundle) out of the top-level
-    // module graph so the pure helpers above stay importable from
-    // Node --test without the named-export complaint.
-    const exifr = await import('exifr')
-    const parseFn = exifr.parse || exifr.default?.parse || exifr.default
-    const raw = await parseFn(file, { pick: EXIF_PICK })
+    // The shared adapter reads the original bytes via ExifReader (kept in
+    // its own lazy chunk) and returns the exifr-shaped intermediate
+    // parseExifData consumes — so GPS arrives as finite signed decimals
+    // and HEIC is read natively, neither of which the old exifr managed.
+    const raw = exifReaderToRaw(await loadExifTags(file))
     return parseExifData(raw, file)
   } catch {
     return parseExifData(null, file)
@@ -138,9 +125,9 @@ export async function readPhotoExif(file) {
 // `tripStartIso` / `tripEndIso` are 'YYYY-MM-DD' strings as stored on
 // the trip record (`dateRangeStart` / `dateRangeEnd`). We expand them
 // to a [00:00:00.000Z, 23:59:59.999Z] inclusive window. This deliberately
-// compares timestamps as UTC wall-clock — exifr returns the EXIF
-// wall-clock-as-UTC and trip date strings are also wall-clock, so the
-// comparison is consistent without explicit timezone math. The trip
+// compares timestamps as UTC wall-clock — the EXIF capture time and the
+// trip date strings are both wall-clock, so the comparison is consistent
+// without explicit timezone math. The trip
 // boundary is wide enough (00:00–23:59) that off-by-a-few-hours from
 // timezone drift doesn't push a real trip photo out of range.
 //

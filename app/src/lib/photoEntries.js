@@ -123,11 +123,19 @@ export function groupByStop(entries, trip) {
       ...entry,
       stopName: ctx?.stop?.name || 'Unfiled',
       stopAddress: ctx?.stop?.address || null,
+      // Label precedence: a stored/human label first, then the stop this
+      // photo is filed to (address → name), and only as a LAST resort the
+      // raw EXIF coordinates — so a finite GPS fix never replaces a
+      // friendly stop name with a decimal pair. (Coords → place-name
+      // reverse-geocoding lives only in the backfill triage today; the
+      // album render has no geocoder.)
       locationLabel:
         entry.exifLocation ||
+        ctx?.stop?.address ||
+        ctx?.stop?.name ||
         (entry.exifLat != null && entry.exifLng != null
           ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
-          : ctx?.stop?.address || ctx?.stop?.name || null),
+          : null),
       _dayN: ctx?.day?.n ?? 99,
       _stopOrder: ctx?.stop?.id
         ? (ctx.day?.stops || []).findIndex((s) => s.id === ctx.stop.id)

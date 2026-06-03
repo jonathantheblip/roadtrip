@@ -5,6 +5,8 @@
 // reused by future surfaces (Aurelia's PostcardComposer, automated
 // share-in importers).
 
+import { loadExifTags, exifReaderToRaw } from './exifRead.js'
+
 // Max edge length per the punchlist: 2048px on the longest side, JPEG
 // q=0.85. Tuned for a good balance between fidelity (group photos
 // printed at 4×6 still look fine) and bytes-on-the-wire (a typical
@@ -54,36 +56,26 @@ export function validatePhotoFile(file) {
 }
 
 // Pull EXIF metadata. Returns `{ capturedAt?: string ISO,
-// lat?: number, lng?: number, locationLabel?: string }`. Anything we
-// don't find is omitted — the caller treats missing fields as
-// "fall back to createdAt / stop address."
+// lat?: number, lng?: number }`. Anything we don't find is omitted —
+// the caller treats missing fields as "fall back to createdAt / stop
+// address."
 export async function readExif(file) {
   try {
-    // Dynamic import so this module stays importable from Node
-    // --test (exifr's CJS bundle blocks the named static import).
-    // No measurable cost at runtime — Vite already bundles eagerly.
-    const exifr = await import('exifr')
-    const parseFn = exifr.parse || exifr.default?.parse || exifr.default
-    const data = await parseFn(file, {
-      // Limit to what the album surface actually uses; speeds parse
-      // dramatically vs. the full default mask.
-      pick: ['DateTimeOriginal', 'CreateDate', 'GPSLatitude', 'GPSLongitude'],
-    })
-    if (!data) return {}
+    // EXIF is read off the ORIGINAL file bytes via the shared adapter
+    // (exifRead.js → ExifReader, lazy chunk). preparePhotoForUpload
+    // calls this in parallel with the canvas downscale, so the canvas
+    // is never the EXIF source.
+    const raw = exifReaderToRaw(await loadExifTags(file))
     const out = {}
-    const dt = data.DateTimeOriginal || data.CreateDate
+    const dt = raw.DateTimeOriginal || raw.CreateDate
     if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
       out.capturedAt = dt.toISOString()
-    } else if (typeof dt === 'string' && dt) {
-      const parsed = new Date(dt)
-      if (!Number.isNaN(parsed.getTime())) out.capturedAt = parsed.toISOString()
     }
-    if (Number.isFinite(data.GPSLatitude)) out.lat = data.GPSLatitude
-    if (Number.isFinite(data.GPSLongitude)) out.lng = data.GPSLongitude
+    if (Number.isFinite(raw.GPSLatitude)) out.lat = raw.GPSLatitude
+    if (Number.isFinite(raw.GPSLongitude)) out.lng = raw.GPSLongitude
     return out
   } catch {
-    // exifr throws on non-image files and on some malformed JPEGs.
-    // Treat as "no EXIF" and move on.
+    // Non-image files / unreadable EXIF — treat as "no EXIF" and move on.
     return {}
   }
 }

@@ -20,7 +20,13 @@ function photoMem({ id, tripId, stopId, author = 'helen', caption = '', refs, ca
     kind: 'photo',
     caption,
     capturedAt: capturedAt ?? null,
-    photoRefs: refs.map((u, i) => ({ storage: 'external', url: u, capturedAt: refs.length > 1 ? null : null })),
+    photoRefs: refs.map((u) =>
+      // A ref may be a bare URL string, or a full object carrying
+      // lat/lng/locationLabel for the label-precedence tests.
+      typeof u === 'string'
+        ? { storage: 'external', url: u, capturedAt: null }
+        : { storage: 'external', capturedAt: null, ...u }
+    ),
     photoExternalURLs: [],
     reactions: [],
     createdAt: createdAt || '2026-05-24T00:00:00.000Z',
@@ -43,6 +49,7 @@ function trip({ id, title, dateRangeStart, days }) {
       stops: d.stops.map((s) => ({
         id: s.id,
         name: s.name,
+        address: s.address,
         time: s.time || '',
       })),
     })),
@@ -168,4 +175,59 @@ test('groupByStop is unchanged from its per-trip contract', () => {
   ])
   const groups = groupByStop(entries, t)
   assert.deepEqual(groups.map((g) => g.stopKey), ['a', 'b'])
+})
+
+test('groupByStop label precedence: stored label → stop → raw coords (a GPS fix never replaces a stop name with a decimal pair)', () => {
+  // This is the regression guard for the EXIF/GPS pass: once photos carry
+  // finite lat/lng, the album must NOT show "41.494, -72.092" in place of
+  // the friendly stop name. Coordinates are the last resort only.
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-05-22',
+    days: [
+      {
+        n: 1,
+        date: 'May 22',
+        isoDate: '2026-05-22',
+        stops: [{ id: 'a', name: 'Mohegan Sun', address: 'New London, CT' }],
+      },
+    ],
+  })
+  const entries = flattenPhotoEntries([
+    // Filed to a stop AND carrying EXIF GPS → must show the stop, not coords.
+    photoMem({
+      id: 'filed',
+      tripId: 't',
+      stopId: 'a',
+      refs: [{ url: 'u://1', lat: 41.4943, lng: -72.09163 }],
+      capturedAt: '2026-05-22T17:00:00.000Z',
+    }),
+    // A human/stored label on the ref outranks both stop and coords.
+    photoMem({
+      id: 'labeled',
+      tripId: 't',
+      stopId: 'a',
+      refs: [{ url: 'u://2', lat: 41.0, lng: -72.0, locationLabel: "Grandma's porch" }],
+      capturedAt: '2026-05-22T18:00:00.000Z',
+    }),
+    // Unfiled (no matching stop) but has GPS → coords are the last resort.
+    photoMem({
+      id: 'unfiled',
+      tripId: 't',
+      stopId: 'no-such-stop',
+      refs: [{ url: 'u://3', lat: 41.32245, lng: -72.09434 }],
+      capturedAt: '2026-05-22T19:00:00.000Z',
+    }),
+  ])
+  const label = {}
+  for (const g of groupByStop(entries, t)) {
+    for (const e of g.entries) label[e.memoryId] = e.locationLabel
+  }
+  // The stop address wins over the photo's own coordinates.
+  assert.equal(label.filed, 'New London, CT')
+  // A stored label wins over everything.
+  assert.equal(label.labeled, "Grandma's porch")
+  // Only a photo with nowhere to file falls back to coordinates (3dp, signed).
+  assert.equal(label.unfiled, '41.322, -72.094')
 })

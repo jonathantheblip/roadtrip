@@ -22,7 +22,7 @@
     "test:simulator": "node tests/simulator/runner.mjs"
   },
   "dependencies": {
-    "exifr": "^7.1.3",
+    "exifreader": "^4.40.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.11.0",
     "mp4-muxer": "^5.2.2",

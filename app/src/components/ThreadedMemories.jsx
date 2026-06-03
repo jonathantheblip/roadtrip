@@ -158,16 +158,25 @@ export function ThreadedMemories({ trip, stop, traveler }) {
         // saveAsset auto-downscales photos via preparePhotoForUpload and
         // returns `prepared` (the pipeline result, incl. exif). We read the
         // mime so the photoRef tracks the actual stored bytes (image/jpeg),
-        // and — the fix — the capture date the pipeline already extracted
-        // from the original file's EXIF. It was dropped here, which is why
-        // album photos sorted by upload time. Mirrors AddDispatchModal's
-        // single-photo path (capturedAt: prep.exif?.capturedAt). Per-ref so
-        // memoryStore derives the memory-level capturedAt as the earliest
-        // frame; left undefined (not null) when EXIF is absent so the store
-        // falls back to upload time instead of short-circuiting.
+        // plus the capture date AND the GPS lat/lng the pipeline extracted
+        // from the original file's EXIF. Both were dropped here — the date
+        // made albums sort by upload time, the lat/lng left every photo
+        // with no location label and nothing for the auto-filer to match.
+        // Mirrors AddDispatchModal's single-photo path. Per-ref, and omitted
+        // (not null) when absent so memoryStore's derivation falls back
+        // instead of short-circuiting.
         const { mime, prepared } = await saveAsset('photo', key, p.file, p.file.type)
         const capturedAt = prepared?.exif?.capturedAt
-        refs.push({ storage: 'idb', key, mime, ...(capturedAt ? { capturedAt } : {}) })
+        const lat = prepared?.exif?.lat
+        const lng = prepared?.exif?.lng
+        refs.push({
+          storage: 'idb',
+          key,
+          mime,
+          ...(capturedAt ? { capturedAt } : {}),
+          ...(Number.isFinite(lat) ? { lat } : {}),
+          ...(Number.isFinite(lng) ? { lng } : {}),
+        })
       }
       saveMemory({
         tripId: trip.id,

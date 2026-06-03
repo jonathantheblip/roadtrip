@@ -30,6 +30,7 @@ const {
   listMemoriesForTrip,
   updateMemoryCapturedAt,
   backfillCapturedAt,
+  mergeFromRemote,
 } = await import('../../src/lib/memoryStore.js')
 
 beforeEach(() => {
@@ -255,4 +256,92 @@ test('backfillCapturedAt picks the earliest ref date for multi-photo memories', 
   backfillCapturedAt()
   const [m] = listMemoriesForTrip('t', 'helen')
   assert.equal(m.capturedAt, '2026-04-17T08:00:00.000Z')
+})
+
+// ─── merge-guard: a lossy remote can't erase local EXIF enrichment ──────────
+// Non-vacuous: without preserveLocalPhotoMeta the wholesale replace
+// (sharedMap.set(r.id, r)) leaves the merged ref with the remote's undefined
+// coords, so the equality assertions go red.
+
+test('mergeFromRemote preserves local photoRef lat/lng/capturedAt when a newer remote drops them (dispatch path)', () => {
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'd1', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+        kind: 'photo',
+        photoRef: { storage: 'r2', key: 'r2/d1', mime: 'image/jpeg', lat: 41.4943, lng: -72.09163, capturedAt: '2026-05-24T17:02:29.000Z' },
+        capturedAt: '2026-05-24T17:02:29.000Z',
+        createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T03:00:00.000Z',
+      },
+    ])
+  )
+  // Same memory pulled back newer (e.g. a reaction added elsewhere), but the
+  // worker's scalar photoRef columns carry no coords/date.
+  const added = mergeFromRemote([
+    {
+      id: 'd1', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+      kind: 'photo',
+      photoRef: { storage: 'r2', key: 'r2/d1', mime: 'image/jpeg' },
+      createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T04:00:00.000Z',
+    },
+  ])
+  assert.equal(added, 1) // the remote was actually taken (proves the replace fired)
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.equal(m.photoRef.lat, 41.4943)
+  assert.equal(m.photoRef.lng, -72.09163)
+  assert.equal(m.photoRef.capturedAt, '2026-05-24T17:02:29.000Z')
+})
+
+test('mergeFromRemote does not override coords the remote already carries (LEG-C lossless album)', () => {
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'a1', tripId: 't', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+        photoRefs: [{ storage: 'r2', key: 'r2/a', lat: 1.111, lng: 2.222, capturedAt: '2026-01-01T00:00:00.000Z' }],
+        createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T03:00:00.000Z',
+      },
+    ])
+  )
+  mergeFromRemote([
+    {
+      id: 'a1', tripId: 't', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+      photoRefs: [{ storage: 'r2', key: 'r2/a', lat: 41.4943, lng: -72.09163, capturedAt: '2026-05-24T17:02:29.000Z' }],
+      createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T04:00:00.000Z',
+    },
+  ])
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.equal(m.photoRefs[0].lat, 41.4943) // remote's authoritative value wins, not local 1.111
+  assert.equal(m.photoRefs[0].capturedAt, '2026-05-24T17:02:29.000Z')
+})
+
+test('mergeFromRemote preserves album photoRefs coords by index when a newer remote drops them', () => {
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'al', tripId: 't', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+        photoRefs: [
+          { storage: 'r2', key: 'r2/0', lat: 10.5, lng: -20.5, capturedAt: '2026-05-01T10:00:00.000Z' },
+          { storage: 'r2', key: 'r2/1', lat: 11.5, lng: -21.5, capturedAt: '2026-05-01T11:00:00.000Z' },
+        ],
+        createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T03:00:00.000Z',
+      },
+    ])
+  )
+  mergeFromRemote([
+    {
+      id: 'al', tripId: 't', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+      photoRefs: [
+        { storage: 'r2', key: 'r2/0', mime: 'image/jpeg' },
+        { storage: 'r2', key: 'r2/1', mime: 'image/jpeg' },
+      ],
+      createdAt: '2026-05-24T03:00:00.000Z', updatedAt: '2026-05-24T04:00:00.000Z',
+    },
+  ])
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.equal(m.photoRefs[0].lat, 10.5)
+  assert.equal(m.photoRefs[1].lng, -21.5)
+  assert.equal(m.photoRefs[1].capturedAt, '2026-05-01T11:00:00.000Z')
 })
