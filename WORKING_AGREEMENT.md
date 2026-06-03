@@ -26,10 +26,12 @@ Everything below is written to live in **real memory**: `CLAUDE.md` points here,
 every carryover is required to point back here (§5). If you are reading this because a carryover told you to —
 good, the chain held.
 
-> The full product spec, personas, and the original Golden Rules rationale historically lived in a chat
-> handover ("FAMILY TRIPS PWA — MASTER SPEC") that is **NOT version-controlled** (verified 2026-06-02: not in
-> any tracked file). The operative essence of those rules is embedded here (§7) so this file is self-sufficient.
-> If the full master spec is ever committed, link it here; until then, treat it as un-authoritative for process.
+> The full product spec, personas, and the original Golden Rules rationale live in
+> **[MASTER_SPEC.md](MASTER_SPEC.md)** (committed 2026-06-03, `0e0b1f6`'s successor — closing the "every window
+> depends on a re-pasted doc" risk). That file is the authoritative *product* spec; THIS file is the *process*
+> contract and wins on any how-we-work conflict. The Golden-Rules essence is also embedded here (§7) so this
+> file stays self-sufficient. Note: MASTER_SPEC §3 (Current State) and §4 (Parking Lot) are a frozen handover
+> snapshot — pointers to verify against `git log` + `memory/`, not live state (§1).
 
 ---
 
@@ -164,9 +166,9 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 Verified 2026-06-02; last updated 2026-06-03. Update as these resolve.
 
-- **[OPEN] The master product spec is not version-controlled.** Process essence is here (§7); the full personas /
-  product spec are not in any tracked file. Risk: every window depends on a re-pasted doc. *Fix when able:
-  commit the master spec, link it here.*
+- **[RESOLVED 2026-06-03] The master product spec is now version-controlled.** Committed as
+  [MASTER_SPEC.md](MASTER_SPEC.md) (durable §0–§2/§5 authoritative; §3/§4 a verify-don't-trust snapshot),
+  linked from §0 and CLAUDE.md. The "every window depends on a re-pasted doc" risk is closed.
 - **[RESOLVED 2026-06-03 · `6e2b5ca`] Root-doc sprawl.** Was ~30 untracked root `.md` files incl. macOS
   ` 2.md` sync-conflict dupes. Fix: 3 byte-identical dupes deleted; `.gitignore` now covers `* 2.md` +
   `/CARRYOVER_*.md` + `/PUNCHLIST_*.md` + `/SIDE_ACTIVITIES_PUNCHLIST*.md` (kept on disk, out of status);

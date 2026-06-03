@@ -17,5 +17,5 @@ The three rules that catch the most expensive mistakes (full set in the agreemen
 **Every carryover file MUST open by reasserting:** "Read WORKING_AGREEMENT.md first; this carryover is a
 pointer, not truth." (See agreement §5.)
 
-Product context, personas, and the live state of features live in the master spec + `memory/` — both of which
-are *pointers to verify*, not authorities to obey.
+Product context and personas live in [MASTER_SPEC.md](MASTER_SPEC.md) (§0–§2/§5 durable; §3/§4 a frozen
+snapshot). Live feature state lives in `memory/`. Both are *pointers to verify*, not authorities to obey.
