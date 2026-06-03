@@ -220,23 +220,34 @@ async function postMemory(env, traveler, request, url, cors) {
     photoR2Key = body.photoRef.key
     photoMime = body.photoRef.mime || null
   }
+  // Per-photo entry for the photo_r2_keys_json column. Carries EXIF location
+  // + capture date through the sync round-trip (LEG-C) INSIDE the existing
+  // JSON column — no schema migration, since lat/lng/capturedAt are per-photo
+  // (an album spans places + times) and scalar columns could not represent
+  // that. Only finite/real values are written, so a ref with no GPS stays
+  // {key, mime} and old rows deserialize unchanged.
+  const photoEntry = (r) => {
+    const e = { key: r.key, mime: r.mime || null }
+    if (Number.isFinite(r.lat)) e.lat = r.lat
+    if (Number.isFinite(r.lng)) e.lng = r.lng
+    if (typeof r.capturedAt === 'string' && r.capturedAt) e.capturedAt = r.capturedAt
+    return e
+  }
+  const refHasExif = (r) =>
+    Number.isFinite(r?.lat) ||
+    Number.isFinite(r?.lng) ||
+    (typeof r?.capturedAt === 'string' && r.capturedAt)
   let photoR2KeysJson = null
   if (body.photoRefs?.length) {
-    // LEG-C — carry per-photo EXIF location + capture date through the
-    // sync round-trip. Stored INSIDE the existing JSON column, so there
-    // is no schema migration: lat/lng/capturedAt are per-photo (an album
-    // spans places + times), which scalar columns on `memories` could not
-    // represent anyway. Only finite/real values are written, so a ref with
-    // no GPS stays {key, mime} and old rows deserialize unchanged.
-    photoR2KeysJson = JSON.stringify(
-      body.photoRefs.map((r) => {
-        const e = { key: r.key, mime: r.mime || null }
-        if (Number.isFinite(r.lat)) e.lat = r.lat
-        if (Number.isFinite(r.lng)) e.lng = r.lng
-        if (typeof r.capturedAt === 'string' && r.capturedAt) e.capturedAt = r.capturedAt
-        return e
-      })
-    )
+    photoR2KeysJson = JSON.stringify(body.photoRefs.map(photoEntry))
+  } else if (body.photoRef?.storage === 'r2' && refHasExif(body.photoRef)) {
+    // Single-photo dispatch path: the scalar photo_r2_key column keeps no
+    // EXIF, so when this lone ref carries location/date, ALSO mirror it into
+    // the JSON column — the only place coords survive without a migration,
+    // making dispatch GPS durable CROSS-DEVICE (rowToMemory then surfaces a
+    // 1-element photoRefs[] with the coords). A coordless single photo stays
+    // scalar-only, unchanged.
+    photoR2KeysJson = JSON.stringify([photoEntry(body.photoRef)])
   }
   let audioR2Key = null
   let audioMime = null

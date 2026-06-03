@@ -91,4 +91,45 @@ describe('LEG-C — photoRefs lat/lng/capturedAt survive postMemory → rowToMem
     expect(old.photoRefs[0].mime).toBe('image/jpeg')
     expect('lat' in old.photoRefs[0]).toBe(false) // no null pollution
   })
+
+  it('mirrors a single-photo dispatch ref WITH coords into photoRefs[] (cross-device, no migration)', async () => {
+    // Dispatch (AddDispatchModal) sends a lone photoRef, not photoRefs[] — its
+    // scalar columns drop coords. The mirror puts them in the JSON column so a
+    // SECOND device pulling this memory still gets the location + date.
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-disp',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRef: { storage: 'r2', key: 'jonathan/m-disp/p', mime: 'image/jpeg', ...LOC },
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs).toHaveLength(1)
+    expect(mem.photoRefs[0].lat).toBe(LOC.lat)
+    expect(mem.photoRefs[0].lng).toBe(LOC.lng)
+    expect(mem.photoRefs[0].capturedAt).toBe(LOC.capturedAt)
+  })
+
+  it('does NOT create photoRefs[] for a coordless single photo (stays scalar-only)', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-plain',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRef: { storage: 'r2', key: 'jonathan/m-plain/p', mime: 'image/jpeg' },
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRef).toBeTruthy()
+    expect(mem.photoRefs).toBeUndefined() // no mirror when there is nothing to preserve
+  })
 })
