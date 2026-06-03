@@ -45,3 +45,8 @@ worker/.wrangler
 /CARRYOVER_*.md
 /PUNCHLIST_*.md
 /SIDE_ACTIVITIES_PUNCHLIST*.md
+
+# Local drop folder for the reconcile-report instrument — REAL family photos
+# go here for validation/threshold-tuning. PRIVATE: never committed. The
+# report (scripts/reconcile-report.mjs) reads them locally and prints text only.
+app/.reconcile-input/
