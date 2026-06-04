@@ -12,26 +12,31 @@
 // iOS WebKit. Its entire purpose is to move this bug class from "a human
 // notices it on the phone" to "the harness catches it every run."
 //
-// WHY THE DISPATCH PREVIEW IS THE RIGHT SURFACE:
-//   Injecting a real full-res JPEG into the "Add photo" file input runs
-//   the app's real photo pipeline (preparePhotoForUpload → photoPipeline.js):
+// WHY THE POST-IMPORT ALBUM TILE IS THE RIGHT SURFACE:
+//   Injecting a real full-res JPEG into the IMPORTER's bulk-import input
+//   runs the app's real photo pipeline on save (preparePhotoForUpload →
+//   photoPipeline.js):
 //     1. createImageBitmap() DECODES the full 4032×3024 bytes — the
 //        memory-intensive, budget-relevant operation that blacked out at
 //        the tournament.
 //     2. ctx.drawImage(fullResBitmap → ≤2048px canvas) rasterizes it.
-//     3. canvasToBlob re-encodes the result; the preview <img> shows it.
+//     3. canvasToBlob re-encodes the result; the album tile renders it.
 //   If the full-res decode/draw blacks out on iOS, the produced blob is
-//   GENUINELY BLACK BYTES, so the preview is black and a canvas readback
-//   catches it faithfully — the black-out is baked into real pixels, not
-//   an ephemeral compositing state a re-decode could paper over. This is
-//   the one place the current app still performs a full-res decode, and
-//   it's reached by exactly the fetch(/@fs/…)+DataTransfer injection the
-//   video gate already proved works.
+//   GENUINELY BLACK BYTES — baked into the bytes the album shows, whether
+//   the tile is the local pending blob: (Worker-less build) or the uploaded
+//   Worker thumbnail (the black propagates through upload + resize). This is
+//   the importer equivalent of the original dispatch-preview readback, and
+//   it ALSO covers the real user-facing album render end-to-end. (It used to
+//   read the dispatch composer's preview <img>; the importer subsumes that
+//   surface — see IMPORTER_SPEC.md Stage 3 — so the guard moved here before
+//   the composer is retired.)
 //
 // THE READBACK (the assertion the project never had):
-//   The preview <img> src is a same-origin blob: URL, so a 2D canvas
-//   drawn from it is NOT tainted and getImageData() is allowed. We draw
-//   the decoded photo into a small sampling canvas and assert the image
+//   The tile <img> may be a same-origin blob: OR a cross-origin Worker
+//   thumbnail, so rather than draw the <img> (which taints a 2D canvas
+//   cross-origin) we FETCH its bytes — GET /assets sends CORS; a blob: fetch
+//   is same-origin — and decode with createImageBitmap (CORS-clean, never
+//   tainted). We then draw to a small sampling canvas and assert the image
 //   area is NOT uniformly black/blank:
 //     - maxLuma must clear a black threshold  (a blacked-out render → ~0)
 //     - luma range (max-min) must be non-trivial (a uniform field —
@@ -85,7 +90,10 @@ const ARTIFACT_DIR = resolve(HERE, '__artifacts__')
 // view on the real clock. Without it the raw May-2026 fixture bounces to
 // the trips index and helen-photos-entry never renders. FIXTURE_TRIP itself
 // stays pinned for the clock-stubbed e2e suite + its visual baselines.
-const SEED_TRIP = dateStableTripSeed()
+// Widen the range to 2025–2027 so the importer's trip-range filter KEEPS the
+// fixture photo (EXIF ~2026-05-25): the dispatch path didn't filter by date,
+// but the importer does (filterByTripRange drops out-of-range / dateless).
+const SEED_TRIP = { ...dateStableTripSeed(), dateRangeStart: '2025-01-01', dateRangeEnd: '2027-12-31' }
 
 // Persona for this sim run: RT_PERSONA env override, default 'helen' so
 // existing sim behavior is unchanged. See app/tests/e2e/_fixtures/persona.js.
@@ -152,17 +160,15 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
   }
 
   await clickByTestId('helen-photos-entry')
-  await clickByTestId('add-dispatch')
 
-  // The hidden photo <input data-testid="dispatch-file-input"> is mounted
-  // unconditionally by the modal (not gated on a "pick" sub-phase), so we
-  // inject straight into it. We deliberately do NOT click the "Pick a
-  // photo" button first: a programmatic .click() on a file input can't
-  // open the native sheet without a user gesture anyway, and skipping it
-  // avoids any native picker overlay. React's onChange fires on the
-  // dispatched change event regardless — the same contract the video gate
-  // relies on for its hidden input.
-  const photoInput = await browser.$('[data-testid="dispatch-file-input"]')
+  // Inject the real full-res JPEG into the IMPORTER's hidden bulk-import input
+  // (data-testid="import-file-input", in PhotosView — no modal). The importer
+  // runs the SAME full-res decode the dispatch composer did:
+  // preparePhotoForUpload (photoPipeline.js) createImageBitmap()-DECODES the
+  // 4032×3024 bytes, then drawImage → ≤2048px canvas → re-encode. Inject
+  // straight into the display:none input (DataTransfer + dispatched change →
+  // React onChange) — the same contract the video gate relies on.
+  const photoInput = await browser.$('[data-testid="import-file-input"]')
   await photoInput.waitForExist({ timeout: 10_000 })
 
   // Inject the real 2.8 MB / 4032×3024 JPEG. Fetch it from Vite's dev
@@ -177,9 +183,7 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
         if (!res.ok) return { ok: false, stage: 'fetch', status: res.status }
         const blob = await res.blob()
         const file = new File([blob], name, { type: mimeType })
-        const input = document.querySelector(
-          '[data-testid="dispatch-file-input"]'
-        )
+        const input = document.querySelector('[data-testid="import-file-input"]')
         if (!input) return { ok: false, stage: 'input-missing' }
         const dt = new DataTransfer()
         dt.items.add(file)
@@ -227,24 +231,33 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
     `injected photo is suspiciously small (${inject.fileSize} bytes) — expected the ~2.8 MB full-res fixture`
   )
 
-  // The pipeline runs (preparing → preview) and the preview <img> renders
-  // the decoded+downscaled result. Generous timeout: createImageBitmap on
-  // a 4032×3024 file plus a canvas re-encode is real work on the sim.
-  const preview = await browser.$('[data-testid="dispatch-preview-image"]')
+  // The importer analyzes (EXIF + match) then SAVES the photo — and SAVE is
+  // where preparePhotoForUpload runs the full-res decode. A clean single photo
+  // smart-skips (silent save → straight back to the album); an interstitial /
+  // off-route one shows a lightweight confirm. Accept the confirm if it shows;
+  // either way the photo lands in the album.
   try {
-    await preview.waitForDisplayed({ timeout: 45_000 })
+    const go = await browser.$('[data-testid="import-confirm-go"]')
+    await go.waitForDisplayed({ timeout: 25_000 })
+    await browser.execute(() => document.querySelector('[data-testid="import-confirm-go"]')?.click())
+  } catch {
+    /* smart-skipped — no confirm screen; the photo saved silently */
+  }
+
+  // The album tile renders the imported photo. In the dev (Worker-less) build
+  // the pending photoRef's url is a same-origin blob: of the DOWNSCALED blob —
+  // i.e. the actual output of the full-res decode under test. thumbUrl passes
+  // blob: through unchanged, so the tile <img> shows it directly. Generous
+  // timeout: createImageBitmap on a 4032×3024 file + canvas re-encode is real
+  // work on the sim.
+  const tile = await browser.$('[data-testid="photo-tile"]')
+  try {
+    await tile.waitForExist({ timeout: 45_000 })
   } catch (err) {
     const probe = await browser.execute(() => ({
-      modalTestids: Array.from(
-        document.querySelectorAll(
-          '[data-testid*="dispatch"], [data-testid*="prep"], [data-testid*="bucket"]'
-        )
-      ).map((el) => el.getAttribute('data-testid')),
-      // Bucket C = the pipeline rejected the photo (too-large/unreadable);
-      // that's a different finding than a black render, so surface it.
-      bucketCText:
-        document.querySelector('[data-testid="dispatch-bucketC"]')?.textContent ||
-        null,
+      importTestids: Array.from(document.querySelectorAll('[data-testid*="import"]')).map((el) => el.getAttribute('data-testid')),
+      surfaceTestids: Array.from(document.querySelectorAll('[data-testid]')).map((el) => el.getAttribute('data-testid')).slice(0, 24),
+      bodyText: (document.body.innerText || '').slice(0, 300),
       uploadLog: (() => {
         try {
           const raw = localStorage.getItem('rt_upload_log_v1')
@@ -255,32 +268,43 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
       })(),
     }))
     throw new Error(
-      `dispatch-preview-image not displayed after 45s\n  probe: ${JSON.stringify(probe, null, 2)}\n  origin: ${err?.message}`
+      `no album photo-tile after import (45s) — the photo never made it through decode+save\n  probe: ${JSON.stringify(probe, null, 2)}\n  origin: ${err?.message}`
     )
   }
+  // Scroll the tile into view so the IntersectionObserver-gated <img> mounts.
+  await browser.execute(() => document.querySelector('[data-testid="photo-tile"]')?.scrollIntoView({ block: 'center' }))
 
-  // THE ASSERTION. Decode the preview photo and read back its pixels via a
-  // small same-origin canvas. A blob: URL is same-origin, so getImageData
-  // is not tainted. Returns luma stats; the non-black decision is made in
-  // Node so the thresholds live in one place.
-  const sample = await browser.execute(async () => {
-    const img = document.querySelector('[data-testid="dispatch-preview-image"]')
-    if (!img) return { ok: false, stage: 'img-missing' }
+  // THE ASSERTION. Read back the album tile's actual pixels. The tile <img>
+  // may be a same-origin blob: (Worker-less build → pending ref) OR a
+  // cross-origin Worker thumbnail (Worker-configured → uploaded). A
+  // cross-origin <img> taints a 2D canvas, so instead we FETCH the bytes
+  // (GET /assets sends CORS; a blob: fetch is same-origin) and decode them
+  // with createImageBitmap — CORS-clean, never tainted. Either way the bytes
+  // are the client's full-res decode output as the album renders it; black
+  // bytes here mean the decode/render blacked out (the founding bug class).
+  const tileSrc = await browser.execute(
+    () => document.querySelector('[data-testid="photo-tile"] img')?.src || null
+  )
+  const sample = await browser.execute(async (src) => {
+    if (!src) return { ok: false, stage: 'img-src-missing' }
+    let blob
     try {
-      // Force a decode and surface a decode failure explicitly — a full-res
-      // photo that won't decode on iOS IS the bug class, not a flake.
-      await img.decode()
+      const res = await fetch(src, { mode: 'cors' })
+      if (!res.ok) return { ok: false, stage: 'fetch', status: res.status, src: src.slice(0, 120) }
+      blob = await res.blob()
+    } catch (e) {
+      return { ok: false, stage: 'fetch-rejected', message: String(e?.message || e), src: src.slice(0, 120) }
+    }
+    let bmp
+    try {
+      // Decode the fetched bytes — a full-res photo that won't decode on iOS
+      // IS the bug class, not a flake.
+      bmp = await createImageBitmap(blob)
     } catch (e) {
       return { ok: false, stage: 'decode-rejected', message: String(e?.message || e) }
     }
-    if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
-      return {
-        ok: false,
-        stage: 'not-decoded',
-        complete: img.complete,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-      }
+    if (!bmp.width || !bmp.height) {
+      return { ok: false, stage: 'not-decoded', width: bmp.width, height: bmp.height }
     }
     const SW = 48
     const SH = 36 // 4:3, cheap to read
@@ -289,15 +313,14 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
     canvas.height = SH
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
     if (!ctx) return { ok: false, stage: 'no-2d-context' }
-    // Draw the decoded photo bitmap (intrinsic pixels) scaled into the
-    // sample grid. This reads the actual decoded bytes of the pipeline's
-    // output blob — black bytes here mean the full-res decode blacked out.
-    ctx.drawImage(img, 0, 0, SW, SH)
+    // Draw the decoded bitmap scaled into the sample grid and read its bytes —
+    // black bytes here mean the full-res decode blacked out.
+    ctx.drawImage(bmp, 0, 0, SW, SH)
     let data
     try {
       data = ctx.getImageData(0, 0, SW, SH).data
     } catch (e) {
-      return { ok: false, stage: 'getImageData-failed', message: String(e?.message || e) }
+      return { ok: false, stage: 'getImageData-failed', message: String(e?.message || e), src: src.slice(0, 120) }
     }
     let maxLuma = 0
     let minLuma = 255
@@ -317,8 +340,8 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
     }
     return {
       ok: true,
-      naturalWidth: img.naturalWidth,
-      naturalHeight: img.naturalHeight,
+      bitmapWidth: bmp.width,
+      bitmapHeight: bmp.height,
       sampleW: SW,
       sampleH: SH,
       total,
@@ -329,7 +352,7 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
       nonBlack,
       nonBlackFraction: nonBlack / total,
     }
-  })
+  }, tileSrc)
 
   if (!sample.ok) {
     await saveFailureArtifact(browser, 'decode')
