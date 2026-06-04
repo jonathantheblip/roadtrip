@@ -65,6 +65,7 @@ const GATED = [
   { method: 'POST', path: '/trips' },
   { method: 'DELETE', path: '/trips/x' },
   { method: 'POST', path: '/assets/photo/x' }, // upload (POST) IS gated; only GET /assets is public
+  { method: 'POST', path: '/assets/video/x' }, // video upload — same gate as photo/audio
   { method: 'POST', path: '/leave-when' },
   { method: 'POST', path: '/places/nearby' },
   { method: 'GET', path: '/resolve' },

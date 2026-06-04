@@ -99,7 +99,11 @@ export default {
         return await deleteTrip(env, tripMatch[1], cors)
       }
 
-      const uploadMatch = path.match(/^\/assets\/(audio|photo)\/([^/]+)$/)
+      // video uploads (importer + dispatch POST /assets/video/:id) join
+      // audio/photo here; uploadAsset is kind-agnostic (streams the body to
+      // R2 with its content-type). Without 'video' these 404'd and stuck the
+      // offline upload queue forever.
+      const uploadMatch = path.match(/^\/assets\/(audio|photo|video)\/([^/]+)$/)
       if (uploadMatch && request.method === 'POST') {
         return await uploadAsset(
           env, traveler, uploadMatch[1], uploadMatch[2], request, url, cors
