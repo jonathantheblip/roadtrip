@@ -69,7 +69,7 @@ The single-photo dispatch composer is **retired** (Stage 3).
 
 ## 4. Staging — each ≈ one context window, each independently shippable
 
-### Stage 1 — Importer as primary (additive, LOW risk)
+### Stage 1 — Importer as primary (additive, LOW risk) · ✓ SHIPPED 2026-06-04 `1f84006` (deployed, e2e green)
 - Move the bulk importer (`import-file-input` + the triage render block) OUT of `views/Settings.jsx`
   (`:191-204`, `:322-354`) INTO `views/PhotosView.jsx` as the primary **"Import photos"** action.
 - Thread `tripsApi` into PhotosView (App.jsx `:831-837` — PhotosView doesn't get it today; Settings
@@ -82,6 +82,19 @@ The single-photo dispatch composer is **retired** (Stage 3).
 - G8: the new PhotosView layout (import + dispatch buttons) may shift `album-<persona>` baselines →
   LOOK at the diff, re-bless narrowly.
 - **Ships:** bulk-as-primary, out of Settings, cap 10. Nothing broken.
+- **✓ OUTCOME (verified-by-me 2026-06-04, `1f84006`):** shipped exactly as scoped. Line numbers had
+  drifted from this spec (re-derived: PhotosView render `App.jsx:832-837`, Settings `tripsApi` at
+  `:868` not `:797`; Settings importer pointers `:191-204`/`:322-354` were still exact). PhotosView
+  triage renders directly (no `surface-dark/light` wrapper — `TriageShell` brings its own `var(--bg)`),
+  and a completed import bumps `memoryTick`. The reconcile/archive flow stays reachable *through* the
+  relocated importer; the full-motion test gained ONE nav hop (PhotosView → "Trip settings" ⋯ →
+  archive, the top bar renders over Photos too). **G8 correction:** the shift was **11 baselines, not
+  just `album-*`** — 8 `album-*` (4 personas × 2 projects) PLUS 3 dispatch (`dispatch-empty` ×2,
+  `dispatch-photo-picked` chromium): the dispatch modal's *translucent backdrop* reveals the now-taller
+  PhotosView behind it (modal foreground unchanged, no functional regression). All 11 re-blessed and
+  committed; full e2e on the CI runner = 217 pass / 15 skip, 0 functional regressions. The dispatch
+  baselines' coupling to PhotosView layout (via that backdrop) is a standing test-fragility — a future
+  cleanup could screenshot only the modal.
 
 ### Stage 2 — Capabilities into the importer (offline + video) · MEDIUM risk
 - Wire `lib/photoBackfillUpload` through `lib/uploadQueue` (`enqueue` on failed worker push + the
@@ -134,5 +147,14 @@ The single-photo dispatch composer is **retired** (Stage 3).
 ## 7. Status / handoff
 - Spec authored 2026-06-03. Predecessor: Step 2 interstitials shipped (HEAD `8171b32`, both deploys
   green, migration 007 live). See `memory/photo-intake-ground-truth.md`.
-- **NEXT = Stage 1**, ideally a fresh context window that opens by reading this spec + WORKING_AGREEMENT.
-- Root `.md` ⇒ no deploy; committing this is safe (documentation), but commit is still a §3 gate.
+- **✓ Stage 1 SHIPPED 2026-06-04 `1f84006`** (committed → pushed → deployed; client deploy run green,
+  e2e 217 pass / 15 skip on the CI runner; 11 photos-surface baselines re-blessed in the same commit).
+  Importer is now PhotosView-primary, out of Settings; album cap 10; dispatch untouched. See §4 Stage 1
+  OUTCOME for the verified detail and the G8 baseline correction.
+- **NEXT = Stage 2** (offline queue + video into the importer + the lightweight import-confirm /
+  smart-skip view) — open a fresh window by reading this spec + WORKING_AGREEMENT. The **hard
+  stop-condition** is §4 Stage 2's: prove offline upload *survives* through the importer (a REAL
+  sim/e2e test, not asserted) BEFORE Stage 3 retires dispatch. Working carryover:
+  `CARRYOVER_IMPORTER_STAGE2.md` (repo root, gitignored-local — a pointer, re-derive from code).
+- Root `.md` ⇒ no deploy (verified: `deploy-client` fires on `app/**`, `deploy-worker` on `worker/**`);
+  committing this is safe (documentation), but commit is still a §3 gate.
