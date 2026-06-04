@@ -834,6 +834,7 @@ export default function App() {
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
             openDispatchOnMount={!!view.openDispatch}
+            tripsApi={tripsApi}
           />
         )}
         {view.name === 'all-photos' && (

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, Plus, Image as ImageIcon, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, Plus, Image as ImageIcon, ImagePlus, RefreshCw } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { AddDispatchModal } from '../components/AddDispatchModal'
+import { PhotoBackfillTriage } from '../components/PhotoBackfillTriage'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
@@ -17,17 +18,26 @@ import { saveMemory } from '../lib/memoryStore'
 // StopGroup since it's how this view stitches a single trip's
 // memories into the stops timeline.
 //
-// "Add photo or video" lives prominently at the top — this is where
-// the FILE A DISPATCH entry point moved to (was at the bottom of
-// Jonathan's view, wrong place).
+// "Import photos" is the PRIMARY action at the top (Importer Stage 1 —
+// moved here out of Trip Settings): a bulk library pick that auto-files
+// by GPS+time through PhotoBackfillTriage. "Add photo or video" (the
+// single-photo dispatch — still the video + offline path) sits below it
+// as the secondary add. The dispatch entry itself is unchanged.
 //
 // Aesthetic: Helen's surface palette (linen / forest accent) is the
 // reference design; the other three themed views inherit via CSS vars
 // when they navigate in.
 
-export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
+export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsApi }) {
   // Re-read memories when this view-render flips (e.g. after a save).
   const [memoryTick, setMemoryTick] = useState(0)
+
+  // Bulk importer (Stage 1). When the user picks a library batch, the
+  // files land here and we hand off to PhotoBackfillTriage full-screen;
+  // clearing them (cancel or "back to the trip") returns to the album,
+  // and a completed import bumps memoryTick so the new photos appear.
+  const [triageFiles, setTriageFiles] = useState(null)
+  const importInputRef = useRef(null)
   const memories = useMemo(
     () => listMemoriesForTrip(trip.id, traveler),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -144,6 +154,25 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
     setMemoryTick((t) => t + 1)
   }
 
+  // Importer takes over the whole surface while triaging a picked batch —
+  // PhotoBackfillTriage (TriageShell) brings its own var(--bg) chrome, so
+  // it renders directly inside the already-themed Photos surface.
+  if (triageFiles && triageFiles.length > 0) {
+    return (
+      <PhotoBackfillTriage
+        trip={trip}
+        traveler={traveler}
+        files={triageFiles}
+        tripsApi={tripsApi}
+        onCancel={() => setTriageFiles(null)}
+        onComplete={() => {
+          setTriageFiles(null)
+          setMemoryTick((t) => t + 1)
+        }}
+      />
+    )
+  }
+
   return (
     <div
       style={{
@@ -215,7 +244,22 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount }) {
         </div>
       </header>
 
-      <div style={{ padding: '14px 14px 0' }}>
+      <div style={{ padding: '14px 14px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          data-testid="import-file-input"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const files = Array.from(e.target.files || [])
+            // Clear the value so picking the same batch twice still fires.
+            e.target.value = ''
+            if (files.length > 0) setTriageFiles(files)
+          }}
+        />
+        <ImportButton onClick={() => importInputRef.current?.click()} />
         <AddDispatchButton onClick={() => setDispatchOpen(true)} />
       </div>
 
@@ -290,6 +334,72 @@ function SyncPill({ count, draining, onTap }) {
         }}
       />
       {count} syncing
+    </button>
+  )
+}
+
+// Primary action (Importer Stage 1): bulk-pick from the library, then
+// auto-file by GPS+time through the triage. Sits above the single-photo
+// dispatch; mirrors its card styling so the two read as a matched pair.
+function ImportButton({ onClick }) {
+  return (
+    <button
+      type="button"
+      data-testid="import-photos"
+      onClick={onClick}
+      style={{
+        width: '100%',
+        padding: '16px 14px',
+        background: 'var(--card, transparent)',
+        border: '1px solid var(--accent)',
+        borderRadius: 10,
+        cursor: 'pointer',
+        textAlign: 'left',
+        color: 'var(--text)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <ImagePlus size={18} style={{ color: 'var(--accent-text)' }} />
+        <div>
+          <div
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 10,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: 'var(--accent-text)',
+              fontWeight: 700,
+            }}
+          >
+            Import photos
+          </div>
+          <div
+            style={{
+              fontFamily: 'Fraunces, Georgia, serif',
+              fontStyle: 'italic',
+              fontSize: 14,
+              color: 'var(--muted)',
+              marginTop: 2,
+            }}
+          >
+            from your library — we'll match them to stops.
+          </div>
+        </div>
+      </div>
+      <span
+        style={{
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 26,
+          fontStyle: 'italic',
+          color: 'var(--accent-text)',
+        }}
+      >
+        →
+      </span>
     </button>
   )
 }

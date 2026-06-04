@@ -12,7 +12,7 @@ import { Avatar, AvatarStack } from './Avatar'
 import { VoiceRecorder } from './VoiceRecorder'
 import { PhotoLightbox } from './PhotoAlbum'
 
-const MAX_PHOTOS_PER_ALBUM = 6
+const MAX_PHOTOS_PER_ALBUM = 10
 
 // Direction 02 — Threaded Memories. Per Design system.jsx /
 // variant-threaded.jsx, each stop carries a vertical thread of memories
@@ -21,7 +21,7 @@ const MAX_PHOTOS_PER_ALBUM = 6
 // text + photo + voice; voice opens the full-screen VoiceRecorder.
 //
 // The photo path is real: tapping the camera icon opens a multi-photo
-// tray (up to 6) → IDB store via lib/memAssets → photoRefs[] on the
+// tray (up to 10) → IDB store via lib/memAssets → photoRefs[] on the
 // Memory record → R2 upload via workerSync.pushMemory.
 export function ThreadedMemories({ trip, stop, traveler }) {
   const [memories, setMemories] = useState(() =>

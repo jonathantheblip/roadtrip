@@ -115,7 +115,9 @@ async function openReconcileTriage(page) {
   }, BACKFILL_EXIF)
   await page.goto(`/?person=${PERSONA}&trip=recon-roadtrip-2026&nosw=1`)
 
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  // Importer moved to PhotosView (Stage 1): open Photos, then the bulk
+  // import input. Same `import-file-input` testid — only the nav changed.
+  await page.getByTestId(`${PERSONA}-photos-entry`).click()
   await page.getByTestId('import-file-input').setInputFiles(RECON_FILES)
 
   // READY when the Save bar is up.
@@ -185,8 +187,11 @@ test.describe('Trip reconciliation + archiving', () => {
     expect(reconciled.originalPlan.days.find((d) => d.n === 2).stops.map((s) => s.id)).toContain('terrell')
     expect(reconciled.reconciledAt).toBeTruthy()
 
-    // ── Archive (from the DONE screen → back to Settings) ────────────
+    // ── Archive ──────────────────────────────────────────────────────
+    // "Back to the trip" lands in PhotosView now (the importer's home).
+    // Archiving lives in Trip Settings, so hop there via the top-bar ⋯.
     await page.getByRole('button', { name: /Back to the trip/i }).click()
+    await page.getByRole('button', { name: 'Trip settings' }).click()
     const archiveToggle = page.getByTestId('archive-toggle')
     await expect(archiveToggle).toContainText(/Mark as archived/i)
     await archiveToggle.click()
