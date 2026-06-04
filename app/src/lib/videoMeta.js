@@ -10,13 +10,13 @@
 // and silently if neither is parseable — the caller falls back to the
 // upload time.
 //
-// Reads only the first 4 MB by default; the `moov` atom is typically at
-// the start of fast-start MP4s (iPhone writes them this way). For older
-// QuickTime files with moov at the end we'd need a second pass; for now
-// we accept the gap and return null in that case so the upload-time
-// fallback wins.
+// We locate `moov` by walking the top-level atom chain (reading only each
+// box's header, never the multi-MB `mdat` payload), so it works whether moov
+// is at the FRONT (fast-start MP4) or the END of the file. The latter is the
+// common iPhone layout, which an earlier first-4MB-only scan missed entirely —
+// it returned null for any clip >4 MB with moov at the end, so large videos
+// imported dateless (and were then dropped as "outside trip dates").
 
-const SCAN_BYTES = 4 * 1024 * 1024
 // Seconds between 1904-01-01 UTC (MP4 epoch) and 1970-01-01 UTC (Unix
 // epoch). The mvhd atom stamps in MP4 epoch.
 const MP4_TO_UNIX_EPOCH_SECONDS = 2_082_844_800
@@ -24,24 +24,53 @@ const MP4_TO_UNIX_EPOCH_SECONDS = 2_082_844_800
 export async function extractVideoCreationDate(file) {
   if (!file) return null
   try {
-    const slice = file.slice(0, Math.min(file.size, SCAN_BYTES))
-    const buf = await slice.arrayBuffer()
-    const view = new DataView(buf)
-    const moov = findAtom(view, 0, view.byteLength, 'moov')
+    const moov = await locateTopLevelAtom(file, 'moov')
     if (!moov) return null
+    // Read ONLY the moov atom's data (track headers + metadata — KBs to a few
+    // MB, never the mdat bulk), then scan it with the same readers as before.
+    const buf = await file.slice(moov.dataStart, moov.dataEnd).arrayBuffer()
+    const view = new DataView(buf)
 
     // Apple Keys / Values metadata is the higher-fidelity source — it
     // includes the original timezone, which mvhd discards. Look first.
-    const apple = readAppleQuickTimeCreationDate(view, moov.start, moov.end)
+    const apple = readAppleQuickTimeCreationDate(view, 0, view.byteLength)
     if (apple) return apple
 
     // Fallback: mvhd creation_time (UTC seconds since 1904).
-    const mvhd = findAtom(view, moov.start, moov.end, 'mvhd')
+    const mvhd = findAtom(view, 0, view.byteLength, 'mvhd')
     if (!mvhd) return null
     return parseMvhdCreationDate(view, mvhd.start, mvhd.end)
   } catch {
     return null
   }
+}
+
+// Walk the top-level atom chain, reading only each box's 8/16-byte header and
+// following its size, until `wantType` is found. Returns the box's DATA range
+// (header excluded) as absolute file offsets, or null. Bounded so a malformed
+// or zero-size box can't spin forever.
+async function locateTopLevelAtom(file, wantType) {
+  const size = file.size
+  let pos = 0
+  for (let guard = 0; guard < 4096 && pos + 8 <= size; guard++) {
+    const hv = new DataView(await file.slice(pos, Math.min(pos + 16, size)).arrayBuffer())
+    if (hv.byteLength < 8) break
+    let boxSize = hv.getUint32(0)
+    const type = readAscii4(hv, 4)
+    let headerLen = 8
+    if (boxSize === 1) {
+      // 64-bit largesize in the next 8 bytes.
+      if (hv.byteLength < 16) break
+      boxSize = hv.getUint32(8) * 0x100000000 + hv.getUint32(12)
+      headerLen = 16
+    } else if (boxSize === 0) {
+      boxSize = size - pos // box runs to EOF
+    }
+    if (boxSize < headerLen) break // malformed — bail cleanly
+    if (type === wantType) return { dataStart: pos + headerLen, dataEnd: pos + boxSize }
+    pos += boxSize
+  }
+  return null
 }
 
 // Walk top-level atoms in [start, end) looking for one whose type

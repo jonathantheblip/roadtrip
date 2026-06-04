@@ -31,34 +31,21 @@ import {
   assertSimulatorBooted,
 } from './_driver.mjs'
 import { resolvePersona } from '../e2e/_fixtures/persona.js'
+import { dateStableTripSeed } from './_seed.mjs'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
-// Wide-range trip so the .mov (container date ~2026-05-30) is NEVER excluded by
-// the trip-range filter, AND the range contains "today" so this is the ACTIVE
-// trip on the sim's real clock (the sim tier has no clockStub). A stop on
-// 2026-05-30 lets a co-dated clip file by time; an off-date in-range clip still
-// counts as a video (ImportFlow counts kind:'video' regardless of stop match).
+// Use the SAME proven seed video-encode.test.mjs uses — a date-stable
+// FIXTURE_TRIP copy that lands reliably in HelenView → PhotosView on the sim's
+// real clock. The earlier hand-rolled trip landed on the people-picker and
+// reloaded (forceConfirm wiped) so ImportFlow never mounted. We widen ONLY the
+// date range so the .mov (whatever its container date) is never excluded by the
+// trip-range filter while today still falls inside the window. The clip files
+// by time relative to FIXTURE_TRIP's stops; ImportFlow counts kind:'video'
+// regardless of which stop (or interstitial) it lands in.
 const SEED_TRIP = {
-  id: 'import-video-2026',
-  status: 'planning',
-  title: 'Import Video Trip',
-  subtitle: 'fixture',
-  dateRange: '2025 – 2027',
+  ...dateStableTripSeed(),
   dateRangeStart: '2025-01-01',
   dateRangeEnd: '2027-12-31',
-  startCity: 'Alpha',
-  endCity: 'Beta',
-  travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
-  homeBase: { lat: 40, lng: -75, label: 'Home' },
-  days: [
-    {
-      n: 1, date: 'Sat May 30', isoDate: '2026-05-30', title: 'Clip day',
-      drive: { from: 'Alpha', to: 'Beta', hours: '1h', miles: 30 }, lodging: '',
-      stops: [
-        { id: 'alpha', time: '9:00 AM', name: 'Alpha', kind: 'fuel', for: ['jonathan', 'helen', 'aurelia', 'rafa'], note: '', address: 'Alpha', lat: 40, lng: -75 },
-      ],
-    },
-  ],
 }
 const PERSONA = resolvePersona('helen')
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -76,9 +63,6 @@ test('importer encodes a picked video on iOS Simulator Safari and files it by ti
   // and the WebCodecs encode it relies on is proven green by the sibling
   // dispatch video-encode.test.mjs. Re-enable once the harness mount issue is
   // solved (suspect the synthetic click/inject sequence under safaridriver).
-  t.skip('importer-video harness flow WIP — feature verified manually on-device + encode proven by video-encode.test.mjs')
-  return
-  // eslint-disable-next-line no-unreachable
   await assertSimulatorBooted()
   if (!existsSync(FIXTURE_PATH)) {
     t.skip(`real-media fixture not present at ${FIXTURE_PATH} — see app/tests/fixtures/media/README.md`)
@@ -112,12 +96,12 @@ test('importer encodes a picked video on iOS Simulator Safari and files it by ti
     localStorage.setItem('rt_person_v2', persona)
   }, SEED_TRIP, PERSONA)
 
-  await browser.url(BASE_URL + `/?person=${PERSONA}&trip=import-video-2026&nosw=1`)
+  await browser.url(BASE_URL + `/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
 
-  // Force the confirm summary so the test stops before a real upload.
-  await browser.execute(() => {
-    window.__RT_IMPORT_FORCE_CONFIRM = true
-  })
+  // NOTE: window.__RT_IMPORT_FORCE_CONFIRM is set INSIDE the inject below, right
+  // before the change fires — setting it here (post-navigation) didn't survive
+  // to import time (the global read back null), so it's set in the same context
+  // as the change it gates.
 
   // Open Photos (JS-level click — fixed sticky headers intercept WebDriver
   // touch on this surface; see video-encode.test.mjs).
@@ -150,6 +134,11 @@ test('importer encodes a picked video on iOS Simulator Safari and files it by ti
           assignedVia = 'defineProperty'
         }
         const filesLengthAfter = input.files?.length || 0
+        // Force the confirm summary (stop before save/upload) — set HERE, in the
+        // same page context right before the change fires, so a navigation or
+        // reload between initial load and now can't wipe it. (It did: when set
+        // right after browser.url(), the global read back null by inject time.)
+        window.__RT_IMPORT_FORCE_CONFIRM = true
         input.dispatchEvent(new Event('change', { bubbles: true }))
         return { ok: true, fileSize: file.size, filesLengthAfter, assignedVia }
       } catch (e) {

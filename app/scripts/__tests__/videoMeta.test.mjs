@@ -164,3 +164,15 @@ test('extractVideoCreationDate ignores mvhd creation_time more than 1 day in the
   const iso = await extractVideoCreationDate(file)
   assert.equal(iso, null)
 })
+
+test('extractVideoCreationDate finds moov at the END of the file, past the 4MB mark (iPhone layout)', async () => {
+  // Regression guard: non-fast-start MP4s (the common iPhone layout) put a
+  // large mdat BEFORE moov. An earlier first-4MB-only scan missed moov here
+  // entirely → the clip imported dateless and got dropped as "outside trip
+  // dates". The atom-chain walk reads box headers only and must still find it.
+  const captured = new Date('2026-05-24T22:58:05.000Z')
+  const bigMdat = atom('mdat', Buffer.alloc(4 * 1024 * 1024 + 1024)) // > 4MB
+  const file = bufferAsFile(makeMp4([mvhdV0(captured)], [bigMdat]))
+  const iso = await extractVideoCreationDate(file)
+  assert.equal(iso, captured.toISOString())
+})
