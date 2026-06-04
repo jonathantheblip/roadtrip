@@ -162,7 +162,7 @@ inline / opacity.
 
 ---
 
-## DEADCODE-1 — orphaned pre-refactor component/data/hook layer (78 files) `[real, dead-code]`
+## DEADCODE-1 — orphaned pre-refactor component/data/hook layer `[RESOLVED — 73 files deleted, 2026-06-04]`
 
 **Source:** the dead-code tier — knip (QA_COVERAGE_SYSTEM_SPEC §4 build-list #3),
 wired 2026-05-31 at HEAD `14ab6a0`. Reproducer: `cd app && npm run deadcode`.
@@ -173,8 +173,29 @@ live code (JonathanView + its imports Avatar/NearbyResultsModal/FlightStatus) is
 NOT flagged; spot-checks confirmed each flagged file's only importers are other
 orphans.
 
-**Status: [real, recorded — do NOT delete in this pass].** Cataloging is the
-job; deletion (or restoration) is a separate triage decision.
+**Status: RESOLVED 2026-06-04 — the catalog was triaged and DELETED.** By the
+time of the cleanup the set had shrunk 78→73 on its own (the live-map feature
+restored `RouteMap`/`RouteMapLazy`/`useGeolocation`/`useVisited`/`data/route` and
+re-used `leaflet`/`react-leaflet`, so only the *old* `RouteSvg`/`MapCard` stayed
+dead). All 73 remaining orphans deleted in one pass (Jonathan's call: delete,
+incl. the `useTheme` chain). Verified: vite build green, knip → **0 unused files**
+(23 dead exports + cosmetic config-hints remain — the follow-on), unit 298/299
+(known claudeSystemPrompt), full both-engine e2e **202 pass / 12 skip / 0 fail**
+(unchanged → nothing dead was used at runtime), no baseline churn.
+
+**⚠ ONE FEATURE GAP ACCEPTED (for the redesign, NOT a bug to fix now):
+per-person PWA install APPEARANCE is OFF.** `useTheme` was the only deleted file
+that did live work — it swapped `<link rel="manifest">` to a per-person manifest
+(each family member's home-screen install gets their own app name "…— Helen",
+icon, theme color) + per-person favicon/apple-touch-icon/title at
+Add-to-Home-Screen time. App.jsx + the index.html bootstrap already re-implement
+person *persistence* (the `rt_person` cookie that crosses the iOS standalone
+boundary, the `?person=` URL capture, the `theme-color` first-paint) — so launch
+still opens as the right person; only the installed icon/name/color is now
+generic (the static `manifest.json`). **Rebuild per-person install during the
+skin redesign** (it redoes per-person icons/colors anyway). The manifest-swap +
+iOS icon-reattach technique lives in git history at `useTheme.js` (parent of the
+deletion commit). See [[per-user-skin-redesign]].
 
 **Root cause:** the "four refined themed views" refactor (commit `1fc7a9f`)
 replaced a prior single-view design generation; the old layer it used was left
