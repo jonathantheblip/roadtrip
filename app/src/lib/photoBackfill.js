@@ -119,6 +119,29 @@ export async function readPhotoExif(file) {
   }
 }
 
+// EXIF read with the headless-test seam. Headless image fixtures can't
+// carry real GPS EXIF, so when `window.__RT_BACKFILL_EXIF` maps this file's
+// name to a record we feed that straight into the matcher/draft pipeline
+// instead of reading bytes. The global is never set in production, so this
+// is inert outside tests. Shared by PhotoBackfillTriage AND ImportFlow so
+// the seam can't drift between the two import surfaces (both must honor it
+// or the e2e import coverage would diverge).
+export async function readExifForImport(file) {
+  const map = typeof window !== 'undefined' ? window.__RT_BACKFILL_EXIF : null
+  if (map && file && Object.prototype.hasOwnProperty.call(map, file.name)) {
+    const o = map[file.name] || {}
+    return {
+      capturedAt: o.capturedAt ?? null,
+      capturedAtSource: 'test',
+      lat: Number.isFinite(o.lat) ? o.lat : null,
+      lng: Number.isFinite(o.lng) ? o.lng : null,
+      orientation: null,
+      offset: null,
+    }
+  }
+  return readPhotoExif(file)
+}
+
 // Filter a list of photo records (each carrying at least `capturedAt`)
 // to those whose timestamps fall inside the trip's date range.
 //

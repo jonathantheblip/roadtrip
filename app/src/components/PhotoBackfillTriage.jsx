@@ -13,7 +13,7 @@ import {
   Scissors,
   X,
 } from 'lucide-react'
-import { readPhotoExif, filterByTripRange } from '../lib/photoBackfill'
+import { readExifForImport, filterByTripRange } from '../lib/photoBackfill'
 import { matchPhotosToStops } from '../lib/photoMatch'
 import { reverseGeocode } from '../lib/geocode'
 import { listMemoriesForTrip } from '../lib/memoryStore'
@@ -119,7 +119,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, tripsApi, onCancel,
       for (const entry of fileEntries) {
         if (cancelled) return
         try {
-          const exif = await readExifWithTestOverride(entry.file)
+          const exif = await readExifForImport(entry.file)
           results.push({
             id: entry.id,
             file: entry.file,
@@ -390,7 +390,7 @@ export function PhotoBackfillTriage({ trip, traveler, files, tripsApi, onCancel,
   }
 
   if (phase === PHASE.DONE) {
-    const r = uploadResults || { ok: 0, reattached: 0, failed: 0, errors: [] }
+    const r = uploadResults || { ok: 0, reattached: 0, queued: 0, failed: 0, errors: [] }
     return (
       <TriageShell trip={trip} onBack={null}>
         <div style={{ padding: '32px 18px' }}>
@@ -401,6 +401,9 @@ export function PhotoBackfillTriage({ trip, traveler, files, tripsApi, onCancel,
             <li>Trip updated with what actually happened.</li>
             {r.ok > 0 && (
               <li>{r.ok} new photo{r.ok === 1 ? '' : 's'} imported</li>
+            )}
+            {r.queued > 0 && (
+              <li>{r.queued} will sync when you’re back online</li>
             )}
             {r.reattached > 0 && (
               <li>{r.reattached} photo{r.reattached === 1 ? '' : 's'} re-attached to existing memories</li>
@@ -1118,28 +1121,6 @@ function PhotoTile({ entry, checked, duplicate, onToggle }) {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────
-
-// EXIF read with a test seam (parallels AddDispatchModal's
-// `window.__RT_FORCE_BUCKETC`). Headless image fixtures can't carry real
-// GPS EXIF, so when `window.__RT_BACKFILL_EXIF` maps this file's name to
-// a record, we feed that record straight into the REAL matcher + draft
-// pipeline instead of reading bytes. The global is never set in
-// production, so this is inert outside tests.
-async function readExifWithTestOverride(file) {
-  const map = typeof window !== 'undefined' ? window.__RT_BACKFILL_EXIF : null
-  if (map && file && Object.prototype.hasOwnProperty.call(map, file.name)) {
-    const o = map[file.name] || {}
-    return {
-      capturedAt: o.capturedAt ?? null,
-      capturedAtSource: 'test',
-      lat: Number.isFinite(o.lat) ? o.lat : null,
-      lng: Number.isFinite(o.lng) ? o.lng : null,
-      orientation: null,
-      offset: null,
-    }
-  }
-  return readPhotoExif(file)
-}
 
 function truncate(s, n = 16) {
   const str = String(s || '')

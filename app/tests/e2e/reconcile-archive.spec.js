@@ -120,6 +120,11 @@ async function openReconcileTriage(page) {
   await page.getByTestId(`${PERSONA}-photos-entry`).click()
   await page.getByTestId('import-file-input').setInputFiles(RECON_FILES)
 
+  // Importer Stage 2: the bulk pick now analyzes first and shows the
+  // lightweight confirm summary (this batch is "messy" — an interstitial +
+  // an off-route cluster). "Review in detail" opens the full reconcile editor.
+  await page.getByTestId('import-confirm-review').click()
+
   // READY when the Save bar is up.
   await expect(page.getByRole('button', { name: /Save · upload|Save changes/i })).toBeVisible({ timeout: 10000 })
 }

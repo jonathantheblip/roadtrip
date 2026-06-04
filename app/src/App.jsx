@@ -284,7 +284,16 @@ export default function App() {
     let drainInFlight = false
     let cancelled = false
     const SYNC_THROTTLE_MS = 5000
-    const DRAIN_INTERVAL_MS = 120_000
+    // Reconnect backstop. iOS Safari (standalone PWA) has NO Background Sync
+    // (reg.sync is undefined → registerBackgroundSync no-ops) and fires the
+    // `online` event unreliably — sometimes not at all, sometimes before
+    // connectivity is truly restored (that drain attempt then fails). So this
+    // interval is the only dependable "network's back, drain now" signal on
+    // iOS. Keep it short enough that a queued upload clears within seconds of
+    // reconnect, not minutes. runDrain early-returns when the queue is empty
+    // (a cheap IDB count), so a short idle interval costs almost nothing. Was
+    // 120_000 — a 2-minute lag read as "stuck" on a real device.
+    const DRAIN_INTERVAL_MS = 20_000
 
     async function runSync() {
       const now = Date.now()

@@ -1,32 +1,50 @@
 // Backfill upload pipeline. Takes the triage payload (the array of
-// `{ file, exif, match, reattachOf, ... }` records the user kept
-// checked) and routes each photo through the existing
-// saveAsset → saveMemory plumbing.
+// `{ file, exif, match, reattachOf, stopId, interstitial, ... }` records
+// the user kept checked) and routes each photo through the upload +
+// memory plumbing.
 //
-// New photos land as fresh memory records, kind='photo', captioned
-// blank (per spec — no auto-captions). Re-attach candidates (the
-// vb3-4 case: existing D1 metadata rows with no photo) are detected
-// by the triage layer and routed through this helper as updates to
-// the existing record's `id` + photoRefs[], so we don't fork a
-// duplicate.
+// Offline-safe (Importer Stage 2): a new photo is downscaled, then pushed
+// straight to the Worker's R2 route. When that push fails (offline /
+// Worker 5xx) the blob is parked in `lib/uploadQueue` and the memory is
+// saved with a `storage:'pending'` ref so the album still renders it; the
+// PhotosView sync pill drains the queue on reconnect. This mirrors
+// `AddDispatchModal.queueSilently` — the proven single-photo path — so a
+// bulk import survives an outage exactly the way a single dispatch does.
+//
+// New photos land as fresh memory records, kind='photo', captioned blank
+// (per spec — no auto-captions). Re-attach candidates (the vb3-4 case:
+// existing D1 metadata rows with no photo) are detected by the triage
+// layer and routed through this helper as updates to the existing
+// record's id + photoRefs[], so we don't fork a duplicate.
 
 import { saveAsset, makeAssetKey } from './memAssets'
 import { saveMemory } from './memoryStore'
 import { mergeRefIntoExisting } from './photoRefMerge'
+import { preparePhotoForUpload } from './photoPipeline'
+import { enqueue, registerBackgroundSync } from './uploadQueue'
+import { workerFetch } from './workerSync'
 
-// Run the backfill upload for one triage payload. Resolves after
-// every photo has either been saved locally + queued for sync, or
-// failed. Returns `{ ok, reattached, failed, errors }`.
+function makeMemoryId() {
+  return `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+}
+
+// Run the backfill upload for one triage payload. Resolves after every
+// photo has been saved locally + (uploaded OR queued for sync), or has
+// failed. Returns `{ ok, reattached, queued, failed, errors }`:
+//   - ok:        new photos saved (whether uploaded now or queued)
+//   - queued:    subset of `ok` that couldn't reach the Worker and are
+//                parked for the sync pill to drain on reconnect
+//   - reattached: imported photos merged into an existing memory
 //
-// onProgress({ done, total, currentName }) is invoked once per
-// photo as we step through.
+// onProgress({ done, total, currentName }) is invoked once per photo as
+// we step through.
 export async function uploadBackfillPhotos({
   photos,
   trip,
   traveler,
   onProgress,
 }) {
-  const results = { ok: 0, reattached: 0, failed: 0, errors: [] }
+  const results = { ok: 0, reattached: 0, queued: 0, failed: 0, errors: [] }
   const total = photos.length
   if (total === 0) {
     onProgress?.({ done: 0, total: 0, currentName: null })
@@ -39,34 +57,35 @@ export async function uploadBackfillPhotos({
     onProgress?.({ done: i, total, currentName: name })
 
     try {
-      const assetKey = makeAssetKey('photo')
-      // saveAsset auto-downscales image inputs through the M2 pipeline
-      // (see memAssets.js). We pass the raw File; it returns the IDB
-      // key + the post-downscale mime.
-      const { mime } = await saveAsset('photo', assetKey, entry.file)
-
+      // Date + coords come from the triage's EXIF read (entry.exif), which
+      // honors the __RT_BACKFILL_EXIF test seam; the downscale's own EXIF is
+      // identical in production but null for headless fixtures.
       const capturedAt = entry?.exif?.capturedAt || null
-      const ref = {
-        key: assetKey,
-        storage: 'idb',
-        mime,
-        capturedAt,
-      }
 
-      // Pick the stop assignment. An explicit `entry.stopId` (set by
-      // the reconciliation layer, which binds photos to the FINAL
-      // reconciled stops — including auto-added ones that didn't exist
-      // at match time) always wins, even when it's null (interstitial).
-      // Otherwise fall back to the raw matcher result: GPS+time /
-      // time-only matches land on their stop; interstitial / deviation
-      // store with stopId=null.
+      // Pick the stop assignment. An explicit `entry.stopId` (set by the
+      // reconciliation layer, which binds photos to the FINAL reconciled
+      // stops — including auto-added ones that didn't exist at match time)
+      // always wins, even when it's null (interstitial). Otherwise fall back
+      // to the raw matcher result: GPS+time / time-only matches land on their
+      // stop; interstitial / deviation store with stopId=null.
       const stopId =
         entry?.stopId !== undefined ? entry.stopId : entry?.match?.stopId || null
 
       if (entry.reattachOf) {
-        // Re-attach: update the existing metadata-only memory by id,
-        // preserving everything that was there. saveMemory's upsert
-        // path keeps createdAt and rewrites updatedAt for us.
+        // Re-attach (unchanged): the imported photo links to an existing
+        // metadata-only memory. Bytes go to IDB; the memoryStore mirror
+        // (workerSync.pushMemory) uploads them to R2 best-effort.
+        //
+        // NOTE: offline re-attach is NOT queue-backed — the shared drain
+        // runner OVERWRITES a memory by id rather than MERGING refs, so
+        // routing a re-attach through the queue would clobber the existing
+        // record's other photos. Re-attach therefore syncs whenever
+        // pushMemory next succeeds. New-photo imports (the common case) ARE
+        // offline-safe via the queue below; re-attach is a rare recovery
+        // edge (existing metadata row, missing bytes).
+        const assetKey = makeAssetKey('photo')
+        const { mime } = await saveAsset('photo', assetKey, entry.file)
+        const ref = { key: assetKey, storage: 'idb', mime, capturedAt }
         const existing = entry.reattachOf
         const merged = mergeRefIntoExisting(existing, ref)
         saveMemory({
@@ -84,23 +103,37 @@ export async function uploadBackfillPhotos({
           reactions: existing.reactions || [],
         })
         results.reattached += 1
-      } else {
-        // New photo memory. An interstitial photo keeps stopId = null and
-        // carries its "from A to B" identity as a memory-level field (007);
-        // pass it only when present so non-interstitial photos write nothing.
-        saveMemory({
-          tripId: trip.id,
-          stopId,
-          authorTraveler: traveler,
-          visibility: 'shared',
-          kind: 'photo',
-          caption: '',
-          photoRefs: [ref],
-          capturedAt,
-          interstitial: entry.interstitial || undefined,
-        })
-        results.ok += 1
+        continue
       }
+
+      // New photo OR video. Generate the id up front so the queued item's id
+      // matches the saved record's id — the drain runner re-saves by that id,
+      // so the pending memory becomes the R2-backed one rather than a
+      // duplicate.
+      const memoryId = makeMemoryId()
+      const ref =
+        entry.kind === 'video'
+          ? await uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, capturedAt, results })
+          : await uploadOrQueueNewPhoto({ entry, memoryId, trip, traveler, stopId, capturedAt, results })
+
+      // An interstitial photo keeps stopId = null and carries its "from A to
+      // B" identity as a memory-level field (007). On a queued photo this
+      // identity lives on the local record and survives the drain's re-save
+      // because saveMemory PRESERVES interstitial (and capturedAt) when the
+      // caller passes undefined — the drain runner does exactly that.
+      saveMemory({
+        id: memoryId,
+        tripId: trip.id,
+        stopId,
+        authorTraveler: traveler,
+        visibility: 'shared',
+        kind: 'photo',
+        caption: '',
+        photoRef: ref,
+        capturedAt,
+        interstitial: entry.interstitial || undefined,
+      })
+      results.ok += 1
     } catch (err) {
       results.failed += 1
       results.errors.push({
@@ -114,7 +147,133 @@ export async function uploadBackfillPhotos({
   return results
 }
 
-// `mergeRefIntoExisting` lives in `./photoRefMerge` so the dedup
-// logic stays Node-testable without dragging the memAssets +
-// memoryStore + photoPipeline tree into the test import graph.
+// Downscale + upload one new photo, returning the photoRef to persist.
+// On a failed Worker push the blob is enqueued and a 'pending' ref (with
+// an object URL so the tile renders) is returned; `results.queued` is
+// bumped. When no Worker is configured we fall back to the legacy
+// IDB-local store (no queue — there's nothing to drain to).
+async function uploadOrQueueNewPhoto({
+  entry,
+  memoryId,
+  trip,
+  traveler,
+  stopId,
+  capturedAt,
+  results,
+}) {
+  // Downscale for upload (the M2 pipeline — guards iOS's decoded-image
+  // budget). Fall back to the raw file if it can't be decoded; one bad
+  // photo shouldn't fail the whole batch.
+  let blob
+  let mime
+  try {
+    const prep = await preparePhotoForUpload(entry.file)
+    blob = prep.blob
+    mime = prep.mime
+  } catch {
+    blob = entry.file
+    mime = entry.file?.type || 'image/jpeg'
+  }
+
+  // baseRef carries everything the drain runner needs to reconstruct the R2
+  // ref on retry (mime + capturedAt ride through item.ref). Try the Worker
+  // push; on ANY failure park the blob in the queue + return a 'pending' ref
+  // so the sync pill shows and the drain retries. workerFetch throws 'worker
+  // not configured' when there's no Worker, so the unconfigured case enqueues
+  // too — matching AddDispatchModal.queueSilently. (The importer used to
+  // diverge here, going IDB-only with no pill, which read as "saved, nothing
+  // syncing" in a worker-less build.)
+  const baseRef = { kind: 'photo', mime, capturedAt }
+  try {
+    const r = await workerFetch(
+      `/assets/photo/${encodeURIComponent(memoryId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': blob?.type || mime || 'application/octet-stream' },
+        body: blob,
+      }
+    )
+    const remote = await r.json() // { key, url, mime }
+    return { ...baseRef, storage: 'r2', key: remote.key, url: remote.url }
+  } catch (err) {
+    // Offline / Worker error → park the blob for the sync pill to retry.
+    // The local ref stays 'pending' with an object URL so the album tile
+    // renders until the drain swaps in the R2 URL. The pending ref carries
+    // NO `key`, so the memoryStore mirror (pushMemory) skips it — the queue
+    // owns this upload, so there's no double-push.
+    await enqueue({
+      id: memoryId,
+      kind: 'photo',
+      blob,
+      tripId: trip.id,
+      stopId,
+      authorTraveler: traveler,
+      caption: '',
+      ref: baseRef,
+      lastError: err?.message || null,
+    })
+    await registerBackgroundSync().catch(() => {})
+    results.queued += 1
+    return { ...baseRef, storage: 'pending', url: URL.createObjectURL(blob) }
+  }
+}
+
+// Upload one already-encoded video (ImportFlow runs the WebCodecs encode in
+// PREPARE), returning the photoRef to persist. Mirrors the photo path's
+// offline-safe shape: try the Worker's /assets/video route, else park the
+// encoded blob in the queue. The pending/local ref renders the first-frame
+// poster (the encoded video itself isn't grid-renderable). Videos never use
+// the IDB asset store (memAssets has no video store) — offline persistence is
+// the upload queue; with no Worker the object URL covers the session.
+async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, capturedAt, results }) {
+  const enc = entry.encoded || {}
+  const blob = enc.blob
+  const posterBlob = enc.posterBlob || null
+  const baseRef = {
+    kind: 'video',
+    mime: enc.mime || 'video/mp4',
+    width: enc.width,
+    height: enc.height,
+    durationMs: enc.durationMs,
+    capturedAt,
+  }
+  const pendingRef = () => ({ ...baseRef, storage: 'pending', url: URL.createObjectURL(posterBlob || blob) })
+
+  // Nothing to upload (encode produced no blob) → render-only pending ref.
+  if (!blob) {
+    return pendingRef()
+  }
+  // Otherwise try the push; the catch enqueues on ANY failure (offline OR no
+  // Worker configured — workerFetch throws when unconfigured), matching the
+  // photo path + AddDispatchModal.queueSilently.
+  try {
+    const r = await workerFetch(`/assets/video/${encodeURIComponent(memoryId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': blob.type || 'video/mp4' },
+      body: blob,
+    })
+    const remote = await r.json()
+    return { ...baseRef, storage: 'r2', key: remote.key, url: remote.url }
+  } catch (err) {
+    await enqueue({
+      id: memoryId,
+      kind: 'video',
+      blob,
+      posterBlob,
+      tripId: trip.id,
+      stopId,
+      authorTraveler: traveler,
+      caption: '',
+      ref: baseRef,
+      lastError: err?.message || null,
+    })
+    await registerBackgroundSync().catch(() => {})
+    results.queued += 1
+    return pendingRef()
+  }
+}
+
+// `mergeRefIntoExisting` lives in `./photoRefMerge` so the dedup logic
+// stays Node-testable without dragging the memAssets + memoryStore +
+// photoPipeline tree into the test import graph.
 export { mergeRefIntoExisting }

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Plus, Image as ImageIcon, ImagePlus, RefreshCw } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { AddDispatchModal } from '../components/AddDispatchModal'
-import { PhotoBackfillTriage } from '../components/PhotoBackfillTriage'
+import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
 import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
 import { saveMemory } from '../lib/memoryStore'
+import { isVideoEncodeSupported } from '../lib/videoPipeline'
 
 // Photos-by-event view. Punchlist 3 Item 4 — Helen's primary surface
 // for the trip's photo archive, grouped by Stop/event.
@@ -76,6 +77,21 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
   // Dispatch composer state. Auto-opens when the parent set
   // openDispatchOnMount (e.g. user tapped "Add photo" elsewhere).
   const [dispatchOpen, setDispatchOpen] = useState(!!openDispatchOnMount)
+
+  // Quiet confirmation toast after an import (the smart-skip feel — the
+  // clean batch saves silently, this is the only acknowledgement).
+  const [toast, setToast] = useState(null)
+  const toastTimerRef = useRef(null)
+  function showImportToast(results) {
+    const props = importToastProps(results)
+    if (!props) return
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast(props)
+    toastTimerRef.current = setTimeout(() => setToast(null), 3400)
+  }
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+  }, [])
 
   // Sync pill: live count from the IndexedDB queue. Subscribes so a
   // save anywhere in the app updates this view without polling.
@@ -154,20 +170,23 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
     setMemoryTick((t) => t + 1)
   }
 
-  // Importer takes over the whole surface while triaging a picked batch —
-  // PhotoBackfillTriage (TriageShell) brings its own var(--bg) chrome, so
-  // it renders directly inside the already-themed Photos surface.
+  // Importer takes over the whole surface while a picked batch is in flight —
+  // ImportFlow (its own var(--bg) chrome) analyzes, smart-skips clean imports
+  // with a toast, or shows the confirm summary, and hands off to the heavy
+  // reconcile editor on "Review in detail". A completed import bumps
+  // memoryTick so the new photos appear, and surfaces a quiet toast.
   if (triageFiles && triageFiles.length > 0) {
     return (
-      <PhotoBackfillTriage
+      <ImportFlow
         trip={trip}
         traveler={traveler}
         files={triageFiles}
         tripsApi={tripsApi}
         onCancel={() => setTriageFiles(null)}
-        onComplete={() => {
+        onComplete={(results) => {
           setTriageFiles(null)
           setMemoryTick((t) => t + 1)
+          showImportToast(results)
         }}
       />
     )
@@ -248,7 +267,11 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
         <input
           ref={importInputRef}
           type="file"
-          accept="image/*"
+          // Only offer video where the WebCodecs encode can actually run —
+          // otherwise a picked video would be silently dropped (ImportFlow
+          // skips unencodable videos). Mirrors AddDispatchModal hiding its
+          // video picker when !isVideoEncodeSupported().
+          accept={isVideoEncodeSupported() ? 'image/*,video/*' : 'image/*'}
           multiple
           data-testid="import-file-input"
           style={{ display: 'none' }}
@@ -299,8 +322,25 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
           onSaved={onDispatchSaved}
         />
       )}
+
+      {toast && <ImportToast {...toast} />}
     </div>
   )
+}
+
+// Map the upload results → <ImportToast> props (the design's quiet, count-first
+// voice). The common case is "N photos added [· M syncing]"; re-attach and the
+// nothing-new case get a plain message line.
+function importToastProps(r) {
+  if (!r) return null
+  if (r.nothingNew) return { message: 'Nothing new to import' }
+  if (r.ok > 0) {
+    return { count: r.ok, noun: r.ok === 1 ? 'photo' : 'photos', syncing: r.queued || 0 }
+  }
+  if (r.reattached > 0) {
+    return { message: `${r.reattached} re-attached` }
+  }
+  return { message: 'Nothing new to import' }
 }
 
 function SyncPill({ count, draining, onTap }) {
