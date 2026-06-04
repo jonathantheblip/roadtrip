@@ -12,7 +12,7 @@ test.describe('Photos surfaces — visual capture', () => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await page.goto('/?person=helen&trip=volleyball-2026')
     await page.getByTestId('helen-photos-entry').click()
-    await page.waitForSelector('[data-testid="add-dispatch"]')
+    await page.waitForSelector('[data-testid="import-photos"]')
     await page.screenshot({ path: `${SHOT_DIR}/photos-empty-helen.png`, fullPage: true })
   })
 

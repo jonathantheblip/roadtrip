@@ -52,7 +52,7 @@
 // real iOS WebKit. The failure path below saves a screenshot artifact and
 // dumps the luma stats so it can be reported as a finding, not buried.
 //
-// Lessons inherited from video-encode.test.mjs (same gate, same traps):
+// Lessons inherited from the iOS-Simulator safaridriver gates (same traps):
 //   - Drive the app via JS-level .click() on the React handler, not
 //     WebDriver pointer clicks: iOS Safari routes a touch to the topmost
 //     z-indexed element, and PhotosView's sticky header overlays the

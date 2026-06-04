@@ -5,10 +5,7 @@ import {
   FIXTURE_TRIP,
   TINY_RED_PNG_DATA_URL,
 } from './_fixtures/withTrip.js'
-import {
-  mockSuccessfulUpload,
-  mockClaudeChatWorker,
-} from './_fixtures/mockUpload.js'
+import { mockClaudeChatWorker } from './_fixtures/mockUpload.js'
 
 // Bug-Trap Item A.4 — visual regression baselines.
 //
@@ -166,33 +163,6 @@ test('lightbox — multi-photo memory open', async ({ page }) => {
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(400)
   await expect(page).toHaveScreenshot('lightbox-multi.png', { fullPage: false })
-})
-
-// ─── Dispatch composer states ──────────────────────────────────
-test('dispatch composer — empty state', async ({ page }) => {
-  await setupTraveler(page, 'helen')
-  await mockSuccessfulUpload(page)
-  await page.getByTestId('helen-photos-entry').click()
-  await page.getByTestId('add-dispatch').click()
-  await expect(page.getByTestId('add-dispatch-modal')).toBeVisible()
-  await page.waitForTimeout(300)
-  await expect(page).toHaveScreenshot('dispatch-empty.png', { fullPage: false })
-})
-
-test('dispatch composer — photo picked + preview', async ({ page }) => {
-  await setupTraveler(page, 'helen')
-  await mockSuccessfulUpload(page)
-  await page.getByTestId('helen-photos-entry').click()
-  await page.getByTestId('add-dispatch').click()
-  // Synthetic PNG fixture is fine for the baseline — visual
-  // baseline tests don't depend on the real-media corpus.
-  const { redPhotoFile } = await import('./_fixtures/photoFixtures.js')
-  await page.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
-  await expect(page.getByTestId('prep-metadata')).toBeVisible({ timeout: 15_000 })
-  await page.waitForTimeout(300)
-  await expect(page).toHaveScreenshot('dispatch-photo-picked.png', {
-    fullPage: false,
-  })
 })
 
 // ─── Claude chat — empty + with conversation ───────────────────

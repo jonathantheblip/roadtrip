@@ -107,4 +107,42 @@ test.describe('Importer Stage 2 — ImportFlow (smart-skip + confirm)', () => {
     // Alpha + "From Alpha to Beta" + Beta = three sections.
     await expect(page.getByTestId('stop-group')).toHaveCount(3, { timeout: 8000 })
   })
+
+  test('imported photo is downscaled to JPEG before upload (worker receives image/jpeg)', async ({ page }) => {
+    // The importer runs the same preparePhotoForUpload downscale the retired
+    // dispatch composer did — a picked PNG reaches the Worker as a JPEG, not
+    // the original PNG. (Relocated from the retired photos-dispatch happy-path
+    // test, whose JPEG-downscale-mime proof must survive on the one importer.)
+    // Playwright route interception doesn't reliably surface Blob request
+    // bodies, so the Content-Type header is the proof the downscale ran.
+    const uploadedMimes = []
+    await seedTripIntoCache(page, TRIP)
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/assets\/photo/,
+      async (route) => {
+        uploadedMimes.push((await route.request().headerValue('content-type')) || '')
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ key: 'helen/flow/jpeg', url: 'https://example.test/flow-jpeg', mime: 'image/jpeg' }),
+        })
+      }
+    )
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/(memories|trips)/,
+      (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    )
+    await page.addInitScript((map) => { window.__RT_BACKFILL_EXIF = map }, {
+      'downscale.png': { capturedAt: '2026-05-23T09:15:00Z', lat: 40.0, lng: -75.0 },
+    })
+    await page.goto(`/?person=${PERSONA}&trip=import-flow-2026&nosw=1`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
+    await page.getByTestId('import-file-input').setInputFiles([redPhotoFile('downscale.png')])
+
+    // Clean batch → smart-skip → toast; the upload fired during the save.
+    await expect(page.getByTestId('import-toast')).toContainText(/1 photo added/i, { timeout: 12000 })
+    await expect.poll(() => uploadedMimes.length, { timeout: 8000 }).toBeGreaterThan(0)
+    // The downscale ran end-to-end: the Worker got a JPEG, not the source PNG.
+    expect(uploadedMimes[0]).toMatch(/jpeg/i)
+  })
 })

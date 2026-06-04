@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Plus, Image as ImageIcon, ImagePlus, RefreshCw } from 'lucide-react'
+import { ChevronLeft, Image as ImageIcon, ImagePlus, RefreshCw } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
-import { AddDispatchModal } from '../components/AddDispatchModal'
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
@@ -19,17 +18,17 @@ import { isVideoEncodeSupported } from '../lib/videoPipeline'
 // StopGroup since it's how this view stitches a single trip's
 // memories into the stops timeline.
 //
-// "Import photos" is the PRIMARY action at the top (Importer Stage 1 —
-// moved here out of Trip Settings): a bulk library pick that auto-files
-// by GPS+time through PhotoBackfillTriage. "Add photo or video" (the
-// single-photo dispatch — still the video + offline path) sits below it
-// as the secondary add. The dispatch entry itself is unchanged.
+// "Import photos" is the sole add affordance at the top (the One True
+// Importer — Stage 3 retired the single-photo dispatch composer): a bulk
+// library pick (photos + video) that auto-files by GPS+time through
+// PhotoBackfillTriage, is offline-safe via the upload queue, and captions
+// happen in the album afterward. There is no separate dispatch modal.
 //
 // Aesthetic: Helen's surface palette (linen / forest accent) is the
 // reference design; the other three themed views inherit via CSS vars
 // when they navigate in.
 
-export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsApi }) {
+export function PhotosView({ trip, traveler, onBack, tripsApi }) {
   // Re-read memories when this view-render flips (e.g. after a save).
   const [memoryTick, setMemoryTick] = useState(0)
 
@@ -73,10 +72,6 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
       return { ...lb, list: sameGroup.entries, index: idx, entry: sameGroup.entries[idx] }
     })
   }, [groups])
-
-  // Dispatch composer state. Auto-opens when the parent set
-  // openDispatchOnMount (e.g. user tapped "Add photo" elsewhere).
-  const [dispatchOpen, setDispatchOpen] = useState(!!openDispatchOnMount)
 
   // Quiet confirmation toast after an import (the smart-skip feel — the
   // clean batch saves silently, this is the only acknowledgement).
@@ -171,10 +166,6 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
       setDraining(false)
       setMemoryTick((t) => t + 1)
     }
-  }
-
-  function onDispatchSaved() {
-    setMemoryTick((t) => t + 1)
   }
 
   // Importer takes over the whole surface while a picked batch is in flight —
@@ -276,8 +267,7 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
           type="file"
           // Only offer video where the WebCodecs encode can actually run —
           // otherwise a picked video would be silently dropped (ImportFlow
-          // skips unencodable videos). Mirrors AddDispatchModal hiding its
-          // video picker when !isVideoEncodeSupported().
+          // skips unencodable videos, logging the skip to the dev upload log).
           accept={isVideoEncodeSupported() ? 'image/*,video/*' : 'image/*'}
           multiple
           data-testid="import-file-input"
@@ -290,7 +280,6 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
           }}
         />
         <ImportButton onClick={() => importInputRef.current?.click()} />
-        <AddDispatchButton onClick={() => setDispatchOpen(true)} />
       </div>
 
       <GridPausedProvider paused={!!lightbox}>
@@ -318,15 +307,6 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
           onNext={lightbox.index < lightbox.list.length - 1 ? () => step(1) : null}
           onClose={closeLightbox}
           onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
-        />
-      )}
-
-      {dispatchOpen && (
-        <AddDispatchModal
-          trip={trip}
-          traveler={traveler}
-          onClose={() => setDispatchOpen(false)}
-          onSaved={onDispatchSaved}
         />
       )}
 
@@ -386,8 +366,8 @@ function SyncPill({ count, draining, onTap }) {
 }
 
 // Primary action (Importer Stage 1): bulk-pick from the library, then
-// auto-file by GPS+time through the triage. Sits above the single-photo
-// dispatch; mirrors its card styling so the two read as a matched pair.
+// auto-file by GPS+time through the triage. The sole add affordance on
+// this surface (Stage 3 retired the single-photo dispatch composer).
 function ImportButton({ onClick }) {
   return (
     <button
@@ -434,69 +414,6 @@ function ImportButton({ onClick }) {
             }}
           >
             from your library — we'll match them to stops.
-          </div>
-        </div>
-      </div>
-      <span
-        style={{
-          fontFamily: 'Fraunces, Georgia, serif',
-          fontSize: 26,
-          fontStyle: 'italic',
-          color: 'var(--accent-text)',
-        }}
-      >
-        →
-      </span>
-    </button>
-  )
-}
-
-function AddDispatchButton({ onClick }) {
-  return (
-    <button
-      type="button"
-      data-testid="add-dispatch"
-      onClick={onClick}
-      style={{
-        width: '100%',
-        padding: '16px 14px',
-        background: 'var(--card, transparent)',
-        border: '1px solid var(--accent)',
-        borderRadius: 10,
-        cursor: 'pointer',
-        textAlign: 'left',
-        color: 'var(--text)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Plus size={18} style={{ color: 'var(--accent-text)' }} />
-        <div>
-          <div
-            style={{
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 10,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              color: 'var(--accent-text)',
-              fontWeight: 700,
-            }}
-          >
-            Add photo or video
-          </div>
-          <div
-            style={{
-              fontFamily: 'Fraunces, Georgia, serif',
-              fontStyle: 'italic',
-              fontSize: 14,
-              color: 'var(--muted)',
-              marginTop: 2,
-            }}
-          >
-            from wherever you are.
           </div>
         </div>
       </div>

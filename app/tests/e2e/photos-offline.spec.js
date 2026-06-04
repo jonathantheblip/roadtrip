@@ -1,8 +1,5 @@
 import { test, expect } from './_fixtures/clockStub.js'
-import {
-  seedTripIntoCache,
-  FIXTURE_TRIP,
-} from './_fixtures/withTrip.js'
+import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
 import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
 import { resolvePersona } from './_fixtures/persona.js'
@@ -11,34 +8,40 @@ import { resolvePersona } from './_fixtures/persona.js'
 // unset so existing runs stay byte-identical to before.
 const PERSONA = resolvePersona('helen')
 
-// M4 acceptance — Background Sync fallback (Page Visibility +
-// interval + online event). Plays the actual end-to-end story:
-// Helen loses signal, picks a photo, signal comes back, app drains
-// without her doing anything.
+// Importer offline AUTO-drain — the two triggers the importer's own offline
+// spec (photos-import-offline, manual pill-tap only) does NOT cover: Page
+// Visibility (foreground) and a service-worker drain message. Plays the
+// end-to-end story: Helen loses signal, imports a photo, signal returns, the
+// app drains without her tapping anything. Stage 3 moved the on-ramp from the
+// dispatch composer to the one importer; the drain triggers under test are
+// unchanged.
 //
-// Background Sync API itself is not available in iOS Safari, so the
-// app relies on the fallback path. Headless Chromium DOES have
-// SyncManager, but for this test we toggle offline/online via
-// context.setOffline + visibilitychange so the assertion holds
-// across both code paths.
+// Background Sync API itself is absent on iOS Safari, so the app relies on
+// this fallback path. We simulate the outage by failing the /assets route
+// (503) then flipping it to 200.
 
-test.describe('Photos upload — offline drain (M4)', () => {
+// One photo, cleanly at the Saturday match stop (vb2-3) → the importer
+// smart-skips review and saves silently; the failed upload parks in the queue
+// and the album header shows the pill.
+const CLEAN_EXIF = {
+  'outage.png': { capturedAt: '2026-05-23T19:45:00Z', lat: 41.4923, lng: -72.0934 },
+}
+
+test.describe('Photos upload — offline auto-drain (importer)', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => indexedDB.deleteDatabase('roadtrip-upload-queue'))
   })
 
-  test('offline pick → queue populates → online + foreground → drain to zero', async ({
+  test('offline import → queue populates → online + foreground → drain to zero', async ({
     page,
-    context,
     browserName,
   }) => {
     test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
     await seedTripIntoCache(page, FIXTURE_TRIP)
 
-    // Mock the asset upload endpoint to count attempts. The catch-all
-    // in seedTripIntoCache 404s anything else from the Worker host;
-    // we install this more-specific route first so Playwright's LIFO
-    // routing reaches it before the catch-all.
+    // Mock the asset upload endpoint to count attempts. The catch-all in
+    // seedTripIntoCache 404s anything else from the Worker host; we install
+    // this more-specific route first so Playwright's LIFO routing reaches it.
     let assetCalls = 0
     let nextResponseStatus = 200
     await page.route(
@@ -52,34 +55,22 @@ test.describe('Photos upload — offline drain (M4)', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({
-            key: 'helen/test/drain-photo',
-            url: 'https://example.test/drain-photo',
-            mime: 'image/jpeg',
-          }),
+          body: JSON.stringify({ key: 'helen/test/drain-photo', url: 'https://example.test/drain-photo', mime: 'image/jpeg' }),
         })
       }
     )
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/(memories|trips)/,
+      (route) => route.fulfill({ status: 200, body: '{}' })
+    )
+    await page.addInitScript((map) => { window.__RT_BACKFILL_EXIF = map }, CLEAN_EXIF)
 
     await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
 
-    // Take the upload offline (simulated via 500 from the Worker
-    // mock). context.setOffline would also work but the network
-    // route gives us a deterministic signal of "the upload was
-    // attempted but failed."
+    // Take the upload offline (simulated via 503) before importing.
     nextResponseStatus = 503
-
     await page.getByTestId(`${PERSONA}-photos-entry`).click()
-    await page.getByTestId('add-dispatch').click()
-    const modal = page.getByTestId('add-dispatch-modal')
-    await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
-    await modal.getByTestId('dispatch-caption').fill('Queued during outage')
-    await modal.getByTestId('dispatch-submit').click()
-    // Composer pivots to 'done' silently (Bucket A — no error UI).
-    await expect(modal.getByTestId('dispatch-status')).toContainText('Saved', {
-      timeout: 8000,
-    })
-    await modal.getByRole('button', { name: 'Close' }).click()
+    await page.getByTestId('import-file-input').setInputFiles([redPhotoFile('outage.png')])
 
     // Sync pill in the album header now shows 1 item pending.
     await expect(page.getByTestId('sync-pill')).toBeVisible()
@@ -87,22 +78,16 @@ test.describe('Photos upload — offline drain (M4)', () => {
     expect(assetCalls).toBeGreaterThanOrEqual(1) // initial attempt
     const callsBeforeDrain = assetCalls
 
-    // Signal comes back. Flip the mock to 200, then trigger a
-    // visibility change — App.jsx's onVisibility handler should call
-    // runDrain, which calls uploadQueue.drain, which retries.
+    // Signal comes back. Flip the mock to 200, then trigger a visibility
+    // change — App.jsx's onVisibility handler runs the drain on the visible
+    // transition, which retries the queued upload.
     nextResponseStatus = 200
     await page.evaluate(() => {
-      // Simulate the tab going hidden then visible. The drain handler
-      // only runs on the visible transition.
-      Object.defineProperty(document, 'visibilityState', {
-        configurable: true,
-        get: () => 'hidden',
-      })
+      // Simulate the tab going hidden then visible. The drain handler only
+      // runs on the visible transition.
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
       document.dispatchEvent(new Event('visibilitychange'))
-      Object.defineProperty(document, 'visibilityState', {
-        configurable: true,
-        get: () => 'visible',
-      })
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
       document.dispatchEvent(new Event('visibilitychange'))
     })
 
@@ -117,9 +102,8 @@ test.describe('Photos upload — offline drain (M4)', () => {
     browserName,
   }) => {
     test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
-    // Posting `{ type: 'drain-upload-queue' }` to the page from the
-    // SW (or anywhere) should kick off a drain. This is the same
-    // message the SW's sync event handler posts.
+    // Posting `{ type: 'drain-upload-queue' }` to the page (the same message
+    // the SW's sync event handler posts) should kick off a drain.
     await seedTripIntoCache(page, FIXTURE_TRIP)
     let assetCalls = 0
     let respondWith = 503
@@ -134,34 +118,29 @@ test.describe('Photos upload — offline drain (M4)', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({
-            key: 'helen/test/sw-drain',
-            url: 'https://example.test/sw-drain',
-            mime: 'image/jpeg',
-          }),
+          body: JSON.stringify({ key: 'helen/test/sw-drain', url: 'https://example.test/sw-drain', mime: 'image/jpeg' }),
         })
       }
     )
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/(memories|trips)/,
+      (route) => route.fulfill({ status: 200, body: '{}' })
+    )
+    await page.addInitScript((map) => { window.__RT_BACKFILL_EXIF = map }, CLEAN_EXIF)
 
     await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
     await page.getByTestId(`${PERSONA}-photos-entry`).click()
-    await page.getByTestId('add-dispatch').click()
-    const modal = page.getByTestId('add-dispatch-modal')
-    await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
-    await modal.getByTestId('dispatch-submit').click()
-    await expect(modal.getByTestId('dispatch-status')).toContainText('Saved', {
-      timeout: 8000,
-    })
-    await modal.getByRole('button', { name: 'Close' }).click()
+    // Imported while offline (503) → parks in the queue.
+    await page.getByTestId('import-file-input').setInputFiles([redPhotoFile('outage.png')])
     await expect(page.getByTestId('sync-pill')).toBeVisible()
     const callsBeforeDrain = assetCalls
 
     // Connectivity returns; simulate the SW posting a drain message.
     respondWith = 200
     await page.evaluate(() => {
-      // The App listens for 'message' on navigator.serviceWorker. We
-      // dispatch a synthetic MessageEvent directly onto that target so
-      // the listener fires without needing a real SW running.
+      // The App listens for 'message' on navigator.serviceWorker. Dispatch a
+      // synthetic MessageEvent directly onto that target so the listener fires
+      // without needing a real SW running.
       const target = navigator.serviceWorker
       const evt = new MessageEvent('message', {
         data: { type: 'drain-upload-queue', tag: 'rt-upload-queue' },

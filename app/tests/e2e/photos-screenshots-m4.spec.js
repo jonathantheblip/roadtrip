@@ -41,15 +41,19 @@ test.describe('M4 + dev-mode — visual capture', () => {
       }
     )
 
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/(memories|trips)/,
+      (route) => route.fulfill({ status: 200, body: '{}' })
+    )
+    // Import one photo, cleanly at the Saturday stop (vb2-3) → smart-skip; the
+    // upload 503s, so it parks in the queue and the pill renders. (On-ramp
+    // moved from the retired dispatch composer to the one importer.)
+    await page.addInitScript((map) => { window.__RT_BACKFILL_EXIF = map }, {
+      'outage.png': { capturedAt: '2026-05-23T19:45:00Z', lat: 41.4923, lng: -72.0934 },
+    })
     await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
     await page.getByTestId(`${PERSONA}-photos-entry`).click()
-    await page.getByTestId('add-dispatch').click()
-    const modal = page.getByTestId('add-dispatch-modal')
-    await modal.getByTestId('dispatch-file-input').setInputFiles(redPhotoFile())
-    await modal.getByTestId('dispatch-caption').fill('Outage capture')
-    await modal.getByTestId('dispatch-submit').click()
-    await page.waitForSelector('[data-testid="dispatch-status"]')
-    await modal.getByRole('button', { name: 'Close' }).click()
+    await page.getByTestId('import-file-input').setInputFiles([redPhotoFile('outage.png')])
     await page.waitForSelector('[data-testid="sync-pill"]')
     await page.screenshot({
       path: `${SHOT_DIR}/m4-sync-pill-pending.png`,

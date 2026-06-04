@@ -8,6 +8,7 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { uploadBackfillPhotos } from '../lib/photoBackfillUpload'
 import { encodeVideo, isVideoEncodeSupported } from '../lib/videoPipeline'
 import { extractVideoCreationDate } from '../lib/videoMeta'
+import { logUploadEvent } from '../lib/uploadLog'
 import { PhotoBackfillTriage } from './PhotoBackfillTriage'
 
 // ImportFlow — the one importer's orchestrator (Stage 2). It sits in front
@@ -120,10 +121,20 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                 exif: { capturedAt, lat: null, lng: null },
                 photo: { id, capturedAt, lat: null, lng: null },
               })
-            } catch {
+            } catch (err) {
               // This clip won't encode on this device — skip it silently and
-              // keep the rest of the batch moving (parity with the dispatch
-              // composer's silent video-encode failure).
+              // keep the rest of the batch moving. The UI stays quiet (the
+              // Apple/Google Photos feel), but the swallowed skip is logged
+              // to the dev upload log so it's traceable and harvestable — a
+              // Bucket A silent failure, exactly as the old dispatch composer
+              // recorded its silent video-encode failures.
+              logUploadEvent({
+                code: 'video-encode-failed',
+                message: err?.message || String(err),
+                stack: err?.stack || null,
+                fileMeta: { name: f?.name || 'video', type: f?.type || null, size: f?.size ?? null },
+                context: { phase: 'import-video-encode' },
+              })
             }
           }
         }

@@ -7,7 +7,7 @@
 // fixed at 2026-05-22 → 2026-05-25, any cold-cache test run after
 // the system clock crosses 2026-05-25 falls through to "no active
 // trip" and loses access to every `*-photos-entry`,
-// `add-dispatch-modal`, etc. locator the suite relies on.
+// `import-photos`, etc. locator the suite relies on.
 //
 // This stub patches the page's `Date` ONLY — production and the
 // real app are unaffected. Tests pin their own clock, deterministically.

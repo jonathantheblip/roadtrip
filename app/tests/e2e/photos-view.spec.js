@@ -13,9 +13,10 @@ test.describe('PhotosView shell (M1)', () => {
     await expect(
       page.getByText('Once the trip starts collecting photos', { exact: false })
     ).toBeVisible()
-    // The "Add photo or video" entry point shows even when empty —
-    // it's the only way Helen can add the first photo.
-    await expect(page.getByTestId('add-dispatch')).toBeVisible()
+    // The "Import photos" entry point shows even when empty — it's the
+    // only way Helen can add the first photo now that Stage 3 retired the
+    // single-photo dispatch composer.
+    await expect(page.getByTestId('import-photos')).toBeVisible()
   })
 
   test('photos group by stop, sorted by capture date ascending', async ({ page }) => {
@@ -133,6 +134,82 @@ test.describe('PhotosView shell (M1)', () => {
     await expect(dot).toBeVisible()
     const bg = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
     expect(bg).toBe('rgb(46, 93, 58)')
+  })
+
+  test('EXIF capture date is primary, fallback to createdAt is labelled', async ({ page }) => {
+    // Tile-render concern (relocated from the retired photos-dispatch spec —
+    // it never touched the dispatch composer): seed two memories — one with a
+    // ref capturedAt, one without — and assert each tile renders the right
+    // date *source* tag.
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.addInitScript(() => {
+      const memories = [
+        {
+          id: 'with-exif',
+          tripId: 'volleyball-2026',
+          stopId: 'vb2-3',
+          authorTraveler: 'helen',
+          visibility: 'shared',
+          kind: 'photo',
+          caption: 'EXIF photo Helen',
+          photoRef: {
+            storage: 'external',
+            url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9eyf3KsAAAAASUVORK5CYII=',
+            capturedAt: '2026-05-23T19:50:00Z', // EXIF says ~3:50 PM ET
+          },
+          // memory uploaded much later — if the app used createdAt, the
+          // chronology would break.
+          createdAt: '2026-05-24T09:00:00Z',
+          updatedAt: '2026-05-24T09:00:00Z',
+        },
+        {
+          id: 'no-exif',
+          tripId: 'volleyball-2026',
+          stopId: 'vb2-3',
+          authorTraveler: 'jonathan',
+          visibility: 'shared',
+          kind: 'photo',
+          caption: 'Bare upload Jonathan',
+          photoRef: {
+            storage: 'external',
+            url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9eyf3KsAAAAASUVORK5CYII=',
+            // no capturedAt
+          },
+          createdAt: '2026-05-23T20:30:00Z',
+          updatedAt: '2026-05-23T20:30:00Z',
+        },
+      ]
+      localStorage.setItem('rt_memories_shared_v1', JSON.stringify(memories))
+    })
+
+    await page.goto('/?person=helen&trip=volleyball-2026')
+    await openPhotos(page)
+
+    const exifTile = page
+      .getByTestId('photo-tile')
+      .filter({ hasText: 'EXIF photo Helen' })
+    const fallbackTile = page
+      .getByTestId('photo-tile')
+      .filter({ hasText: 'Bare upload Jonathan' })
+
+    const exifSource = await exifTile
+      .locator('[data-testid="tile-date-source"]')
+      .getAttribute('data-source')
+    const fallbackSource = await fallbackTile
+      .locator('[data-testid="tile-date-source"]')
+      .getAttribute('data-source')
+
+    // Source attribute is 'memory' when the album has a top-level capturedAt
+    // — the post-C0 default for any new upload with EXIF, and what the
+    // boot-time backfill produces for legacy records whose ref.capturedAt is
+    // meaningfully earlier than the upload time. Both 'memory' and 'exif' are
+    // "real capture date" sources; the alternative is 'createdAt' (below).
+    expect(['memory', 'exif']).toContain(exifSource)
+    expect(fallbackSource).toBe('createdAt')
+
+    // The fallback tile additionally labels itself "· uploaded" so the viewer
+    // can tell the date isn't the actual capture moment.
+    await expect(fallbackTile).toContainText('· uploaded')
   })
 })
 

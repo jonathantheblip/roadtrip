@@ -1,13 +1,13 @@
 // iOS Simulator importer-video journey — the iOS-real coverage the headless
 // Playwright suite can't provide for the IMPORTER's video path.
 //
-// Stage 2 folds video into the one importer: the bulk picker accepts
-// image/*,video/*, ImportFlow partitions by type and runs the SAME WebCodecs
-// encode (videoPipeline.encodeVideo) the dispatch composer uses — which only
-// runs end-to-end on real iOS Safari (Playwright's bundled WebKit + Chromium
-// both fail the encode; see app/tests/e2e/photos-video.spec.js). The encode
-// itself is already gated by video-encode.test.mjs (dispatch); THIS test
-// proves the importer's NEW glue on real iOS:
+// The one importer folds video in: the bulk picker accepts image/*,video/*,
+// ImportFlow partitions by type and runs the WebCodecs encode
+// (videoPipeline.encodeVideo) — which only runs end-to-end on real iOS Safari
+// (Playwright's bundled WebKit + Chromium both fail the encode). Stage 3
+// retired the single-photo dispatch composer and its sim gate, so THIS test
+// is now the SOLE iOS-real gate for the importer's video path — both the
+// picker→encode→file-by-time glue AND the WebCodecs encode itself:
 //   1. import-file-input routes a picked .mov into the encode (partition).
 //   2. The encode runs to completion (ImportFlow ENCODING → progress).
 //   3. The clip files by time and surfaces in the confirm summary as a video.
@@ -34,8 +34,7 @@ import { resolvePersona } from '../e2e/_fixtures/persona.js'
 import { dateStableTripSeed } from './_seed.mjs'
 
 const BASE_URL = process.env.SIMULATOR_BASE_URL || 'http://localhost:5181'
-// Use the SAME proven seed video-encode.test.mjs uses — a date-stable
-// FIXTURE_TRIP copy that lands reliably in HelenView → PhotosView on the sim's
+// A date-stable FIXTURE_TRIP copy that lands reliably in HelenView → PhotosView on the sim's
 // real clock. The earlier hand-rolled trip landed on the people-picker and
 // reloaded (forceConfirm wiped) so ImportFlow never mounted. We widen ONLY the
 // date range so the .mov (whatever its container date) is never excluded by the
@@ -51,18 +50,20 @@ const PERSONA = resolvePersona('helen')
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_PATH = resolve(HERE, '..', 'fixtures', 'media', 'iphone-video-1080p-5s.mov')
 // Must exceed the pipeline's ENCODE_TIMEOUT_MS (120s) plus margin so a slow-
-// but-valid encode gets its full budget. Same bound as video-encode.test.mjs.
+// but-valid encode gets its full budget.
 const CONFIRM_WAIT_MS = 150_000
 
 test('importer encodes a picked video on iOS Simulator Safari and files it by time', async (t) => {
-  // SKIPPED: this gate's safaridriver flow (JS-level click into PhotosView +
-  // DataTransfer file-injection into import-file-input) doesn't reliably mount
-  // ImportFlow on the sim — the importer view comes up empty in the harness,
-  // even though the feature itself is fine: ImportFlow renders + the importer
-  // video path was verified MANUALLY on-device (2026-06-04, walk-list item 2),
-  // and the WebCodecs encode it relies on is proven green by the sibling
-  // dispatch video-encode.test.mjs. Re-enable once the harness mount issue is
-  // solved (suspect the synthetic click/inject sequence under safaridriver).
+  // iOS-Simulator-only: this gate drives safaridriver (JS-level click into
+  // PhotosView + DataTransfer file-injection into import-file-input) and
+  // asserts encode→confirm. It runs ONLY where the Simulator + safaridriver +
+  // the LFS .mov fixture are present (it t.skip()s below without the fixture),
+  // so it is NOT part of the headless CI e2e gate — verify it on-device. The
+  // importer video path was also verified manually on-device (2026-06-04). The
+  // raw WebCodecs encode was formerly covered separately by the dispatch
+  // video-encode.test.mjs, retired with the composer in Stage 3 — this gate now
+  // owns it. Known fragility: the synthetic click/inject sequence has at times
+  // mounted ImportFlow empty under safaridriver; if that recurs, debug here.
   await assertSimulatorBooted()
   if (!existsSync(FIXTURE_PATH)) {
     t.skip(`real-media fixture not present at ${FIXTURE_PATH} — see app/tests/fixtures/media/README.md`)
@@ -104,7 +105,7 @@ test('importer encodes a picked video on iOS Simulator Safari and files it by ti
   // as the change it gates.
 
   // Open Photos (JS-level click — fixed sticky headers intercept WebDriver
-  // touch on this surface; see video-encode.test.mjs).
+  // touch on this surface, so a coordinate click would hit the banner).
   await browser.$('[data-testid="helen-photos-entry"]').then((el) => el.waitForExist({ timeout: 10_000 }))
   await browser.execute(() => document.querySelector('[data-testid="helen-photos-entry"]')?.click())
 

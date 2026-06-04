@@ -565,13 +565,6 @@ export default function App() {
     setView({ name: 'map' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
-  function openDispatch() {
-    // M2 wires the actual dispatch composer; for now route into Photos
-    // so the entry point is reachable. The composer modal mounts inside
-    // PhotosView in M2 and opens via this callback.
-    setView({ name: 'photos', openDispatch: true })
-    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-  }
   // Returns the upsert result so NewTrip can show an inline error and
   // stay put on failure (no navigation), per change order §3.4. On
   // success we go straight into the editor — Helen continues adding
@@ -850,7 +843,6 @@ export default function App() {
             trip={trip}
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
-            openDispatchOnMount={!!view.openDispatch}
             tripsApi={tripsApi}
           />
         )}

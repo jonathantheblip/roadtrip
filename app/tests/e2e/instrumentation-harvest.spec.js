@@ -12,15 +12,17 @@ import {
 // walk and surfaces SILENT (Bucket A) failures the UI hid. NOT the Phase-3
 // capture run — just the working proof.
 //
-// Non-vacuous: captured-when-silently-failing (a video picked into the photo
-// input is Bucket-A 'is-video' — silently reset to the picker, no error panel —
-// and the harvest picks the entry up) + clean-when-good (a normal walk leaves
-// the dev-log empty).
+// Non-vacuous: captured-when-silently-failing (an UNENCODABLE video picked into
+// the importer is skipped silently — no error panel, the batch just finds
+// nothing new — and ImportFlow logs 'video-encode-failed' which the harvest
+// picks up) + clean-when-good (opening the importer with no failing action
+// leaves the failure-only dev-log empty). Swapped from the retired dispatch
+// composer's video-into-photo-input reject to the importer's silent video-skip.
 
 test.describe('instrumentation harvest — client dev-log', () => {
   test.beforeEach(async ({ page }) => {
-    // Deterministic queue state (mirrors photos-dispatch); the dev-log itself
-    // starts empty in each fresh Playwright context.
+    // Deterministic queue state; the dev-log itself starts empty in each fresh
+    // Playwright context.
     await page.addInitScript(() => indexedDB.deleteDatabase('roadtrip-upload-queue'))
   })
 
@@ -28,47 +30,43 @@ test.describe('instrumentation harvest — client dev-log', () => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
     await page.getByTestId('helen-photos-entry').click()
-    await page.getByTestId('add-dispatch').click()
-    await expect(page.getByTestId('add-dispatch-modal')).toBeVisible()
+    await expect(page.getByTestId('import-photos')).toBeVisible()
 
     // No failing action taken → the failure-only dev-log stays empty.
     const entries = await harvestDevLog(page)
     expect(entries).toEqual([])
-    await expectNoSilentFailures(page, { label: 'clean dispatch open' }) // green
+    await expectNoSilentFailures(page, { label: 'clean importer open' }) // green
   })
 
-  test('a silently-rejected dispatch IS captured by the harvest (UI stayed silent)', async ({
+  test('a silently-skipped unencodable video IS captured by the harvest (UI stayed silent)', async ({
     page,
   }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
     await page.getByTestId('helen-photos-entry').click()
-    await page.getByTestId('add-dispatch').click()
-    const modal = page.getByTestId('add-dispatch-modal')
-    await expect(modal).toBeVisible()
+    await expect(page.getByTestId('import-photos')).toBeVisible()
 
-    // Pick a VIDEO into the PHOTO input → Bucket A 'is-video': the modal
-    // silently resets to the picker (no error panel) and logs the code. This is
-    // the canonical swallowed failure — the visual/DOM tier sees nothing wrong.
-    await modal.getByTestId('dispatch-file-input').setInputFiles(mp4FileForRejection())
+    // Import a video the encoder can't decode (an ftyp-only mp4 with no tracks).
+    // ImportFlow's encode throws at the <video> metadata stage; the clip is
+    // skipped SILENTLY — no error panel, the batch just finds nothing new — and
+    // ImportFlow logs 'video-encode-failed' (Bucket A). The visual/DOM tier sees
+    // nothing wrong; only the dev-log records it.
+    await page.getByTestId('import-file-input').setInputFiles(mp4FileForRejection())
 
-    // UI stayed SILENT: no Bucket-C / error panel, and the rejected video never
-    // reached preview — the modal just resets to the picker (the file input is
-    // a hidden, click-triggered control, so we assert on what's NOT shown).
-    await expect(modal.getByTestId('dispatch-bucketC')).toHaveCount(0)
-    await expect(modal.getByTestId('dispatch-preview-image')).toHaveCount(0)
-    await expect(modal).toBeVisible()
+    // UI stayed SILENT: the importer fell back to the album (no error surface,
+    // at most a quiet "nothing new" toast).
+    await expect(page.getByTestId('import-photos')).toBeVisible({ timeout: 10_000 })
 
     // THE HARVEST captured the swallowed Bucket-A failure the UI hid.
     await expect
-      .poll(async () => silentFailures(await harvestDevLog(page)).length, { timeout: 5000 })
+      .poll(async () => silentFailures(await harvestDevLog(page)).length, { timeout: 8000 })
       .toBeGreaterThan(0)
 
     // ASSERT-mode gate fires on the real silent failure (non-vacuous): with the
     // Bucket-A entry present, expectNoSilentFailures must throw.
     let threw = false
     try {
-      await expectNoSilentFailures(page, { label: 'video-into-photo-input' })
+      await expectNoSilentFailures(page, { label: 'unencodable-video-skip' })
     } catch {
       threw = true
     }

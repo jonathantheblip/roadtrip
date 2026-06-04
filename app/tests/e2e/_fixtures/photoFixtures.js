@@ -40,15 +40,6 @@ export function mp4FileForRejection(name = 'clip.mp4') {
   }
 }
 
-// TIFF "magic" header: triggers the 'unsupported-image' branch.
-export function tiffFileForRejection() {
-  return {
-    name: 'shot.tiff',
-    buffer: Buffer.from('II* ', 'binary'),
-    mimeType: 'image/tiff',
-  }
-}
-
 // --- minimal PNG writer ----------------------------------------------
 //
 // Produces a valid uniform-color PNG of arbitrary dimensions without

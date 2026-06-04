@@ -151,7 +151,7 @@ test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', as
   await browser.execute(() => {
     document.querySelector('[data-testid="helen-photos-entry"]')?.click()
   })
-  await browser.$('[data-testid="add-dispatch"]').then((el) =>
+  await browser.$('[data-testid="import-photos"]').then((el) =>
     el.waitForExist({ timeout: 10_000 })
   )
 

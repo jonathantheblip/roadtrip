@@ -5,7 +5,7 @@
 //   App.jsx's ?trip= cold-load override only lands on the trip view when
 //   today is inside the trip's window (dateRangeStart <= today <=
 //   dateRangeEnd); otherwise it strips ?trip= and drops to the trips index,
-//   where the *-photos-entry / add-dispatch locators don't exist. The
+//   where the *-photos-entry / import-photos locators don't exist. The
 //   Playwright e2e suite sidesteps this by importing _fixtures/clockStub.js,
 //   which pins `new Date()` to 2026-05-23 (inside FIXTURE_TRIP's May 22-25
 //   window) — so the e2e suite's fixed dates and its frozen clock are an
