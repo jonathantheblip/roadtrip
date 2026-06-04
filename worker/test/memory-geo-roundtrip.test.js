@@ -133,3 +133,97 @@ describe('LEG-C — photoRefs lat/lng/capturedAt survive postMemory → rowToMem
     expect(mem.photoRefs).toBeUndefined() // no mirror when there is nothing to preserve
   })
 })
+
+// ─── Stage 3, step 1 — video poster keys survive the round-trip ──────────
+// A synced video needs a renderable POSTER cross-device: its R2 `key` points
+// at an .mp4 (an <img> can't render it), so the ref also carries `posterKey`
+// (a small first-frame JPEG). It rides the SAME photo_r2_keys_json column;
+// rowToMemory derives `posterUrl` from it via assetUrl. A video files by TIME
+// so it usually has `capturedAt`, but a DATELESS video has neither coords nor
+// date — so the single-ref JSON mirror must ALSO fire on `posterKey`, else the
+// lone video stays scalar-only and the poster is lost cross-device.
+//
+// NON-VACUOUS: on the OLD serialize (photoEntry omits posterKey + the mirror
+// only fires on EXIF) the dateless-video case never mirrors and the
+// posterUrl assertions read undefined → red. Only the fix makes them pass.
+
+const VIDEO_POSTER_KEY = 'jonathan/m-vid/poster-abc123'
+
+describe('Stage 3 step 1 — video posterKey survives postMemory → rowToMemory', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+    await env.DB.prepare('DELETE FROM memories').run()
+  })
+
+  it('round-trips a video ref posterKey → posterUrl (distinct from the video url)', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-vid',
+        tripId: 't1',
+        kind: 'photo', // memories are always kind:'photo'; mime disambiguates video
+        visibility: 'shared',
+        photoRefs: [
+          {
+            storage: 'r2',
+            key: 'jonathan/m-vid/video-xyz',
+            mime: 'video/mp4',
+            capturedAt: '2026-04-21T17:30:39.000Z',
+            posterKey: VIDEO_POSTER_KEY,
+          },
+        ],
+      },
+    })
+    expect(res.status).toBe(200)
+    const ref = (await res.json()).photoRefs[0]
+    expect(ref.posterKey).toBe(VIDEO_POSTER_KEY)
+    expect(typeof ref.posterUrl).toBe('string')
+    expect(ref.posterUrl).toContain('/assets/')
+    expect(ref.posterUrl).not.toBe(ref.url) // derived from posterKey, not the video key
+    expect(ref.mime).toBe('video/mp4')
+    expect(ref.capturedAt).toBe('2026-04-21T17:30:39.000Z')
+  })
+
+  it('mirrors a DATELESS single video (only posterKey, no coords/date) into photoRefs[]', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-vid-dateless',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRef: {
+          storage: 'r2',
+          key: 'jonathan/m-vid-dateless/video-q',
+          mime: 'video/mp4',
+          posterKey: VIDEO_POSTER_KEY,
+        },
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs, 'a lone video must mirror into JSON so its poster survives').toHaveLength(1)
+    expect(mem.photoRefs[0].posterKey).toBe(VIDEO_POSTER_KEY)
+    expect(mem.photoRefs[0].posterUrl).toContain('/assets/')
+  })
+
+  it('a ref WITHOUT posterKey omits posterKey/posterUrl (no null pollution)', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-photo-noposter',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-photo-noposter/p', mime: 'image/jpeg' }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const ref = (await res.json()).photoRefs[0]
+    expect('posterKey' in ref).toBe(false)
+    expect('posterUrl' in ref).toBe(false)
+  })
+})

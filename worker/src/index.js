@@ -235,22 +235,28 @@ async function postMemory(env, traveler, request, url, cors) {
     if (Number.isFinite(r.lat)) e.lat = r.lat
     if (Number.isFinite(r.lng)) e.lng = r.lng
     if (typeof r.capturedAt === 'string' && r.capturedAt) e.capturedAt = r.capturedAt
+    // Video poster: the ref's `key` points at an .mp4 (unrenderable as <img>),
+    // so a video carries a separate posterKey (first-frame JPEG). rowToMemory
+    // derives posterUrl from it. Rides the same JSON column — no migration.
+    if (typeof r.posterKey === 'string' && r.posterKey) e.posterKey = r.posterKey
     return e
   }
   const refHasExif = (r) =>
     Number.isFinite(r?.lat) ||
     Number.isFinite(r?.lng) ||
     (typeof r?.capturedAt === 'string' && r.capturedAt)
+  const refHasPoster = (r) => typeof r?.posterKey === 'string' && !!r.posterKey
   let photoR2KeysJson = null
   if (body.photoRefs?.length) {
     photoR2KeysJson = JSON.stringify(body.photoRefs.map(photoEntry))
-  } else if (body.photoRef?.storage === 'r2' && refHasExif(body.photoRef)) {
-    // Single-photo dispatch path: the scalar photo_r2_key column keeps no
-    // EXIF, so when this lone ref carries location/date, ALSO mirror it into
-    // the JSON column — the only place coords survive without a migration,
-    // making dispatch GPS durable CROSS-DEVICE (rowToMemory then surfaces a
-    // 1-element photoRefs[] with the coords). A coordless single photo stays
-    // scalar-only, unchanged.
+  } else if (body.photoRef?.storage === 'r2' && (refHasExif(body.photoRef) || refHasPoster(body.photoRef))) {
+    // Single-photo dispatch / single-video path: the scalar photo_r2_key column
+    // keeps no EXIF and no posterKey, so when this lone ref carries location/date
+    // OR a video poster, ALSO mirror it into the JSON column — the only place
+    // those survive without a migration, making them durable CROSS-DEVICE
+    // (rowToMemory then surfaces a 1-element photoRefs[]). A dateless video still
+    // mirrors (on posterKey) so its poster isn't lost; a coordless plain photo
+    // stays scalar-only, unchanged.
     photoR2KeysJson = JSON.stringify([photoEntry(body.photoRef)])
   }
   let audioR2Key = null
@@ -385,6 +391,12 @@ function rowToMemory(r, origin) {
         if (Number.isFinite(a.lat)) ref.lat = a.lat
         if (Number.isFinite(a.lng)) ref.lng = a.lng
         if (typeof a.capturedAt === 'string' && a.capturedAt) ref.capturedAt = a.capturedAt
+        // Video poster — derive a renderable URL from the stored posterKey
+        // (the ref's own url points at the .mp4). Omit when absent.
+        if (typeof a.posterKey === 'string' && a.posterKey) {
+          ref.posterKey = a.posterKey
+          ref.posterUrl = assetUrl(a.posterKey, origin)
+        }
         return ref
       })
     } catch {}
