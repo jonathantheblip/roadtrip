@@ -22,7 +22,7 @@ import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
 import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
-import { pullAll, isWorkerConfigured, workerFetch } from './lib/workerSync'
+import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import './styles/platform.css'
@@ -150,6 +150,14 @@ async function uploadQueueRunner(item) {
     }
   )
   const remote = await r.json()
+  const photoRef = { ...item.ref, storage: 'r2', key: remote.key, url: remote.url }
+  // A queued video carries its poster blob too — re-upload it so the synced
+  // tile renders a still, not a fallback icon (best-effort; mirrors
+  // uploadOrQueueVideo + PhotosView.triggerDrain so the three can't drift).
+  if (item.kind === 'video' && item.posterBlob) {
+    const poster = await uploadPoster(item.id, item.posterBlob)
+    if (poster) Object.assign(photoRef, poster)
+  }
   saveMemory({
     id: item.id,
     tripId: item.tripId,
@@ -158,7 +166,7 @@ async function uploadQueueRunner(item) {
     visibility: 'shared',
     kind: 'photo', // memories always 'photo' kind; photoRef.kind disambiguates
     caption: item.caption,
-    photoRef: { ...item.ref, storage: 'r2', key: remote.key, url: remote.url },
+    photoRef,
   })
 }
 

@@ -174,3 +174,58 @@ function photoMemory({ id, stopId, author, caption, createdAt }) {
     updatedAt: createdAt,
   }
 }
+
+// A video memory: kind stays 'photo' (the ref's mime/posterUrl mark it as
+// video). The url stands in for the .mp4 (the lightbox <video src>); posterUrl
+// is the renderable still the grid tile shows.
+function videoMemory({ id, stopId, author, caption, createdAt }) {
+  return {
+    id,
+    tripId: 'volleyball-2026',
+    stopId,
+    authorTraveler: author,
+    visibility: 'shared',
+    kind: 'photo',
+    caption,
+    photoRef: {
+      storage: 'r2',
+      url: TINY_RED_PNG_DATA_URL,
+      mime: 'video/mp4',
+      posterUrl: TINY_RED_PNG_DATA_URL,
+    },
+    photoExternalURLs: [],
+    reactions: [],
+    createdAt,
+    updatedAt: createdAt,
+  }
+}
+
+// Stage 3 — a synced video renders a play badge in the grid + a <video> in the
+// lightbox (was a fallback icon because the ref's url points at the .mp4).
+test.describe('PhotosView — video tiles (Stage 3)', () => {
+  test('a video memory shows a play badge in the grid and a <video> in the lightbox', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await seedMemoriesIntoCache(page, [
+      videoMemory({ id: 'v1', stopId: 'vb2-3', author: 'helen', caption: 'Match point', createdAt: '2026-05-23T20:00:00Z' }),
+    ])
+    await page.goto('/?person=helen&trip=volleyball-2026')
+    await openPhotos(page)
+
+    const tile = page.getByTestId('photo-tile').first()
+    await expect(tile).toBeVisible()
+    // The grid marks it as a video — the badge renders whenever the entry is a
+    // video, independent of whether the poster <img> loaded.
+    await expect(tile.getByTestId('tile-video-badge')).toBeVisible()
+
+    // Opening it yields a <video> (not an <img>), carrying the poster + src.
+    await tile.click()
+    const lightbox = page.getByTestId('photo-lightbox')
+    await expect(lightbox).toBeVisible()
+    const video = lightbox.getByTestId('lightbox-video')
+    await expect(video).toBeAttached()
+    await expect(video).toHaveAttribute('poster', TINY_RED_PNG_DATA_URL)
+    await expect(video).toHaveAttribute('src', TINY_RED_PNG_DATA_URL)
+    // ...and no plain <img> stands in for the video in the lightbox.
+    await expect(lightbox.locator('img')).toHaveCount(0)
+  })
+})

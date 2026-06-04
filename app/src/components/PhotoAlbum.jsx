@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { updateMemoryCapturedAt } from '../lib/memoryStore'
 import { classifySwipe } from '../lib/swipeClassify'
@@ -56,6 +56,10 @@ export function PhotoTile({ entry, onOpen }) {
   const [imgFailed, setImgFailed] = useState(false)
   const isFirstInMemory = (entry.photoIndexInMemory || 0) === 0
   const memoryCount = entry.photoCountInMemory || 1
+  // A video tile renders the poster still (entry.url is the .mp4) + a play
+  // badge. A poster-less video falls through to the icon fallback, same as a
+  // broken photo — the badge below still marks it as a video.
+  const displayUrl = entry.isVideo ? entry.posterUrl : entry.url
   // IntersectionObserver-gated: the <img> isn't rendered until the
   // tile is within ~300px of the viewport. With 55 photos on a
   // typical album this caps concurrent in-flight fetches to ~10–15
@@ -99,13 +103,13 @@ export function PhotoTile({ entry, onOpen }) {
             'repeating-linear-gradient(45deg, #d6c5a8 0 6px, #c5b497 6px 12px)',
         }}
       >
-        {entry.url && !imgFailed && inView && !gridPaused ? (
+        {displayUrl && !imgFailed && inView && !gridPaused ? (
           <img
             // Use ?w=600 for the grid — covers retina at the largest
             // tile size we render and keeps payload to ~50KB instead
-            // of 1MB. Lightbox below uses entry.url bare for full
-            // fidelity.
-            src={thumbUrl(entry.url, TILE_THUMB_WIDTH)}
+            // of 1MB. Lightbox below uses the bare URL for full
+            // fidelity. For a video this is the poster still.
+            src={thumbUrl(displayUrl, TILE_THUMB_WIDTH)}
             alt={entry.caption || 'Trip photo'}
             loading="lazy"
             decoding="async"
@@ -132,6 +136,36 @@ export function PhotoTile({ entry, onOpen }) {
             <ImageIcon size={20} />
           </div>
         ) : null /* offscreen or no url — the sage-stripe skeleton on the parent shows through */}
+        {entry.isVideo && (
+          <span
+            data-testid="tile-video-badge"
+            aria-label="Video"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                background: 'rgba(0,0,0,0.5)',
+                color: '#F2EBDA',
+                boxShadow: '0 0 0 1.5px rgba(242,235,218,0.5)',
+              }}
+            >
+              <Play size={16} fill="currentColor" />
+            </span>
+          </span>
+        )}
         <span
           aria-label={`Posted by ${TRAVELERS[entry.author]?.name || entry.author}`}
           style={{
@@ -359,7 +393,17 @@ export function PhotoLightbox({
         }}
       >
         {onPrev && <NavArrow direction="left" onClick={onPrev} />}
-        {entry.url ? (
+        {entry.isVideo && entry.url ? (
+          <video
+            data-testid="lightbox-video"
+            src={entry.url}
+            poster={entry.posterUrl || undefined}
+            controls
+            playsInline
+            preload="metadata"
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+          />
+        ) : entry.url ? (
           <img
             src={entry.url}
             alt={entry.caption || 'Trip photo'}

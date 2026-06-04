@@ -6,7 +6,7 @@ import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
-import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
+import { isWorkerConfigured, workerFetch, uploadPoster } from '../lib/workerSync'
 import { saveMemory } from '../lib/memoryStore'
 import { isVideoEncodeSupported } from '../lib/videoPipeline'
 
@@ -149,15 +149,22 @@ export function PhotosView({ trip, traveler, onBack, openDispatchOnMount, tripsA
           }
         )
         const remote = await r.json()
+        const photoRef = { ...item.ref, storage: 'r2', key: remote.key, url: remote.url }
+        // Re-upload a queued video's poster so the synced tile renders a still
+        // (best-effort; mirrors uploadOrQueueVideo + App.jsx uploadQueueRunner).
+        if (item.kind === 'video' && item.posterBlob) {
+          const poster = await uploadPoster(item.id, item.posterBlob)
+          if (poster) Object.assign(photoRef, poster)
+        }
         saveMemory({
           id: item.id,
           tripId: item.tripId,
           stopId: item.stopId,
           authorTraveler: item.authorTraveler,
           visibility: 'shared',
-          kind: item.kind === 'video' ? 'photo' : 'photo',
+          kind: 'photo',
           caption: item.caption,
-          photoRef: { ...item.ref, storage: 'r2', key: remote.key, url: remote.url },
+          photoRef,
         })
       })
     } finally {

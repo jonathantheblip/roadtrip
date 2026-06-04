@@ -293,6 +293,36 @@ test('mergeFromRemote preserves local photoRef lat/lng/capturedAt when a newer r
   assert.equal(m.photoRef.capturedAt, '2026-05-24T17:02:29.000Z')
 })
 
+test('mergeFromRemote preserves a local video posterKey/posterUrl when a newer remote drops them', () => {
+  // Stage 3: a synced video's poster makes the album tile renderable. During
+  // the rollout window a newer remote may not carry the poster fields yet — the
+  // capturing device must keep its own so the tile doesn't revert to an icon.
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'v1', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+        kind: 'photo',
+        photoRef: { storage: 'r2', key: 'r2/video', mime: 'video/mp4', posterKey: 'r2/poster', posterUrl: 'https://e.test/poster.jpg', capturedAt: '2026-04-21T17:30:39.000Z' },
+        capturedAt: '2026-04-21T17:30:39.000Z',
+        createdAt: '2026-04-21T03:00:00.000Z', updatedAt: '2026-04-21T03:00:00.000Z',
+      },
+    ])
+  )
+  const added = mergeFromRemote([
+    {
+      id: 'v1', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+      kind: 'photo',
+      photoRef: { storage: 'r2', key: 'r2/video', mime: 'video/mp4' },
+      createdAt: '2026-04-21T03:00:00.000Z', updatedAt: '2026-04-21T04:00:00.000Z',
+    },
+  ])
+  assert.equal(added, 1) // the remote was taken (proves the wholesale replace fired)
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.equal(m.photoRef.posterKey, 'r2/poster')
+  assert.equal(m.photoRef.posterUrl, 'https://e.test/poster.jpg')
+})
+
 test('mergeFromRemote does not override coords the remote already carries (LEG-C lossless album)', () => {
   globalThis.localStorage.setItem(
     'rt_memories_shared_v1',

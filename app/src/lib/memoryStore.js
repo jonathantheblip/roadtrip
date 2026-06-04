@@ -334,6 +334,16 @@ function preserveLocalPhotoMeta(remote, local) {
     if (!rRef.capturedAt && typeof lRef.capturedAt === 'string' && lRef.capturedAt) {
       rRef.capturedAt = lRef.capturedAt
     }
+    // Video poster: a stale/rolling-out remote may not carry posterKey/posterUrl
+    // yet — keep the capturing device's own so its synced video keeps rendering
+    // a still instead of reverting to a fallback icon. (Same merge-guard
+    // rationale as lat/lng/capturedAt above.)
+    if (!rRef.posterKey && typeof lRef.posterKey === 'string' && lRef.posterKey) {
+      rRef.posterKey = lRef.posterKey
+    }
+    if (!rRef.posterUrl && typeof lRef.posterUrl === 'string' && lRef.posterUrl) {
+      rRef.posterUrl = lRef.posterUrl
+    }
     return rRef
   }
   if (remote.photoRef && local.photoRef) {

@@ -328,3 +328,28 @@ test('groupAcrossTrips inherits the interstitial section in the cross-trip album
   ])
   assert.ok(sections[0].stops.map((s) => s.stopName).includes('From A to B'))
 })
+
+// ─── Stage 3: video entries carry isVideo + posterUrl for the album render ───
+
+test('flattenPhotoEntries flags a video ref (isVideo + posterUrl) and leaves photos alone', () => {
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'vid', tripId: 't', stopId: 's', refs: [{ url: 'u://video.mp4', mime: 'video/mp4', posterUrl: 'u://poster.jpg' }] }),
+    photoMem({ id: 'pic', tripId: 't', stopId: 's', refs: [{ url: 'u://photo.jpg', mime: 'image/jpeg' }] }),
+  ])
+  const byMem = Object.fromEntries(entries.map((e) => [e.memoryId, e]))
+  assert.equal(byMem.vid.isVideo, true)
+  assert.equal(byMem.vid.posterUrl, 'u://poster.jpg')
+  // entry.url stays the video itself — the lightbox <video src> needs the mp4,
+  // and the tile uses posterUrl for its <img>.
+  assert.equal(byMem.vid.url, 'u://video.mp4')
+  assert.equal(byMem.pic.isVideo, false)
+  assert.equal(byMem.pic.posterUrl, null)
+})
+
+test('flattenPhotoEntries detects a video by posterUrl alone (cross-device ref may omit mime)', () => {
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'vid', tripId: 't', stopId: 's', refs: [{ url: 'u://v', posterUrl: 'u://p' }] }),
+  ])
+  assert.equal(entries[0].isVideo, true)
+  assert.equal(entries[0].posterUrl, 'u://p')
+})

@@ -196,6 +196,26 @@ export async function uploadTripCover(tripId, blob) {
   return uploadBlob('photo', `trip-${tripId}`, blob)
 }
 
+// Video poster. A synced video's own R2 key points at the .mp4 (unrenderable
+// as <img>), so we upload the first-frame poster (a small JPEG) to the PHOTO
+// asset route and carry its key on the ref as `posterKey` — which the worker
+// ref serialization persists (Stage-3 step 1) so the still survives
+// cross-device. Shared by the immediate import path AND both queue-drain
+// runners (App.jsx / PhotosView) so the three can't drift. Best-effort:
+// returns { posterKey, posterUrl } or null on ANY failure (no worker, offline,
+// poster encode missing) — a missing poster must NOT fail the video upload; the
+// album tile just falls back to its icon, exactly as before this feature.
+export async function uploadPoster(memoryId, posterBlob) {
+  if (!posterBlob) return null
+  try {
+    const remote = await uploadBlob('photo', memoryId, posterBlob)
+    if (!remote?.key) return null
+    return { posterKey: remote.key, posterUrl: remote.url }
+  } catch {
+    return null
+  }
+}
+
 // ─── Trips ────────────────────────────────────────────────────────────
 
 export async function pullTrips() {

@@ -58,6 +58,16 @@ export function flattenPhotoEntries(memories) {
     memoryEntries.forEach(({ url, ref }, idx) => {
       const exifAt = ref?.capturedAt || null
       const realDate = memoryAt || exifAt
+      // A video ref carries a posterUrl (its own `url` points at the .mp4, which
+      // an <img> can't render). Detect video by poster presence OR a video/* mime
+      // (both survive the worker round-trip) so the tile renders a still + play
+      // badge and the lightbox renders a <video> instead of a dead <img>.
+      const posterUrl =
+        typeof ref?.posterUrl === 'string' && ref.posterUrl ? ref.posterUrl : null
+      const isVideo =
+        !!posterUrl ||
+        (typeof ref?.mime === 'string' && ref.mime.startsWith('video/')) ||
+        ref?.kind === 'video'
       out.push({
         key: `${m.id}::${url}`,
         memoryId: m.id,
@@ -96,6 +106,10 @@ export function flattenPhotoEntries(memories) {
           m.interstitial && typeof m.interstitial === 'object'
             ? m.interstitial
             : null,
+        // Video: isVideo flips the tile to poster+play-badge and the lightbox to
+        // a <video>; posterUrl is the renderable still (null for plain photos).
+        isVideo,
+        posterUrl,
         url,
       })
     })
