@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Calendar, RotateCcw, Moon, Sun, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, Archive } from 'lucide-react'
+import { ChevronLeft, Calendar, RotateCcw, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, Archive } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import {
@@ -18,17 +18,13 @@ import {
   uploadLogHistogram,
 } from '../lib/uploadLog'
 
-// Per-trip settings panel: calendar export, appearance, traveler-picker,
-// sync status. Sync now goes to a Cloudflare Worker
-// (D1 + R2) authenticated by a per-traveler family token; the panel only
-// surfaces synced / syncing / offline + Pull / Push / Seed actions.
-//
-// helenDark / onToggleHelenDark come from App so the toggle here and the
-// surface theming there share a single source of truth — calling
-// useHelenDark() locally gave each consumer its own state, so flipping
-// it inside Settings didn't update the surface class App computes.
+// Per-trip settings panel: calendar export, traveler-picker, sync status.
+// Sync goes to a Cloudflare Worker (D1 + R2) authenticated by a
+// per-traveler family token; the panel surfaces synced / syncing /
+// offline + Pull / Push / Seed actions. (Helen's dark-mode toggle was
+// removed 2026-06-05 — dark mode dropped as a per-person axis.)
 
-export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, tripsApi, onBack, onChangeTraveler, onOpenEditor }) {
+export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor }) {
   const [workerStatus, setWorkerStatus] = useState({
     status: isWorkerConfigured() ? 'syncing' : 'unconfigured',
     traveler: null,
@@ -338,32 +334,6 @@ export function Settings({ trip, traveler, dark, helenDark, onToggleHelenDark, t
           KNOWN_BUGS_HELEN_SURFACE.md P1.7. The `sharedAlbumURL` field
           stays in the schema for backward compatibility (TripEditor
           still surfaces it for explicit edits). */}
-
-      {traveler === 'helen' && (
-        <section className="px-6 py-8 border-b surface-rule">
-          <div className="flex items-center gap-2 mb-3">
-            {helenDark ? <Moon size={14} /> : <Sun size={14} />}
-            <p className="smallcaps f-dm text-[11px] opacity-70">Appearance</p>
-          </div>
-          <p className="f-dm text-sm opacity-70 mb-3 max-w-prose">
-            Light archive by default. Dark mode pulls the photos forward and lets the oxblood
-            accents do more work.
-          </p>
-          <button
-            type="button"
-            className="btn-pill"
-            onClick={onToggleHelenDark}
-            style={{
-              background: helenDark ? '#14110D' : 'transparent',
-              color: helenDark ? '#F2EBDA' : 'inherit',
-              borderColor: helenDark ? '#14110D' : 'currentColor',
-            }}
-          >
-            {helenDark ? <Moon size={12} /> : <Sun size={12} />}
-            {helenDark ? 'Dark mode on' : 'Switch to dark mode'}
-          </button>
-        </section>
-      )}
 
       <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">

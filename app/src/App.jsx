@@ -20,7 +20,6 @@ import { ImportView } from './views/ImportView'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
-import { useHelenDark } from './hooks/useHelenDark'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
@@ -47,18 +46,11 @@ function initialViewFromUrl() {
   return { name: 'trip' }
 }
 
-// Per-traveler palette tokens for the fixed top bar. Spec §6 dark/light:
-// Jonathan permanent dark; Aurelia permanent light; Rafa permanent dark;
-// Helen toggles via her settings. Returns { gradient, text }.
-function topBarTokens(traveler, helenDark) {
+// Per-traveler palette tokens for the fixed top bar. Fixed per person now
+// (dark-mode toggle dropped 2026-06-05): Jonathan + Rafa dark, Helen +
+// Aurelia light. Returns { gradient, text, opacity }.
+function topBarTokens(traveler) {
   if (traveler === 'jonathan' || traveler === 'rafa') {
-    return {
-      gradient: 'linear-gradient(to bottom, rgba(20,17,13,.92), rgba(20,17,13,0))',
-      text: '#F2EBDA',
-      opacity: 0.7,
-    }
-  }
-  if (traveler === 'helen' && helenDark) {
     return {
       gradient: 'linear-gradient(to bottom, rgba(20,17,13,.92), rgba(20,17,13,0))',
       text: '#F2EBDA',
@@ -193,7 +185,6 @@ export default function App() {
   const [traveler, setTraveler] = useState(readTraveler)
   const [tripId, setTripId] = useState(readRequestedTripId)
   const [view, setView] = useState(() => initialViewFromUrl()) // 'index' | 'trip' | 'stop' | 'settings' | 'new' | 'edit' | 'activities' | 'photos' | 'import' | 'replay' | 'map'
-  const [helenDark, toggleHelenDark] = useHelenDark()
   // Claude-in-App M1: panel state lives at App level so the entry
   // points scattered across views all open the same surface, and the
   // panel's per-trip context falls out of the existing `trip` resolve.
@@ -207,13 +198,10 @@ export default function App() {
   // pick. They live only in the editor and the Settings → Drafts list.
   // This is what stops a sparse trip from ever rendering in a view.
   const visibleTrips = allTrips.filter((t) => !t.draft)
-  const topBar = topBarTokens(traveler, helenDark)
-  // Spec §6: Jonathan + Rafa permanent dark; Helen dark when toggled on.
-  // Aurelia stays light. This drives the StopDetail / Settings surface.
-  const darkSurface =
-    traveler === 'jonathan' ||
-    traveler === 'rafa' ||
-    (traveler === 'helen' && helenDark)
+  const topBar = topBarTokens(traveler)
+  // Jonathan + Rafa are dark; Helen + Aurelia light (the per-person
+  // dark-mode toggle was dropped 2026-06-05). Drives StopDetail/Settings.
+  const darkSurface = traveler === 'jonathan' || traveler === 'rafa'
 
   // Persist traveler across reloads + standalone PWA boundary.
   useEffect(() => {
@@ -234,13 +222,12 @@ export default function App() {
     }
   }, [traveler])
 
-  // The CSS theme cascade. Helen has two palettes — `helen` (linen
-  // archive) and `helen-dark` (oxblood evening). Re-runs on toggle.
+  // The CSS theme cascade — data-theme = the current person. One fixed
+  // palette per person now (Helen's dark variant was dropped 2026-06-05).
   useEffect(() => {
-    const themeName = traveler === 'helen' && helenDark ? 'helen-dark' : traveler
-    document.documentElement.setAttribute('data-theme', themeName)
-    document.body.setAttribute('data-theme', themeName)
-  }, [traveler, helenDark])
+    document.documentElement.setAttribute('data-theme', traveler)
+    document.body.setAttribute('data-theme', traveler)
+  }, [traveler])
 
   // Mirror tripId in the URL too, so a home-screen save remembers it.
   // When tripId clears (cold-load override decided no trip matches
@@ -595,6 +582,7 @@ export default function App() {
       onOpenPhotos: openPhotos,
       onOpenAllPhotos: openAllPhotos,
       onOpenImport: openImport,
+      onOpenClaude: openClaude,
     }
     switch (traveler) {
       case 'helen':
@@ -873,8 +861,6 @@ export default function App() {
             trip={trip}
             traveler={traveler}
             dark={darkSurface}
-            helenDark={helenDark}
-            onToggleHelenDark={toggleHelenDark}
             tripsApi={tripsApi}
             onBack={() => setView({ name: 'trip' })}
             onChangeTraveler={handleTravelerSwitch}

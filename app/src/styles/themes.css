@@ -10,10 +10,10 @@
    deferred per "polish, not redesign" guidance — only the per-traveler
    *dot* colors are imported (see app/src/data/travelers.js TRAVELER_DOT).
 
-   Per-view dark mode (V3 spec §6): Jonathan permanent dark, Helen
-   toggle (useHelenDark), Aurelia permanent light, Rafa unchanged
-   (deep-blue mission-control). Those rules live in App.jsx
-   (`darkSurface`); this file only defines the surface tokens.
+   Per-person mode is now FIXED (no toggle — dark-mode-as-axis dropped
+   2026-06-05): Jonathan dark, Helen light, Aurelia light (→ dark in her
+   own increment), Rafa dark. `darkSurface` in App.jsx drives the
+   StopDetail/Settings surface; this file defines the per-theme tokens.
    ========================================================================== */
 
 :root,
@@ -57,60 +57,47 @@
 }
 
 [data-theme='helen'] {
-  /* Linen archive — sage on warm paper. */
-  --bg: #F2EFE7;
-  --bg2: #E6E1D2;
-  --bg-nav: rgba(242, 239, 231, 0.86);
-  --card: #FFFFFF;
-  --text: #15201A;
-  --muted: rgba(21, 32, 26, 0.65);  /* A11Y-1b: ≥4.5:1 on --bg (#626862 = 4.97:1); was .62 = 4.48 */
-  --faint: rgba(21, 32, 26, 0.32);
-  --accent: #2E5D3A;          /* forest */
-  --accent2: #2E5D3A;
-  --accent3: #2E5D3A;
-  --accent-text: #2E5D3A;     /* C1: == --accent; forest already clears AA on all grounds */
-  --accent-ink: #FFFFFF;
-  --border: rgba(21, 32, 26, 0.13);
-  --tag: #2E5D3A;
+  /* Family Trips v2 — Helen "Keeper + Planner" (redesign increment 2, 2026-06-05).
+     Warm editorial: sage on warm paper, soft 18px corners. Light ONLY — the
+     dark-mode toggle is dropped (design + locked decision). Values from the
+     design handoff system.jsx TRAVELERS.helen. Same token-name map as Jonathan
+     (surface=--card, ink=--text, line=--border, lineBold=--line-bold). --muted
+     held at 0.65 (the A11Y-1b-proven opacity), not the design's 0.62, so it
+     keeps clearing AA on --bg; accent TEXT uses --accent-text. */
+  --bg: #F4F0E7;
+  --bg2: #ECE6D9;
+  --bg-nav: rgba(244, 240, 231, 0.86);
+  --card: #FFFFFF;            /* design 'surface' */
+  --text: #1C2A21;           /* design 'ink' */
+  --muted: rgba(28, 42, 33, 0.65);   /* A11Y-1b-safe (design says .62, which failed AA before) */
+  --faint: rgba(28, 42, 33, 0.34);   /* decorative-only — readable labels use --muted */
+  --accent: #2E7D52;          /* sage (FILL/marker) */
+  --accent2: #2E7D52;
+  --accent3: #2E7D52;
+  --accent-text: #256B45;     /* readable sage on --bg (design accentText) */
+  --accent-ink: #FFFFFF;      /* white on sage fill (7.66:1) */
+  --border: rgba(28, 42, 33, 0.12);     /* design 'line' */
+  --line-bold: rgba(28, 42, 33, 0.22);  /* design 'lineBold' */
+  --live: #C2603A;            /* terracotta — decide / now marker */
+  --good: #2E7D52;
+  --tag: #2E7D52;
   --tag-text: #FFFFFF;
-  --radius: 4px;
-  --shadow-card: 0 1px 3px rgba(21, 32, 26, 0.06),
-    0 10px 30px rgba(21, 32, 26, 0.06);
-  --shadow-card-hover: 0 4px 8px rgba(21, 32, 26, 0.08),
-    0 18px 44px rgba(21, 32, 26, 0.10);
+  --radius: 18px;
+  --shadow-card: 0 1px 3px rgba(28, 42, 33, 0.06),
+    0 16px 36px -20px rgba(28, 42, 33, 0.5);
+  --shadow-card-hover: 0 4px 8px rgba(28, 42, 33, 0.08),
+    0 18px 44px rgba(28, 42, 33, 0.12);
   --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
   --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --heading-weight: 500;
   --body-weight: 400;
 }
 
-[data-theme='helen-dark'] {
-  /* Linen archive at night — warm near-black with oxblood accents. */
-  --bg: #14110D;
-  --bg2: #1F1B14;
-  --bg-nav: rgba(20, 17, 13, 0.88);
-  --card: #2A241B;
-  --text: #F2EBDA;
-  --muted: rgba(242, 235, 218, 0.62);
-  --faint: rgba(242, 235, 218, 0.32);
-  --accent: #B0463F;          /* oxblood, a touch warm so photos pop (FILL — unchanged) */
-  --accent2: #B0463F;
-  --accent3: #B0463F;
-  --accent-text: #CD7973;     /* C1: readable-on-bg emphasis sibling of --accent; AA ≥4.8:1 on bg/bg2/card */
-  --accent-ink: #F2EBDA;
-  --border: rgba(242, 235, 218, 0.13);
-  --tag: #B0463F;
-  --tag-text: #F2EBDA;
-  --radius: 4px;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4),
-    0 10px 30px rgba(0, 0, 0, 0.35);
-  --shadow-card-hover: 0 4px 8px rgba(0, 0, 0, 0.45),
-    0 18px 44px rgba(0, 0, 0, 0.45);
-  --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
-  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
-  --heading-weight: 500;
-  --body-weight: 400;
-}
+/* [data-theme='helen-dark'] removed 2026-06-05 — the per-person dark-mode
+   toggle is a dropped feature (design + locked product decision). Helen is
+   light-only now; the useHelenDark hook + the Settings toggle were removed
+   with it. (The dead platform.css .helen-* palette classes are a separate
+   parked cleanup.) */
 
 [data-theme='aurelia'] {
   /* Hot-pink scrapbook on rose paper. */
@@ -207,13 +194,6 @@ body[data-theme='rafa'] {
 /* Helen's warm linen backdrop with a paper-bright top wash. */
 body[data-theme='helen'] {
   background-image: radial-gradient(ellipse at top, #FBF7EE 0%, var(--bg) 60%);
-  background-attachment: fixed;
-}
-
-/* Helen-dark: a faint oxblood top wash so the warm near-black feels
-   lit-from-above rather than flat. */
-body[data-theme='helen-dark'] {
-  background-image: radial-gradient(ellipse at 50% 0%, rgba(176, 70, 63, 0.10) 0%, transparent 55%);
   background-attachment: fixed;
 }
 
