@@ -17,6 +17,7 @@ import { AllPhotosView } from './views/AllPhotosView'
 import { ReplayView } from './views/ReplayView'
 import { MapView } from './views/MapView'
 import { ImportView } from './views/ImportView'
+import { InstallIdentity } from './views/InstallIdentity'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
@@ -24,6 +25,7 @@ import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
+import { applyInstallIdentity } from './lib/appInstall'
 import './styles/platform.css'
 
 // Read `?url=` (and optional `&action=import`) at boot — the
@@ -228,6 +230,9 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', traveler)
     document.body.setAttribute('data-theme', traveler)
+    // Point the installed-app identity (manifest + home-screen icon + title)
+    // at this person, so an Add-to-Home-Screen captures THEIR app.
+    applyInstallIdentity(traveler)
   }, [traveler])
 
   // Mirror tripId in the URL too, so a home-screen save remembers it.
@@ -866,13 +871,20 @@ export default function App() {
             onBack={() => setView({ name: 'trip' })}
             onChangeTraveler={handleTravelerSwitch}
             onOpenEditor={openEditor}
+            onOpenIdentity={() => setView({ name: 'identity' })}
+          />
+        )}
+        {view.name === 'identity' && (
+          <InstallIdentity
+            traveler={traveler}
+            onClose={() => setView({ name: 'settings' })}
           />
         )}
       </div>
 
       {/* Bottom switcher visible everywhere except the index (and replay,
           which is immersive and owns its own bottom transport bar). */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && (
         <Switcher active={traveler} onSwitch={handleTravelerSwitch} />
       )}
 

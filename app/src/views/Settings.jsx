@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Calendar, RotateCcw, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, Archive } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, Archive, Smartphone } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER, TRAVELER_DOT } from '../data/travelers'
+import { AppIcon } from '../components/AppIcon'
+import { APP_IDENTITY, getSticker } from '../data/appIdentity'
 import { downloadIcs } from '../lib/icsExport'
 import {
   pullAll,
@@ -24,7 +26,7 @@ import {
 // offline + Pull / Push / Seed actions. (Helen's dark-mode toggle was
 // removed 2026-06-05 — dark mode dropped as a per-person axis.)
 
-export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor }) {
+export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor, onOpenIdentity }) {
   const [workerStatus, setWorkerStatus] = useState({
     status: isWorkerConfigured() ? 'syncing' : 'unconfigured',
     traveler: null,
@@ -361,6 +363,29 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
           ))}
         </div>
       </section>
+
+      {onOpenIdentity && (
+        <section className="px-6 py-8 border-b surface-rule">
+          <div className="flex items-center gap-2 mb-3">
+            <Smartphone size={14} />
+            <p className="smallcaps f-dm text-[11px] opacity-70">Your home-screen app</p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenIdentity}
+            data-testid="open-identity"
+            className="flex items-center"
+            style={{ gap: 14, width: '100%', background: 'transparent', border: 0, cursor: 'pointer', textAlign: 'left', padding: 0, color: 'inherit' }}
+          >
+            <AppIcon id={traveler} size={44} emblem={getSticker(traveler)} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="f-dm text-sm" style={{ fontWeight: 600 }}>{APP_IDENTITY[traveler]?.app}</div>
+              <div className="f-dm text-xs opacity-70">Make it yours — pick your sticker</div>
+            </div>
+            <ChevronRight size={16} style={{ opacity: 0.5 }} />
+          </button>
+        </section>
+      )}
 
       <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">

@@ -88,3 +88,21 @@ test.describe('a11y (axe, serious+critical) — S2 trip-view ×4 personas', () =
     })
   }
 })
+
+// InstallIdentity (the per-person "Make it yours" home-screen app picker,
+// added in the cross-cutting pass) is a full-screen view with its own small
+// mono labels + accent-as-text ("yours") + the picker — exactly the surface
+// where a --faint-as-text slip hides. Gate its contrast ×4 personas so the
+// new view can't regress silently.
+test.describe('a11y (axe, serious+critical) — InstallIdentity ×4 personas', () => {
+  for (const p of TRAVELERS) {
+    test(`install identity — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
+      await page.getByRole('button', { name: 'Trip settings' }).click()
+      await page.getByTestId('open-identity').click()
+      await expect(page.getByTestId('install-identity')).toBeVisible()
+      await expectNoSeriousA11y(page, { label: `install identity (${p})`, only: ['color-contrast'] })
+    })
+  }
+})
