@@ -277,8 +277,3 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     return pendingRef()
   }
 }
-
-// `mergeRefIntoExisting` lives in `./photoRefMerge` so the dedup logic
-// stays Node-testable without dragging the memAssets + memoryStore +
-// photoPipeline tree into the test import graph.
-export { mergeRefIntoExisting }

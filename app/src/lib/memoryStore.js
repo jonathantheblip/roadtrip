@@ -481,17 +481,3 @@ export function backfillCapturedAt() {
   }
   return patched
 }
-
-// Single-entry convenience: load the active traveler's memory for a stop
-// (the most recent one they authored). Used by StopDetail.
-export function loadOwnMemoryForStop(stopId, traveler) {
-  const own = readJson(PRIVATE_KEY(traveler))
-  const sharedOwn = readJson(SHARED_KEY).filter(
-    (m) => m.authorTraveler === traveler && m.stopId === stopId
-  )
-  const ownAtStop = own.filter((m) => m.stopId === stopId)
-  const merged = [...ownAtStop, ...sharedOwn].sort((a, b) =>
-    a.updatedAt < b.updatedAt ? 1 : -1
-  )
-  return merged[0] || null
-}

@@ -58,7 +58,7 @@ const FONT = {
 // `currentColor`, so callers control hue via the parent's `color`
 // CSS — that lets the same component render sage in Helen's panel,
 // oxblood on Jonathan's surface, etc., without prop drilling.
-export function ClaudeMark({ size = 16, color = 'currentColor' }) {
+function ClaudeMark({ size = 16, color = 'currentColor' }) {
   return (
     <svg
       width={size}
@@ -122,7 +122,7 @@ function ChevronRightIcon({ size = 12, color = 'currentColor' }) {
 // Brand wordmark — "Claude" in Fraunces followed by the spark. iconSize
 // defaults to 20 so the chat panel header reads the same size the spec
 // names for the header surface; callers can override for compact uses.
-export function ClaudeLockup({ size = 14, color = 'var(--text)', accent = 'var(--accent)', iconSize = 20 }) {
+function ClaudeLockup({ size = 14, color = 'var(--text)', accent = 'var(--accent)', iconSize = 20 }) {
   return (
     <span
       style={{

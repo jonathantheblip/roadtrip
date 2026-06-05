@@ -117,7 +117,7 @@ export function flattenPhotoEntries(memories) {
   return out
 }
 
-export function refUrl(ref) {
+function refUrl(ref) {
   if (!ref) return null
   if (typeof ref.url === 'string' && ref.url) return ref.url
   if (typeof ref === 'string') return ref

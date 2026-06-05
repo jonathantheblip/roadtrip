@@ -96,7 +96,7 @@ function buildEvent(trip, day, stop) {
 
 // Build the .ics text. travelerId is optional — if provided, only stops
 // where that traveler is in `for` are included.
-export function buildIcs(trip, travelerId = null) {
+function buildIcs(trip, travelerId = null) {
   const header = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',

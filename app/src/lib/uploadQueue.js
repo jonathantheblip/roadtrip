@@ -69,7 +69,7 @@ export async function enqueue(item) {
   }
 }
 
-export async function list() {
+async function list() {
   let db
   try {
     db = await openDb()
@@ -89,7 +89,7 @@ export async function count() {
   return items.length
 }
 
-export async function remove(id) {
+async function remove(id) {
   const db = await openDb()
   try {
     await asPromise(tx(db, 'readwrite').delete(id))
@@ -99,7 +99,7 @@ export async function remove(id) {
   }
 }
 
-export async function update(id, patch) {
+async function update(id, patch) {
   const db = await openDb()
   try {
     const store = tx(db, 'readwrite')
@@ -109,16 +109,6 @@ export async function update(id, patch) {
     await asPromise(store.put(next))
     notifyListeners()
     return next
-  } finally {
-    db.close()
-  }
-}
-
-export async function clear() {
-  const db = await openDb()
-  try {
-    await asPromise(tx(db, 'readwrite').clear())
-    notifyListeners()
   } finally {
     db.close()
   }

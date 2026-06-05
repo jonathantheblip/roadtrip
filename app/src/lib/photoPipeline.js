@@ -11,8 +11,8 @@ import { loadExifTags, exifReaderToRaw } from './exifRead.js'
 // q=0.85. Tuned for a good balance between fidelity (group photos
 // printed at 4×6 still look fine) and bytes-on-the-wire (a typical
 // iPhone 4032×3024 HEIC compresses ~3-5× under these settings).
-export const PHOTO_MAX_EDGE = 2048
-export const PHOTO_JPEG_QUALITY = 0.85
+const PHOTO_MAX_EDGE = 2048
+const PHOTO_JPEG_QUALITY = 0.85
 
 // Acceptable image MIME types. iOS Safari serves HEIC as
 // "image/heic" and "image/heif"; the Canvas decoder reads them
@@ -34,7 +34,7 @@ const SCREEN_REC_HINTS = /screen.?recording|replaykit/i
 // Coarse pre-check before we hand the file to the decoder. Returns
 // `{ ok: true }` or `{ ok: false, reason: <designed error code> }`.
 // Reason codes map to user-facing copy in AddDispatchModal.
-export function validatePhotoFile(file) {
+function validatePhotoFile(file) {
   if (!file) return { ok: false, reason: 'missing-file' }
   const mime = file.type || ''
   if (VIDEO_MIME_RE.test(mime) || SCREEN_REC_HINTS.test(file.name || '')) {
@@ -127,7 +127,7 @@ function targetSize(srcW, srcH, maxEdge) {
 // Throws Errors with `.code` set to a designed reason for the caller
 // to map to copy (`decode-failed`, `heic-decode-failed`,
 // `canvas-encode-failed`, `still-too-large`).
-export async function downscaleImage(
+async function downscaleImage(
   file,
   { maxEdge = PHOTO_MAX_EDGE, quality = PHOTO_JPEG_QUALITY, maxOutputBytes } = {}
 ) {

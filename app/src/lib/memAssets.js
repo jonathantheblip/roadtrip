@@ -130,14 +130,3 @@ export async function loadAsset(kind, key) {
     req.onerror = () => resolve(null)
   })
 }
-
-export async function deleteAsset(kind, key) {
-  if (!STORES[kind] || !key) return
-  const db = await openDb()
-  return new Promise((resolve) => {
-    const t = db.transaction(STORES[kind], 'readwrite')
-    t.objectStore(STORES[kind]).delete(key)
-    t.oncomplete = () => resolve()
-    t.onerror = () => resolve()
-  })
-}

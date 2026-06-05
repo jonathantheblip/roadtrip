@@ -23,10 +23,6 @@ function cacheKey(origin, destination, targetArrival) {
   return `${o}→${d}@${t}`
 }
 
-export function clearLeaveWhenCache() {
-  cache.clear()
-}
-
 /**
  * Compute the leave-by time for a driving trip with a target arrival.
  * @param {object} params

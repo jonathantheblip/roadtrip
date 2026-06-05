@@ -25,14 +25,6 @@ export function isClaudeChatConfigured() {
   return isWorkerConfigured()
 }
 
-export async function createConversation({ userId, tripId = null, id = null } = {}) {
-  const r = await workerFetch('/claude/conversations', {
-    method: 'POST',
-    body: JSON.stringify({ id, user_id: userId, trip_id: tripId }),
-  })
-  return r.json()
-}
-
 export async function listConversations({ userId, tripId = null } = {}) {
   if (!userId) throw new Error('listConversations: userId required')
   const qs = new URLSearchParams({ user_id: userId })

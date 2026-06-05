@@ -28,7 +28,7 @@ export function isWhisperConfigured() {
 //   { transcript: string, language?: string }
 //   or null if not configured / failure (caller treats as 'skipped' /
 //   'failed' depending on context — see transcribeWithStatus below).
-export async function transcribeAudio(blob, { model = DEFAULT_MODEL, language } = {}) {
+async function transcribeAudio(blob, { model = DEFAULT_MODEL, language } = {}) {
   if (!blob) return null
   const base = proxyBase()
   if (!base) return null

@@ -20,7 +20,7 @@ const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // Format an hour/minute pair as "4pm" or "10:30am" — no leading zero
 // on the hour, lowercase am/pm, no space.
-export function formatTime(hour, minute) {
+function formatTime(hour, minute) {
   const h = ((hour % 24) + 24) % 24
   const m = minute || 0
   const ampm = h >= 12 ? 'pm' : 'am'

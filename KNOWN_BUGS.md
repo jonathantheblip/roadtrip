@@ -178,10 +178,23 @@ time of the cleanup the set had shrunk 78→73 on its own (the live-map feature
 restored `RouteMap`/`RouteMapLazy`/`useGeolocation`/`useVisited`/`data/route` and
 re-used `leaflet`/`react-leaflet`, so only the *old* `RouteSvg`/`MapCard` stayed
 dead). All 73 remaining orphans deleted in one pass (Jonathan's call: delete,
-incl. the `useTheme` chain). Verified: vite build green, knip → **0 unused files**
-(23 dead exports + cosmetic config-hints remain — the follow-on), unit 298/299
+incl. the `useTheme` chain). Verified: vite build green, knip → **0 unused files**,
+unit 298/299
 (known claudeSystemPrompt), full both-engine e2e **202 pass / 12 skip / 0 fail**
 (unchanged → nothing dead was used at runtime), no baseline churn.
+
+**Dead-EXPORTS follow-on also done (same day):** knip's 23 unused exports in
+otherwise-live files were trimmed — **8 fully-dead deleted** (createConversation,
+ROUTE_WAYPOINTS, PODCAST_REGION_COORDS, distanceKm, airlineStatusUrl [also the
+duplicate-export], clearLeaveWhenCache, deleteAsset, loadOwnMemoryForStop), **15
+used-internally un-exported** (photoPipeline PHOTO_MAX_EDGE/PHOTO_JPEG_QUALITY/
+validatePhotoFile/downscaleImage, uploadQueue list/remove/update, ClaudeChat
+ClaudeMark/ClaudeLockup, buildIcs, formatTime, refUrl, transcribeAudio, +
+photoBackfillUpload's mergeRefIntoExisting re-export dropped). Each verified vs a
+repo-wide grep first (caught 3 red-herrings: a comment ref, a different local
+`formatTime`, a test-comment ref). knip now → **0 unused files + 0 unused exports
++ 0 duplicate exports**; only the known test-harness dynamic import + cosmetic
+config-hints remain. build green, unit 298/299, e2e 202/12/0 unchanged.
 
 **⚠ ONE FEATURE GAP ACCEPTED (for the redesign, NOT a bug to fix now):
 per-person PWA install APPEARANCE is OFF.** `useTheme` was the only deleted file

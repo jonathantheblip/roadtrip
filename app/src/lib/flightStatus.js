@@ -26,9 +26,6 @@ export function flightAwareUrl(flightNumber) {
   return `https://www.flightaware.com/live/flight/${encodeURIComponent(ident)}`
 }
 
-// Backward-compat alias — call sites don't need updating.
-export const airlineStatusUrl = flightAwareUrl
-
 // Common IATA → ICAO airline-code prefix map. AeroAPI v4 prefers ICAO
 // (DAL4961) for direct lookup; if we get IATA (DL4961) we translate.
 const IATA_TO_ICAO = {
