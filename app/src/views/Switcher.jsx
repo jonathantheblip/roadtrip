@@ -20,11 +20,13 @@ export function Switcher({ active, onSwitch }) {
               className={isActive ? '' : 'inactive'}
               style={{
                 backgroundColor: isActive ? TRAVELER_DOT[id] : 'transparent',
-                // C2: aurelia's pink dot (#E8478C) fails white text (3.68) — dark ink,
-                // same as C1's white-on-pink fill fix. Inactive is a readable-secondary
-                // color (0.6 on the dark pill = 5.85:1 worst), not the old opacity:.5 kill.
+                // The light identity dots fail white text on the active pill, so
+                // they flip to dark ink (the C1/C2 fill-ink rule): aurelia's pink
+                // #E8478C and rafa's orange #E8552E (both ~3.6 white → ~5+ dark).
+                // Jonathan #2E6BB8 / Helen #2E7D52 keep white (~5:1). Inactive is a
+                // readable-secondary color (0.6 on the dark pill = 5.85:1 worst).
                 color: isActive
-                  ? (id === 'aurelia' ? '#2A0816' : '#fff')
+                  ? (id === 'aurelia' ? '#2A0816' : id === 'rafa' ? '#1B1108' : '#fff')
                   : 'rgba(255,255,255,0.6)',
               }}
               aria-pressed={isActive}

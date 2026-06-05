@@ -7,6 +7,7 @@ import { findArrivalStop } from './FlightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
+import { TRAVELER_DOT } from '../data/travelers'
 
 // Jonathan — Ops. Broadsheet mission-control (redesign increment 1,
 // design handoff jonathan.jsx). Two modes off one masthead toggle:
@@ -22,11 +23,10 @@ import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/Phot
 // later increment, per the working agreement (the UI only promises
 // what the plumbing delivers).
 
-// Identity color for Jonathan from the design handoff (system.jsx dot
-// #2E6BB8). Rendered as a literal here, NOT via the shared TRAVELER_DOT,
-// so the bottom Switcher + the other three personas' avatars stay on
-// today's dots until the cross-cutting identity-color increment.
-const JONATHAN_DOT = '#2E6BB8'
+// Jonathan's masthead identity dot, now sourced from the shared canonical
+// TRAVELER_DOT (cross-cutting identity-color consolidation, 2026-06-05) —
+// no longer a local literal. Same value (#2E6BB8 = the design dot).
+const JONATHAN_DOT = TRAVELER_DOT.jonathan
 
 const ORDINALS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
 

@@ -1,5 +1,6 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
+import { TRAVELER_DOT } from '../../src/data/travelers.js'
 
 // M1 acceptance — PhotosView renders, groups by stop, dedupes, lightbox
 // opens/navigates/closes. Asserts against the actual DOM the family
@@ -129,11 +130,14 @@ test.describe('PhotosView shell (M1)', () => {
     await expect(tile).toContainText('Helen tile metadata')
     // Location falls back to stop address when EXIF is absent.
     await expect(tile).toContainText('Court 1, Mohegan Sun')
-    // The poster color dot is the green TRAVELER_DOT for Helen.
+    // The poster color dot is Helen's canonical identity color — derived
+    // from TRAVELER_DOT (the source of truth) so an identity-color change
+    // updates this assertion instead of silently breaking it.
     const dot = tile.locator('[aria-label="Posted by Helen"]')
     await expect(dot).toBeVisible()
     const bg = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
-    expect(bg).toBe('rgb(46, 93, 58)')
+    const [r, g, b] = TRAVELER_DOT.helen.match(/\w\w/g).map((h) => parseInt(h, 16))
+    expect(bg).toBe(`rgb(${r}, ${g}, ${b})`)
   })
 
   test('EXIF capture date is primary, fallback to createdAt is labelled', async ({ page }) => {

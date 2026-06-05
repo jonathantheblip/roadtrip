@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, Calendar, RotateCcw, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, Archive } from 'lucide-react'
-import { TRAVELERS, TRAVELER_ORDER } from '../data/travelers'
+import { TRAVELERS, TRAVELER_ORDER, TRAVELER_DOT } from '../data/travelers'
 import { downloadIcs } from '../lib/icsExport'
 import {
   pullAll,
@@ -350,9 +350,9 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
               type="button"
               className="btn-pill"
               style={{
-                background: traveler === id ? TRAVELERS[id].color : 'transparent',
+                background: traveler === id ? TRAVELER_DOT[id] : 'transparent',
                 color: traveler === id ? '#FBF8F2' : 'inherit',
-                borderColor: traveler === id ? TRAVELERS[id].color : 'currentColor',
+                borderColor: traveler === id ? TRAVELER_DOT[id] : 'currentColor',
               }}
               onClick={() => onChangeTraveler(id)}
             >

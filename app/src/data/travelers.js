@@ -4,10 +4,13 @@
 // `TripPlatform_BuildSpec_v2.md` — see V3 naming note at the top of
 // ROADTRIP_PWA_BUILD_SPEC_V3.md).
 //
-// TRAVELER_DOT below mirrors the Family Trips Redesign bundle's
-// per-traveler dot colors (system.jsx → TRAVELERS[*].dot). These are
-// the canonical author-attribution colors and are independent of each
-// view's surface palette in themes.css.
+// TRAVELER_DOT (below) is the SINGLE canonical per-person identity color —
+// the dot on avatars, attribution chips, person pickers. It mirrors the
+// design handoff (system.jsx → TRAVELERS[*].dot) and is independent of each
+// view's surface palette in themes.css (--accent is the lens accent, a
+// separate thing). Consolidated 2026-06-05: a legacy per-traveler `color`
+// field (used only by the Settings persona picker) was retired in favor of
+// this, and JonathanView's hardcoded masthead-dot literal now reads it too.
 
 export const TRAVELER_ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
 
@@ -16,7 +19,6 @@ export const TRAVELERS = {
     id: 'jonathan',
     name: 'Jonathan',
     sub: 'ops',
-    color: '#1A1614',
     appleId: 'jonathan.d.jackson@gmail.com',
     music: 'spotify',
     maps: 'waze',
@@ -27,7 +29,6 @@ export const TRAVELERS = {
     id: 'helen',
     name: 'Helen',
     sub: 'archive',
-    color: '#8B2B1F',
     appleId: 'hhemley@gmail.com',
     music: 'apple-music',
     maps: 'apple-maps',
@@ -38,7 +39,6 @@ export const TRAVELERS = {
     id: 'aurelia',
     name: 'Aurelia',
     sub: 'her stuff',
-    color: '#C77A45',
     appleId: 'aureliaelise2012@icloud.com',
     music: 'spotify',
     maps: 'apple-maps',
@@ -49,7 +49,6 @@ export const TRAVELERS = {
     id: 'rafa',
     name: 'Rafa',
     sub: 'mission',
-    color: '#E63333',
     appleId: null, // uses parent device
     music: null,
     maps: 'apple-maps',
@@ -58,13 +57,15 @@ export const TRAVELERS = {
   },
 }
 
-// Person-tag swatches used inside themed surfaces (small dots / chips).
-// Aligned with the Design bundle's traveler dots — Jonathan navy,
-// Helen forest, Aurelia hot pink, Rafa oxblood. Drives memory
-// attribution chips in StopDetail and the threaded-memory direction.
+// The canonical per-person identity dot — Jonathan cobalt, Helen forest,
+// Aurelia hot pink, Rafa orange-red. Values are the design handoff dots
+// (system.jsx TRAVELERS[*].dot). Drives the Avatar, attribution chips in
+// StopDetail / ThreadedMemories / PostcardComposer, the Switcher, and the
+// activity/import person pickers. One source of truth — change a person's
+// identity color here and it moves everywhere.
 export const TRAVELER_DOT = {
-  jonathan: '#1E3A6F',
-  helen: '#2E5D3A',
+  jonathan: '#2E6BB8',
+  helen: '#2E7D52',
   aurelia: '#E8478C',
-  rafa: '#C9342A',
+  rafa: '#E8552E',
 }
