@@ -2,7 +2,8 @@
 Durable, version-controlled anti-drift contract between Jonathan and Claude Code.
 This file is **in the repo on purpose**. Read it at the start of every work window and hold to it.
 
-Status: living. Amended only with Jonathan's explicit approval (see §9). Last structural change: 2026-06-02.
+Status: living. Amended only with Jonathan's explicit approval (see §9). Last structural change: 2026-06-05
+(§3 "reconcile before you replace").
 
 ---
 
@@ -84,6 +85,13 @@ does not extend to the next.
 - **Re-blessing a visual baseline** — look at the diff image first; never bless blind to force green.
 - **Anything touching code that already works** — re-verify the working path against real input *first*, and
   name that re-verification as a stop-condition (don't break the JPEG path to fix the HEIC one).
+- **Reconcile before you replace.** When an increment rewrites, reskins, ports, or refactors a surface that
+  already works, first write a short **do-not-lose inventory** of what the current surface actually does —
+  every wired behavior, entry point, and deliberate past decision — and verify each one survives, or is
+  consciously dropped with a reason. A design spec or new plan is a *target, not a completeness check*: it
+  won't enumerate the working features it didn't think to include. Reconcile against the code that exists,
+  not just the spec in front of you. *(Added 2026-06-05 — caught a demoted photo entry + a muddled "Queue"
+  label during the skin redesign's increment 1.)*
 
 Scope is a contract. If the work pushes past the named boundary, **drift halts — it does not expand.**
 Jonathan decides whether scope grows.
