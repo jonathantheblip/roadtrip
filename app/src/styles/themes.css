@@ -182,15 +182,6 @@
   --body-weight: 500;
 }
 
-/* Person-tag colors stay constant across themes. */
-:root {
-  --person-helen: #2d8a4e;
-  --person-aurelia: #c2185b;
-  --person-rafa: #e65100;
-  --person-jonathan: #1565c0;
-  --person-everyone: #5e35b1;
-}
-
 /* Body-level theme application + transition.
    Transitions are short and intentional so theme switching feels smooth
    but never laggy. */
