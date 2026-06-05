@@ -18,28 +18,37 @@
 
 :root,
 [data-theme='jonathan'] {
-  /* Editorial console — Kottke-dark. Paper-cream on near-black with
-     oxblood links. Per Design system.jsx TRAVELERS.jonathan.theme. */
+  /* Family Trips v2 — Jonathan "Ops" (redesign increment 1, 2026-06-05).
+     Broadsheet mission-control: paper-cream on near-black, clay-red accent,
+     hard 2px corners. Values from the design handoff system.jsx
+     TRAVELERS.jonathan.  Token-name map (design → ours): surface=--card,
+     ink=--text, line=--border, lineBold=--line-bold, accentInk=--accent-ink.
+     CRITICAL: the clay accent is LIGHT, so ink ON the accent fill flips DARK
+     (--accent-ink/--tag-text #16100C) — the Stage-2/C1 fill-ink trap. Accent
+     AS TEXT must use --accent-text (readable on --bg), never raw --accent. */
   --bg: #0E0F11;
   --bg2: #15171A;
   --bg-nav: rgba(14, 15, 17, 0.86);
-  --card: #1C1E22;
-  --text: #EDE6D6;
-  --muted: rgba(237, 230, 214, 0.58);
-  --faint: rgba(237, 230, 214, 0.30);
-  --accent: #A33A2E;          /* oxblood link (FILL — unchanged) */
-  --accent2: #A33A2E;
-  --accent3: #EDE6D6;         /* used as bright dot (decorative — unchanged) */
-  --accent-text: #D26C60;     /* C1: readable-on-bg emphasis sibling of --accent; AA ≥4.8:1 on bg/bg2/card */
-  --accent-ink: #FFF6E8;
-  --border: rgba(237, 230, 214, 0.16);
-  --tag: #A33A2E;
-  --tag-text: #FFF6E8;
-  --radius: 6px;
-  /* Newsroom plate — thin oxblood rim, deep ink drop, no glow. */
+  --card: #1C1E22;            /* design 'surface' */
+  --text: #EDE6D6;            /* design 'ink' */
+  --muted: rgba(237, 230, 214, 0.60);
+  --faint: rgba(237, 230, 214, 0.32);
+  --accent: #E0654F;          /* clay-red — FILL / marker / underline only */
+  --accent2: #E0654F;
+  --accent3: #EDE6D6;         /* bright paper dot (decorative) */
+  --accent-text: #EC8770;     /* readable clay ON --bg — use for accent TEXT (design accentText) */
+  --accent-ink: #16100C;      /* dark ink ON the clay fill (design accentInk) */
+  --border: rgba(237, 230, 214, 0.14);     /* design 'line' */
+  --line-bold: rgba(237, 230, 214, 0.30);  /* design 'lineBold' — heavier rules */
+  --live: #E0654F;            /* live / now marker */
+  --good: #7FB069;            /* on-time / locked-in green */
+  --tag: #E0654F;
+  --tag-text: #16100C;        /* dark ink on clay tag fill */
+  --radius: 2px;
+  /* Newsroom plate — thin clay rim, deep ink drop, no glow. */
   --shadow-card: 0 0 0 1px rgba(237, 230, 214, 0.06),
     0 8px 22px rgba(0, 0, 0, 0.55);
-  --shadow-card-hover: 0 0 0 1px rgba(163, 58, 46, 0.36),
+  --shadow-card-hover: 0 0 0 1px rgba(224, 101, 79, 0.36),
     0 12px 32px rgba(0, 0, 0, 0.7);
   --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
   --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
@@ -208,11 +217,11 @@ body[data-theme='helen-dark'] {
   background-attachment: fixed;
 }
 
-/* Jonathan's Kottke-dark ground stays mostly flat — a single faint
-   oxblood top wash keeps it from looking like a void. */
+/* Jonathan's near-black ground stays mostly flat — a single faint
+   clay top wash keeps it from looking like a void. */
 body[data-theme='jonathan'] {
   background-image:
-    radial-gradient(ellipse at 50% 0%, rgba(163, 58, 46, 0.06) 0%, transparent 50%);
+    radial-gradient(ellipse at 50% 0%, rgba(224, 101, 79, 0.06) 0%, transparent 50%);
   background-attachment: fixed;
 }
 
