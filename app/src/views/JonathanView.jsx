@@ -435,8 +435,10 @@ function JOps({
         </>
       )}
 
-      {/* QUICK LOG — runtime "where's the nearest one?" queries. */}
-      <JSectionHead label="Quick log" meta="WHERE'S THE NEAREST" />
+      {/* QUEUE — runtime "where's the nearest one?" queries (the live
+          Places search, NOT a journal — the design's "Quick log" names a
+          log-the-stop behavior this app deliberately removed as a bug). */}
+      <JSectionHead label="Queue" meta="WHERE'S THE NEAREST" />
       <div style={{ padding: '4px 16px 0' }}>
         <QueueButtons trip={trip} traveler={traveler} />
       </div>
