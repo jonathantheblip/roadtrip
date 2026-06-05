@@ -1,8 +1,9 @@
 /* ==========================================================================
    Trip Platform — base utility layer for the four themed views.
-   The themed views use these utilities + per-view classes (helen-*, jj-*,
-   au-*, rafa-*) for the editorial surfaces specified in
-   TripPlatform_BuildSpec_v2.md §6.
+   The themed views use these utilities + inline styles driven by the
+   active theme tokens (see styles/themes.css). (The old per-view palette
+   classes — the helen-, jj-, au- and rafa- prefixes — were unused and
+   removed 2026-06-05; the live .jj-day-chip / .rafa-day-chip kept below.)
    Hand-rolled rather than pulling in Tailwind, since the surface area
    we need is bounded and the build pipeline stays minimal.
    ========================================================================== */
@@ -143,45 +144,6 @@ button { font: inherit; }
 .rt-spin { animation: rt-spin 0.9s linear infinite; }
 @keyframes rt-spin { to { transform: rotate(360deg); } }
 
-/* ---- Theme classes ----------------------------------------------------
-   `.helen-bone` / `.helen-paper` / `.jj-paper` etc. exist for
-   per-traveler view markup and now drive their colors from the
-   active CSS theme variables (see styles/themes.css). The rules
-   below are intentionally token-driven so any future palette change
-   only needs to land in themes.css.
-   ----------------------------------------------------------------- */
-.helen-bone { background: var(--bg); color: var(--text); }
-.helen-paper { background: var(--card); }
-.helen-rule { border-color: var(--border); }
-.helen-soft { color: var(--text); opacity: 0.78; }
-.helen-faded { color: var(--muted); }
-.helen-photo {
-  background: linear-gradient(135deg, var(--bg2) 0%, var(--card) 100%);
-  position: relative; overflow: hidden;
-}
-.helen-photo::after {
-  content: ''; position: absolute; inset: 0;
-  background-image:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.20) 0%, transparent 55%),
-    radial-gradient(circle at 75% 75%, rgba(0,0,0,.08) 0%, transparent 55%);
-}
-.helen-deckle { box-shadow: 0 0 0 8px var(--card), 0 8px 24px rgba(0,0,0,.10); }
-
-/* Helen dark variant — opt-in via her settings (spec §6). Mirrors
-   Jonathan's Kottke-dark palette while she's in dark mode. Class is
-   applied alongside `.helen-bone` by HelenView. */
-.helen-bone.helen-dark {
-  background: #0E0F11;
-  color: #EDE6D6;
-}
-.helen-dark .helen-rule,
-.helen-dark.helen-rule { border-color: rgba(237, 230, 214, 0.16); }
-.helen-dark .helen-soft { color: rgba(237, 230, 214, 0.86); }
-.helen-dark .helen-faded { color: rgba(237, 230, 214, 0.58); }
-.helen-dark .helen-deckle {
-  box-shadow: 0 0 0 8px #15171A, 0 8px 24px rgba(0,0,0,.5);
-}
-
 /* ---- Surface tokens (StopDetail / Settings / utility surfaces) ------
    Light by default, dark when wrapped in .surface-dark. Both pull from
    the active theme so a Helen surface looks like Helen, an Aurelia
@@ -202,9 +164,7 @@ button { font: inherit; }
   border-radius: var(--radius);
   padding: 16px;
 }
-.surface-dark .embed-panel,
-.jj-paper .embed-panel,
-.helen-bone.helen-dark .embed-panel {
+.surface-dark .embed-panel {
   background: var(--bg2);
   border-color: var(--border);
   color: var(--text);
@@ -267,64 +227,6 @@ button { font: inherit; }
 .jj-day-chip:active,
 .rafa-day-chip:active {
   transform: scale(0.94);
-}
-
-/* ---- Theme: Jonathan (permanent dark) --------------------------------
-   Per spec §6: dark editorial newsprint. Black/charcoal ground,
-   paper-white text, oxblood accents preserved. No light variant.
-   "Bloomberg terminal that read literary magazines." */
-.jj-paper { background: #14110D; color: #F2EBDA; }
-.jj-rule { border-color: rgba(242, 235, 218, 0.18); }
-.jj-soft { color: #C9C0AB; }
-.jj-faded { color: #8A8270; }
-.jj-divide-h {
-  border-top: 1px solid rgba(242, 235, 218, 0.18);
-  border-bottom: 1px solid rgba(242, 235, 218, 0.18);
-  padding: 1px 0;
-}
-.jj-ox { color: #C0573F; }
-/* Inline-card elements that previously used dark on light now flip:
-   the headphones tile, the loyalty cards, the queue rules. */
-.jj-inverse {
-  background: #F2EBDA;
-  color: #14110D;
-}
-
-/* ---- Theme: Aurelia --------------------------------------------------- */
-.au-cream { background: #FFF8F2; color: #4A1F0A; }
-.au-blush { background: #FCE4D6; }
-.au-coral { background: #F0A36B; }
-.au-deep { color: #6B2A0F; }
-.au-ink { color: #4A1F0A; }
-.au-rule { border-color: #F0D8C0; }
-.au-tape {
-  background: rgba(247, 168, 124, 0.55);
-  transform: rotate(-3deg);
-  box-shadow: 0 1px 3px rgba(107, 42, 15, 0.1);
-}
-
-/* ---- Theme: Rafa ------------------------------------------------------
-   Driven from Rafa's Design tokens (themes.css) — ochre warning on
-   near-black oxblood ground. The "mission" color callouts collapse to
-   the two Design accents (ochre + oxblood) instead of the prior
-   yellow/blue/red/green spread. */
-.rafa-bg { background: var(--bg); color: var(--text); }
-.rafa-card { background: var(--bg2); }
-.rafa-card-2 { background: var(--card); }
-.rafa-yellow { color: var(--accent-text); }    /* ochre */
-.rafa-red { color: var(--accent-text); }      /* oxblood */
-.rafa-blue { color: var(--text); }
-.rafa-green { color: var(--accent-text); }
-.rafa-bg-red { background: var(--accent2); color: var(--text); }
-.rafa-bg-blue { background: var(--card); color: var(--text); }
-.rafa-bg-yellow { background: var(--accent); color: var(--accent-ink); }
-.rafa-bg-green { background: var(--accent); color: var(--accent-ink); }
-.rafa-rule { border-color: var(--border); }
-.grid-bg {
-  background-image:
-    linear-gradient(rgba(255, 246, 232, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 246, 232, 0.04) 1px, transparent 1px);
-  background-size: 24px 24px;
 }
 
 /* ---- Switcher ---------------------------------------------------------- */
@@ -415,21 +317,15 @@ button { font: inherit; }
 .memory-textarea::placeholder { color: rgba(26, 22, 20, 0.42); }
 /* Dark surfaces flip the textarea so it doesn't read as a cream
    slab inside a charcoal page. */
-.surface-dark .memory-textarea,
-.jj-paper .memory-textarea,
-.helen-bone.helen-dark .memory-textarea {
+.surface-dark .memory-textarea {
   background: #1F1A14;
   color: #F2EBDA;
   border-color: rgba(242, 235, 218, 0.22);
 }
-.surface-dark .memory-textarea::placeholder,
-.jj-paper .memory-textarea::placeholder,
-.helen-bone.helen-dark .memory-textarea::placeholder {
+.surface-dark .memory-textarea::placeholder {
   color: rgba(242, 235, 218, 0.45);
 }
-.surface-dark .memory-textarea:focus,
-.jj-paper .memory-textarea:focus,
-.helen-bone.helen-dark .memory-textarea:focus {
+.surface-dark .memory-textarea:focus {
   border-color: #F2EBDA;
 }
 
