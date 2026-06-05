@@ -142,29 +142,42 @@
 }
 
 [data-theme='rafa'] {
-  /* Mission warning — ochre on near-black oxblood ground. */
-  --bg: #1A0A0B;
-  --bg2: #2A1012;
-  --bg-nav: rgba(26, 10, 11, 0.88);
-  --card: #3C1518;
-  --text: #FFF6E8;
-  --muted: rgba(255, 246, 232, 0.70);
-  --faint: rgba(255, 246, 232, 0.38);
-  --accent: #FFB833;          /* ochre warning */
-  --accent2: #C9342A;         /* oxblood (FILL — unchanged; as TEXT it unifies to --accent-text) */
-  --accent3: #FFB833;
-  --accent-text: #FFB833;     /* C1: == --accent (ochre); readable. Oxblood --accent2 as text unifies here */
-  --accent-ink: #1A0A0B;
-  --border: rgba(255, 246, 232, 0.18);
-  --tag: #FFB833;
-  --tag-text: #1A0A0B;
-  --radius: 4px;
-  --shadow-card: 0 0 0 1px rgba(255, 184, 51, 0.18),
-    0 8px 32px rgba(0, 0, 0, 0.7);
-  --shadow-card-hover: 0 0 0 1px rgba(255, 184, 51, 0.36),
-    0 12px 42px rgba(0, 0, 0, 0.8);
-  --font-body: 'Inter Tight', -apple-system, system-ui, sans-serif;
-  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  /* Family Trips v2 — Rafa "Mission" (redesign increment 4, 2026-06-05).
+     Big, bright, rounded mission deck for a 4-year-old: warm brown-black
+     ground, ochre accent, Fredoka everywhere (SELF-HOSTED, see platform.css
+     @font-face), very round 24px corners + chunky candy buttons. Values from
+     the design handoff system.jsx TRAVELERS.rafa (was oxblood #1A0A0B; the
+     off-palette blue is now an INTENTIONAL sticker, resolved in RafaView).
+     Same token-name map as the others (surface=--card, ink=--text,
+     line=--border, lineBold=--line-bold). The ochre FILL is light, so ink ON
+     it flips DARK (--accent-ink/--tag-text #1B1108 — the C1/Stage-2 trap).
+     Accent AS TEXT uses --accent-text (#FFC247, readable on --bg). */
+  --bg: #1B1108;
+  --bg2: #28190C;
+  --bg-nav: rgba(27, 17, 8, 0.88);
+  --card: #33200F;            /* design 'surface' */
+  --text: #FFF3DF;            /* design 'ink' */
+  --muted: rgba(255, 243, 223, 0.74);
+  --faint: rgba(255, 243, 223, 0.42);  /* decorative-only; readable labels use --muted */
+  --accent: #FFB12E;          /* ochre — FILL / marker */
+  --accent2: #FFB12E;
+  --accent3: #FFB12E;
+  --accent-text: #FFC247;     /* readable ochre ON --bg — accent TEXT (design accentText) */
+  --accent-ink: #1B1108;      /* dark ink ON the ochre fill (design accentInk) */
+  --border: rgba(255, 243, 223, 0.16);     /* design 'line' */
+  --line-bold: rgba(255, 243, 223, 0.30);  /* design 'lineBold' */
+  --live: #FF6B4D;            /* coral — live / now marker */
+  --good: #4CC36E;            /* green — locked-in */
+  --tag: #FFB12E;
+  --tag-text: #1B1108;
+  --radius: 24px;
+  /* Warm dark plate; the chunky candy drop-shadows are per-button in RafaView. */
+  --shadow-card: 0 0 0 1px rgba(255, 243, 223, 0.06),
+    0 8px 28px rgba(0, 0, 0, 0.55);
+  --shadow-card-hover: 0 0 0 1px rgba(255, 177, 46, 0.36),
+    0 12px 36px rgba(0, 0, 0, 0.7);
+  --font-body: 'Fredoka', 'Inter Tight', system-ui, sans-serif;
+  --font-display: 'Fredoka', 'Inter Tight', system-ui, sans-serif;
   --heading-weight: 700;
   --body-weight: 500;
 }
@@ -196,12 +209,13 @@ body {
    a descendant of an element with the attr — which never matches
    since body can't be its own descendant). */
 
-/* Rafa's near-black ground gets a warm-ochre top wash and an oxblood
-   bottom wash — the same warning-glow lighting as the Design Phone. */
+/* Rafa's warm brown-black ground gets an ochre top wash and a coral
+   bottom wash — the bright playful lighting of the Design Phone (redesign
+   increment 4, was oxblood). */
 body[data-theme='rafa'] {
   background-image:
-    radial-gradient(ellipse at 50% 0%, rgba(255, 184, 51, 0.10) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 100%, rgba(201, 52, 42, 0.18) 0%, transparent 50%);
+    radial-gradient(ellipse at 50% 0%, rgba(255, 177, 46, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 100%, rgba(255, 107, 77, 0.16) 0%, transparent 50%);
   background-attachment: fixed;
 }
 

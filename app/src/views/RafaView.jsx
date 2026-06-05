@@ -3,14 +3,26 @@ import { Mic } from 'lucide-react'
 import { effectiveStatus } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 
-// Rafa — Mission. Design-bundle authoritative
-// (prototype.jsx#RafaMission). Near-black ground with ochre warning
-// type. Eyebrow status + day count, big block-serif title that takes
-// over the screen, italic deck, anchor card in ochre with a time chip
-// and emoji, two chunky alt cards (blue + green) with emoji + uppercase
-// title + time, then a giant "TELL A STORY" mic button at the bottom.
+// Rafa — "Mission." Redesign increment 4 (2026-06-05): big, bright,
+// rounded mission deck for a 4-year-old. Was oxblood + Fraunces; now warm
+// brown-black + ochre, Fredoka everywhere (self-hosted), very round 24px
+// corners and chunky candy buttons (a solid darker edge below + a soft
+// drop). Same data + behaviors as before (reconciled): mission status,
+// day picker, the big stacked three-word title, the anchor + alt stop
+// cards, both photos entries, things-to-do, and the TELL A STORY button.
+// The old off-palette blue is now the design's intentional sticker color.
 
-export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
+const FREDOKA = "'Fredoka', 'Inter Tight', system-ui, sans-serif"
+// Rafa's sticker palette (system.jsx TRAVELERS.rafa.pal.sticker). The blue
+// (ST[1]) is the resolved-from-off-palette accent — now intentional.
+const ST = ['#FFB12E', '#3DA5E0', '#4CC36E', '#FF6B4D', '#C77DFF']
+// Dark ink for text ON the bright candy fills. White fails AA on these
+// mid-tones (the axe gate caught PICTURES on blue at 2.74 and TELL A STORY
+// on coral at 2.81 vs the 3:1 floor); dark ink clears ~6–7:1. Matches
+// --accent-ink — the C1/Stage-2 fill-ink rule applied to the stickers.
+const CANDY_INK = '#1B1108'
+
+export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
   // Which day's mission is on screen. Default to today-if-in-trip,
   // else day 1. Lets a 3-day weekend show three different missions
   // instead of one summary card that doesn't change.
@@ -60,14 +72,56 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         color: 'var(--text)',
         minHeight: '100vh',
         paddingBottom: 120,
+        fontFamily: FREDOKA,
       }}
     >
-      {/* Status eyebrow */}
+      {/* Greeting + the R button (settings) */}
       <div
         style={{
           padding: 'calc(env(safe-area-inset-top) + 60px) 18px 0',
           display: 'flex',
           justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 28, color: 'var(--text)' }}>
+          Hi Rafa! <span style={{ color: ST[0] }}>★</span>
+        </div>
+        {onOpenSettings && (
+          <button
+            type="button"
+            aria-label="Settings"
+            onClick={onOpenSettings}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: '50%',
+              background: ST[3],
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: `0 4px 0 ${shade(ST[3], -50)}`,
+              fontFamily: FREDOKA,
+              fontWeight: 700,
+              fontSize: 22,
+              color: CANDY_INK,
+              flexShrink: 0,
+            }}
+          >
+            R
+          </button>
+        )}
+      </div>
+
+      {/* Mission status */}
+      <div
+        style={{
+          padding: '8px 18px 0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
         <Eyebrow color="var(--accent-text)">● MISSION {status}</Eyebrow>
@@ -76,12 +130,10 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         </Eyebrow>
       </div>
 
-      {/* Day picker — chunky, finger-sized chips for a 5-year-old. Hide
-          when there's only one day (no point) and when there's no day
-          info at all. touch-action: manipulation makes taps fire on
-          first contact instead of waiting on the iOS double-tap-zoom
-          gesture; tap-highlight + :active scale give a visual ack so
-          a 5-year-old sees the chip respond. */}
+      {/* Day picker — chunky, finger-sized chips for a 4-year-old. Hide
+          when there's only one day. touch-action: manipulation makes taps
+          fire on first contact; tap-highlight + the .rafa-day-chip :active
+          scale give a visual ack so a 4-year-old sees the chip respond. */}
       {trip.days.length > 1 && (
         <div
           style={{
@@ -106,35 +158,39 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
                 className="rafa-day-chip"
                 style={{
                   flex: '0 0 auto',
-                  minWidth: 64,
-                  minHeight: 56,
+                  minWidth: 66,
+                  minHeight: 58,
                   padding: '10px 14px',
-                  background: isActive ? 'var(--accent)' : 'transparent',
-                  color: isActive ? 'var(--accent-ink, #1A0A0B)' : 'var(--muted)',
-                  border: isActive ? 'none' : '1.5px solid var(--border)',
-                  borderRadius: 14,
+                  background: isActive ? 'var(--accent)' : 'var(--card)',
+                  color: isActive ? 'var(--accent-ink)' : 'var(--muted)',
+                  border: 'none',
+                  borderRadius: 20,
                   cursor: 'pointer',
                   textAlign: 'center',
                   touchAction: 'manipulation',
-                  WebkitTapHighlightColor: 'rgba(255, 184, 51, 0.25)',
+                  WebkitTapHighlightColor: 'rgba(255, 177, 46, 0.25)',
+                  boxShadow: isActive
+                    ? `0 5px 0 ${shade('#FFB12E', -45)}`
+                    : `0 4px 0 var(--bg2)`,
                   transition: 'transform .12s ease',
                 }}
               >
                 <div
                   style={{
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: 9,
-                    letterSpacing: '0.12em',
-                    opacity: 0.8,
+                    fontFamily: FREDOKA,
+                    fontWeight: 600,
+                    fontSize: 10,
+                    letterSpacing: '0.08em',
+                    opacity: 0.85,
                   }}
                 >
                   DAY {d.n}
                 </div>
                 <div
                   style={{
-                    fontFamily: 'Fraunces, Georgia, serif',
-                    fontSize: 16,
-                    fontWeight: 800,
+                    fontFamily: FREDOKA,
+                    fontSize: 17,
+                    fontWeight: 700,
                     marginTop: 2,
                     textTransform: 'uppercase',
                   }}
@@ -147,16 +203,16 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         </div>
       )}
 
-      {/* Block-serif title — ochre stack */}
-      <div style={{ padding: '14px 18px 8px' }}>
+      {/* Big stacked title — ochre Fredoka */}
+      <div style={{ padding: '16px 18px 8px' }}>
         <div
           style={{
-            fontFamily: 'Fraunces, "Iowan Old Style", Georgia, serif',
+            fontFamily: FREDOKA,
             fontSize: 52,
-            fontWeight: 900,
-            lineHeight: 0.85,
+            fontWeight: 700,
+            lineHeight: 0.95,
             color: 'var(--accent-text)',
-            letterSpacing: '-0.02em',
+            letterSpacing: '-0.01em',
           }}
         >
           {titleWords.map((w, i) => (
@@ -168,18 +224,18 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         </div>
         <div
           style={{
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 13,
+            fontFamily: FREDOKA,
+            fontWeight: 500,
+            fontSize: 15,
             color: 'var(--muted)',
-            marginTop: 8,
-            fontStyle: 'italic',
+            marginTop: 10,
           }}
         >
-          {status === 'COMPLETE' ? 'you went to a lot of places.' : 'big trip coming up.'}
+          {status === 'COMPLETE' ? 'you went to a lot of places!' : 'big trip coming up!'}
         </div>
       </div>
 
-      {/* Anchor card — ochre */}
+      {/* Anchor card — big ochre candy card */}
       {featured && (
         <button
           type="button"
@@ -187,27 +243,28 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
           style={{
             display: 'block',
             width: 'calc(100% - 28px)',
-            margin: '8px 14px 0',
-            padding: 14,
+            margin: '10px 14px 0',
+            padding: 18,
             background: 'var(--accent)',
-            color: 'var(--accent-ink, #1A0A0B)',
-            borderRadius: 16,
+            color: 'var(--accent-ink)',
+            borderRadius: 28,
             position: 'relative',
             overflow: 'hidden',
             border: 0,
             cursor: 'pointer',
             textAlign: 'left',
+            boxShadow: `0 8px 0 ${shade('#FFB12E', -45)}, 0 14px 24px -8px rgba(0,0,0,0.4)`,
           }}
         >
           <div
             style={{
               position: 'absolute',
-              top: -20,
-              right: -20,
-              width: 100,
-              height: 100,
+              top: -24,
+              right: -24,
+              width: 110,
+              height: 110,
               borderRadius: '50%',
-              background: 'rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.16)',
             }}
           />
           <div
@@ -215,31 +272,31 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: 10,
+              marginBottom: 12,
               position: 'relative',
             }}
           >
             <div
               style={{
-                background: 'rgba(255,255,255,0.18)',
-                padding: '4px 10px',
-                borderRadius: 10,
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10,
-                letterSpacing: '0.14em',
-                fontWeight: 600,
+                background: 'rgba(27,17,8,0.16)',
+                padding: '5px 12px',
+                borderRadius: 999,
+                fontFamily: FREDOKA,
+                fontSize: 12,
+                letterSpacing: '0.06em',
+                fontWeight: 700,
                 color: 'inherit',
               }}
             >
               {featured.time}
             </div>
-            <span style={{ fontSize: 24 }}>{emojiFor(featured)}</span>
+            <span style={{ fontSize: 30 }}>{emojiFor(featured)}</span>
           </div>
           <div
             style={{
-              fontFamily: 'Fraunces, Georgia, serif',
-              fontSize: 24,
-              fontWeight: 800,
+              fontFamily: FREDOKA,
+              fontSize: 26,
+              fontWeight: 700,
               lineHeight: 1,
               position: 'relative',
             }}
@@ -249,9 +306,11 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
           {featured.note && (
             <div
               style={{
-                fontSize: 11,
-                marginTop: 8,
-                opacity: 0.85,
+                fontFamily: FREDOKA,
+                fontWeight: 500,
+                fontSize: 13,
+                marginTop: 10,
+                opacity: 0.82,
                 position: 'relative',
                 lineHeight: 1.4,
                 display: '-webkit-box',
@@ -266,18 +325,18 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         </button>
       )}
 
-      {/* Two chunky alt cards */}
+      {/* Two chunky alt cards — sticker blue + green (the resolved palette) */}
       {others.length > 0 && (
         <div
           style={{
-            padding: '14px 14px 0',
+            padding: '16px 14px 0',
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
-            gap: 8,
+            gap: 12,
           }}
         >
           {others.map((s, i) => {
-            const bg = i === 0 ? '#3D6FB8' : '#2E5D3A'
+            const bg = i === 0 ? ST[1] : ST[2]
             return (
               <button
                 type="button"
@@ -285,33 +344,35 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
                 onClick={() => onOpenStop(s.day, s.id)}
                 style={{
                   background: bg,
-                  color: '#fff',
-                  borderRadius: 14,
-                  padding: 12,
+                  color: CANDY_INK,
+                  borderRadius: 24,
+                  padding: 16,
                   border: 0,
                   cursor: 'pointer',
                   textAlign: 'left',
+                  boxShadow: `0 7px 0 ${shade(bg, -45)}`,
                 }}
               >
-                <div style={{ fontSize: 22 }}>{i === 0 ? '🏆' : '⭐'}</div>
+                <div style={{ fontSize: 26 }}>{i === 0 ? '🏆' : '⭐'}</div>
                 <div
                   style={{
-                    fontFamily: 'Fraunces, Georgia, serif',
-                    fontSize: 14,
-                    fontWeight: 800,
-                    marginTop: 8,
-                    lineHeight: 1,
+                    fontFamily: FREDOKA,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    marginTop: 10,
+                    lineHeight: 1.05,
                   }}
                 >
                   {s.name.toUpperCase()}
                 </div>
                 <div
                   style={{
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: 9,
-                    letterSpacing: '0.1em',
-                    marginTop: 6,
-                    opacity: 0.85,
+                    fontFamily: FREDOKA,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.06em',
+                    marginTop: 8,
+                    opacity: 0.9,
                   }}
                 >
                   {s.time?.toUpperCase()}
@@ -322,31 +383,30 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         </div>
       )}
 
-      {/* PICTURES first — the album is the thing Rafa actually pulls
-          up on his own. The Things-to-do button stays below in its
-          chunky blue form so it's still discoverable. */}
+      {/* PICTURES first — the album is the thing Rafa pulls up on his own.
+          A big blue candy button (the resolved sticker blue). */}
       {onOpenPhotos && (
-        <div style={{ padding: '14px 14px 0' }}>
+        <div style={{ padding: '16px 14px 0' }}>
           <button
             type="button"
             data-testid="rafa-photos-entry"
             onClick={onOpenPhotos}
             style={{
               width: '100%',
-              padding: '16px 18px',
-              borderRadius: 16,
+              padding: '18px 20px',
+              borderRadius: 26,
               border: 0,
-              background: '#3D6FB8',
-              color: '#fff',
+              background: ST[1],
+              color: CANDY_INK,
               cursor: 'pointer',
               textAlign: 'left',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              boxShadow: '0 8px 20px rgba(61, 111, 184, 0.35)',
-              fontFamily: 'Fraunces, Georgia, serif',
-              fontSize: 22,
-              fontWeight: 800,
+              boxShadow: `0 8px 0 ${shade(ST[1], -45)}`,
+              fontFamily: FREDOKA,
+              fontSize: 24,
+              fontWeight: 700,
             }}
           >
             <span>📸 PICTURES</span>
@@ -359,9 +419,9 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
               onClick={onOpenAllPhotos}
               style={{
                 width: '100%',
-                padding: '10px 16px',
-                marginTop: 8,
-                borderRadius: 12,
+                padding: '12px 18px',
+                marginTop: 10,
+                borderRadius: 18,
                 border: '2px solid var(--accent-text)',
                 background: 'transparent',
                 color: 'var(--accent-text)',
@@ -370,7 +430,7 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                fontFamily: 'Fraunces, Georgia, serif',
+                fontFamily: FREDOKA,
                 fontSize: 15,
                 fontWeight: 700,
               }}
@@ -384,14 +444,14 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
 
       {/* Things to do — outline button under the photos CTA. */}
       {hasActivitiesForTrip(trip.id) && onOpenActivities && (
-        <div style={{ padding: '10px 14px 0' }}>
+        <div style={{ padding: '12px 14px 0' }}>
           <button
             type="button"
             onClick={onOpenActivities}
             style={{
               width: '100%',
-              padding: '12px 16px',
-              borderRadius: 14,
+              padding: '14px 18px',
+              borderRadius: 18,
               border: '2px solid var(--accent-text)',
               background: 'transparent',
               color: 'var(--accent-text)',
@@ -400,7 +460,7 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              fontFamily: 'Fraunces, Georgia, serif',
+              fontFamily: FREDOKA,
               fontSize: 18,
               fontWeight: 700,
             }}
@@ -413,35 +473,35 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         </div>
       )}
 
-      {/* TELL A STORY mic */}
-      <div style={{ padding: '20px 14px 0' }}>
+      {/* TELL A STORY — big coral mic candy button */}
+      <div style={{ padding: '22px 14px 0' }}>
         <button
           type="button"
           onClick={() => featured && onOpenStop(featured.day, featured.id)}
           style={{
             width: '100%',
-            height: 80,
-            borderRadius: 40,
-            background: 'var(--accent)',
-            color: 'var(--accent-ink, #1A0A0B)',
+            minHeight: 86,
+            borderRadius: 32,
+            background: ST[3],
+            color: CANDY_INK,
             border: 'none',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: 14,
-            boxShadow: '0 12px 30px rgba(255, 184, 51, 0.35)',
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 22,
-            fontWeight: 800,
+            boxShadow: `0 8px 0 ${shade(ST[3], -45)}, 0 14px 24px -8px rgba(0,0,0,0.4)`,
+            fontFamily: FREDOKA,
+            fontSize: 24,
+            fontWeight: 700,
           }}
         >
           <span
             style={{
-              width: 52,
-              height: 52,
+              width: 54,
+              height: 54,
               borderRadius: '50%',
-              background: 'rgba(0,0,0,0.18)',
+              background: 'rgba(255,255,255,0.26)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -453,15 +513,16 @@ export function RafaView({ trip, onOpenStop, onOpenActivities, onOpenPhotos, onO
         </button>
         <div
           style={{
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: 10,
+            fontFamily: FREDOKA,
+            fontWeight: 500,
+            fontSize: 12,
             color: 'var(--muted)',
-            letterSpacing: '0.14em',
+            letterSpacing: '0.04em',
             textAlign: 'center',
-            marginTop: 8,
+            marginTop: 10,
           }}
         >
-          HOLD AND TALK · MOM AND DAD WILL HEAR
+          HOLD AND TALK · MAMA AND PAPA WILL HEAR
         </div>
       </div>
     </div>
@@ -495,9 +556,10 @@ function Eyebrow({ children, color, style }) {
   return (
     <div
       style={{
-        fontFamily: 'JetBrains Mono, monospace',
-        fontSize: 11,
-        letterSpacing: '0.14em',
+        fontFamily: FREDOKA,
+        fontSize: 12,
+        fontWeight: 600,
+        letterSpacing: '0.1em',
         textTransform: 'uppercase',
         color: color || 'currentColor',
         ...style,
@@ -506,4 +568,15 @@ function Eyebrow({ children, color, style }) {
       {children}
     </div>
   )
+}
+
+function shade(hex, pct) {
+  const n = parseInt(hex.slice(1), 16)
+  let r = (n >> 16) + pct
+  let g = ((n >> 8) & 0xff) + pct
+  let b = (n & 0xff) + pct
+  r = Math.max(0, Math.min(255, r))
+  g = Math.max(0, Math.min(255, g))
+  b = Math.max(0, Math.min(255, b))
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
 }
