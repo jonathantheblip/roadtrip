@@ -4,19 +4,26 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
 import { thumbUrl } from '../lib/thumbUrl'
 import { useInView } from '../lib/useInView'
-import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { TRAVELERS } from '../data/travelers'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { PostcardComposer } from '../components/PostcardComposer'
 import { allStops } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 
-// Aurelia — Postcard Scrapbook ("Trip Book"). Design-bundle authoritative
-// (prototype.jsx#AureliaBook). Italic serif title on rose paper, a stack
-// of slightly-rotated polaroid cards (each carrying tape, a photo
-// placeholder, an italic quote, author + time + felt-mood, WITH
-// avatars, location). Hot-pink FAB at the bottom-right.
+// Aurelia — "Her roll." Redesign increment 3 (2026-06-05): the big
+// LIGHT→DARK inversion. Was a rose-paper scrapbook; now a near-black
+// film-roll editorial — Instrument Serif italic display (self-hosted),
+// hot-pink accent, grained photo frames with a film-sprocket edge.
+// Same data + behaviors as before: the "note from Dad" letter (kept as a
+// cream-paper artifact slipped into the dark roll), both photos entries,
+// the postcard memories, the composer, things-to-do, day nav.
 
-export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
+// Instrument Serif (self-hosted, see styles/platform.css @font-face) is
+// Aurelia's display face. The cream "note from Dad" letter keeps Fraunces
+// on purpose — it reads as a real typeset letter, not app chrome.
+const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
+
+export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -45,8 +52,9 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
     return ((h % 1000) / 1000 - 0.5) * 2 * range
   }
 
-  // Tints cycle through Aurelia's warm scrapbook palette.
-  const tints = ['#e8a880', '#c9a890', '#b8a8c8', '#d6c5a8', '#e8c2b0']
+  // Photo-placeholder tints — moody film frames now (was warm pastels,
+  // which fought the dark ground). Pulled from the design's roll palette.
+  const tints = ['#6E5A6A', '#46505E', '#7A6448', '#5C4A52', '#4A5A50']
 
   return (
     <div
@@ -58,6 +66,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
         position: 'relative',
       }}
     >
+      {/* Masthead — film-roll voice, big lowercase Instrument Serif italic. */}
       <div
         style={{
           padding: 'calc(env(safe-area-inset-top) + 60px) 18px 0',
@@ -65,49 +74,53 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
           justifyContent: 'space-between',
         }}
       >
-        <Eyebrow color="var(--muted)">A · SINCE 2012</Eyebrow>
-        <Eyebrow color="var(--muted)">HER STUFF</Eyebrow>
+        <Eyebrow color="var(--accent-text)">THE ROLL · ONLY MINE</Eyebrow>
+        <Eyebrow color="var(--muted)">
+          {mems.length} {mems.length === 1 ? 'FRAME' : 'FRAMES'}
+        </Eyebrow>
       </div>
-      <div style={{ padding: '8px 18px 12px' }}>
+      <div style={{ padding: '6px 18px 12px' }}>
         <div
           style={{
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 36,
-            fontWeight: 700,
+            fontFamily: SERIF,
+            fontSize: 52,
+            fontWeight: 400,
             lineHeight: 0.95,
             fontStyle: 'italic',
+            letterSpacing: '-0.01em',
             color: 'var(--text)',
           }}
         >
-          Aurelia's<br />Trip Book
+          aurelia
         </div>
         <div
           style={{
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 13,
+            fontFamily: SERIF,
+            fontSize: 16,
             fontStyle: 'italic',
             color: 'var(--muted)',
-            marginTop: 8,
+            marginTop: 6,
           }}
         >
           a place for what you actually cared about.
         </div>
       </div>
 
-      {/* Personal letter from another traveler, if the trip carries
-          one addressed to Aurelia. Renders right under the masthead so
-          it's the first content she sees on this trip — for the May
-          2026 volleyball tournament, a note from Dad. */}
+      {/* Personal letter from another traveler, if the trip carries one
+          addressed to Aurelia. Renders right under the masthead so it's
+          the first content she sees — for the May 2026 volleyball trip, a
+          note from Dad. Kept as warm cream paper on the dark roll (her
+          must-keep artifact); only its pink accents follow the new hue. */}
       {trip.travelerNotes?.aurelia && (
         <div style={{ padding: '14px 14px 6px' }}>
           <PersonalLetter note={trip.travelerNotes.aurelia} />
         </div>
       )}
 
-      {/* Photos entry promoted above Things to do — Aurelia uses the
-          album to post + scroll back through the day, and Helen's
-          dispatch composer launches from here too. Keep it high on
-          the page so a tap is one scroll away from the top. */}
+      {/* Photos entry — the foregrounded verb. Styled as a grained film
+          frame ("her best frame"), hot-pink CTA. Aurelia uses the album
+          to post + scroll back; Helen's dispatch composer launches here
+          too. Kept high on the page. */}
       {onOpenPhotos && (
         <div style={{ padding: '12px 18px 0' }}>
           <button
@@ -116,30 +129,34 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
             onClick={onOpenPhotos}
             style={{
               width: '100%',
-              padding: '12px 16px',
-              borderRadius: 20,
-              border: 'none',
-              background: 'var(--accent)',
-              color: 'var(--accent-ink, #fff)',
+              padding: 0,
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--line-bold)',
+              background: 'transparent',
+              color: 'var(--text)',
               cursor: 'pointer',
               textAlign: 'left',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              boxShadow: '0 6px 18px rgba(232, 71, 140, 0.30)',
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
-            <span
-              style={{
-                fontFamily: 'Fraunces, Georgia, serif',
-                fontSize: 15,
-                fontStyle: 'italic',
-                fontWeight: 600,
-              }}
-            >
-              📷 The photo album
-            </span>
-            <span style={{ fontSize: 18 }}>→</span>
+            <FilmFrame tint="#5C4A52" height={132}>
+              <div style={{ position: 'relative', padding: '0 18px 16px 26px' }}>
+                <Eyebrow color="var(--accent-text)">★ THE PHOTO ALBUM</Eyebrow>
+                <div
+                  style={{
+                    fontFamily: SERIF,
+                    fontSize: 26,
+                    fontStyle: 'italic',
+                    color: '#fff',
+                    marginTop: 4,
+                    lineHeight: 1.05,
+                  }}
+                >
+                  every frame, this trip →
+                </div>
+              </div>
+            </FilmFrame>
           </button>
           {onOpenAllPhotos && (
             <button
@@ -148,9 +165,9 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
               onClick={onOpenAllPhotos}
               style={{
                 width: '100%',
-                padding: '8px 14px',
-                marginTop: 6,
-                borderRadius: 20,
+                padding: '9px 14px',
+                marginTop: 8,
+                borderRadius: 'var(--radius)',
                 border: '1px solid var(--accent)',
                 background: 'transparent',
                 color: 'var(--accent-text)',
@@ -163,10 +180,10 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
             >
               <span
                 style={{
-                  fontFamily: 'Fraunces, Georgia, serif',
-                  fontSize: 13,
+                  fontFamily: SERIF,
+                  fontSize: 15,
                   fontStyle: 'italic',
-                  fontWeight: 500,
+                  fontWeight: 400,
                 }}
               >
                 ✨ Every trip's photos
@@ -177,7 +194,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
         </div>
       )}
 
-      {/* Things to do — secondary pink pill into the activities menu. */}
+      {/* Things to do — secondary pink-outline pill into the activities menu. */}
       {hasActivitiesForTrip(trip.id) && onOpenActivities && (
         <div style={{ padding: '8px 18px 0' }}>
           <button
@@ -186,7 +203,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
             style={{
               width: '100%',
               padding: '10px 14px',
-              borderRadius: 20,
+              borderRadius: 'var(--radius)',
               border: '1px solid var(--accent)',
               background: 'transparent',
               color: 'var(--accent-text)',
@@ -199,10 +216,10 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
           >
             <span
               style={{
-                fontFamily: 'Fraunces, Georgia, serif',
-                fontSize: 14,
+                fontFamily: SERIF,
+                fontSize: 15,
                 fontStyle: 'italic',
-                fontWeight: 600,
+                fontWeight: 400,
               }}
             >
               ✨ {getActivitiesForTrip(trip.id, trip).length} things to do
@@ -212,9 +229,9 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
         </div>
       )}
 
-      {/* Day picker — Helen-style cards in Aurelia's pink palette so
-          she can navigate the itinerary alongside the scrapbook. */}
-      <div style={{ padding: '4px 18px 0', display: 'flex', gap: 6 }}>
+      {/* Day picker — dark film chips so she can navigate the itinerary
+          alongside the roll. */}
+      <div style={{ padding: '14px 18px 0', display: 'flex', gap: 6 }}>
         {trip.days.map((d) => {
           const isActive = d.n === activeDay
           const dow = (d.date || '').split(' ')[0]
@@ -226,9 +243,9 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
               style={{
                 flex: 1,
                 padding: '6px 8px',
-                borderRadius: 12,
+                borderRadius: 'var(--radius)',
                 background: isActive ? 'var(--accent)' : 'var(--card)',
-                color: isActive ? 'var(--accent-ink, #fff)' : 'var(--muted)',
+                color: isActive ? 'var(--accent-ink)' : 'var(--muted)',
                 border: isActive ? 'none' : '1px solid var(--border)',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -239,17 +256,15 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
                   fontFamily: 'JetBrains Mono, monospace',
                   fontSize: 9,
                   letterSpacing: '0.1em',
-                  /* C2: removed opacity:0.75 — it sank the day label (inactive 3.14:1
-                     #a0838f; active dragged C1's dark-ink to 3.53). Full --muted / #2A0816 clears. */
                 }}
               >
                 DAY {d.n}
               </div>
               <div
                 style={{
-                  fontFamily: 'Fraunces, Georgia, serif',
-                  fontSize: 14,
-                  fontWeight: 600,
+                  fontFamily: SERIF,
+                  fontSize: 16,
+                  fontStyle: 'italic',
                   marginTop: 2,
                 }}
               >
@@ -267,10 +282,10 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
         </Eyebrow>
         <div
           style={{
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 22,
-            fontWeight: 700,
-            lineHeight: 1.1,
+            fontFamily: SERIF,
+            fontSize: 24,
+            fontWeight: 400,
+            lineHeight: 1.05,
             marginTop: 4,
             color: 'var(--text)',
             fontStyle: 'italic',
@@ -290,7 +305,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
             onClick={() => onOpenStop(day.n, s.id)}
             style={{
               padding: '10px 14px',
-              borderRadius: 12,
+              borderRadius: 'var(--radius)',
               border: '1px solid var(--border)',
               background: 'var(--card)',
               color: 'var(--text)',
@@ -312,11 +327,11 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
             </div>
             <div
               style={{
-                fontFamily: 'Fraunces, Georgia, serif',
-                fontSize: 16,
-                fontWeight: 600,
+                fontFamily: SERIF,
+                fontSize: 18,
+                fontStyle: 'italic',
                 marginTop: 4,
-                lineHeight: 1.18,
+                lineHeight: 1.12,
               }}
             >
               {s.name}
@@ -324,8 +339,8 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
             {s.note && (
               <div
                 style={{
-                  fontFamily: 'Fraunces, Georgia, serif',
-                  fontSize: 12,
+                  fontFamily: SERIF,
+                  fontSize: 13,
                   fontStyle: 'italic',
                   color: 'var(--muted)',
                   marginTop: 4,
@@ -343,7 +358,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
         ))}
       </div>
 
-      {/* Postcards section header */}
+      {/* The roll — her postcard frames */}
       <div
         style={{
           padding: '28px 18px 4px',
@@ -355,10 +370,10 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
         }}
       >
         <Eyebrow color="var(--accent-text)" style={{ fontWeight: 600 }}>
-          POSTCARDS
+          THE ROLL
         </Eyebrow>
         <Eyebrow color="var(--muted)">
-          {mems.length} {mems.length === 1 ? 'CARD' : 'CARDS'}
+          {mems.length} {mems.length === 1 ? 'FRAME' : 'FRAMES'}
         </Eyebrow>
       </div>
 
@@ -402,11 +417,11 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
           borderRadius: '50%',
           border: 'none',
           background: 'var(--accent)',
-          color: 'var(--accent-ink, #fff)',
+          color: 'var(--accent-ink)',
           fontSize: 28,
           fontWeight: 300,
           cursor: 'pointer',
-          boxShadow: '0 10px 28px rgba(232, 71, 140, 0.45)',
+          boxShadow: '0 10px 28px rgba(255, 61, 120, 0.45)',
           zIndex: 20,
         }}
       >
@@ -427,13 +442,52 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenSettings, onOpen
   )
 }
 
-// A trip-level letter from one traveler to another, surfaced inside
-// the recipient's themed view. Visual treatment leans into the
-// scrapbook feel of Aurelia's view — cream paper card slipped under
-// pink tape, deep brown ink in italic serif, signature in a larger
-// flourish so it reads as personal hand-written closing rather than
-// another typed line. Long enough to feel like a real letter, quiet
-// enough not to fight her own postcards below.
+// A grained, film-edged frame: dark photographic gradient + sprocket
+// strip down the left + a bottom scrim so overlaid text stays legible.
+// Used for the hero photo-album entry; children render over the scrim.
+function FilmFrame({ tint, height, children }) {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        overflow: 'hidden',
+        background: `linear-gradient(150deg, ${shade(tint, 22)}, ${tint} 48%, ${shade(tint, -20)})`,
+      }}
+    >
+      {/* film sprocket edge */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: 14,
+          background:
+            'repeating-linear-gradient(180deg, #0a0a0a 0 9px, rgba(255,255,255,0.16) 9px 13px)',
+        }}
+      />
+      {/* bottom scrim */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(180deg, transparent 45%, rgba(0,0,0,0.82))',
+        }}
+      />
+      {children}
+    </div>
+  )
+}
+
+// A trip-level letter from one traveler to another, surfaced inside the
+// recipient's themed view. Kept as warm cream paper even on Aurelia's
+// dark roll (Jonathan's call, 2026-06-05) — it reads as a real letter
+// slipped into the roll. Only the pink tape/label follow the new accent.
 function PersonalLetter({ note }) {
   const paragraphs = Array.isArray(note?.body) ? note.body : [note?.body || '']
   return (
@@ -445,15 +499,15 @@ function PersonalLetter({ note }) {
         borderRadius: 4,
         padding: '34px 24px 26px',
         boxShadow:
-          '0 14px 32px rgba(61, 14, 34, 0.18), 0 1px 3px rgba(61, 14, 34, 0.08)',
+          '0 16px 38px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3)',
         transform: 'rotate(-1.2deg)',
         border: '1px solid rgba(150, 100, 80, 0.10)',
         marginTop: 8,
       }}
     >
-      {/* Pink paper tape across the top — picks up Aurelia's accent
-          so the card visually belongs to her surface even though the
-          paper itself is the warmer cream of a real letter. */}
+      {/* Pink paper tape across the top — picks up Aurelia's hot-pink
+          accent so the card visually belongs to her surface even though
+          the paper itself is the warmer cream of a real letter. */}
       <div
         style={{
           position: 'absolute',
@@ -462,7 +516,7 @@ function PersonalLetter({ note }) {
           transform: 'translateX(-50%) rotate(2.2deg)',
           width: 96,
           height: 22,
-          background: 'rgba(232, 71, 140, 0.22)',
+          background: 'rgba(255, 61, 120, 0.26)',
           boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
         }}
       />
@@ -605,13 +659,13 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
       onClick={onClick}
       style={{
         background: 'var(--card)',
-        borderRadius: 4,
+        borderRadius: 'var(--radius)',
         padding: 10,
-        boxShadow: '0 10px 28px rgba(61, 14, 34, 0.16)',
+        boxShadow: 'var(--shadow-card)',
         transform: `rotate(${tilt}deg)`,
         position: 'relative',
         cursor: 'pointer',
-        border: 0,
+        border: '1px solid var(--border)',
         textAlign: 'left',
         color: 'var(--text)',
       }}
@@ -624,9 +678,9 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
           left: 32,
           width: 54,
           height: 16,
-          background: 'rgba(255, 255, 255, 0.55)',
+          background: 'rgba(243, 238, 233, 0.16)',
           transform: 'rotate(-6deg)',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.18)',
         }}
       />
       {/* photo */}
@@ -649,23 +703,38 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
       ) : (
         <div
           style={{
+            position: 'relative',
             width: '100%',
             aspectRatio: '5 / 3',
             borderRadius: 2,
+            overflow: 'hidden',
             background: photoUrl
               ? `url(${photoUrl}) center/cover no-repeat`
-              : `repeating-linear-gradient(45deg, ${tint}, ${tint} 6px, ${shade(tint, -10)} 6px, ${shade(tint, -10)} 12px)`,
+              : `linear-gradient(150deg, ${shade(tint, 18)}, ${tint} 50%, ${shade(tint, -18)})`,
           }}
-        />
+        >
+          {/* film sprocket edge — sells the roll */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left: 0,
+              width: 10,
+              background:
+                'repeating-linear-gradient(180deg, #0a0a0a 0 7px, rgba(255,255,255,0.14) 7px 10px)',
+            }}
+          />
+        </div>
       )}
       <div
         style={{
           marginTop: 10,
           padding: '0 6px',
-          fontFamily: 'Fraunces, Georgia, serif',
-          fontSize: 14,
+          fontFamily: SERIF,
+          fontSize: 17,
           fontStyle: 'italic',
-          lineHeight: 1.35,
+          lineHeight: 1.3,
         }}
       >
         “{caption}”
@@ -693,9 +762,9 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
         </div>
         <span
           style={{
-            fontFamily: 'Fraunces, Georgia, serif',
+            fontFamily: SERIF,
             fontStyle: 'italic',
-            fontSize: 11,
+            fontSize: 13,
             color: 'var(--accent-text)',
           }}
         >
@@ -746,31 +815,32 @@ function EmptyState({ onOpenStop, firstStop, firstDay }) {
       style={{
         padding: 24,
         background: 'var(--card)',
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
         textAlign: 'center',
-        boxShadow: '0 6px 20px rgba(61, 14, 34, 0.10)',
+        boxShadow: 'var(--shadow-card)',
+        border: '1px solid var(--border)',
       }}
     >
       <div
         style={{
-          fontFamily: 'Fraunces, Georgia, serif',
-          fontSize: 18,
+          fontFamily: SERIF,
+          fontSize: 20,
           fontStyle: 'italic',
           color: 'var(--muted)',
           marginBottom: 12,
         }}
       >
-        no postcards yet — tap a stop to make the first one.
+        no frames yet — tap a stop to make the first one.
       </div>
       <button
         type="button"
         onClick={() => firstStop && onOpenStop(firstDay, firstStop.id)}
         style={{
           padding: '8px 16px',
-          borderRadius: 16,
+          borderRadius: 999,
           border: 'none',
           background: 'var(--accent)',
-          color: 'var(--accent-ink, #fff)',
+          color: 'var(--accent-ink)',
           fontFamily: 'Inter Tight, system-ui, sans-serif',
           fontWeight: 600,
           fontSize: 12,

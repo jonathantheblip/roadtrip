@@ -50,7 +50,7 @@ function initialViewFromUrl() {
 // (dark-mode toggle dropped 2026-06-05): Jonathan + Rafa dark, Helen +
 // Aurelia light. Returns { gradient, text, opacity }.
 function topBarTokens(traveler) {
-  if (traveler === 'jonathan' || traveler === 'rafa') {
+  if (traveler === 'jonathan' || traveler === 'rafa' || traveler === 'aurelia') {
     return {
       gradient: 'linear-gradient(to bottom, rgba(20,17,13,.92), rgba(20,17,13,0))',
       text: '#F2EBDA',
@@ -199,9 +199,10 @@ export default function App() {
   // This is what stops a sparse trip from ever rendering in a view.
   const visibleTrips = allTrips.filter((t) => !t.draft)
   const topBar = topBarTokens(traveler)
-  // Jonathan + Rafa are dark; Helen + Aurelia light (the per-person
-  // dark-mode toggle was dropped 2026-06-05). Drives StopDetail/Settings.
-  const darkSurface = traveler === 'jonathan' || traveler === 'rafa'
+  // Jonathan + Rafa + Aurelia are dark; Helen light (the per-person
+  // dark-mode toggle was dropped 2026-06-05; Aurelia inverted to dark in
+  // increment 3, 2026-06-05). Drives StopDetail/Settings surface.
+  const darkSurface = traveler === 'jonathan' || traveler === 'rafa' || traveler === 'aurelia'
 
   // Persist traveler across reloads + standalone PWA boundary.
   useEffect(() => {
