@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { allStops } from '../data/trips'
 import { useGeolocation } from '../hooks/useGeolocation'
 import { useVisited } from '../hooks/useVisited'
@@ -7,6 +7,7 @@ import {
   projectOntoRoute,
   traveledPolyline,
 } from '../lib/routeProgress'
+import { fetchRoadRoute } from '../lib/driveRoute'
 import { RouteMapLazy } from '../components/RouteMapLazy'
 import './MapView.css'
 
@@ -18,9 +19,29 @@ import './MapView.css'
 export function MapView({ trip, traveler = 'everyone', onBack }) {
   const stops = useMemo(() => allStops(trip), [trip])
   const geometry = useMemo(() => buildRouteGeometry(stops), [stops])
+
+  // Real road route (Google Routes via the worker /route, async + cached).
+  // The drawn route + traveled overlay upgrade from straight-line to real
+  // roads when it resolves; everything falls back to `geometry` until then /
+  // when the worker is unconfigured or offline.
+  const [road, setRoad] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    setRoad(null)
+    fetchRoadRoute(stops).then((r) => {
+      if (!cancelled) setRoad(r)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [stops])
+
   const routeLine = useMemo(
-    () => geometry.waypoints.map((w) => [w.lat, w.lng]),
-    [geometry]
+    () =>
+      road?.points?.length
+        ? road.points.map((p) => [p.lat, p.lng])
+        : geometry.waypoints.map((w) => [w.lat, w.lng]),
+    [road, geometry]
   )
 
   const { position, status } = useGeolocation()
@@ -31,10 +52,19 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
     () => projectOntoRoute(position, geometry),
     [position, geometry]
   )
-  const traveled = useMemo(
-    () => traveledPolyline(geometry, projection),
-    [geometry, projection]
-  )
+  const traveled = useMemo(() => {
+    // With a real road line, draw the traveled portion ALONG it — its extent
+    // set by the stop-based trip fraction, so it stays on the road instead of
+    // cutting straight across. Falls back to the straight-line traveled poly.
+    if (road?.points?.length && projection) {
+      const n = Math.max(
+        0,
+        Math.min(road.points.length, Math.round((projection.tripFraction || 0) * road.points.length))
+      )
+      return road.points.slice(0, n).map((p) => [p.lat, p.lng])
+    }
+    return traveledPolyline(geometry, projection)
+  }, [road, geometry, projection])
 
   // Where next: first unvisited stop in trip order.
   const nextStop = useMemo(
@@ -89,6 +119,9 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
         <div className="mapview-status">
           <span className={`mapview-dot ${live ? 'on' : 'off'}`} />
           {statusLabel}
+          {road?.miles ? (
+            <span className="mapview-sel" data-testid="map-road-miles"> · {Math.round(road.miles)} mi by road</span>
+          ) : null}
           {selectedStop && <span className="mapview-sel"> · {selectedStop.name}</span>}
         </div>
 
