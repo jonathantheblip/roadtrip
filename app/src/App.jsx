@@ -18,6 +18,7 @@ import { ReplayView } from './views/ReplayView'
 import { MapView } from './views/MapView'
 import { ImportView } from './views/ImportView'
 import { InstallIdentity } from './views/InstallIdentity'
+import { TheWeave } from './views/TheWeave'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
@@ -558,6 +559,12 @@ export default function App() {
     setView({ name: 'map' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  // THE WEAVE: nightly auto-woven day page. Temporary top-bar entry
+  // like Replay + Map — designed affordance TBD.
+  function openWeave() {
+    setView({ name: 'weave' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   // Returns the upsert result so NewTrip can show an inline error and
   // stay put on failure (no navigation), per change order §3.4. On
   // success we go straight into the editor — Helen continues adding
@@ -606,8 +613,8 @@ export default function App() {
   return (
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
-          Hidden in replay: that surface is immersive and owns its own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && (
+          Hidden in replay / map / weave: those surfaces own their own chrome. */}
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -761,6 +768,29 @@ export default function App() {
               ▣ Map
             </button>
           )}
+          {/* TEMP entry point for THE WEAVE. Replace with the designed
+              affordance in the redesign. */}
+          {trip && (
+            <button
+              type="button"
+              onClick={openWeave}
+              aria-label="The Weave — today's woven page"
+              style={{
+                background: 'transparent',
+                border: 0,
+                padding: '0 4px',
+                cursor: 'pointer',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 10,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                opacity: topBar.opacity,
+                color: topBar.text,
+              }}
+            >
+              ✦ Weave
+            </button>
+          )}
           <button
             type="button"
             onClick={openSettings}
@@ -860,6 +890,14 @@ export default function App() {
             trip={trip}
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
+          />
+        )}
+        {view.name === 'weave' && (
+          <TheWeave
+            trip={trip}
+            trips={visibleTrips}
+            traveler={traveler}
+            onBack={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
           />
         )}
         {view.name === 'settings' && trip && (

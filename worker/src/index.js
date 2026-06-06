@@ -125,6 +125,9 @@ export default {
       if (path === '/draft' && request.method === 'POST') {
         return await postDraft(env, request, cors)
       }
+      if (path === '/weave' && request.method === 'POST') {
+        return await postWeave(env, request, cors)
+      }
 
       // Claude-in-App (M1)
       if (path === '/claude/chat' && request.method === 'POST') {
@@ -1313,6 +1316,103 @@ function parseDraftJson(text) {
   }
   if (!tags.length) return null
   return { tags, descriptions }
+}
+
+// ─── The Weave ───────────────────────────────────────────────────────
+//
+// POST /weave  (auth-gated, non-streaming)
+//
+// Claude generates the connective tissue — title + opening + closing —
+// that frames a day's real family contributions into one page.  The
+// beats are short summaries sent by the client; Claude never receives
+// the family's raw memory text, so it can only frame around what it's
+// told — it CAN'T fabricate or rewrite their actual words.
+//
+// Input:  { beats: [{who, kind, snippet}], stat?: string }
+// Output: { title: string, opening: string, closing: string }
+async function postWeave(env, request, cors) {
+  if (!env.ANTHROPIC_API_KEY) {
+    return json({ error: 'Anthropic key not configured on worker' }, 500, cors)
+  }
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const beats = Array.isArray(body?.beats) ? body.beats : []
+  if (!beats.length) return json({ error: 'beats required' }, 400, cors)
+
+  const beatLines = beats
+    .filter((b) => b?.who && b?.kind && b?.snippet)
+    .map((b) => `- ${b.who} (${b.kind}): ${String(b.snippet).slice(0, 200)}`)
+    .join('\n')
+  if (!beatLines) return json({ error: 'no valid beats' }, 400, cors)
+
+  const stat = typeof body?.stat === 'string' && body.stat.trim() ? body.stat.trim() : null
+
+  const userPrompt =
+    `You are assembling the connective tissue for a family travel memory page.\n\n` +
+    `The family contributed these moments today:\n${beatLines}\n` +
+    (stat ? `\nTravel: ${stat}\n` : '') +
+    `\nWrite a short narrative frame — three things only:\n` +
+    `- title: a vivid, specific day title (4–7 words, no quotes, no punctuation at end)\n` +
+    `- opening: 1–2 sentences that capture the shape of the day as a shared family story. Ground every claim in the beats above — do not invent details.\n` +
+    `- closing: one short line that closes the page (e.g. "That was Tuesday." or a quiet reflection).\n\n` +
+    `Rules: never rewrite or paraphrase the family's actual words — only frame around them. No markdown. ` +
+    `Reply with exactly: {"title":"...","opening":"...","closing":"..."}`
+
+  let res
+  try {
+    res = await fetch(anthropicMessagesUrl(env), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 512,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+  } catch (e) {
+    return json({ error: `anthropic fetch failed: ${e?.message || String(e)}` }, 502, cors)
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return json({ error: `anthropic ${res.status}: ${text.slice(0, 300)}` }, 502, cors)
+  }
+  const payload = await res.json().catch(() => ({}))
+  const rawText =
+    (Array.isArray(payload?.content) &&
+      payload.content.map((c) => (c?.type === 'text' ? c.text : '')).join('')) ||
+    ''
+  const narrative = parseWeaveJson(rawText)
+  if (!narrative) {
+    return json({ error: 'could not parse narrative', raw: rawText.slice(0, 500) }, 502, cors)
+  }
+  return json(narrative, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+function parseWeaveJson(text) {
+  if (typeof text !== 'string') return null
+  let cleaned = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  let raw
+  try {
+    raw = JSON.parse(cleaned.slice(start, end + 1))
+  } catch {
+    return null
+  }
+  const title = typeof raw?.title === 'string' && raw.title.trim()
+  const opening = typeof raw?.opening === 'string' && raw.opening.trim()
+  const closing = typeof raw?.closing === 'string' && raw.closing.trim()
+  if (!title || !opening || !closing) return null
+  return { title, opening, closing }
 }
 
 // ─── Claude in the App (M1) ───────────────────────────────────────────

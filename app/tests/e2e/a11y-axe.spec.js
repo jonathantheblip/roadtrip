@@ -1,5 +1,5 @@
 import { test, expect } from './_fixtures/clockStub.js'
-import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { mockClaudeChatWorker } from './_fixtures/mockUpload.js'
 import { resolvePersona, TRAVELERS } from './_fixtures/persona.js'
 import { expectNoSeriousA11y } from './_fixtures/axe.js'
@@ -110,6 +110,52 @@ test.describe('a11y (axe, serious+critical) — InstallIdentity ×4 personas', (
         include: '[data-testid="install-identity"]',
         only: ['color-contrast'],
         label: `install identity (${p})`,
+      })
+    })
+  }
+})
+
+// TheWeave — new full-screen overlay with mono micro-labels + serif text
+// + accent-text usage on the day label. Same risk surface as InstallIdentity:
+// --faint-as-text can hide in small-label slots. Gate ×4 personas.
+test.describe('a11y (axe, serious+critical) — TheWeave ×4 personas', () => {
+  for (const p of TRAVELERS) {
+    test(`the weave — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      // Mock /weave so the component reaches 'ready' state without a real worker.
+      await page.route(/workers\.dev\/weave$/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            title: 'A Day Together',
+            opening: 'The family arrived in the evening.',
+            closing: 'That was Friday.',
+          }),
+        })
+      })
+      // Seed one memory so the overlay has content and doesn't show the empty state.
+      // Must use seedMemoriesIntoCache (addInitScript) — page.evaluate before
+      // page.goto hits about:blank and throws a cross-origin SecurityError.
+      await seedMemoriesIntoCache(page, [
+        {
+          id: 'axe-weave-mem',
+          tripId: 'volleyball-2026',
+          stopId: 'vb1-3',
+          authorTraveler: 'jonathan',
+          visibility: 'shared',
+          kind: 'text',
+          text: 'Arrived safely.',
+          createdAt: '2026-05-22T18:00:00.000Z',
+        },
+      ])
+      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
+      await page.getByRole('button', { name: /Weave/i }).click()
+      await expect(page.getByTestId('the-weave')).toBeVisible()
+      await expectNoSeriousA11y(page, {
+        include: '[data-testid="the-weave"]',
+        only: ['color-contrast'],
+        label: `the weave (${p})`,
       })
     })
   }
