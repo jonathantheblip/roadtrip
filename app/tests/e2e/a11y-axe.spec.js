@@ -102,7 +102,15 @@ test.describe('a11y (axe, serious+critical) — InstallIdentity ×4 personas', (
       await page.getByRole('button', { name: 'Trip settings' }).click()
       await page.getByTestId('open-identity').click()
       await expect(page.getByTestId('install-identity')).toBeVisible()
-      await expectNoSeriousA11y(page, { label: `install identity (${p})`, only: ['color-contrast'] })
+      // Scope to the overlay (like the Claude-panel scan): a small-subtree
+      // scan is far lighter than a full-page axe, so adding 4 personas ×2
+      // engines doesn't tip the full a11y file into timeouts under parallel
+      // load — and it's immune to whatever surface sits behind the overlay.
+      await expectNoSeriousA11y(page, {
+        include: '[data-testid="install-identity"]',
+        only: ['color-contrast'],
+        label: `install identity (${p})`,
+      })
     })
   }
 })
