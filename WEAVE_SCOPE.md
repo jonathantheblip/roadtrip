@@ -27,21 +27,16 @@ Design source: `design_handoff_family_trips/src/ft2/shared.jsx` → `WEAVE` + `T
 - Beat kinds map: photo→frame (caption), voice→clip (waveform+transcript), text→words (quote),
   log→Jonathan's day (see stat below). Avatars/dots via the consolidated `TRAVELER_DOT`.
 
-## The travel stat (COMPUTED — `app/src/lib/photoMatch.js` haversineMeters already exists)
-Method: walk a day's (or trip's) stops in order, sum great-circle distance between consecutive
-stops; real roads run ~1.2× longer than straight-line. Stops have `lat`/`lng` in `data/trips.js`.
-Real values from the current trip data:
-| Trip | stops | straight-line | ~road (×1.2) |
-|---|---|---|---|
-| jackson-2026 (Belmont→TX & back) | 28 | 2,171 mi | **~2,605 mi** |
-| nyc-rafa-2026 | 15 | 289 mi | ~346 mi |
-| volleyball-2026 | 22 | 231 mi | ~277 mi |
-| **total** | | 2,691 mi | **~3,229 mi** |
-- For the Weave: per-DAY distance = sum that day's stop-to-stop legs, same method. It's the family's
-  shared journey (everyone travels together), shown as e.g. "Day 2 · 540 mi · 4 stops".
-- BEST-EFFORT caveats: straight-line under-counts roads (the ×1.2 is an estimate); assumes
-  day/stop order; excludes home-base→first-stop + flights. The build CAN refine per-leg with the
-  worker's `compute_drive_time` (the F1 tool-chat already has it) for precision — optional.
+## The travel stat — REAL road miles (the drive-time tool SHIPPED 2026-06-06)
+**Use `lib/driveRoute.fetchRoadRoute(stops).miles`** — real Google Routes road distance via the
+worker `POST /route` (content-addressed cache; auto-recomputes on a schedule change). Slice 1 calls
+it per day: `fetchRoadRoute(thatDay'sStops)` → real road miles for the family's shared journey,
+shown e.g. "Day 2 · 540 mi · 4 stops". Graceful: returns null (→ omit/estimate) when offline.
+- The haversine ×1.2 ESTIMATE below is SUPERSEDED by the real tool — keep only as a sanity-check
+  ballpark (the live tool returned a plausible real number for the fixture trip in verification):
+  jackson-2026 ~2,605 mi · nyc ~346 · volleyball ~277 · total ~3,229 mi (straight-line ×1.2).
+- The `/route` tool also returns the road **polyline** (already wired into the maps) and duration,
+  so the Weave can show real road geometry too if useful.
 
 ## Slices (build order)
 1. **The woven page (on-screen)** — group a day's real memories by person → animated braid (beat by
