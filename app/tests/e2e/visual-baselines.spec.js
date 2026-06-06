@@ -98,7 +98,12 @@ test.describe('themed trip view per traveler', () => {
       // covered by functional + a11y tests. Masking ends the churn.
       await expect(page).toHaveScreenshot(`trip-${traveler}.png`, {
         fullPage: true,
-        mask: [page.getByTestId('trip-topbar')],
+        // The FamilyDock (.switcher) is masked alongside the top bar: its
+        // backdrop-blur renders ~1% differently off the CI runner (the same
+        // off-runner gremlin that masked the top bar — a sub-threshold-local
+        // baseline failed CI's 0.2% tolerance). The dock is guarded by the S2
+        // axe contrast gate + the Switcher functional tests instead.
+        mask: [page.getByTestId('trip-topbar'), page.locator('.switcher')],
       })
     })
   }
@@ -123,6 +128,7 @@ test.describe('photos album per traveler', () => {
       await page.waitForTimeout(400)
       await expect(page).toHaveScreenshot(`album-${traveler}.png`, {
         fullPage: true,
+        mask: [page.locator('.switcher')], // off-runner-blurry FamilyDock (see trip view)
       })
     })
   }
@@ -140,6 +146,7 @@ test.describe('all-photos cross-trip per traveler', () => {
         await page.waitForTimeout(400)
         await expect(page).toHaveScreenshot(`all-photos-${traveler}.png`, {
           fullPage: true,
+          mask: [page.locator('.switcher')], // off-runner-blurry FamilyDock (see trip view)
         })
       } else {
         // Surface this as a baseline gap — annotate but don't fail.
