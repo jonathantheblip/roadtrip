@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, Heart, Check } from 'lucide-react'
+import { ChevronLeft, Heart, Check, Share } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import { TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { thumbUrl } from '../lib/thumbUrl'
 import { selectWeaveDay, buildBeats, fetchWeaveNarrative } from '../lib/weave'
+import { encodeWeavePage, shareWeave, isVideoEncodeSupported } from '../lib/weaveEncode'
 
 // Inject keyframes once for the reveal animation.
 let _keyframesInjected = false
@@ -65,7 +66,39 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
   const [narrative, setNarrative] = useState(null)   // { title, opening, closing } | null
   const [stat, setStat] = useState(null)             // "Day N · X mi · Y stops" | null
   const [kept, setKept] = useState(false)
+  const [saveState, setSaveState] = useState('idle') // idle | encoding | sharing | shared
   const scrollRef = useRef(null)
+  const encodeAbortRef = useRef(null)
+
+  // Cancel any in-flight encode when the overlay unmounts.
+  useEffect(() => () => encodeAbortRef.current?.abort(), [])
+
+  const videoSupported = isVideoEncodeSupported()
+
+  async function saveToPhotos() {
+    if (saveState !== 'idle') return
+    encodeAbortRef.current = new AbortController()
+    setSaveState('encoding')
+    try {
+      const blob = await encodeWeavePage({
+        beats,
+        narrative,
+        stat,
+        day: weavedDay?.day,
+        traveler,
+        onProgress: () => {},
+        signal: encodeAbortRef.current.signal,
+      })
+      setSaveState('sharing')
+      await shareWeave(blob, narrative)
+      setSaveState('shared')
+    } catch (err) {
+      // AbortError = user dismissed share sheet or component unmounted — silent.
+      const isAbort = err?.name === 'AbortError' || err?.message === 'aborted'
+      if (!isAbort) console.warn('[weave] save failed:', err)
+      setSaveState('idle')
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -177,6 +210,24 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
     )
   }
 
+  // Save button for the TopBar right slot (only if WebCodecs is available).
+  const saveBtn = videoSupported ? (
+    <button
+      data-testid="weave-save-top"
+      onClick={saveToPhotos}
+      aria-label="Save to Photos"
+      style={{
+        background: 'transparent', border: 'none',
+        cursor: saveState !== 'idle' ? 'default' : 'pointer',
+        color: 'var(--accent-text)', padding: 4,
+        display: 'flex', alignItems: 'center',
+        opacity: saveState !== 'idle' ? 0.35 : 1,
+      }}
+    >
+      <Share size={20} />
+    </button>
+  ) : <div style={{ width: 30 }} />
+
   const { day } = weavedDay
   const dayLabel = day.date || `Day ${day.n}`
 
@@ -191,7 +242,7 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
         fontFamily: 'var(--font-body)',
       }}
     >
-      <TopBar onBack={onBack} label="Tonight, woven" />
+      <TopBar onBack={onBack} label="Tonight, woven" rightSlot={saveBtn} />
 
       {/* scrollable body */}
       <div
@@ -291,26 +342,49 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
                 {stat}
               </div>
             )}
-            <button
-              data-testid="weave-keep"
-              onClick={() => setKept(true)}
-              disabled={kept}
-              style={{
-                padding: '13px 22px',
-                borderRadius: 999,
-                border: `1px solid ${kept ? 'var(--border)' : 'var(--line-bold)'}`,
-                cursor: kept ? 'default' : 'pointer',
-                background: 'transparent',
-                color: kept ? 'var(--good)' : 'var(--text)',
-                fontFamily: 'var(--font-body)',
-                fontWeight: 600, fontSize: 14,
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-              }}
-            >
-              {kept
-                ? <><Check size={15} /> In the book</>
-                : <><Heart size={15} /> Keep this page</>}
-            </button>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                data-testid="weave-keep"
+                onClick={() => setKept(true)}
+                disabled={kept}
+                style={{
+                  padding: '13px 22px',
+                  borderRadius: 999,
+                  border: `1px solid ${kept ? 'var(--border)' : 'var(--line-bold)'}`,
+                  cursor: kept ? 'default' : 'pointer',
+                  background: 'transparent',
+                  color: kept ? 'var(--good)' : 'var(--text)',
+                  fontFamily: 'var(--font-body)',
+                  fontWeight: 600, fontSize: 14,
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                {kept
+                  ? <><Check size={15} /> In the book</>
+                  : <><Heart size={15} /> Keep this page</>}
+              </button>
+              {videoSupported && (
+                <button
+                  data-testid="weave-save"
+                  onClick={saveToPhotos}
+                  disabled={saveState !== 'idle'}
+                  style={{
+                    padding: '13px 22px',
+                    borderRadius: 999,
+                    border: 'none',
+                    cursor: saveState !== 'idle' ? 'default' : 'pointer',
+                    background: 'var(--accent)',
+                    color: 'var(--accent-ink)',
+                    fontFamily: 'var(--font-body)',
+                    fontWeight: 600, fontSize: 14,
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    opacity: saveState !== 'idle' ? 0.5 : 1,
+                  }}
+                >
+                  <Share size={15} /> Save to Photos
+                </button>
+              )}
+            </div>
             <div
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
@@ -325,12 +399,106 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
           </div>
         </Reveal>
       </div>
+
+      {/* ── Save progress modal ─────────────────────────────────── */}
+      {saveState !== 'idle' && (
+        <div
+          style={{
+            position: 'absolute', inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 70, display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+            padding: 30,
+          }}
+        >
+          <div
+            style={{
+              width: '100%', maxWidth: 300,
+              background: 'var(--card)',
+              borderRadius: 22, padding: '24px 22px',
+              textAlign: 'center',
+              boxShadow: '0 30px 70px rgba(0,0,0,0.4)',
+            }}
+          >
+            {/* Decorative thumbnail preview of the woven page */}
+            <div
+              style={{
+                width: 132, margin: '0 auto',
+                aspectRatio: '4/5', borderRadius: 12,
+                overflow: 'hidden',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+              }}
+            >
+              <div style={{ padding: 12, textAlign: 'left' }}>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 6, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--accent-text)' }}>
+                  {weavedDay?.day?.date || 'Tonight'} · woven
+                </div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600, lineHeight: 1.1, marginTop: 4, color: 'var(--text)' }}>
+                  {narrative?.title || weavedDay?.day?.title || 'Tonight, woven'}
+                </div>
+                <div style={{ display: 'flex', gap: 4, marginTop: 10 }}>
+                  {['jonathan', 'helen', 'aurelia', 'rafa'].map((id) => (
+                    <span key={id} style={{ width: 12, height: 12, borderRadius: '50%', background: TRAVELER_DOT[id], display: 'block' }} />
+                  ))}
+                </div>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} style={{ height: 3, borderRadius: 2, background: 'var(--border)', marginTop: 6, width: ['90%', '70%', '80%'][i] }} />
+                ))}
+              </div>
+            </div>
+
+            {(saveState === 'encoding' || saveState === 'sharing') && (
+              <>
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 18 }}>
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: 'var(--accent)',
+                        animation: `weave-up 0.7s ease-in-out ${i * 0.15}s infinite alternate`,
+                      }}
+                    />
+                  ))}
+                </div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontStyle: 'italic', color: 'var(--muted)', marginTop: 12 }}>
+                  Creating your weave…
+                </div>
+              </>
+            )}
+
+            {saveState === 'shared' && (
+              <>
+                <div style={{ width: 40, height: 40, borderRadius: '50%', margin: '16px auto 0', background: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Check size={22} color="#fff" />
+                </div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 19, fontWeight: 600, marginTop: 12, color: 'var(--text)' }}>
+                  Saved to Photos
+                </div>
+                <button
+                  onClick={() => setSaveState('idle')}
+                  style={{
+                    marginTop: 16, padding: '11px 24px',
+                    borderRadius: 999, border: 'none',
+                    cursor: 'pointer',
+                    background: 'var(--text)', color: 'var(--bg)',
+                    fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: 14,
+                  }}
+                >
+                  Done
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ── TopBar ───────────────────────────────────────────────────────────
-function TopBar({ onBack, label }) {
+function TopBar({ onBack, label, rightSlot }) {
   return (
     <div
       style={{
@@ -358,8 +526,7 @@ function TopBar({ onBack, label }) {
       >
         {label}
       </div>
-      {/* right slot kept empty — save button is slice 2 (mp4 keepsake) */}
-      <div style={{ width: 30 }} />
+      {rightSlot ?? <div style={{ width: 30 }} />}
     </div>
   )
 }

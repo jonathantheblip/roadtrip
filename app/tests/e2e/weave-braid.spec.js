@@ -159,3 +159,74 @@ test.describe('TheWeave — braid rendering', () => {
     }
   })
 })
+
+// ── Slice 2 — Save to Photos ──────────────────────────────────────────
+
+test.describe('TheWeave — save to Photos (slice 2)', () => {
+  test('Save button absent when WebCodecs unavailable', async ({ page }) => {
+    // Remove VideoEncoder so isVideoEncodeSupported() returns false.
+    await page.addInitScript(() => { delete window.VideoEncoder })
+    await setup(page)
+    await openWeave(page)
+
+    await expect(page.getByTestId('weave-save')).not.toBeAttached()
+    await expect(page.getByTestId('weave-save-top')).not.toBeAttached()
+  })
+
+  test('Save button triggers encode (mocked Worker) and share (mocked navigator.share)', async ({ page }) => {
+    // Mock Worker: immediately returns a fake MP4 blob on flush.
+    // Mock navigator.share/canShare: captures the shared files.
+    await page.addInitScript(() => {
+      const configCalls = []
+      class MockWorker {
+        constructor() { MockWorker.last = this }
+        postMessage(data) {
+          if (data.type === 'config') {
+            configCalls.push({ width: data.width, height: data.height, audio: data.audio, totalFrames: data.totalFrames })
+            setTimeout(() => this.onmessage?.({ data: { type: 'ready' } }), 0)
+          } else if (data.type === 'flush') {
+            // Return a minimal valid MP4-typed blob.
+            const blob = new Blob([new Uint8Array([0, 0, 0, 8, 102, 116, 121, 112])], { type: 'video/mp4' })
+            setTimeout(() => this.onmessage?.({ data: { type: 'done', blob, width: data.width || 576, height: data.height || 720 } }), 20)
+          }
+        }
+        terminate() {}
+      }
+      window.Worker = MockWorker
+      window.__weaveWorkerConfigCalls = configCalls
+
+      const sharedFiles = []
+      window.__weaveSharedFiles = sharedFiles
+      navigator.share = async (shareData) => { sharedFiles.push(...(shareData.files || [])) }
+      navigator.canShare = () => true
+    })
+
+    await setup(page)
+    await openWeave(page)
+
+    // Bottom Save button is present (WebCodecs available — MockWorker provides it).
+    const saveBtn = page.getByTestId('weave-save')
+    await expect(saveBtn).toBeVisible()
+
+    // Click → encoding starts.
+    await saveBtn.click()
+
+    // Modal appears ("Creating your weave…").
+    await expect(page.getByText(/Creating your weave/i)).toBeVisible({ timeout: 3000 })
+
+    // After the mock worker resolves, "Saved to Photos" confirmation appears.
+    await expect(page.getByText(/Saved to Photos/i)).toBeVisible({ timeout: 15_000 })
+
+    // Worker was configured with correct dimensions (576×720, no audio).
+    const configs = await page.evaluate(() => window.__weaveWorkerConfigCalls)
+    expect(configs.length).toBeGreaterThan(0)
+    expect(configs[0].width).toBe(576)
+    expect(configs[0].height).toBe(720)
+    expect(configs[0].audio).toBeUndefined()
+    expect(configs[0].totalFrames).toBe(150)
+
+    // navigator.share was called with a video/mp4 File.
+    const fileType = await page.evaluate(() => window.__weaveSharedFiles[0]?.type)
+    expect(fileType).toBe('video/mp4')
+  })
+})
