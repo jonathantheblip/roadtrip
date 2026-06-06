@@ -27,7 +27,7 @@ export function Switcher({ active, onSwitch }) {
                 // readable-secondary color (0.6 on the dark pill = 5.85:1 worst).
                 color: isActive
                   ? (id === 'aurelia' ? '#2A0816' : id === 'rafa' ? '#1B1108' : '#fff')
-                  : 'rgba(255,255,255,0.6)',
+                  : 'rgba(255,255,255,0.78)',
               }}
               aria-pressed={isActive}
             >

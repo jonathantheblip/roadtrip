@@ -274,31 +274,36 @@ button { font: inherit; }
   pointer-events: none;
 }
 .switcher-inner {
-  background: rgba(20,16,14,0.86);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* FamilyDock glass pill — design system.jsx values (cooler/darker tint,
+     deeper blur, inset hairline edge). Cross-cutting polish 2026-06-05. */
+  background: rgba(10,10,12,0.82);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-radius: 9999px;
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: 3px;
+  padding: 5px;
   max-width: 28rem;
   margin: 0 auto;
-  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.40), inset 0 0 0 1px rgba(255,255,255,0.08);
   pointer-events: auto;
 }
 .switcher button {
   flex: 1; appearance: none; border: 0; background: transparent;
-  border-radius: 9999px; padding: 8px;
+  border-radius: 9999px; padding: 6px 8px; min-height: 46px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
   color: #FBF8F2; cursor: pointer;
   transition: background .2s ease, opacity .2s ease;
 }
 .switcher button .label {
+  /* Design = Inter 12.5/600; kept on the LOADED DM Sans (not system Inter)
+     to avoid the off-runner system-font AA churn the top bar hit. */
   font-family: 'DM Sans', system-ui, sans-serif;
-  font-size: 11px; font-weight: 500; line-height: 1;
+  font-size: 12.5px; font-weight: 600; line-height: 1.1;
 }
 .switcher button .sub {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 8px; letter-spacing: .18em; text-transform: uppercase;
+  font-size: 7.5px; letter-spacing: .16em; text-transform: uppercase;
   line-height: 1; margin-top: 2px;
   /* C2: removed opacity:.7 — it sank active subs (rafa #fff@.7 = 3.28; aurelia 2.5).
      The sub is already differentiated by size + letter-spacing + uppercase. */
