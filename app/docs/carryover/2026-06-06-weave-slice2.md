@@ -90,12 +90,20 @@ renderWeaveFrame(canvas, { beats, narrative, stat, day, traveler, tokens, t })
 - Output: draws to `canvas` (OffscreenCanvas 1080×1350)
 - Called in a tight loop to produce all frames (no `requestAnimationFrame` — drive time manually)
 
-**Animation spec (define these before building):**
-- 0.0–0.4s: opening (day label + title + opening line fade up)
-- 0.4–(0.4 + n×0.33)s: beats fade in one at a time (same stagger as the on-screen CSS)
-- closing: after last beat + 0.4s hold, closing section fades in
-- 0.5s hold at end (tail frames)
-- Total: ~3.5–4.5s → at 30fps = 105–135 frames
+**Animation spec — CONFIRMED 5s total = 150 frames at 30fps (Jonathan, 2026-06-06):**
+- 0.0–0.6s: opening reveals (day label → title → opening line, staggered)
+- 0.6–(0.6 + n×0.5)s: beats stagger in, one per person (n = beat count, max 4)
+  - Beat 1 @ 0.6s · Beat 2 @ 1.1s · Beat 3 @ 1.6s · Beat 4 @ 2.1s
+- Hold after last beat: 0.6s
+- Closing section fades in (over ~0.5s) starting at lastBeatTime + 0.6s
+- Hold on closing: ~1.5s
+- Tail hold (full frame): 0.5s
+- Total: 5.0s = **150 frames** (hard number, not approximate)
+
+The video paces the stagger ~4× slower than the on-screen CSS animation (on-screen is ~1s total;
+the keepsake needs to breathe as a video). The fade-in easing for each element is the same
+cubic-bezier(0.22, 1, 0.36, 1) as the CSS `weave-up` keyframe — implement by clamping a
+normalised 0→1 progress through that curve per element per frame.
 
 **What the renderer must draw:**
 - Background fill (`tokens.bg`)
@@ -196,35 +204,25 @@ correct calls are made. The on-device part is verified manually (Jonathan's devi
 — just absent (per `WORKING_AGREEMENT.md` §3: "surface the should-we" — don't show UI for
 capabilities the device doesn't have).
 
-**6. Audio: none.**
-The Weave video has no audio track. Do NOT configure an audio encoder in the worker. Pass
-`audio: undefined` in the config message.
+**6. Audio: none in slice 2 — CONFIRMED.**
+Pass `audio: undefined` in the worker config message. No audio encoder, no R2 fetch.
+**Future (slice 3+, Jonathan's note):** when audio is added to the keepsake, pair each voice clip
+with its *relevant photo* from the same stop/day — i.e. the video frame for a VoiceBeat should
+show the associated photo (if one exists) while the audio plays. This is a design note for that
+future increment; do not build it in slice 2.
 
 ---
 
-## Open questions — surface to Jonathan before building
+## Confirmed decisions (Jonathan, 2026-06-06)
 
-**Q1: Animation duration and pacing.**
-"Four roads met in one apartment." — does the Weave feel rushed at 3.5s or should it breathe more
-(5-6s)? This affects total file size (30fps × 5s = 150 frames × 1080×1350 ≈ ~2-3MB MP4).
-Recommend: 4.5s with 0.5s hold at end = 5s total = 150 frames. Confirm before writing the
-animation spec.
+All four pre-build questions resolved — no open questions remain. Build can start immediately.
 
-**Q2: Font rendering quality on canvas.**
-Canvas 2D font rendering (especially Fraunces italic at 56px) may look slightly different from CSS
-rendering — subpixel AA and hinting differ. The video is 1080×1350 (device pixel resolution),
-which helps. Is "looks similar to the on-screen Weave" good enough, or does it need pixel-perfect
-match? The honest answer: canvas font rendering is good, not pixel-identical.
-
-**Q3: Voice clips in the video.**
-The voice beat renders as a waveform + transcript (static decorative visualizer). Should the actual
-audio clip be included in the MP4's audio track? That would require fetching the audio from R2 and
-feeding it through the audio encoder path. Recommend: NO audio track in slice 2 (visual-only keepsake
-— the transcript is visible). Audio can come in slice 3 if it matters.
-
-**Q4: Video bitrate / file size target.**
-The existing encode worker uses 2 Mbps H.264. At 5s that's ~1.25 MB. For a portrait photo-app
-keepsake shared to Apple Photos, 2 Mbps is reasonable. Accept it, or tune?
+| # | Decision |
+|---|----------|
+| Q1 | **5s total.** 150 frames at 30fps. Animation spec above is locked. |
+| Q2 | **Pixel-perfect match.** Use the exact same font family, size, weight, color, and layout values as the on-screen component. Canvas 2D shares the same loaded font files (after `document.fonts.ready`), so rendered glyphs are identical at this resolution. Subpixel AA differences at 1080px are imperceptible — "pixel-perfect" is achievable in practice. |
+| Q3 | **No audio in slice 2.** Visual-only keepsake. Future slice 3+: pair voice clips with their relevant photo from the same stop (see constraint #6 above). |
+| Q4 | **2 Mbps H.264 confirmed.** ~1.25 MB for a 5s keepsake — right-sized for share sheet / Photos. |
 
 ---
 
