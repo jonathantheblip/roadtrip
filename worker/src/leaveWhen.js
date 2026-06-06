@@ -149,3 +149,88 @@ export async function callRoutesDriveDuration({
   }
   return { durationMinutes: Math.round(seconds / 60) }
 }
+
+// Real road route for an ORDERED list of stops, via Google Routes
+// computeRoutes with waypoints. Returns DISTANCE (meters), DURATION
+// (minutes), and the decoded road GEOMETRY (points) — one tool that serves
+// the family travel stat (distance), the Weave, AND the maps (the polyline
+// that replaces today's straight lines). Distance/geometry are traffic-
+// INDEPENDENT, so this uses TRAFFIC_UNAWARE — stable (→ cacheable) and
+// cheaper than the traffic-aware duration tool. Routes allows ≤25
+// intermediates (27 points) per call; longer routes (a whole trip) are
+// chunked at a 1-point seam — the seam leg + seam geometry point are counted
+// exactly once. `stops` are {lat, lng} (we already hold them — no geocoding
+// round-trip, unlike the name-based compute_drive_time tool).
+export async function callRoutesDistance({ apiKey, stops, fetchImpl = fetch }) {
+  if (!Array.isArray(stops) || stops.length < 2) {
+    throw new Error('callRoutesDistance needs at least 2 stops')
+  }
+  const MAX_POINTS = 27 // origin + 25 intermediates + destination
+  let distanceMeters = 0
+  let seconds = 0
+  const points = []
+  for (let start = 0; start < stops.length - 1; start += MAX_POINTS - 1) {
+    const chunk = stops.slice(start, start + MAX_POINTS)
+    if (chunk.length < 2) break
+    const leg = await oneRouteChunk(apiKey, chunk, fetchImpl)
+    distanceMeters += leg.meters
+    seconds += leg.seconds
+    // Stitch the geometry; drop the first point of later chunks (it
+    // duplicates the seam stop that ended the previous chunk).
+    const fresh = points.length && leg.points.length ? leg.points.slice(1) : leg.points
+    for (const p of fresh) points.push(p)
+  }
+  return { distanceMeters, durationMinutes: Math.round(seconds / 60), points }
+}
+
+async function oneRouteChunk(apiKey, chunk, fetchImpl) {
+  const pt = (s) => ({ location: { latLng: { latitude: s.lat, longitude: s.lng } } })
+  const body = {
+    origin: pt(chunk[0]),
+    destination: pt(chunk[chunk.length - 1]),
+    intermediates: chunk.slice(1, -1).map(pt),
+    travelMode: 'DRIVE',
+    routingPreference: 'TRAFFIC_UNAWARE',
+  }
+  const r = await fetchImpl('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': apiKey,
+      'x-goog-fieldmask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline',
+    },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const detail = await r.text().catch(() => '')
+    throw new Error(`Routes ${r.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`)
+  }
+  const data = await r.json()
+  const route = data.routes?.[0]
+  const meters = Number(route?.distanceMeters)
+  const seconds = parseFloat(route?.duration)
+  if (!Number.isFinite(meters)) throw new Error('Routes returned no distanceMeters')
+  return {
+    meters,
+    seconds: Number.isFinite(seconds) ? seconds : 0,
+    points: decodePolyline(route?.polyline?.encodedPolyline),
+  }
+}
+
+// Decode a Google "encoded polyline" string to [{lat,lng}] (the standard
+// algorithm). Returns [] for empty/missing input.
+export function decodePolyline(encoded) {
+  if (!encoded || typeof encoded !== 'string') return []
+  const points = []
+  let index = 0, lat = 0, lng = 0
+  while (index < encoded.length) {
+    let b, shift = 0, result = 0
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5 } while (b >= 0x20)
+    lat += result & 1 ? ~(result >> 1) : result >> 1
+    shift = 0; result = 0
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5 } while (b >= 0x20)
+    lng += result & 1 ? ~(result >> 1) : result >> 1
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 })
+  }
+  return points
+}

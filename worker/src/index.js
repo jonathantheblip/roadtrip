@@ -20,6 +20,7 @@
 import {
   iterateLeaveBy,
   callRoutesDriveDuration,
+  callRoutesDistance,
   straightLineMinutes,
 } from './leaveWhen.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
@@ -111,6 +112,9 @@ export default {
       }
       if (path === '/leave-when' && request.method === 'POST') {
         return await postLeaveWhen(env, request, cors)
+      }
+      if (path === '/route' && request.method === 'POST') {
+        return await postRouteDistance(env, request, ctx, cors)
       }
       if (path === '/places/nearby' && request.method === 'POST') {
         return await postPlacesNearby(env, request, cors)
@@ -815,6 +819,72 @@ async function fetchResizedAsset(env, ctx, key, searchParams, cors) {
   headers.set('Cache-Control', 'public, max-age=31536000, immutable')
   headers.set('X-Photon-Cache', 'MISS')
   return new Response(variantBuf, { status: 200, headers })
+}
+
+// ─── Route distance + geometry (real roads) ──────────────────────────
+// POST /route { stops:[{lat,lng}…] } → { miles, distanceMeters,
+// durationMinutes, points:[{lat,lng}…], cached }. Real Google Routes road
+// distance + geometry for the family travel stat (the Weave) AND the maps
+// (the polyline that replaces today's straight lines). Content-addressed
+// cache: the key is a hash of the EXACT ordered stops, so a schedule change
+// (add/move/remove a stop) automatically recomputes — a stale route is never
+// served — while an unchanged trip is billed ~once then free.
+async function postRouteDistance(env, request, ctx, cors) {
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    return json({ error: 'Routes API not configured on worker' }, 500, cors)
+  }
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON' }, 400, cors)
+  }
+  const stops = (Array.isArray(body?.stops) ? body.stops : [])
+    .filter((s) => Number.isFinite(s?.lat) && Number.isFinite(s?.lng))
+    .map((s) => ({ lat: s.lat, lng: s.lng }))
+  if (stops.length < 2) {
+    return json({ error: 'route needs at least 2 stops with lat/lng' }, 400, cors)
+  }
+
+  // Content-addressed cache key — round to 1e-5 (~1 m) so float jitter
+  // doesn't fragment the cache, but any real edit changes the hash.
+  const canon = JSON.stringify(
+    stops.map((s) => [Math.round(s.lat * 1e5), Math.round(s.lng * 1e5)])
+  )
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canon))
+  const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  const cacheKey = new Request(`https://route-cache.internal/v1/${hash}`)
+  const cache = caches.default
+
+  const hit = await cache.match(cacheKey).catch(() => null)
+  if (hit) {
+    const data = await hit.json().catch(() => null)
+    if (data) return json({ ...data, cached: true }, 200, cors)
+  }
+
+  let result
+  try {
+    result = await callRoutesDistance({ apiKey: env.GOOGLE_PLACES_API_KEY, stops })
+  } catch (err) {
+    return json({ error: `route lookup failed: ${err?.message || String(err)}` }, 502, cors)
+  }
+
+  const payload = {
+    miles: Math.round((result.distanceMeters / 1609.344) * 10) / 10,
+    distanceMeters: result.distanceMeters,
+    durationMinutes: result.durationMinutes,
+    points: result.points,
+  }
+  // The key IS the stops, so the value can cache forever — only a schedule
+  // change (a different key) misses.
+  const cacheable = new Response(JSON.stringify(payload), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  })
+  ctx?.waitUntil?.(cache.put(cacheKey, cacheable).catch((err) => console.error('route cache put failed', err?.stack || err)))
+  return json({ ...payload, cached: false }, 200, cors)
 }
 
 // ─── Leave-when (Routes API proxy) ────────────────────────────────────
