@@ -104,8 +104,11 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
     // inputs to their dark variant. Matches the Settings pattern.
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
       <header
-        className="px-6 pt-6 pb-6"
-        style={{ borderBottom: '1px solid var(--border)' }}
+        className="px-6 pb-6"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top) + 24px)',
+          borderBottom: '1px solid var(--border)',
+        }}
       >
         <button
           onClick={onBack}

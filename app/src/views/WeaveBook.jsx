@@ -107,8 +107,16 @@ export function WeaveBook({ trip, trips, traveler, onBack }) {
         overflowY: 'auto',
       }}
     >
-      {/* Top bar — back to the trip. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px', flexShrink: 0 }}>
+      {/* Top bar — back to the trip. Clear the iOS status bar (black-translucent). */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: 'calc(env(safe-area-inset-top) + 14px) 16px 14px',
+          flexShrink: 0,
+        }}
+      >
         <button
           type="button"
           onClick={onBack}

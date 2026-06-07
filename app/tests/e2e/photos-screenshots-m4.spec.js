@@ -1,4 +1,5 @@
 import { test } from './_fixtures/clockStub.js'
+import { openTopMenuItem } from './_fixtures/topNav.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
 import { WEBKIT_IDB_BLOB_REASON } from './_fixtures/webkitIdbBlobGate.js'
@@ -127,7 +128,7 @@ test.describe('M4 + dev-mode — visual capture', () => {
     })
     await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
     // Open Settings via the ⋯ button in the top bar.
-    await page.getByRole('button', { name: 'Trip settings' }).click()
+    await openTopMenuItem(page, /Settings/i)
     await page.waitForSelector('[data-testid="dev-upload-log"]')
     // Scroll the section into view so the screenshot frames it.
     await page.evaluate(() => {

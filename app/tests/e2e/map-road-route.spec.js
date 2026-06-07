@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { openTopMenuItem } from './_fixtures/topNav.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 
 // The live map upgrades from straight-line to the REAL road route fetched
@@ -29,7 +30,7 @@ test('map: shows the real road distance fetched from /route', async ({ page }) =
 
   await page.goto('/?person=jonathan&nosw=1')
   await page.getByText('Fun @ the Sun').first().click()
-  await page.getByRole('button', { name: 'Live map for this trip' }).click()
+  await openTopMenuItem(page, /Live map/i)
 
   await expect(page.getByTestId('map-road-miles')).toHaveText(/540 mi by road/)
 })

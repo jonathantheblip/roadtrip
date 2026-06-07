@@ -1,4 +1,5 @@
 import { test, expect } from './_fixtures/clockStub.js'
+import { openTopMenuItem } from './_fixtures/topNav.js'
 import { seedTripIntoCache } from './_fixtures/withTrip.js'
 import { redPhotoFile } from './_fixtures/photoFixtures.js'
 import { resolvePersona } from './_fixtures/persona.js'
@@ -196,7 +197,7 @@ test.describe('Trip reconciliation + archiving', () => {
     // "Back to the trip" lands in PhotosView now (the importer's home).
     // Archiving lives in Trip Settings, so hop there via the top-bar ⋯.
     await page.getByRole('button', { name: /Back to the trip/i }).click()
-    await page.getByRole('button', { name: 'Trip settings' }).click()
+    await openTopMenuItem(page, /Settings/i)
     const archiveToggle = page.getByTestId('archive-toggle')
     await expect(archiveToggle).toContainText(/Mark as archived/i)
     await archiveToggle.click()
@@ -218,7 +219,7 @@ test.describe('Trip reconciliation + archiving', () => {
 
     // ── Still editable: re-open the archived trip → Settings works ───
     await page.getByRole('button').filter({ hasText: 'Reconcile Test Roadtrip' }).first().click()
-    await page.getByRole('button', { name: 'Trip settings' }).click()
+    await openTopMenuItem(page, /Settings/i)
     await expect(page.getByTestId('archive-toggle')).toContainText(/Unarchive this trip/i)
   })
 })

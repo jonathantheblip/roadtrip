@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { openTopMenuItem } from './_fixtures/topNav.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 
 // InstallIdentity (the design's "Make it yours") — each person's home-screen
@@ -12,7 +13,7 @@ async function openIdentity(page, person) {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await page.goto(`/?person=${person}&nosw=1`)
   await page.getByText('Fun @ the Sun').first().click()
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await openTopMenuItem(page, /Settings/i)
   await page.getByTestId('open-identity').click()
   await expect(page.getByTestId('install-identity')).toBeVisible()
 }
@@ -36,7 +37,7 @@ test('install-identity: pick a sticker → preview, confirmation, persistence', 
   // Persistence: reload + reopen → the pick is still selected.
   await page.reload()
   await page.getByText('Fun @ the Sun').first().click()
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await openTopMenuItem(page, /Settings/i)
   await page.getByTestId('open-identity').click()
   await expect(
     page.getByTestId('install-identity').getByRole('button', { name: 'Sticker 🌷' })

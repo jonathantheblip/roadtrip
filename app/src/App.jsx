@@ -430,6 +430,7 @@ export default function App() {
   // is stored yet (fetchStoredWeave returns null → degrades silently).
   const [weaveReady, setWeaveReady] = useState(false)
   const [bookHasPages, setBookHasPages] = useState(false)
+  const [topMenuOpen, setTopMenuOpen] = useState(false) // top-bar overflow (⋯)
   const weaveGenRef = useRef(0)
   useEffect(() => {
     setWeaveReady(false)
@@ -755,59 +756,11 @@ export default function App() {
               ))}
             </select>
           )}
-          {/* Claude entry — only when there's a trip in context (matches
-              spec: in-trip surface "Modify this trip with Claude"). On
-              non-trip deep views (settings, photos, etc.) the button
-              still surfaces so the conversation can continue with that
-              trip's context loaded. M1 has no badge. */}
+          {/* Modify-with-Claude stays visible — it's the primary trip action.
+              Replay / Map / Book / Settings live in the ⋯ overflow menu below
+              so the bar stays uncrowded + pressable on a phone. */}
           {trip && (
             <ClaudeEntryButton onClick={openClaude} label="Modify this trip with Claude" />
-          )}
-          {/* TEMP entry point for the REPLAY day-level slice. Replace with
-              the designed affordance when the four-level engine lands. */}
-          {trip && (
-            <button
-              type="button"
-              onClick={openReplay}
-              aria-label="Replay this trip"
-              style={{
-                background: 'transparent',
-                border: 0,
-                padding: '0 4px',
-                cursor: 'pointer',
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                opacity: topBar.opacity,
-                color: topBar.text,
-              }}
-            >
-              ▶ Replay
-            </button>
-          )}
-          {/* TEMP entry point for the LIVE MAP. Replace with the designed
-              affordance in the redesign. */}
-          {trip && (
-            <button
-              type="button"
-              onClick={openMap}
-              aria-label="Live map for this trip"
-              style={{
-                background: 'transparent',
-                border: 0,
-                padding: '0 4px',
-                cursor: 'pointer',
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                opacity: topBar.opacity,
-                color: topBar.text,
-              }}
-            >
-              ▣ Map
-            </button>
           )}
           {/* TEMP entry point for THE WEAVE. Replace with the designed
               affordance in the redesign. */}
@@ -847,49 +800,99 @@ export default function App() {
               )}
             </button>
           )}
-          {/* TEMP entry point for THE BOOK (kept weave pages). Shown only
-              when the trip has kept pages. Replace with the designed
-              affordance in the redesign. */}
-          {trip && bookHasPages && (
+          {/* Overflow menu — the secondary entries collapse here so the bar
+              stays uncrowded + pressable on a phone. */}
+          <div style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
             <button
               type="button"
-              onClick={openBook}
-              aria-label="The book — kept weave pages"
+              onClick={() => setTopMenuOpen((o) => !o)}
+              aria-label="More"
+              aria-haspopup="menu"
+              aria-expanded={topMenuOpen}
               style={{
                 background: 'transparent',
                 border: 0,
-                padding: '0 4px',
+                padding: '4px 6px',
                 cursor: 'pointer',
                 fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
+                fontSize: 15,
+                lineHeight: 1,
                 opacity: topBar.opacity,
                 color: topBar.text,
               }}
             >
-              ❏ Book
+              ⋯
             </button>
-          )}
-          <button
-            type="button"
-            onClick={openSettings}
-            aria-label="Trip settings"
-            style={{
-              background: 'transparent',
-              border: 0,
-              padding: '0 4px',
-              cursor: 'pointer',
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 10,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              opacity: topBar.opacity,
-              color: topBar.text,
-            }}
-          >
-            ⋯
-          </button>
+            {topMenuOpen && (
+              <>
+                {/* tap-anywhere-to-close backdrop */}
+                <div
+                  aria-hidden="true"
+                  data-testid="top-menu-backdrop"
+                  onClick={() => setTopMenuOpen(false)}
+                  style={{ position: 'fixed', inset: 0, zIndex: 41 }}
+                />
+                <div
+                  role="menu"
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: 8,
+                    zIndex: 42,
+                    minWidth: 188,
+                    padding: 5,
+                    background: 'var(--card, var(--bg))',
+                    border: '1px solid var(--border)',
+                    borderRadius: 14,
+                    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.22)',
+                  }}
+                >
+                  {[
+                    ...(trip
+                      ? [
+                          { label: 'Replay', glyph: '▶', onClick: () => openReplay() },
+                          { label: 'Live map', glyph: '▣', onClick: openMap },
+                        ]
+                      : []),
+                    ...(trip && bookHasPages ? [{ label: 'The book', glyph: '❏', onClick: openBook }] : []),
+                    { label: 'Settings', glyph: '⚙', onClick: openSettings },
+                  ].map((it) => (
+                    <button
+                      key={it.label}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setTopMenuOpen(false)
+                        it.onClick()
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 11,
+                        width: '100%',
+                        minHeight: 44,
+                        padding: '0 12px',
+                        background: 'transparent',
+                        border: 0,
+                        borderRadius: 9,
+                        cursor: 'pointer',
+                        color: 'var(--text)',
+                        fontFamily: 'var(--font-body)',
+                        fontSize: 14.5,
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ width: 18, textAlign: 'center', color: 'var(--muted)' }}>
+                        {it.glyph}
+                      </span>
+                      {it.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 

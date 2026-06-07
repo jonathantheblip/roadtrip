@@ -10,6 +10,7 @@
 // and auto-opens (otherwise the cold-load override drops to the index).
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
+import { openTopMenuItem } from './_fixtures/topNav.js'
 
 const PHOTO_MEM = {
   id: 'rpl-photo-1',
@@ -54,7 +55,7 @@ test.describe('Replay — cinematic stop playback', () => {
     await seedMemoriesIntoCache(page, [PHOTO_MEM])
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
 
-    await page.getByRole('button', { name: /Replay/i }).click()
+    await openTopMenuItem(page, /Replay/i)
 
     // Replay opens at day level. Zoom out to the trip, then descend
     // deterministically: Day 1 → the Beach Bungalow stop (has a photo).
@@ -88,7 +89,7 @@ test.describe('Replay — cinematic stop playback', () => {
       })
     })
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-    await page.getByRole('button', { name: /Replay/i }).click()
+    await openTopMenuItem(page, /Replay/i)
 
     // Replay opens at the day level → the day's woven narrative header renders.
     const weave = page.getByTestId('rpl-dayweave')

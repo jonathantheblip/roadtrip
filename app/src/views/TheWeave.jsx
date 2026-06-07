@@ -533,7 +533,8 @@ function TopBar({ onBack, label, rightSlot }) {
       style={{
         flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 16px',
+        // Clear the iOS status bar (black-translucent → content goes full-height).
+        padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px',
       }}
     >
       <button

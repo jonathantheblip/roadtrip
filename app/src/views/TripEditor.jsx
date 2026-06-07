@@ -250,7 +250,10 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
 
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
-      <header className="px-6 pt-6 pb-5 border-b surface-rule">
+      <header
+        className="px-6 pb-5 border-b surface-rule"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 24px)' }}
+      >
         <button
           onClick={onBack}
           className="link-quiet flex items-center gap-1 f-dm text-xs opacity-70"

@@ -1,4 +1,5 @@
 import { test, expect } from './_fixtures/clockStub.js'
+import { openTopMenuItem } from './_fixtures/topNav.js'
 import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { mockClaudeChatWorker } from './_fixtures/mockUpload.js'
 import { resolvePersona, TRAVELERS } from './_fixtures/persona.js'
@@ -99,7 +100,7 @@ test.describe('a11y (axe, serious+critical) — InstallIdentity ×4 personas', (
     test(`install identity — ${p}`, async ({ page }) => {
       await seedTripIntoCache(page, FIXTURE_TRIP)
       await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      await page.getByRole('button', { name: 'Trip settings' }).click()
+      await openTopMenuItem(page, /Settings/i)
       await page.getByTestId('open-identity').click()
       await expect(page.getByTestId('install-identity')).toBeVisible()
       // Scope to the overlay (like the Claude-panel scan): a small-subtree
@@ -191,7 +192,7 @@ test.describe('a11y (axe, serious+critical) — the book ×4 personas', () => {
         })
       })
       await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      await page.getByRole('button', { name: /the book/i }).click()
+      await openTopMenuItem(page, /the book/i)
       await expect(page.getByTestId('weave-book')).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: '[data-testid="weave-book"]',
