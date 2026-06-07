@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Clock } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { effectiveStatus } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { thumbUrl } from '../lib/thumbUrl'
+import { pickResurface } from '../lib/resurface'
 import { hasExplicitHero } from '../lib/tripHero'
 import { AvatarStack } from '../components/Avatar'
 
@@ -20,7 +21,10 @@ import { AvatarStack } from '../components/Avatar'
 //   • AvatarStack of travelers + "<start> → <end>" route
 //   • live memory count read from listMemoriesForTrip
 
-export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTrip }) {
+export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTrip, onResurfaceReplay }) {
+  // "Looking back": one resurfaced past moment (a completed-trip day with
+  // photos), rotating daily. Null when there's nothing to look back on.
+  const resurface = useMemo(() => pickResurface(trips, traveler), [trips, traveler])
   // Order by where each trip sits relative to today, then bucket prior
   // years into a separate archive. effectiveStatus(trip) (in trips.js)
   // is the single source of truth for the status chip — a stored
@@ -140,6 +144,82 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
           An archive, and a planning surface for what comes next.
         </div>
       </div>
+
+      {resurface && (
+        <button
+          type="button"
+          data-testid="resurface-card"
+          onClick={() => onResurfaceReplay?.(resurface.trip.id, resurface.day.n)}
+          style={{
+            margin: '4px 18px 14px',
+            width: 'calc(100% - 36px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            textAlign: 'left',
+            background: 'var(--card, var(--bg2))',
+            border: '1px solid var(--border)',
+            borderRadius: 16,
+            padding: 12,
+            cursor: 'pointer',
+            color: 'var(--text)',
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 12,
+              flexShrink: 0,
+              backgroundImage: `url(${thumbUrl(resurface.photo.url, 256)})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundColor: 'var(--faint)',
+            }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 10,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color: 'var(--muted)',
+              }}
+            >
+              <Clock size={11} /> Looking back · {resurface.agoLabel}
+            </span>
+            <div
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 17,
+                marginTop: 4,
+                color: 'var(--text)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {resurface.trip.title || 'A trip'} — Day {resurface.day.n}
+              {resurface.day.title ? `, ${resurface.day.title}` : ''}
+            </div>
+            <div
+              style={{
+                fontFamily: 'Inter Tight, system-ui, sans-serif',
+                fontSize: 12,
+                color: 'var(--muted)',
+                marginTop: 2,
+              }}
+            >
+              {resurface.photoCount} photo{resurface.photoCount !== 1 ? 's' : ''} · tap to replay
+            </div>
+          </div>
+        </button>
+      )}
 
       <Hairline color="var(--text)" style={{ margin: '0 18px' }} />
 

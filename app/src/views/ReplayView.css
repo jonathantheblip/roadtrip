@@ -390,15 +390,72 @@
   justify-content: center;
   overflow: hidden;
 }
-.rpl-photo-img {
+/* Cinematic stop-level playback: each photo slowly drifts (Ken Burns) and the
+   next CROSSFADES in over the previous (two layers kept). A layer stays at
+   opacity 0 until it decodes (.play), so a not-yet-cached frame never flashes
+   raw — the original guarantee, now as a crossfade rather than a hard cut. */
+.rpl-cine-stack {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.rpl-cine-layer {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover; /* full-bleed */
   opacity: 0;
-  transition: opacity 0.35s ease; /* fade in on decode — never a raw flash */
+  transform: scale(1.04);
+  will-change: opacity, transform;
 }
-.rpl-photo-img.in {
-  opacity: 1;
+.rpl-cine-layer.play {
+  animation-duration: 6200ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+.rpl-cine-layer.rpl-cine-a.play { animation-name: rpl-cine-a; }
+.rpl-cine-layer.rpl-cine-b.play { animation-name: rpl-cine-b; }
+.rpl-cine-layer.rpl-cine-c.play { animation-name: rpl-cine-c; }
+.rpl-cine-layer.rpl-cine-d.play { animation-name: rpl-cine-d; }
+
+/* opacity 0→1 over the first ~8% is the crossfade; the transform is the
+   slow Ken Burns drift, deliberately longer than a photo's on-screen beat so
+   it never finishes (a continuous, gentle motion). */
+@keyframes rpl-cine-a {
+  0%   { opacity: 0; transform: scale(1.04) translate(0, 0); }
+  8%   { opacity: 1; }
+  100% { opacity: 1; transform: scale(1.13) translate(-2.5%, -2%); }
+}
+@keyframes rpl-cine-b {
+  0%   { opacity: 0; transform: scale(1.04) translate(0, 0); }
+  8%   { opacity: 1; }
+  100% { opacity: 1; transform: scale(1.13) translate(2.5%, 2%); }
+}
+@keyframes rpl-cine-c {
+  0%   { opacity: 0; transform: scale(1.05) translate(0, 0); }
+  8%   { opacity: 1; }
+  100% { opacity: 1; transform: scale(1.14) translate(2.5%, -2%); }
+}
+@keyframes rpl-cine-d {
+  0%   { opacity: 0; transform: scale(1.06) translate(0, 0); }
+  8%   { opacity: 1; }
+  100% { opacity: 1; transform: scale(1.12) translate(0, 0); }
+}
+@keyframes rpl-cine-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+/* Respect reduced-motion: keep the crossfade, drop the drift. */
+@media (prefers-reduced-motion: reduce) {
+  .rpl-cine-layer { transform: none; }
+  .rpl-cine-layer.rpl-cine-a.play,
+  .rpl-cine-layer.rpl-cine-b.play,
+  .rpl-cine-layer.rpl-cine-c.play,
+  .rpl-cine-layer.rpl-cine-d.play {
+    animation-name: rpl-cine-fade;
+    animation-duration: 0.4s;
+  }
 }
 /* Caption/author/date ride a bottom scrim. The scrim + light text are
    fixed (not theme vars) on purpose: they sit over arbitrary photo
@@ -449,4 +506,34 @@
 .rpl-photo-date {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.78);
+}
+
+/* Day-level woven narrative — the Weave's title + opening line, so a replayed
+   day reads as a story above its stops. Themed like the rest of the spine. */
+.rpl-dayweave {
+  padding: 14px 18px 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.rpl-dayweave-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rpl-dayweave-title {
+  font-family: var(--font-display);
+  font-weight: var(--heading-weight);
+  font-size: 23px;
+  line-height: 1.15;
+  margin: 7px 0 8px;
+  color: var(--text);
+}
+.rpl-dayweave-opening {
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
 }

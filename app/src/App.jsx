@@ -575,8 +575,12 @@ export default function App() {
   }
   // REPLAY (increment 1): immersive zoomable spine. Temporary entry point
   // for the DAY-level slice — opens the active trip in the replay surface.
-  function openReplay() {
-    setView({ name: 'replay' })
+  function openReplay(target) {
+    // The trip top-bar button calls this with a click event (no tripId) →
+    // open the active trip. The "Looking back" card calls it with
+    // { tripId, dayN } → open replay AT that resurfaced day.
+    const replayTarget = target && typeof target === 'object' && target.tripId ? target : null
+    setView({ name: 'replay', replayTarget })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
   // LIVE MAP: generalized straight-line map + live progress. Temporary
@@ -896,6 +900,7 @@ export default function App() {
             trips={visibleTrips}
             onOpenTrip={openTrip}
             onNewTrip={openNewTrip}
+            onResurfaceReplay={(tripId, dayN) => openReplay({ tripId, dayN })}
           />
         )}
         {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} dark={darkSurface} />}
@@ -953,12 +958,13 @@ export default function App() {
             onBack={() => setView({ name: 'trip' })}
           />
         )}
-        {view.name === 'replay' && trip && !trip.draft && (
+        {view.name === 'replay' && (view.replayTarget || (trip && !trip.draft)) && (
           <ReplayView
             trip={trip}
             trips={visibleTrips}
             traveler={traveler}
-            onExit={() => setView({ name: 'trip' })}
+            initial={view.replayTarget}
+            onExit={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
           />
         )}
         {view.name === 'map' && trip && !trip.draft && (

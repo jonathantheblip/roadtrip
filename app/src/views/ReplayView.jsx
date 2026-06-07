@@ -5,6 +5,7 @@ import { presenceOf, capturedBy } from '../lib/replayPresence'
 import { flattenPhotoEntries, formatFullDate } from '../lib/photoEntries'
 import { humanDateRange } from '../lib/createTripCard'
 import { thumbUrl } from '../lib/thumbUrl'
+import { fetchStoredWeave } from '../lib/weave'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { TRAVELERS } from '../data/travelers'
 import './ReplayView.css'
@@ -148,25 +149,59 @@ function stopPhotoSequence(stop, traveler) {
   return flattenPhotoEntries(ordered)
 }
 
-// STOP level stage — a single photo, full-bleed, caption + author + date
-// overlaid, fades in on decode so a not-yet-cached frame never flashes raw.
+// Ken Burns pan/zoom directions — cycled per photo so consecutive frames
+// drift differently (never the same move twice in a row).
+const CINE_VARIANTS = ['a', 'b', 'c', 'd']
+
+// One cinematic photo layer: it starts hidden and only begins its animation
+// once the image has DECODED (onLoad), so a not-yet-cached frame never
+// flashes raw — preserving PhotoStage's original guarantee. The animation
+// both fades the layer in (the crossfade) and slowly drifts it (Ken Burns).
+function CineLayer({ url, variant, alt }) {
+  const [ready, setReady] = useState(false)
+  return (
+    <img
+      className={`rpl-cine-layer rpl-cine-${variant} ${ready ? 'play' : ''}`}
+      src={thumbUrl(url, STAGE_MAX_EDGE)}
+      alt={alt || 'Memory photo'}
+      onLoad={() => setReady(true)}
+      draggable={false}
+    />
+  )
+}
+
+// STOP level stage — a full-bleed photo with caption + author + date overlaid.
+// Cinematic: each photo slowly drifts (Ken Burns) and the next CROSSFADES in
+// over the previous (two layers kept) instead of hard-cutting. The cursor,
+// player, scrub and preload all live in the parent and are untouched.
 function PhotoStage({ photo }) {
-  const [loaded, setLoaded] = useState(false)
+  const [layers, setLayers] = useState([])
+  const seqRef = useRef(0)
   useEffect(() => {
-    setLoaded(false)
+    if (!photo?.url) {
+      setLayers([])
+      return
+    }
+    setLayers((prev) => {
+      // Same photo (re-render) → no new layer.
+      if (prev.length && prev[prev.length - 1].url === photo.url) return prev
+      const seq = (seqRef.current += 1)
+      const variant = CINE_VARIANTS[seq % CINE_VARIANTS.length]
+      // Keep the outgoing layer beneath the incoming one so it crossfades.
+      return [...prev, { url: photo.url, variant, key: seq }].slice(-2)
+    })
   }, [photo?.url])
+
   if (!photo) return null
   const author = capturedBy({ authorTraveler: photo.author })
   const dateLabel = formatFullDate(photo.capturedAt)
   return (
     <figure className="rpl-photo">
-      <img
-        className={`rpl-photo-img ${loaded ? 'in' : ''}`}
-        src={thumbUrl(photo.url, STAGE_MAX_EDGE)}
-        alt={photo.caption || 'Memory photo'}
-        onLoad={() => setLoaded(true)}
-        draggable={false}
-      />
+      <div className="rpl-cine-stack">
+        {layers.map((l) => (
+          <CineLayer key={l.key} url={l.url} variant={l.variant} alt={photo.caption} />
+        ))}
+      </div>
       <figcaption className="rpl-photo-overlay">
         {photo.photoCountInMemory > 1 && (
           <span className="rpl-photo-idx">
@@ -285,7 +320,7 @@ function tripDateLabel(t) {
   return t?.dateRange || humanDateRange(t?.dateRangeStart, t?.dateRangeEnd) || ''
 }
 
-export function ReplayView({ trip, trips, traveler, onExit }) {
+export function ReplayView({ trip, trips, traveler, onExit, initial }) {
   // Archive spine source: the whole list, date-ordered. Falls back to just
   // the entry trip if the list wasn't passed.
   const orderedTrips = useMemo(() => {
@@ -296,13 +331,24 @@ export function ReplayView({ trip, trips, traveler, onExit }) {
   // Cursors — one per scope. The entry point lands at the DAY level on the
   // entry trip's hero day; archive/trip are reached by zooming OUT.
   const [archiveCursor, setArchiveCursor] = useState(() => {
-    const idx = orderedTrips.findIndex((t) => t.id === trip?.id)
+    // Resurfacing opens AT a target trip; otherwise the entry trip.
+    const targetId = initial?.tripId || trip?.id
+    const idx = orderedTrips.findIndex((t) => t.id === targetId)
     return idx >= 0 ? idx : 0
   })
   const [level, setLevel] = useState('day') // 'archive' | 'trip' | 'day' | 'stop'
-  const [tripCursor, setTripCursor] = useState(() => heroDayIndex(trip)) // day index
+  const [tripCursor, setTripCursor] = useState(() => {
+    // Resurfacing opens AT a target day; otherwise the trip's hero day.
+    if (initial?.dayN != null) {
+      const t = orderedTrips.find((tt) => tt.id === (initial.tripId || trip?.id))
+      const di = (t?.days || []).findIndex((d) => d.n === initial.dayN)
+      if (di >= 0) return di
+    }
+    return heroDayIndex(trip)
+  }) // day index
   const [dayCursor, setDayCursor] = useState(0) // stop index
   const [photoCursor, setPhotoCursor] = useState(0) // photo index
+  const [dayWeave, setDayWeave] = useState(null) // the current day's woven narrative
 
   const currentTrip = orderedTrips[archiveCursor] || null
   const days = currentTrip?.days || []
@@ -398,6 +444,22 @@ export function ReplayView({ trip, trips, traveler, onExit }) {
       }
     }
   }, [level, photoCursor, photos])
+
+  // Fetch the current day's WOVEN narrative (the Weave's title + opening) so
+  // the day level reads as a story, not just a list of stops. Stored weaves
+  // only (nightly or kept) — a day without one simply shows no header. Reuses
+  // the existing GET /weave/latest; degrades to null on any failure.
+  useEffect(() => {
+    setDayWeave(null)
+    if (!currentTrip?.id || !currentDay?.isoDate) return
+    let cancelled = false
+    fetchStoredWeave(currentTrip.id, currentDay.isoDate).then((w) => {
+      if (!cancelled) setDayWeave(w?.title ? w : null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [currentTrip?.id, currentDay?.isoDate])
 
   // ── ZOOM ladder ───────────────────────────────────────────────────────
   // Descending resets the CHILD cursor to the top; the parent cursor is left
@@ -538,6 +600,13 @@ export function ReplayView({ trip, trips, traveler, onExit }) {
         </div>
       ) : (
         <div className="rpl-spine">
+          {dayWeave && (
+            <div className="rpl-dayweave" data-testid="rpl-dayweave">
+              <span className="rpl-dayweave-eyebrow">✦ The weave</span>
+              <h2 className="rpl-dayweave-title">{dayWeave.title}</h2>
+              {dayWeave.opening && <p className="rpl-dayweave-opening">{dayWeave.opening}</p>}
+            </div>
+          )}
           {stops.map((s, i) => {
             const activeRow = i === dayCursor
             const who = presenceOf(s)
