@@ -188,3 +188,48 @@ export function markWeaveSeen(tripId, generatedAt) {
     /* ignore — the cue is best-effort */
   }
 }
+
+// ── The little book — keep + fetch ───────────────────────────────────
+//
+// "Keep this page" persists the weave into the trip's SHARED book (worker
+// POST /weave/keep). Fire-and-forget from the UI: returns true on success,
+// false on any failure (offline / worker down / pre-migration) so the button
+// can stay optimistic without throwing. Sends the narrative + the beat
+// summaries so an ON-DEMAND weave (no nightly row) is persisted too.
+export async function keepWeave({ tripId, dayIso, narrative, stat, beats }) {
+  if (!isWorkerConfigured() || !tripId || !dayIso || !narrative?.title) return false
+  try {
+    const r = await workerFetch('/weave/keep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tripId,
+        dayIso,
+        title: narrative.title,
+        opening: narrative.opening,
+        closing: narrative.closing,
+        stat: stat || null,
+        beats: (beats || []).map(({ who, kind, snippet }) => ({ who, kind, snippet })),
+      }),
+    })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
+// The trip's shared book — the kept weaves, oldest day first. Returns
+// { pages: [{tripId, dayIso, title, opening, closing, stat, generatedAt, keptAt}] }
+// — empty (never throws) on any failure, so the book degrades to "nothing
+// kept yet" rather than erroring.
+export async function fetchWeaveBook(tripId) {
+  if (!isWorkerConfigured() || !tripId) return { pages: [] }
+  try {
+    const r = await workerFetch(`/weave/book?trip_id=${encodeURIComponent(tripId)}`)
+    if (!r.ok) return { pages: [] }
+    const data = await r.json()
+    return { pages: Array.isArray(data?.pages) ? data.pages : [] }
+  } catch {
+    return { pages: [] }
+  }
+}

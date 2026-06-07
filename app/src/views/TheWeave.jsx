@@ -5,7 +5,7 @@ import { TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { thumbUrl } from '../lib/thumbUrl'
-import { selectWeaveDay, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen } from '../lib/weave'
+import { selectWeaveDay, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen, keepWeave } from '../lib/weave'
 import { encodeWeavePage, shareWeave, isVideoEncodeSupported } from '../lib/weaveEncode'
 
 // Inject keyframes once for the reveal animation.
@@ -59,13 +59,13 @@ function verbFor(who, kind) {
 // Claude-generated title + opening + closing.
 //
 // Props: trip (active trip), trips (all trips), traveler, onBack
-export function TheWeave({ trip, trips, traveler, onBack }) {
+export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKept = false }) {
   const [state, setState] = useState('loading') // loading | ready | empty | error
   const [weavedDay, setWeavedDay] = useState(null)   // { trip, day }
   const [beats, setBeats] = useState([])
   const [narrative, setNarrative] = useState(null)   // { title, opening, closing } | null
   const [stat, setStat] = useState(null)             // "Day N · X mi · Y stops" | null
-  const [kept, setKept] = useState(false)
+  const [kept, setKept] = useState(initialKept)
   const [saveState, setSaveState] = useState('idle') // idle | encoding | sharing | shared
   const scrollRef = useRef(null)
   const encodeAbortRef = useRef(null)
@@ -100,13 +100,35 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
     }
   }
 
+  // Keep this page → the trip's shared book. Optimistic: the button flips to
+  // "In the book" immediately; persistence is fire-and-forget (keepWeave
+  // swallows failures so an offline keep still reads as kept on this device).
+  function keep() {
+    if (kept) return
+    setKept(true)
+    keepWeave({
+      tripId: weavedDay?.trip?.id,
+      dayIso: weavedDay?.day?.isoDate,
+      narrative,
+      stat,
+      beats,
+    })
+  }
+
   useEffect(() => {
     let cancelled = false
 
     async function load() {
-      // 1. Pick a day.
+      // 1. Pick a day — a specific forced day (a book page) or the
+      //    auto-selection (the ✦ entry's "today's woven page").
       const allTrips = trips || (trip ? [trip] : [])
-      const picked = selectWeaveDay(allTrips, traveler)
+      let picked
+      if (forceDayIso) {
+        const day = (trip?.days || []).find((d) => d.isoDate === forceDayIso)
+        picked = day ? { trip, day } : null
+      } else {
+        picked = selectWeaveDay(allTrips, traveler)
+      }
       if (!picked) {
         if (!cancelled) setState('empty')
         return
@@ -352,7 +374,7 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <button
                 data-testid="weave-keep"
-                onClick={() => setKept(true)}
+                onClick={keep}
                 disabled={kept}
                 style={{
                   padding: '13px 22px',

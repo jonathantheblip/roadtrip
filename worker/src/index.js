@@ -23,7 +23,7 @@ import {
   callRoutesDistance,
   straightLineMinutes,
 } from './leaveWhen.js'
-import { runNightlyWeave } from './weaveGen.js'
+import { runNightlyWeave, beatSignature } from './weaveGen.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -131,6 +131,12 @@ export default {
       }
       if (path === '/weave/latest' && request.method === 'GET') {
         return await getStoredWeave(env, url, cors)
+      }
+      if (path === '/weave/keep' && request.method === 'POST') {
+        return await keepWeave(env, request, cors)
+      }
+      if (path === '/weave/book' && request.method === 'GET') {
+        return await getWeaveBook(env, url, cors)
       }
 
       // Claude-in-App (M1)
@@ -1507,6 +1513,95 @@ async function getStoredWeave(env, url, cors) {
     200,
     { ...cors, 'Cache-Control': 'no-store' }
   )
+}
+
+// POST /weave/keep  (auth-gated)
+// Mark a (trip, day) weave as kept → it joins the trip's SHARED book (one
+// book per trip; anyone can keep). Upserts the weave row so an ON-DEMAND
+// weave (no nightly row yet) is persisted too; an existing nightly row keeps
+// its generated_at and just gains kept_at. Keeping is idempotent — re-keeping
+// preserves the original kept_at (COALESCE), so the "added to the book" time
+// is stable. Body: { tripId, dayIso, title, opening, closing, stat?, beats? }
+async function keepWeave(env, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const tripId = typeof body?.tripId === 'string' ? body.tripId : null
+  const dayIso = typeof body?.dayIso === 'string' ? body.dayIso : null
+  const title = typeof body?.title === 'string' ? body.title : null
+  const opening = typeof body?.opening === 'string' ? body.opening : null
+  const closing = typeof body?.closing === 'string' ? body.closing : null
+  if (!tripId || !dayIso || !title || !opening || !closing) {
+    return json({ error: 'tripId, dayIso, title, opening, closing required' }, 400, cors)
+  }
+  const stat = typeof body?.stat === 'string' && body.stat.trim() ? body.stat.trim() : null
+  const beats = Array.isArray(body?.beats) ? body.beats : []
+  const beatsJson = beats.length ? JSON.stringify(beats) : null
+  const sig = beats.length ? beatSignature(beats) : null
+  const now = Date.now()
+  const id = `${tripId}::${dayIso}`
+
+  await env.DB.prepare(
+    `INSERT INTO weaves (
+       id, trip_id, day_iso, title, opening, closing,
+       stat, beats_json, beat_signature, generated_at, updated_at, kept_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       opening = excluded.opening,
+       closing = excluded.closing,
+       stat = COALESCE(excluded.stat, weaves.stat),
+       beats_json = COALESCE(excluded.beats_json, weaves.beats_json),
+       beat_signature = COALESCE(excluded.beat_signature, weaves.beat_signature),
+       updated_at = excluded.updated_at,
+       kept_at = COALESCE(weaves.kept_at, excluded.kept_at)`
+  ).bind(
+    id, tripId, dayIso, title, opening, closing,
+    stat, beatsJson, sig, now, now, now
+  ).run()
+
+  return json({ ok: true, tripId, dayIso, keptAt: now }, 200, cors)
+}
+
+// GET /weave/book?trip_id=...  (auth-gated)
+// The trip's SHARED book — every kept weave, oldest day first. Returns the
+// stored narrative per kept day; the client rebuilds the rich beats from its
+// local memories (same split as the on-screen weave). Empty book (not 500)
+// before migration 009 / when nothing is kept yet.
+async function getWeaveBook(env, url, cors) {
+  const tripId = url.searchParams.get('trip_id')
+  if (!tripId) return json({ error: 'trip_id required' }, 400, cors)
+
+  let results
+  try {
+    ;({ results } = await env.DB.prepare(
+      `SELECT * FROM weaves
+        WHERE trip_id = ? AND kept_at IS NOT NULL
+        ORDER BY day_iso ASC`
+    ).bind(tripId).all())
+  } catch (e) {
+    // Pre-migration (weaves table or kept_at column absent) → empty book,
+    // not a 500. Narrow swallow (matches getStoredWeave / schema.js).
+    if (/no such (table|column)/i.test(String(e?.message || e))) {
+      return json({ tripId, pages: [] }, 200, { ...cors, 'Cache-Control': 'no-store' })
+    }
+    throw e
+  }
+
+  const pages = (results || []).map((row) => ({
+    tripId: row.trip_id,
+    dayIso: row.day_iso,
+    title: row.title,
+    opening: row.opening,
+    closing: row.closing,
+    stat: row.stat || null,
+    generatedAt: row.generated_at,
+    keptAt: row.kept_at,
+  }))
+  return json({ tripId, pages }, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
 function parseWeaveJson(text) {

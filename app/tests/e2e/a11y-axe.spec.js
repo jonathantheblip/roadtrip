@@ -160,3 +160,44 @@ test.describe('a11y (axe, serious+critical) — TheWeave ×4 personas', () => {
     })
   }
 })
+
+// The little book — new full-screen overlay (index of kept weave pages).
+// Same risk surface as TheWeave (mono micro-labels + muted body text on the
+// persona bg). ALWAYS gate a new view ×4 (the recurring --faint-as-text trap).
+test.describe('a11y (axe, serious+critical) — the book ×4 personas', () => {
+  for (const p of TRAVELERS) {
+    test(`the book — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      // Mock the book so the index renders a page (not the empty state).
+      await page.route(/workers\.dev\/weave\/book/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            tripId: 'volleyball-2026',
+            pages: [
+              {
+                tripId: 'volleyball-2026',
+                dayIso: '2026-05-22',
+                title: 'A Day Together',
+                opening: 'The family arrived in the evening.',
+                closing: 'That was Friday.',
+                stat: 'Day 1 · 3 stops',
+                generatedAt: 1,
+                keptAt: 2,
+              },
+            ],
+          }),
+        })
+      })
+      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
+      await page.getByRole('button', { name: /the book/i }).click()
+      await expect(page.getByTestId('weave-book')).toBeVisible()
+      await expectNoSeriousA11y(page, {
+        include: '[data-testid="weave-book"]',
+        only: ['color-contrast'],
+        label: `the book (${p})`,
+      })
+    })
+  }
+})

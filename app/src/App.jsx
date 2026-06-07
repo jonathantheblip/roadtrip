@@ -19,10 +19,11 @@ import { MapView } from './views/MapView'
 import { ImportView } from './views/ImportView'
 import { InstallIdentity } from './views/InstallIdentity'
 import { TheWeave } from './views/TheWeave'
+import { WeaveBook } from './views/WeaveBook'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
-import { fetchStoredWeave, getWeaveSeen, markWeaveSeen } from './lib/weave'
+import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from './lib/weave'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
@@ -428,9 +429,11 @@ export default function App() {
   // per-trip, best-effort — no cue when the worker isn't configured or nothing
   // is stored yet (fetchStoredWeave returns null → degrades silently).
   const [weaveReady, setWeaveReady] = useState(false)
+  const [bookHasPages, setBookHasPages] = useState(false)
   const weaveGenRef = useRef(0)
   useEffect(() => {
     setWeaveReady(false)
+    setBookHasPages(false)
     weaveGenRef.current = 0
     if (!trip?.id) return
     let cancelled = false
@@ -438,6 +441,10 @@ export default function App() {
       if (cancelled || !stored?.generatedAt) return
       weaveGenRef.current = stored.generatedAt
       if (stored.generatedAt > getWeaveSeen(trip.id)) setWeaveReady(true)
+    })
+    // Show the 📖 Book entry only when the trip already has kept pages.
+    fetchWeaveBook(trip.id).then(({ pages }) => {
+      if (!cancelled) setBookHasPages(pages.length > 0)
     })
     return () => { cancelled = true }
   }, [trip?.id])
@@ -589,6 +596,12 @@ export default function App() {
     setView({ name: 'weave' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  // THE BOOK: the trip's kept weave pages. TEMP top-bar entry (like ✦ Weave),
+  // shown only when the trip has kept pages.
+  function openBook() {
+    setView({ name: 'book' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   // Returns the upsert result so NewTrip can show an inline error and
   // stay put on failure (no navigation), per change order §3.4. On
   // success we go straight into the editor — Helen continues adding
@@ -638,7 +651,7 @@ export default function App() {
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -830,6 +843,30 @@ export default function App() {
               )}
             </button>
           )}
+          {/* TEMP entry point for THE BOOK (kept weave pages). Shown only
+              when the trip has kept pages. Replace with the designed
+              affordance in the redesign. */}
+          {trip && bookHasPages && (
+            <button
+              type="button"
+              onClick={openBook}
+              aria-label="The book — kept weave pages"
+              style={{
+                background: 'transparent',
+                border: 0,
+                padding: '0 4px',
+                cursor: 'pointer',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 10,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                opacity: topBar.opacity,
+                color: topBar.text,
+              }}
+            >
+              ❏ Book
+            </button>
+          )}
           <button
             type="button"
             onClick={openSettings}
@@ -933,6 +970,14 @@ export default function App() {
         )}
         {view.name === 'weave' && (
           <TheWeave
+            trip={trip}
+            trips={visibleTrips}
+            traveler={traveler}
+            onBack={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
+          />
+        )}
+        {view.name === 'book' && (
+          <WeaveBook
             trip={trip}
             trips={visibleTrips}
             traveler={traveler}

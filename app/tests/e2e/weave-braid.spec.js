@@ -314,3 +314,74 @@ test.describe('TheWeave — pre-made nightly weave (slice 3)', () => {
     await expect(page.getByTestId('weave-ready-dot')).toHaveCount(0)
   })
 })
+
+// ── Slice 3, part 2 — the little book (keep + book view) ─────────────
+
+async function mockBook(page, pages) {
+  await page.route(/workers\.dev\/weave\/book/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ tripId: 'volleyball-2026', pages }),
+    })
+  })
+}
+
+const KEPT_PAGE = {
+  tripId: 'volleyball-2026',
+  dayIso: '2026-05-22', // FIXTURE_TRIP day 1 (has the seeded memories)
+  title: 'Kept Friday',
+  opening: 'Four roads met in one apartment.',
+  closing: 'That was Friday.',
+  stat: 'Day 1 · 3 stops',
+  generatedAt: 1,
+  keptAt: 2,
+}
+
+test.describe('TheWeave — the little book (slice 3, part 2)', () => {
+  test('Keep this page persists to the shared book (POST /weave/keep)', async ({ page }) => {
+    await setup(page)
+    let keepBody = null
+    await page.route(/workers\.dev\/weave\/keep/, async (route) => {
+      keepBody = route.request().postDataJSON()
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) })
+    })
+    await openWeave(page)
+
+    const keepBtn = page.getByTestId('weave-keep')
+    await keepBtn.click()
+    await expect(keepBtn).toContainText('In the book')
+
+    // The keep was persisted with the day + narrative (NON-VACUOUS). Day 2
+    // (today, 2026-05-23) is empty, so selectWeaveDay falls back to day 1.
+    await expect.poll(() => keepBody?.dayIso).toBe('2026-05-22')
+    expect(keepBody.title).toBe(MOCK_NARRATIVE.title)
+  })
+
+  test('the ❏ Book entry appears, lists kept pages, and opens one', async ({ page }) => {
+    await setup(page)
+    await mockBook(page, [KEPT_PAGE])
+    await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+
+    const bookBtn = page.getByRole('button', { name: /the book/i })
+    await expect(bookBtn).toBeVisible()
+    await bookBtn.click()
+
+    await expect(page.getByTestId('weave-book')).toBeVisible()
+    const bookPages = page.getByTestId('weave-book-page')
+    await expect(bookPages).toHaveCount(1)
+    await expect(bookPages.first()).toContainText('Kept Friday')
+
+    // Opening a page renders the full weave for that day.
+    await bookPages.first().click()
+    await expect(page.getByTestId('the-weave')).toBeVisible()
+  })
+
+  test('no ❏ Book entry when the trip has no kept pages', async ({ page }) => {
+    await setup(page)
+    await mockBook(page, []) // empty book
+    await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+    await expect(page.getByRole('button', { name: /Weave/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /the book/i })).toHaveCount(0)
+  })
+})
