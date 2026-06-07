@@ -133,3 +133,58 @@ export async function fetchWeaveNarrative(beats, stat) {
     return null
   }
 }
+
+// ── Stored (pre-made) weave ──────────────────────────────────────────
+//
+// The nightly cron (worker `scheduled` → runNightlyWeave) pre-assembles the
+// active trip's freshest day and stores the narrative. This fetches it so the
+// page can render INSTANTLY — no per-open Claude call. Returns
+// { tripId, dayIso, title, opening, closing, stat, generatedAt } or null when
+// none exists yet / worker not configured / any error → caller falls back to
+// fetchWeaveNarrative (build-on-demand). 204 (no weave yet) reads as null.
+export async function fetchStoredWeave(tripId, dayIso) {
+  if (!isWorkerConfigured() || !tripId) return null
+  try {
+    const qs = new URLSearchParams({ trip_id: tripId })
+    if (dayIso) qs.set('day', dayIso)
+    const r = await workerFetch(`/weave/latest?${qs.toString()}`)
+    if (r.status === 204 || !r.ok) return null
+    const data = await r.json()
+    if (typeof data?.title !== 'string') return null
+    return data
+  } catch {
+    return null
+  }
+}
+
+// ── "Ready" cue — last-seen tracking ─────────────────────────────────
+//
+// The ✦ entry shows a cue when a stored weave is NEWER than the one this
+// device last opened. Tracked locally (per trip) — the cue is a per-device
+// "you haven't looked yet" nudge, not synced state.
+const WEAVE_SEEN_KEY = 'rt_weave_seen_v1'
+
+function readSeenMap() {
+  try {
+    return JSON.parse(localStorage.getItem(WEAVE_SEEN_KEY) || '{}') || {}
+  } catch {
+    return {}
+  }
+}
+
+export function getWeaveSeen(tripId) {
+  return readSeenMap()[tripId] || 0
+}
+
+export function markWeaveSeen(tripId, generatedAt) {
+  if (!tripId || !generatedAt) return
+  try {
+    const all = readSeenMap()
+    // Never move the marker backwards.
+    if ((all[tripId] || 0) >= generatedAt) return
+    all[tripId] = generatedAt
+    localStorage.setItem(WEAVE_SEEN_KEY, JSON.stringify(all))
+  } catch {
+    /* ignore — the cue is best-effort */
+  }
+}

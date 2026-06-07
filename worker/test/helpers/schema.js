@@ -17,6 +17,7 @@
 import baseSchema from '../../schema.sql?raw'
 import conversationsMigration from '../../migrations/006_claude_conversations.sql?raw'
 import interstitialMigration from '../../migrations/007_memory_interstitial.sql?raw'
+import weavesMigration from '../../migrations/008_weaves.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -70,6 +71,9 @@ function splitStatements(sql) {
 const STATEMENTS = [
   ...splitStatements(baseSchema),
   ...splitStatements(conversationsMigration),
+  // 008 is CREATE TABLE/INDEX IF NOT EXISTS, so it's idempotent like the
+  // baseline and joins the sequential block directly (unlike 007's ALTER).
+  ...splitStatements(weavesMigration),
 ]
 
 export async function applySchema(db) {

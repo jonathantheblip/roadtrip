@@ -5,7 +5,7 @@ import { TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { thumbUrl } from '../lib/thumbUrl'
-import { selectWeaveDay, buildBeats, fetchWeaveNarrative } from '../lib/weave'
+import { selectWeaveDay, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen } from '../lib/weave'
 import { encodeWeavePage, shareWeave, isVideoEncodeSupported } from '../lib/weaveEncode'
 
 // Inject keyframes once for the reveal animation.
@@ -126,32 +126,39 @@ export function TheWeave({ trip, trips, traveler, onBack }) {
       setBeats(dayBeats)
       setState('ready')
 
-      // 3. Travel stat + narrative in parallel (degrade gracefully on failure).
+      // 3. Narrative + travel stat. Try the PRE-MADE nightly weave first — if
+      //    present it renders instantly with NO per-open Claude call. The real
+      //    road-miles stat is computed locally either way (the stored stat is a
+      //    lighter "Day N · K stops" fallback). No stored weave → build on
+      //    demand (the original path), degrading gracefully on failure.
       const dayStops = (picked.day.stops || [])
+      const stopsLabel = `${dayStops.length} stop${dayStops.length !== 1 ? 's' : ''}`
 
-      const [routeResult, narrativeResult] = await Promise.allSettled([
+      const [storedResult, routeResult] = await Promise.allSettled([
+        fetchStoredWeave(picked.trip.id, picked.day.isoDate),
         fetchRoadRoute(dayStops),
-        fetchWeaveNarrative(dayBeats, null),
       ])
-
       if (cancelled) return
 
-      // Format travel stat.
       const route = routeResult.status === 'fulfilled' ? routeResult.value : null
-      if (route?.miles) {
-        const statStr = `Day ${picked.day.n} · ${Math.round(route.miles)} mi · ${dayStops.length} stop${dayStops.length !== 1 ? 's' : ''}`
-        setStat(statStr)
-        // Re-request narrative with the real stat now that we have it.
-        const withStat = await fetchWeaveNarrative(dayBeats, statStr).catch(() => null)
-        if (!cancelled && withStat) {
-          setNarrative(withStat)
-          return
-        }
+      const milesStat = route?.miles
+        ? `Day ${picked.day.n} · ${Math.round(route.miles)} mi · ${stopsLabel}`
+        : null
+      if (milesStat) setStat(milesStat)
+
+      const stored = storedResult.status === 'fulfilled' ? storedResult.value : null
+      if (stored?.title) {
+        // Already woven last night — instant, no Claude call. Mark it seen on
+        // this device so the ✦ "ready" cue clears.
+        setNarrative({ title: stored.title, opening: stored.opening, closing: stored.closing })
+        if (!milesStat && stored.stat) setStat(stored.stat)
+        markWeaveSeen(picked.trip.id, stored.generatedAt)
+        return
       }
 
-      if (!cancelled) {
-        setNarrative(narrativeResult.status === 'fulfilled' ? narrativeResult.value : null)
-      }
+      // Not pre-made — build the narrative on demand with the best stat we have.
+      const onDemand = await fetchWeaveNarrative(dayBeats, milesStat).catch(() => null)
+      if (!cancelled) setNarrative(onDemand)
     }
 
     load()

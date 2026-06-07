@@ -92,6 +92,13 @@ async function setup(page) {
       body: JSON.stringify(MOCK_NARRATIVE),
     })
   })
+
+  // Default: no pre-made nightly weave for this fixture (the cron hasn't run).
+  // GET /weave/latest → 204 makes the on-demand fallback deterministic;
+  // slice-3 tests override this with a stored weave.
+  await page.route(/workers\.dev\/weave\/latest/, async (route) => {
+    await route.fulfill({ status: 204 })
+  })
 }
 
 async function openWeave(page) {
@@ -228,5 +235,82 @@ test.describe('TheWeave — save to Photos (slice 2)', () => {
     // navigator.share was called with a video/mp4 File.
     const fileType = await page.evaluate(() => window.__weaveSharedFiles[0]?.type)
     expect(fileType).toBe('video/mp4')
+  })
+})
+
+// ── Slice 3 — pre-made nightly weave + "ready" cue ───────────────────
+
+const STORED_WEAVE = {
+  tripId: 'volleyball-2026',
+  dayIso: '2026-05-22',
+  title: 'Pre-Woven Friday',
+  opening: 'The night was already written before anyone woke.',
+  closing: 'Saved while you slept.',
+  stat: 'Day 1 · 3 stops',
+  generatedAt: 1717700000000,
+}
+
+async function mockStoredWeave(page, weave) {
+  await page.route(/workers\.dev\/weave\/latest/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(weave),
+    })
+  })
+}
+
+test.describe('TheWeave — pre-made nightly weave (slice 3)', () => {
+  test('renders the stored weave instantly, with NO on-demand POST /weave', async ({ page }) => {
+    await setup(page)
+    // Track whether the on-demand narrative endpoint gets hit (it must not).
+    let postWeaveCalled = false
+    await page.route(/workers\.dev\/weave$/, async (route) => {
+      if (route.request().method() === 'POST') postWeaveCalled = true
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_NARRATIVE),
+      })
+    })
+    await mockStoredWeave(page, STORED_WEAVE)
+    await openWeave(page)
+
+    // The stored narrative renders — NOT the on-demand MOCK_NARRATIVE.
+    await expect(page.getByTestId('weave-title')).toHaveText(STORED_WEAVE.title)
+    await expect(page.getByTestId('weave-opening')).toHaveText(STORED_WEAVE.opening)
+    expect(postWeaveCalled).toBe(false)
+  })
+
+  test('falls back to the on-demand weave when nothing is pre-made (204)', async ({ page }) => {
+    // setup() already mocks /weave/latest → 204 and POST /weave → MOCK_NARRATIVE.
+    await setup(page)
+    await openWeave(page)
+    await expect(page.getByTestId('weave-title')).toHaveText(MOCK_NARRATIVE.title)
+  })
+
+  test('shows the ✦ ready cue for a fresh weave and clears it after opening', async ({ page }) => {
+    await setup(page)
+    await mockStoredWeave(page, STORED_WEAVE)
+    await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+
+    // Cue appears once the stored weave (newer than never-seen) is fetched.
+    await expect(page.getByTestId('weave-ready-dot')).toBeVisible()
+
+    // Opening it marks it seen.
+    await page.getByRole('button', { name: /Weave/i }).click()
+    await expect(page.getByTestId('the-weave')).toBeVisible()
+
+    // Back on the trip view, the cue is gone.
+    await page.getByRole('button', { name: 'Close weave' }).click()
+    await expect(page.getByTestId('weave-ready-dot')).not.toBeVisible()
+  })
+
+  test('no ready cue when nothing is pre-made', async ({ page }) => {
+    await setup(page) // /weave/latest → 204
+    await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+    // The ✦ entry is present, but with no stored weave the cue dot never shows.
+    await expect(page.getByRole('button', { name: /Weave/i })).toBeVisible()
+    await expect(page.getByTestId('weave-ready-dot')).toHaveCount(0)
   })
 })

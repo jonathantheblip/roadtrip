@@ -23,6 +23,7 @@ import {
   callRoutesDistance,
   straightLineMinutes,
 } from './leaveWhen.js'
+import { runNightlyWeave } from './weaveGen.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -128,6 +129,9 @@ export default {
       if (path === '/weave' && request.method === 'POST') {
         return await postWeave(env, request, cors)
       }
+      if (path === '/weave/latest' && request.method === 'GET') {
+        return await getStoredWeave(env, url, cors)
+      }
 
       // Claude-in-App (M1)
       if (path === '/claude/chat' && request.method === 'POST') {
@@ -153,6 +157,24 @@ export default {
       console.error('worker error', err?.stack || err)
       return json({ error: err?.message || String(err) }, 500, cors)
     }
+  },
+
+  // Nightly auto-weave (WEAVE_SCOPE slice 3). The cron trigger
+  // (wrangler.toml [triggers] crons) fires this; it pre-assembles the
+  // active trip's freshest day into a stored weave so the page is already
+  // woven when the family next opens the app. generateWeaveNarrative is
+  // injected so the cron and POST /weave share one Anthropic path.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      runNightlyWeave(env, {
+        nowMs: Date.now(),
+        generateNarrative: ({ beatLines, stat }) =>
+          generateWeaveNarrative(env, beatLines, stat),
+      }).then(
+        (r) => console.log('[nightly-weave]', JSON.stringify(r)),
+        (e) => console.error('[nightly-weave] failed', e?.stack || e)
+      )
+    )
   },
 }
 
@@ -1189,6 +1211,18 @@ const FAMILY_VOICES = {
 
 const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
 
+// The Weave is the app's emotional centerpiece and runs at most once per
+// night per active trip, so it gets its OWN model — defaulting to Sonnet for
+// nuance/specificity — decoupled from ANTHROPIC_MODEL (which still drives the
+// higher-volume trip-draft generator on Haiku). Overridable via the
+// WEAVE_MODEL env var so the model can change WITHOUT a code deploy (same
+// switchable pattern as chatModel / CLAUDE_CHAT_MODEL).
+const DEFAULT_WEAVE_MODEL = 'claude-sonnet-4-6'
+export function weaveModel(env) {
+  const override = typeof env?.WEAVE_MODEL === 'string' ? env.WEAVE_MODEL.trim() : ''
+  return override || DEFAULT_WEAVE_MODEL
+}
+
 // Default Anthropic origin. The base is read from env so the test
 // runtime can redirect the live call at a local stub; when the var is
 // unset (production), this falls back to the real API and the request
@@ -1331,9 +1365,6 @@ function parseDraftJson(text) {
 // Input:  { beats: [{who, kind, snippet}], stat?: string }
 // Output: { title: string, opening: string, closing: string }
 async function postWeave(env, request, cors) {
-  if (!env.ANTHROPIC_API_KEY) {
-    return json({ error: 'Anthropic key not configured on worker' }, 500, cors)
-  }
   let body
   try {
     body = await request.json()
@@ -1350,6 +1381,32 @@ async function postWeave(env, request, cors) {
   if (!beatLines) return json({ error: 'no valid beats' }, 400, cors)
 
   const stat = typeof body?.stat === 'string' && body.stat.trim() ? body.stat.trim() : null
+
+  try {
+    const narrative = await generateWeaveNarrative(env, beatLines, stat)
+    return json(narrative, 200, { ...cors, 'Cache-Control': 'no-store' })
+  } catch (e) {
+    return json(
+      { error: e?.message || 'weave failed', ...(e?.raw ? { raw: e.raw } : {}) },
+      e?.status || 502,
+      cors
+    )
+  }
+}
+
+// Shared narrative generation for the Weave — used by BOTH the on-demand
+// POST /weave (above) and the nightly cron (runNightlyWeave in weaveGen.js,
+// which injects this as generateNarrative). Claude writes ONLY the
+// connective tissue (title + opening + closing) around the family's real
+// beats; it never receives or rewrites their raw words. Throws an Error
+// tagged with `.status` (500 = no key, 502 = anthropic/parse failure) so the
+// HTTP caller can map status codes; returns { title, opening, closing }.
+async function generateWeaveNarrative(env, beatLines, stat) {
+  if (!env.ANTHROPIC_API_KEY) {
+    const e = new Error('Anthropic key not configured on worker')
+    e.status = 500
+    throw e
+  }
 
   const userPrompt =
     `You are assembling the connective tissue for a family travel memory page.\n\n` +
@@ -1372,17 +1429,21 @@ async function postWeave(env, request, cors) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
+        model: weaveModel(env),
         max_tokens: 512,
         messages: [{ role: 'user', content: userPrompt }],
       }),
     })
   } catch (e) {
-    return json({ error: `anthropic fetch failed: ${e?.message || String(e)}` }, 502, cors)
+    const err = new Error(`anthropic fetch failed: ${e?.message || String(e)}`)
+    err.status = 502
+    throw err
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    return json({ error: `anthropic ${res.status}: ${text.slice(0, 300)}` }, 502, cors)
+    const err = new Error(`anthropic ${res.status}: ${text.slice(0, 300)}`)
+    err.status = 502
+    throw err
   }
   const payload = await res.json().catch(() => ({}))
   const rawText =
@@ -1391,9 +1452,61 @@ async function postWeave(env, request, cors) {
     ''
   const narrative = parseWeaveJson(rawText)
   if (!narrative) {
-    return json({ error: 'could not parse narrative', raw: rawText.slice(0, 500) }, 502, cors)
+    const err = new Error('could not parse narrative')
+    err.status = 502
+    err.raw = rawText.slice(0, 500)
+    throw err
   }
-  return json(narrative, 200, { ...cors, 'Cache-Control': 'no-store' })
+  return narrative
+}
+
+// GET /weave/latest?trip_id=...[&day=YYYY-MM-DD]  (auth-gated)
+// Returns the pre-made nightly weave for a trip's day (or the trip's most
+// recent stored day when `day` is omitted). 204 when none exists yet — the
+// client then builds the weave on demand (graceful fallback, not an error).
+async function getStoredWeave(env, url, cors) {
+  const tripId = url.searchParams.get('trip_id')
+  if (!tripId) return json({ error: 'trip_id required' }, 400, cors)
+  const dayIso = url.searchParams.get('day')
+
+  let row
+  try {
+    if (dayIso) {
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM weaves WHERE id = ?`
+      ).bind(`${tripId}::${dayIso}`).all()
+      row = results?.[0]
+    } else {
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM weaves WHERE trip_id = ? ORDER BY day_iso DESC LIMIT 1`
+      ).bind(tripId).all()
+      row = results?.[0]
+    }
+  } catch (e) {
+    // Before migration 008 is applied the `weaves` table is absent. Treat
+    // that as "no weave yet" (204) so the client degrades to building the
+    // weave on demand instead of seeing a 500. Any OTHER D1 error
+    // propagates (narrow swallow, matching test/helpers/schema.js).
+    if (/no such table/i.test(String(e?.message || e))) {
+      return new Response(null, { status: 204, headers: cors })
+    }
+    throw e
+  }
+  if (!row) return new Response(null, { status: 204, headers: cors })
+
+  return json(
+    {
+      tripId: row.trip_id,
+      dayIso: row.day_iso,
+      title: row.title,
+      opening: row.opening,
+      closing: row.closing,
+      stat: row.stat || null,
+      generatedAt: row.generated_at,
+    },
+    200,
+    { ...cors, 'Cache-Control': 'no-store' }
+  )
 }
 
 function parseWeaveJson(text) {

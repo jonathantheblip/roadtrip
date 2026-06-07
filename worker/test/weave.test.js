@@ -108,4 +108,42 @@ describe('POST /weave', () => {
     const data = await res.json()
     expect(data.title).toBe('Day')
   })
+
+  // Capturing mock — records the outbound Anthropic request body so the
+  // model assertions below are non-vacuous (they'd fail on the old Haiku).
+  function mockAnthropicCapturing(sink) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, opts) => {
+        sink.push(JSON.parse(opts.body))
+        return new Response(
+          JSON.stringify({ content: [{ type: 'text', text: '{"title":"T","opening":"O","closing":"C"}' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      })
+    )
+  }
+
+  it('weave request uses the Sonnet weave model by default', async () => {
+    const calls = []
+    mockAnthropicCapturing(calls)
+    const res = await postWeave({ beats: BEATS })
+    expect(res.status).toBe(200)
+    expect(calls[0].model).toBe('claude-sonnet-4-6')
+  })
+
+  it('weave model is overridable via WEAVE_MODEL (no redeploy)', async () => {
+    const calls = []
+    mockAnthropicCapturing(calls)
+    const req = new Request('https://worker.test/weave', {
+      method: 'POST',
+      headers: { Origin: 'http://localhost:5173', 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ beats: BEATS }),
+    })
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(req, { ...authEnv(), WEAVE_MODEL: 'claude-haiku-4-5-20251001' }, ctx)
+    await waitOnExecutionContext(ctx)
+    expect(res.status).toBe(200)
+    expect(calls[0].model).toBe('claude-haiku-4-5-20251001')
+  })
 })

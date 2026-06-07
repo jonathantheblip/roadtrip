@@ -22,6 +22,7 @@ import { TheWeave } from './views/TheWeave'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
+import { fetchStoredWeave, getWeaveSeen, markWeaveSeen } from './lib/weave'
 import { useTrips } from './hooks/useTrips'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
@@ -422,6 +423,25 @@ export default function App() {
     }
   }, [view.name, trip?.draft])
 
+  // THE WEAVE "ready" cue: when the active trip has a pre-made nightly weave
+  // newer than the one this device last opened, mark the ✦ entry. Per-device,
+  // per-trip, best-effort — no cue when the worker isn't configured or nothing
+  // is stored yet (fetchStoredWeave returns null → degrades silently).
+  const [weaveReady, setWeaveReady] = useState(false)
+  const weaveGenRef = useRef(0)
+  useEffect(() => {
+    setWeaveReady(false)
+    weaveGenRef.current = 0
+    if (!trip?.id) return
+    let cancelled = false
+    fetchStoredWeave(trip.id).then((stored) => {
+      if (cancelled || !stored?.generatedAt) return
+      weaveGenRef.current = stored.generatedAt
+      if (stored.generatedAt > getWeaveSeen(trip.id)) setWeaveReady(true)
+    })
+    return () => { cancelled = true }
+  }, [trip?.id])
+
   const day = view.name === 'stop' && trip ? findDay(trip, view.dayN) : null
   const stop = view.name === 'stop' && day ? findStop(day, view.stopId) : null
 
@@ -562,6 +582,10 @@ export default function App() {
   // THE WEAVE: nightly auto-woven day page. Temporary top-bar entry
   // like Replay + Map — designed affordance TBD.
   function openWeave() {
+    // Opening it counts as "seen" — clear the cue and remember the version so
+    // it won't re-fire until the next night's weave supersedes it.
+    if (trip?.id && weaveGenRef.current) markWeaveSeen(trip.id, weaveGenRef.current)
+    setWeaveReady(false)
     setView({ name: 'weave' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
@@ -774,7 +798,7 @@ export default function App() {
             <button
               type="button"
               onClick={openWeave}
-              aria-label="The Weave — today's woven page"
+              aria-label={weaveReady ? "The Weave — last night's page is ready" : "The Weave — today's woven page"}
               style={{
                 background: 'transparent',
                 border: 0,
@@ -789,6 +813,21 @@ export default function App() {
               }}
             >
               ✦ Weave
+              {weaveReady && (
+                <span
+                  data-testid="weave-ready-dot"
+                  aria-hidden="true"
+                  style={{
+                    display: 'inline-block',
+                    width: 5,
+                    height: 5,
+                    borderRadius: '50%',
+                    background: 'var(--accent)',
+                    marginLeft: 5,
+                    verticalAlign: 'middle',
+                  }}
+                />
+              )}
             </button>
           )}
           <button
