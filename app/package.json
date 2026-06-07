@@ -22,10 +22,12 @@
     "test:simulator": "node tests/simulator/runner.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
     "exifreader": "^4.40.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.11.0",
     "mp4-muxer": "^5.2.2",
+    "onnxruntime-web": "^1.26.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",

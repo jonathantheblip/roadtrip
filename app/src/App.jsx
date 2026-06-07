@@ -21,6 +21,7 @@ import { ImportView } from './views/ImportView'
 import { InstallIdentity } from './views/InstallIdentity'
 import { TheWeave } from './views/TheWeave'
 import { WeaveBook } from './views/WeaveBook'
+import { FaceSpike } from './views/FaceSpike'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
@@ -44,6 +45,9 @@ function initialViewFromUrl() {
     const params = new URLSearchParams(window.location.search)
     const action = params.get('action') || ''
     const url = params.get('url') || params.get('text') || ''
+    // Increment C spike: ?facespike=1 opens the on-device face
+    // recognizer prove-it screen (flag-gated, never in the family flow).
+    if (params.get('facespike') === '1') return { name: 'facespike' }
     if (url || action === 'import') {
       return { name: 'import', importUrl: url }
     }
@@ -397,6 +401,10 @@ export default function App() {
     // "no trip active today → drop to index" branch would yank the
     // import flow to the trip list).
     if (view.name === 'import') return
+    // The Increment C face-recognizer spike (?facespike=1) gathers photos
+    // across all trips, so it must not be bounced to the index by the
+    // active-trip override when no trip happens to be active today.
+    if (view.name === 'facespike') return
 
     const today = todayIso()
     const active = pickActiveTrip(visibleTrips, today)
@@ -663,7 +671,7 @@ export default function App() {
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && !(traveler === 'rafa' && isIpad) && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'facespike' && !(traveler === 'rafa' && isIpad) && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -1015,6 +1023,14 @@ export default function App() {
             trips={visibleTrips}
             traveler={traveler}
             onBack={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
+          />
+        )}
+        {view.name === 'facespike' && (
+          <FaceSpike
+            trip={trip}
+            trips={visibleTrips}
+            traveler={traveler}
+            onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
           />
         )}
         {view.name === 'settings' && trip && (

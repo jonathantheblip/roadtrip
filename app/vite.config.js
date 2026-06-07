@@ -27,6 +27,20 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     base: './',
     define: clientDefine,
+    resolve: {
+      // onnxruntime-web (the face recognizer's embedding engine) ships an
+      // "external wasm" build variant behind this export condition. Selecting
+      // it makes ORT fetch its multi-MB .wasm from env.wasm.wasmPaths (a CDN,
+      // or a self-hosted copy later) at runtime instead of Vite emitting a
+      // ~24MB copy into the bundle. The condition name is ORT-specific, so it
+      // does not affect any other dependency. Defaults are preserved.
+      conditions: [
+        'onnxruntime-web-use-extern-wasm',
+        'module',
+        'browser',
+        'development|production',
+      ],
+    },
     // Force pre-bundling of react-markdown's unified/mdast/micromark/rehype
     // tree at startup. Without this, the first request that imports
     // ClaudeChat.jsx triggers a ~34s cold bundle that blows past
