@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Fredoka:wght@500;700&display=swap" media="print" onload="this.media='all'">
+<meta charset="UTF-8">
+<title>Rafael's Special Game!</title>
+<style>
+  
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    font-family: 'Fredoka', sans-serif;
+    height: 100%;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body {
+    background: linear-gradient(180deg, #FFD3E8 0%, #FFB7DE 25%, #B8E6FF 55%, #C8F5D4 100%);
+  }
+
+  #game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #score {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Lilita One', cursive;
+    font-size: 72px;
+    color: white;
+    text-shadow:
+      -3px -3px 0 #FF6B9D,
+      3px -3px 0 #FF6B9D,
+      -3px 3px 0 #FF6B9D,
+      3px 3px 0 #FF6B9D,
+      0 6px 0 #C7457E,
+      0 12px 20px rgba(0,0,0,0.18);
+    letter-spacing: 4px;
+    pointer-events: none;
+    transition: transform 0.15s cubic-bezier(.4,2,.6,1);
+  }
+
+  #title {
+    position: absolute;
+    top: 28px;
+    left: 32px;
+    font-family: 'Lilita One', cursive;
+    font-size: 30px;
+    color: white;
+    text-shadow:
+      -2px -2px 0 #6B8FFF,
+      2px -2px 0 #6B8FFF,
+      -2px 2px 0 #6B8FFF,
+      2px 2px 0 #6B8FFF,
+      0 5px 0 #4862C9;
+    letter-spacing: 2px;
+    transform: rotate(-3deg);
+  }
+
+  #hint {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Lilita One', sans-serif;
+    font-size: 22px;
+    color: white;
+    text-shadow:
+      -2px -2px 0 #FF9F6B,
+      2px -2px 0 #FF9F6B,
+      -2px 2px 0 #FF9F6B,
+      2px 2px 0 #FF9F6B,
+      0 4px 0 #C9714A;
+    letter-spacing: 2px;
+    background: rgba(255,255,255,0.45);
+    padding: 10px 28px;
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 3px solid white;
+    pointer-events: none;
+  }
+
+  .arrow {
+    display: inline-block;
+    animation: wiggle 1s ease-in-out infinite;
+  }
+  .arrow.right { animation-delay: 0.5s; }
+
+  @keyframes wiggle {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(-6px); }
+  }
+  .arrow.right {
+    animation-name: wiggleR;
+  }
+  @keyframes wiggleR {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(6px); }
+  }
+</style>
+</head>
+<body>
+  <div id="game">
+    <div id="title">⭐ RAFAEL'S SPECIAL GAME! ⭐</div>
+    <div id="score">0</div>
+    <div id="hint"><span class="arrow">←</span> ↑ ↓ MOVE • 🧦 = RAINBOW! <span class="arrow right">→</span></div>
+    <canvas id="canvas"></canvas>
+  </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const player = {
+  x: 0,
+  y: 0,
+  vx: 0,
+  vy: 0,
+  size: 55,
+  mouthOpen: 0,
+  squish: 0,
+  bounce: 0,
+  rainbowUntil: 0,
+};
+player.x = W / 2;
+player.y = H * 0.65;
+
+const items = [];
+const particles = [];
+const clouds = [];
+const stars = [];
+let popTexts = [];
+
+let score = 0;
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// Background twinkles
+for (let i = 0; i < 60; i++) {
+  stars.push({
+    x: Math.random() * W,
+    y: Math.random() * H * 0.65,
+    size: 1 + Math.random() * 3,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.03 + Math.random() * 0.05,
+  });
+}
+
+// Fluffy clouds
+for (let i = 0; i < 6; i++) {
+  clouds.push({
+    x: Math.random() * W,
+    y: 40 + Math.random() * (H * 0.35),
+    size: 50 + Math.random() * 50,
+    speed: 0.15 + Math.random() * 0.25,
+  });
+}
+
+const treats = [
+  { emoji: '⭐', points: 1, color: '#FFD93D' },
+  { emoji: '💖', points: 1, color: '#FF6B9D' },
+  { emoji: '🍩', points: 1, color: '#FF9F6B' },
+  { emoji: '🍓', points: 1, color: '#FF4081' },
+  { emoji: '🍌', points: 1, color: '#FFD93D' },
+  { emoji: '🍇', points: 1, color: '#A06BFF' },
+  { emoji: '⚽', points: 1, color: '#FFFFFF' },
+  { emoji: '🏀', points: 1, color: '#FF8C42' },
+  { emoji: '🧁', points: 2, color: '#FFB3D9' },
+  { emoji: '🍪', points: 2, color: '#C97B5A' },
+  { emoji: '🍦', points: 2, color: '#FFE0EC' },
+  { emoji: '⚾', points: 2, color: '#FFFFFF' },
+  { emoji: '🏈', points: 2, color: '#8B4513' },
+  { emoji: '🌟', points: 3, color: '#FFE066' },
+  { emoji: '🦄', points: 5, color: '#C77DFF' },
+  { emoji: '🌈', points: 5, color: '#A06BFF' },
+  // The magical sock — devour for RAINBOW MODE
+  { emoji: '🧦', points: 3, color: '#9B59B6', isSock: true },
+];
+
+let spawnTimer = 30;
+
+function spawnItem() {
+  const r = Math.random();
+  let pool;
+  if (r < 0.10) {
+    // 10% chance: the magical sock!
+    pool = treats.filter(t => t.isSock);
+  } else if (r < 0.18) {
+    pool = treats.filter(t => t.points >= 5);
+  } else if (r < 0.34) {
+    pool = treats.filter(t => t.points === 2 || (t.points === 3 && !t.isSock));
+  } else {
+    pool = treats.filter(t => t.points === 1);
+  }
+  const t = pool[Math.floor(Math.random() * pool.length)];
+
+  const isSpecial = t.points > 1 || t.isSock;
+  items.push({
+    x: 50 + Math.random() * (W - 100),
+    y: -50,
+    vy: 1.8 + Math.random() * 2 + Math.min(score / 100, 2),
+    rot: 0,
+    rotSpeed: (Math.random() - 0.5) * 0.08,
+    size: isSpecial ? 56 : 42,
+    emoji: t.emoji,
+    points: t.points,
+    color: t.color,
+    isSock: !!t.isSock,
+    bob: Math.random() * Math.PI * 2,
+    sparkle: isSpecial,
+  });
+}
+
+function burst(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 6;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      life: 1,
+      size: 3 + Math.random() * 6,
+      color,
+      shape: Math.random() < 0.5 ? 'circle' : 'star',
+    });
+  }
+}
+
+function drawStar(x, y, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const angle = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const radius = i % 2 === 0 ? r : r * 0.45;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawFace(f, mouthOpen) {
+  // Cheeks
+  ctx.fillStyle = 'rgba(255, 90, 140, 0.5)';
+  ctx.beginPath();
+  ctx.arc(-18 * f, 11 * f, 9 * f, 0, Math.PI * 2);
+  ctx.arc(18 * f, 11 * f, 9 * f, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#2a1a3e';
+  ctx.beginPath();
+  ctx.arc(-14 * f, -5 * f, 7 * f, 0, Math.PI * 2);
+  ctx.arc(14 * f, -5 * f, 7 * f, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye shines
+  ctx.fillStyle = 'white';
+  ctx.beginPath();
+  ctx.arc(-12 * f, -7 * f, 2.5 * f, 0, Math.PI * 2);
+  ctx.arc(16 * f, -7 * f, 2.5 * f, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Smile
+  ctx.strokeStyle = '#2a1a3e';
+  ctx.lineWidth = Math.max(3, 4 * f);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  const smileSize = (10 + mouthOpen * 14) * f;
+  ctx.arc(0, 6 * f, smileSize, 0.12 * Math.PI, 0.88 * Math.PI);
+  ctx.stroke();
+
+  if (mouthOpen > 0.35) {
+    ctx.fillStyle = '#FF5577';
+    ctx.beginPath();
+    ctx.arc(0, 6 * f + smileSize - 4 * f, smileSize * 0.55, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.fill();
+  }
+}
+
+function drawAppleBody(r, mode, now) {
+  // Shadow
+  ctx.fillStyle = 'rgba(80, 50, 20, 0.22)';
+  ctx.beginPath();
+  ctx.ellipse(0, r + 8, r * 0.85, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const bodyPath = () => {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.02, r * 0.98, 0, 0, Math.PI * 2);
+  };
+
+  if (mode === 'rainbow') {
+    // Glow halo
+    ctx.shadowColor = `hsl(${(now / 8) % 360}, 100%, 65%)`;
+    ctx.shadowBlur = 30 + Math.sin(now / 100) * 10;
+
+    bodyPath();
+    ctx.save();
+    ctx.clip();
+    const colors = ['#FF5252', '#FF9F40', '#FFD93D', '#6BCB77', '#4DA6FF', '#9B59B6', '#FF6B9D'];
+    const stripeH = (r * 2.4) / colors.length;
+    const drift = (now / 40) % (stripeH * 2);
+    for (let i = -2; i < colors.length + 2; i++) {
+      ctx.fillStyle = colors[((i % colors.length) + colors.length) % colors.length];
+      ctx.fillRect(-r * 1.4, -r * 1.2 + i * stripeH - drift, r * 2.8, stripeH + 1);
+    }
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  } else {
+    bodyPath();
+    const appleGrad = ctx.createRadialGradient(-r * 0.35, -r * 0.35, 5, 0, 0, r * 1.1);
+    appleGrad.addColorStop(0, '#FF8585');
+    appleGrad.addColorStop(0.45, '#E03030');
+    appleGrad.addColorStop(1, '#8A1010');
+    ctx.fillStyle = appleGrad;
+    ctx.fill();
+  }
+
+  // Outline
+  bodyPath();
+  ctx.strokeStyle = mode === 'rainbow' ? '#FFFFFF' : '#5A0808';
+  ctx.lineWidth = Math.max(2, r * 0.04);
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Sprinkles in rainbow mode
+  if (mode === 'rainbow') {
+    ctx.save();
+    bodyPath();
+    ctx.clip();
+    const sprinkles = ['#FFFFFF', '#FFD93D', '#FF5252', '#4DA6FF', '#6BCB77', '#FF6B9D'];
+    for (let i = 0; i < 18; i++) {
+      const seed = i * 137.5;
+      const sxp = Math.cos(seed) * r * 0.7;
+      const syp = Math.sin(seed * 1.3) * r * 0.55;
+      ctx.fillStyle = sprinkles[i % sprinkles.length];
+      ctx.save();
+      ctx.translate(sxp, syp);
+      ctx.rotate(seed);
+      const sl = Math.max(3, r * 0.08);
+      const sw = Math.max(1.5, r * 0.025);
+      ctx.fillRect(-sl / 2, -sw / 2, sl, sw);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Top dimple
+  ctx.fillStyle = 'rgba(80, 10, 10, 0.5)';
+  ctx.beginPath();
+  ctx.ellipse(0, -r * 0.93, r * 0.18, r * 0.07, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Stem
+  ctx.fillStyle = '#5C3815';
+  ctx.strokeStyle = '#2E1A08';
+  ctx.lineWidth = Math.max(1, r * 0.015);
+  ctx.beginPath();
+  ctx.rect(-r * 0.05, -r * 1.18, r * 0.1, r * 0.22);
+  ctx.fill();
+  ctx.stroke();
+
+  // Leaf
+  ctx.save();
+  ctx.translate(r * 0.1, -r * 1.08);
+  ctx.rotate(0.5);
+  ctx.fillStyle = '#4CAF50';
+  ctx.strokeStyle = '#2A6E2E';
+  ctx.lineWidth = Math.max(1, r * 0.015);
+  ctx.beginPath();
+  ctx.ellipse(r * 0.18, 0, r * 0.22, r * 0.1, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(r * 0.36, 0);
+  ctx.stroke();
+  ctx.restore();
+
+  // Shine highlight
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.38, -r * 0.4, r * 0.13, r * 0.28, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawPlayer() {
+  const now = performance.now();
+  const isRainbow = now < player.rainbowUntil;
+  const mode = isRainbow ? 'rainbow' : 'default';
+
+  ctx.save();
+  ctx.translate(player.x, player.y - player.bounce);
+  const sx = 1 - player.squish * 0.18;
+  const sy = 1 + player.squish * 0.32;
+  ctx.scale(sx, sy);
+  ctx.rotate(player.vx * 0.012);
+
+  const r = player.size;
+  const f = r / 55;
+
+  drawAppleBody(r, mode, now);
+  drawFace(f, player.mouthOpen);
+
+  ctx.restore();
+}
+
+function drawCloud(c) {
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, c.size * 0.5, 0, Math.PI * 2);
+  ctx.arc(c.x + c.size * 0.4, c.y - c.size * 0.12, c.size * 0.42, 0, Math.PI * 2);
+  ctx.arc(c.x + c.size * 0.8, c.y, c.size * 0.45, 0, Math.PI * 2);
+  ctx.arc(c.x + c.size * 0.3, c.y + c.size * 0.15, c.size * 0.4, 0, Math.PI * 2);
+  ctx.arc(c.x + c.size * 0.6, c.y + c.size * 0.18, c.size * 0.38, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+let lastTime = performance.now();
+
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 16.67, 2.5);
+  lastTime = now;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Twinkle stars
+  stars.forEach(s => {
+    s.twinkle += s.speed * dt;
+    const a = 0.25 + Math.sin(s.twinkle) * 0.4;
+    ctx.fillStyle = `rgba(255,255,255,${Math.max(0, a)})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Clouds
+  clouds.forEach(c => {
+    c.x += c.speed * dt;
+    if (c.x > W + c.size) c.x = -c.size * 1.5;
+    drawCloud(c);
+  });
+
+  // 2D player movement
+  const moveAccel = 1.8;
+  if (keys['ArrowLeft']  || keys['a'] || keys['A']) player.vx -= moveAccel * dt;
+  if (keys['ArrowRight'] || keys['d'] || keys['D']) player.vx += moveAccel * dt;
+  if (keys['ArrowUp']    || keys['w'] || keys['W']) player.vy -= moveAccel * dt;
+  if (keys['ArrowDown']  || keys['s'] || keys['S']) player.vy += moveAccel * dt;
+  player.vx *= Math.pow(0.85, dt);
+  player.vy *= Math.pow(0.85, dt);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+
+  // Bounds — apple-sized
+  const halfW = player.size * 1.05;
+  const topReach = player.size * 1.2;
+  const bottomReach = player.size * 1.05;
+
+  if (halfW * 2 >= W - 20) {
+    player.x = W / 2; player.vx = 0;
+  } else {
+    if (player.x < halfW)     { player.x = halfW;     player.vx *= -0.4; }
+    if (player.x > W - halfW) { player.x = W - halfW; player.vx *= -0.4; }
+  }
+  if (topReach + bottomReach >= H - 20) {
+    player.y = H / 2; player.vy = 0;
+  } else {
+    if (player.y < topReach)         { player.y = topReach;         player.vy *= -0.4; }
+    if (player.y > H - bottomReach)  { player.y = H - bottomReach;  player.vy *= -0.4; }
+  }
+
+  player.mouthOpen *= Math.pow(0.92, dt);
+  player.squish *= Math.pow(0.85, dt);
+  player.bounce *= Math.pow(0.85, dt);
+
+  // Spawn
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    spawnItem();
+    spawnTimer = Math.max(15, 38 - score * 0.15) + Math.random() * 25;
+  }
+
+  // Items
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    it.y += it.vy * dt;
+    it.rot += it.rotSpeed * dt;
+    it.bob += 0.1 * dt;
+
+    // Sparkle particles for specials
+    if (it.sparkle && Math.random() < 0.3) {
+      particles.push({
+        x: it.x + (Math.random() - 0.5) * 30,
+        y: it.y + (Math.random() - 0.5) * 30,
+        vx: (Math.random() - 0.5) * 1,
+        vy: (Math.random() - 0.5) * 1,
+        life: 0.6,
+        size: 2 + Math.random() * 2,
+        color: it.color,
+        shape: 'star',
+      });
+    }
+
+    // Catch detection — apple body is roughly a circle centered on player
+    const dx = it.x - player.x;
+    const dy = it.y - (player.y - player.bounce);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < player.size + it.size * 0.45) {
+      const now = performance.now();
+
+      score += it.points;
+      scoreEl.textContent = score;
+      scoreEl.style.transform = 'translateX(-50%) scale(1.35) rotate(-3deg)';
+      setTimeout(() => { scoreEl.style.transform = 'translateX(-50%) scale(1)'; }, 180);
+      burst(it.x, it.y, it.color, it.points > 1 ? 45 : 22);
+      player.mouthOpen = 1;
+      player.squish = 1;
+      player.bounce = 12;
+      const growth = it.points > 1 ? 4.5 : 2;
+      player.size += growth;
+
+      // SOCK 🧦 — devour for RAINBOW MODE (15 seconds)
+      if (it.isSock) {
+        const wasActive = now < player.rainbowUntil;
+        player.rainbowUntil = now + 15000;
+        // Extra rainbow confetti
+        for (let h = 0; h < 360; h += 45) {
+          burst(it.x, it.y, `hsl(${h}, 100%, 65%)`, 14);
+        }
+        popTexts.push({
+          x: player.x, y: player.y - player.size, vy: -2.5,
+          text: wasActive ? 'MORE RAINBOW!' : 'RAINBOW APPLE!',
+          life: 1.4,
+          color: '#9B59B6',
+        });
+      } else if (it.points > 1) {
+        popTexts.push({
+          x: it.x, y: it.y - 20, vy: -2,
+          text: '+' + it.points + (it.points >= 5 ? ' WOW!' : '!'),
+          life: 1,
+          color: it.color,
+        });
+      }
+      items.splice(i, 1);
+      continue;
+    }
+
+    if (it.y > H + 60) {
+      items.splice(i, 1);
+      continue;
+    }
+
+    // Draw item
+    ctx.save();
+    ctx.translate(it.x + Math.sin(it.bob) * 5, it.y);
+    ctx.rotate(it.rot);
+    if (it.sparkle) {
+      ctx.shadowColor = it.color;
+      ctx.shadowBlur = it.isSock ? 35 : 30;
+    }
+    ctx.font = `${it.size}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(it.emoji, 0, 0);
+    ctx.restore();
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 0.3 * dt;
+    p.life -= 0.025 * dt;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    ctx.globalAlpha = Math.max(0, p.life);
+    if (p.shape === 'star') {
+      drawStar(p.x, p.y, p.size, p.color);
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Pop texts
+  for (let i = popTexts.length - 1; i >= 0; i--) {
+    const pt = popTexts[i];
+    pt.y += pt.vy * dt;
+    pt.vy *= 0.96;
+    pt.life -= 0.018 * dt;
+    if (pt.life <= 0) { popTexts.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.max(0, pt.life);
+    ctx.font = 'bold 40px "Lilita One", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 6;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(pt.text, pt.x, pt.y);
+    ctx.fillStyle = pt.color;
+    ctx.fillText(pt.text, pt.x, pt.y);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.shadowBlur = 0;
+  drawPlayer();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

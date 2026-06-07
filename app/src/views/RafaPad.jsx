@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Mic } from 'lucide-react'
 import { allStops } from '../data/trips'
 import { RafaMap, stopArt } from './RafaMap'
+import { RafaGames } from './RafaGames'
 import { RafaSound } from '../lib/rafaSound'
 
 // RafaPad — Rafa's iPad "command center" home (design_handoff_rafa_adventure_map).
@@ -21,7 +22,7 @@ const ST = ['#FFB12E', '#3DA5E0', '#4CC36E', '#FF6B4D', '#C77DFF']
 const CANDY_INK = '#1B1108'
 
 export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, onOpenPhotos }) {
-  const [soon, setSoon] = useState(false)
+  const [gamesOpen, setGamesOpen] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   // randomized big-tile corners each visit (the design's "where is it today?" game)
   const bigsOrder = useMemo(() => (Math.random() < 0.5 ? ['games', 'person'] : ['person', 'games']), [])
@@ -48,7 +49,7 @@ export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, o
   const highlights = allRafaStops.slice(0, 6)
 
   const bigDefs = {
-    games: { label: 'My games', emo: '🎮', tint: ST[2], onClick: () => setSoon(true), badge: 'SOON' },
+    games: { label: 'My games', emo: '🎮', tint: ST[2], onClick: () => setGamesOpen(true) },
     person: { label: 'Show me, me!', emo: '📸', tint: ST[4], onClick: () => onOpenPhotos && onOpenPhotos() },
   }
   const A = bigDefs[bigsOrder[0]]
@@ -88,7 +89,7 @@ export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, o
       </div>
 
       {mapOpen && <RafaMap trip={trip} traveler={traveler} onClose={() => setMapOpen(false)} />}
-      {soon && <SoonPop onClose={() => setSoon(false)} />}
+      {gamesOpen && <RafaGames onClose={() => setGamesOpen(false)} />}
     </div>
   )
 }
@@ -145,17 +146,6 @@ function SmallTile({ s, vehicle, destEmoji, countdown, col, row }) {
       )}
       <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 15, color: CANDY_INK, textAlign: 'center', lineHeight: 1.1 }}>{s.label}</div>
     </button>
-  )
-}
-
-function SoonPop({ onClose }) {
-  return (
-    <div role="button" aria-label="Close" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(11,8,4,0.62)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, cursor: 'pointer', padding: 24 }}>
-      <div style={{ background: `radial-gradient(120% 120% at 50% 20%, ${shade(ST[2], 12)}, ${shade(ST[2], -30)})`, borderRadius: 40, boxShadow: `0 12px 0 ${shade(ST[2], -48)}`, padding: '36px 44px', textAlign: 'center', maxWidth: 420 }}>
-        <div style={{ fontSize: 72, lineHeight: 1 }}>🎮</div>
-        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 28, color: CANDY_INK, marginTop: 10 }}>Games are coming soon!</div>
-      </div>
-    </div>
   )
 }
 

@@ -139,6 +139,15 @@ export default {
         return await getWeaveBook(env, url, cors)
       }
 
+      // Rafa's game-maker: Claude writes a self-contained HTML game; Whisper
+      // transcribes his voice (Workers AI). Both auth-gated.
+      if (path === '/game' && request.method === 'POST') {
+        return await postGame(env, request, cors)
+      }
+      if (path === '/transcribe' && request.method === 'POST') {
+        return await postTranscribe(env, request, cors)
+      }
+
       // Claude-in-App (M1)
       if (path === '/claude/chat' && request.method === 'POST') {
         return await postClaudeChat(env, traveler, request, cors)
@@ -1356,6 +1365,136 @@ function parseDraftJson(text) {
   }
   if (!tags.length) return null
   return { tags, descriptions }
+}
+
+// ─── Rafa's game-maker ───────────────────────────────────────────────
+//
+// POST /game (auth-gated, non-streaming) — Claude writes a tiny,
+// self-contained HTML5 canvas game from Rafa's spoken/typed description.
+// The game runs in a STRICT origin-isolated iframe on the client
+// (sandbox="allow-scripts"), so it can never reach app data; this endpoint
+// also caps the response size and the system prompt keeps content
+// age-appropriate and dependency-free.
+//
+// Input:  { desc: string, modify?: string|null }
+// Output: { html: string }
+const DEFAULT_GAME_MODEL = 'claude-sonnet-4-6'
+export function gameModel(env) {
+  const override = typeof env?.GAME_MODEL === 'string' ? env.GAME_MODEL.trim() : ''
+  return override || DEFAULT_GAME_MODEL
+}
+
+const GAME_SYSTEM =
+  'You build tiny, self-contained HTML5 canvas games for a 5-year-old named Rafa. ' +
+  'Rules: return ONE complete HTML file (inline <style> + inline <script> + a <canvas>), ' +
+  'NO external resources or network requests of any kind, big colorful shapes, huge tap and ' +
+  'arrow-key controls, forgiving and gentle (never a harsh "game over"), no text instructions a ' +
+  'non-reader needs, and absolutely nothing scary, violent, or upsetting — always happy and kind. ' +
+  'Return ONLY the HTML, no prose and no markdown fences.'
+
+const MAX_GAME_BYTES = 200 * 1024 // a self-contained kid game is far smaller; cap runaway output
+
+async function postGame(env, request, cors) {
+  if (!env.ANTHROPIC_API_KEY) {
+    return json({ error: 'Anthropic key not configured on worker' }, 500, cors)
+  }
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const desc = typeof body?.desc === 'string' ? body.desc.trim().slice(0, 600) : ''
+  const modify = typeof body?.modify === 'string' ? body.modify.slice(0, MAX_GAME_BYTES) : ''
+  if (!desc && !modify) return json({ error: 'missing desc' }, 400, cors)
+
+  const userPrompt = modify
+    ? `Here is Rafa's current game HTML:\n${modify}\n\nRafa wants to change it: "${desc || 'make it more fun'}". Return the FULL updated HTML file.`
+    : `Rafa says: "${desc}". Make that game as one complete HTML file.`
+
+  let res
+  try {
+    res = await fetch(anthropicMessagesUrl(env), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: gameModel(env),
+        max_tokens: 8192,
+        system: GAME_SYSTEM,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+  } catch (e) {
+    return json({ error: `anthropic fetch failed: ${e?.message || String(e)}` }, 502, cors)
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return json({ error: `anthropic ${res.status}: ${text.slice(0, 300)}` }, 502, cors)
+  }
+  const payload = await res.json().catch(() => ({}))
+  let html =
+    (Array.isArray(payload?.content) &&
+      payload.content.map((c) => (c?.type === 'text' ? c.text : '')).join('')) ||
+    ''
+  html = html.replace(/^```html?\s*/i, '').replace(/```\s*$/i, '').trim()
+  if (!html || !/</.test(html)) return json({ error: 'no game produced' }, 502, cors)
+  if (html.length > MAX_GAME_BYTES) return json({ error: 'game too large' }, 502, cors)
+  return json({ html }, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+// POST /transcribe (auth-gated) — Rafa's recorded voice → text via Cloudflare
+// Workers AI (Whisper). Stays in-stack (no external STT vendor), but called
+// over the Workers-AI REST API with `fetch` rather than the [ai] binding: the
+// binding forces vitest-pool-workers into a remote proxy that breaks the test
+// gate, whereas a fetch is stubbable exactly like the Anthropic seam. Needs the
+// account id + a Workers-AI API token; without them we 503 so the client falls
+// back to typed input. The request body is the recorded audio blob.
+const MAX_AUDIO_BYTES = 6 * 1024 * 1024
+const DEFAULT_CF_AI_BASE_URL = 'https://api.cloudflare.com/client/v4'
+export function cfWhisperUrl(env) {
+  const configured = typeof env?.CF_AI_BASE_URL === 'string' ? env.CF_AI_BASE_URL.trim() : ''
+  const base = (configured || DEFAULT_CF_AI_BASE_URL).replace(/\/+$/, '')
+  return `${base}/accounts/${env?.CF_ACCOUNT_ID || ''}/ai/run/@cf/openai/whisper`
+}
+
+async function postTranscribe(env, request, cors) {
+  if (!env.CF_ACCOUNT_ID || !env.CF_AI_TOKEN) {
+    return json({ error: 'voice not configured' }, 503, cors)
+  }
+  let buf
+  try {
+    buf = await request.arrayBuffer()
+  } catch {
+    return json({ error: 'invalid audio body' }, 400, cors)
+  }
+  if (!buf || buf.byteLength === 0) return json({ error: 'empty audio' }, 400, cors)
+  if (buf.byteLength > MAX_AUDIO_BYTES) return json({ error: 'audio too large' }, 413, cors)
+  let res
+  try {
+    res = await fetch(cfWhisperUrl(env), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.CF_AI_TOKEN}`, 'content-type': 'application/octet-stream' },
+      body: buf,
+    })
+  } catch (e) {
+    return json({ error: `transcribe fetch failed: ${e?.message || String(e)}` }, 502, cors)
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    return json({ error: `transcribe ${res.status}: ${t.slice(0, 200)}` }, 502, cors)
+  }
+  const data = await res.json().catch(() => ({}))
+  const text =
+    typeof data?.result?.text === 'string'
+      ? data.result.text.trim()
+      : typeof data?.text === 'string'
+        ? data.text.trim()
+        : ''
+  return json({ text }, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
 // ─── The Weave ───────────────────────────────────────────────────────

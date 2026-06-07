@@ -1,0 +1,2166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" media="print" onload="this.media='all'">
+<meta charset="UTF-8">
+<title>Gorillas — Banana-Bomb Artillery</title>
+<style>
+  
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    color: #fff;
+    font-family: 'VT323', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  /* ==== SETUP OVERLAY ==== */
+  #setup-overlay {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, #1a0d1f 0%, #050208 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    text-align: center;
+    padding: 20px;
+  }
+
+  #setup-overlay h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(28px, 5vw, 56px);
+    color: #FFE066;
+    margin-bottom: 12px;
+    text-shadow: 0 0 24px #FFE066, 4px 4px 0 #B33;
+    letter-spacing: 6px;
+  }
+
+  #setup-overlay .subtitle {
+    font-size: 28px;
+    color: #aaa;
+    margin-bottom: 36px;
+    max-width: 600px;
+    line-height: 1.2;
+  }
+
+  #setup-overlay .gorillas-row {
+    font-size: 64px;
+    margin-bottom: 28px;
+    letter-spacing: 30px;
+    animation: bob 1.6s ease-in-out infinite;
+  }
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  #setup-overlay .prompt {
+    font-size: 32px;
+    color: #FFE066;
+    margin-bottom: 18px;
+  }
+
+  #setup-overlay .bestof-buttons {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 30px;
+  }
+
+  #setup-overlay button {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 16px;
+    padding: 18px 26px;
+    background: #1a1a2e;
+    color: #FFE066;
+    border: 3px solid #FFE066;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.15s;
+    box-shadow: 0 4px 0 #8A6F00, 0 0 12px rgba(255, 224, 102, 0.3);
+  }
+  #setup-overlay button:hover {
+    background: #FFE066;
+    color: #1a1a2e;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 0 #8A6F00, 0 0 16px rgba(255, 224, 102, 0.5);
+  }
+  #setup-overlay button:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 #8A6F00;
+  }
+
+  #setup-overlay .tip {
+    font-size: 18px;
+    color: #777;
+    max-width: 700px;
+    line-height: 1.4;
+  }
+
+  /* Easy-mode toggle in setup */
+  #setup-overlay .easy-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    background: rgba(255, 224, 102, 0.08);
+    border: 2px dashed rgba(255, 224, 102, 0.45);
+    padding: 12px 22px;
+    margin-bottom: 22px;
+    font-family: 'VT323', monospace;
+    font-size: 22px;
+    color: #FFE066;
+    transition: all 0.15s;
+  }
+  #setup-overlay .easy-mode-toggle:hover {
+    background: rgba(255, 224, 102, 0.16);
+    border-color: #FFE066;
+  }
+  #setup-overlay .easy-mode-toggle input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #setup-overlay .easy-mode-toggle .box {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #FFE066;
+    background: #0a0a18;
+    position: relative;
+    transition: all 0.15s;
+  }
+  #setup-overlay .easy-mode-toggle input:checked + .box {
+    background: #FFE066;
+  }
+  #setup-overlay .easy-mode-toggle input:checked + .box::after {
+    content: '✓';
+    position: absolute;
+    top: -4px;
+    left: 3px;
+    color: #1a1a2e;
+    font-size: 20px;
+    font-weight: bold;
+  }
+
+  /* ==== HUD ==== */
+  #hud {
+    position: fixed;
+    top: 12px;
+    left: 0;
+    right: 0;
+    display: none;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 10;
+    padding: 0 24px;
+    pointer-events: none;
+    font-size: 22px;
+  }
+
+  .score-box {
+    background: rgba(8, 5, 20, 0.78);
+    border: 3px solid;
+    padding: 8px 18px;
+    min-width: 200px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .score-box.p1 { border-color: #FF7755; box-shadow: 0 0 12px rgba(255, 119, 85, 0.4); }
+  .score-box.p2 { border-color: #4DA6FF; box-shadow: 0 0 12px rgba(77, 166, 255, 0.4); }
+  .score-box .name { font-size: 14px; }
+  .score-box.p1 .name { color: #FFAA88; }
+  .score-box.p2 .name { color: #77BBFF; }
+  .score-box .score { font-size: 28px; color: #fff; }
+  .score-box.current { animation: currentPulse 1s ease-in-out infinite; }
+  @keyframes currentPulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
+    50% { box-shadow: 0 0 28px rgba(255, 255, 255, 0.8); }
+  }
+
+  #round-info {
+    background: rgba(8, 5, 20, 0.78);
+    border: 3px solid #FFE066;
+    padding: 8px 24px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 12px;
+    color: #FFE066;
+    box-shadow: 0 0 12px rgba(255, 224, 102, 0.4);
+    text-align: center;
+  }
+  #round-info .weather-strip {
+    font-size: 10px;
+    color: #aaa;
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+
+  /* ==== CONTROLS ==== */
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    align-items: center;
+    gap: 16px;
+    background: rgba(8, 5, 20, 0.85);
+    border: 3px solid #FFE066;
+    border-radius: 8px;
+    padding: 14px 22px;
+    z-index: 10;
+    box-shadow: 0 0 18px rgba(255, 224, 102, 0.3);
+  }
+
+  #turn-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 14px;
+    padding-right: 10px;
+    border-right: 2px solid #555;
+    margin-right: 6px;
+    letter-spacing: 1px;
+    min-width: 140px;
+  }
+
+  #controls label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: #FFE066;
+    letter-spacing: 1px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  #controls input[type="number"] {
+    font-family: 'VT323', monospace;
+    font-size: 28px;
+    width: 90px;
+    padding: 4px 8px;
+    background: #1a1a2e;
+    color: #fff;
+    border: 2px solid #FFE066;
+    text-align: center;
+    outline: none;
+  }
+  #controls input[type="number"]:focus {
+    background: #2a2a4e;
+    border-color: #fff;
+    box-shadow: 0 0 8px #FFE066;
+  }
+  #controls input::-webkit-outer-spin-button,
+  #controls input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  #fire-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 16px;
+    padding: 14px 22px;
+    background: #FFE066;
+    color: #1a1a2e;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 2px;
+    box-shadow: 0 4px 0 #8A6F00;
+    transition: all 0.1s;
+  }
+  #fire-btn:hover { background: #fff; box-shadow: 0 4px 0 #8A6F00, 0 0 12px #FFE066; }
+  #fire-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #8A6F00; }
+  #fire-btn:disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+    box-shadow: 0 4px 0 #222;
+  }
+
+  /* ==== MATCH OVER OVERLAY ==== */
+  #match-over-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    text-align: center;
+    padding: 20px;
+  }
+  #match-over-overlay.show {
+    display: flex;
+    animation: fadeIn 0.5s;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  #match-over-overlay h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(24px, 4vw, 48px);
+    margin-bottom: 16px;
+    text-shadow: 4px 4px 0 #000;
+    letter-spacing: 4px;
+  }
+  #match-over-overlay .final-score {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 20px;
+    color: #FFE066;
+    margin-bottom: 36px;
+  }
+  #match-over-overlay button {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 14px;
+    padding: 14px 24px;
+    background: #FFE066;
+    color: #1a1a2e;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 2px;
+    box-shadow: 0 4px 0 #8A6F00;
+  }
+  #match-over-overlay button:hover { background: #fff; }
+
+  /* ==== ROUND BANNER ==== */
+  #round-banner {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(28px, 5vw, 56px);
+    color: #FFE066;
+    text-shadow: 4px 4px 0 #000, 0 0 30px rgba(255, 224, 102, 0.6);
+    letter-spacing: 6px;
+    z-index: 20;
+    pointer-events: none;
+    opacity: 0;
+    transition: transform 0.4s cubic-bezier(.4,2,.6,1), opacity 0.3s;
+    text-align: center;
+  }
+  #round-banner.show {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  #round-banner .sub {
+    display: block;
+    font-size: 0.5em;
+    margin-top: 10px;
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="setup-overlay">
+  <h1>GORILLAS</h1>
+  <div class="gorillas-row">🦍🍌🦍</div>
+  <div class="subtitle">Banana-bomb your opponent across the cityscape. Adjust angle and velocity. Mind the wind.</div>
+  <div class="prompt">CHOOSE MATCH LENGTH:</div>
+  <div class="bestof-buttons">
+    <button data-bestof="1">1 GAME</button>
+    <button data-bestof="3">BEST OF 3</button>
+    <button data-bestof="9">BEST OF 9</button>
+  </div>
+  <label class="easy-mode-toggle">
+    <input type="checkbox" id="easy-mode-checkbox">
+    <span class="box"></span>
+    <span class="text">🎯 EASY MODE — show trajectory preview</span>
+  </label>
+  <div class="tip">
+    PLAYER 1 (red) shoots →&nbsp;&nbsp;&nbsp; PLAYER 2 (blue) shoots ←<br>
+    Angle: 0 (horizontal) to 90 (straight up).&nbsp;&nbsp; Velocity: 10–150.<br>
+    Hit your opponent. Or carve a tunnel and try again.
+  </div>
+</div>
+
+<div id="hud">
+  <div id="p1-box" class="score-box p1">
+    <div class="name">🦍 PLAYER 1</div>
+    <div class="score">0</div>
+  </div>
+  <div id="round-info">
+    ROUND 1 OF 3
+    <div class="weather-strip">CLEAR · DAY · WIND 0</div>
+  </div>
+  <div id="p2-box" class="score-box p2">
+    <div class="name">PLAYER 2 🦍</div>
+    <div class="score">0</div>
+  </div>
+</div>
+
+<div id="controls">
+  <div id="turn-label">PLAYER 1's TURN</div>
+  <label>ANGLE
+    <input type="number" id="angle" min="0" max="90" value="45" step="1">
+  </label>
+  <label>VELOCITY
+    <input type="number" id="velocity" min="10" max="150" value="80" step="1">
+  </label>
+  <button id="fire-btn">🍌 FIRE!</button>
+</div>
+
+<div id="round-banner"></div>
+
+<div id="match-over-overlay">
+  <h2 id="match-winner-text">PLAYER 1 WINS!</h2>
+  <div class="final-score" id="match-final-score">3 – 1</div>
+  <button id="rematch-btn">PLAY AGAIN</button>
+</div>
+
+<script>
+// ============================================================
+//   GORILLAS — Banana-Bomb Artillery
+// ============================================================
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// Offscreen canvas holds the destructible cityscape.
+// Both rendering and collision detection read from this.
+const cityCanvas = document.createElement('canvas');
+const cityCtx = cityCanvas.getContext('2d', { willReadFrequently: true });
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cityCanvas.width = W;
+  cityCanvas.height = H;
+  if (game.phase !== 'setup') {
+    renderCityToOffscreen();
+  }
+}
+
+// ============== GAME STATE ==============
+const game = {
+  phase: 'setup',           // setup | aiming | flying | roundOver | gameOver
+  bestOf: 3,
+  scores: [0, 0],
+  round: 0,
+  startingPlayer: 0,        // alternates each round
+  currentPlayer: 0,
+  buildings: [],
+  gorillas: [],
+  banana: null,
+  trajectory: [],
+  particles: [],
+  weatherParticles: [],
+  lightningFlash: 0,
+  wind: 0,
+  timeOfDay: 'day',
+  weather: 'clear',
+  celebrationUntil: 0,
+  easyMode: false,
+  // Each player remembers their last-used angle/velocity so they can iterate without retyping
+  lastInputs: [
+    { angle: 45, velocity: 80 },
+    { angle: 45, velocity: 80 },
+  ],
+};
+
+// ============== AUDIO ==============
+//
+// All music below is driven by a faithful MML interpreter using the
+// verbatim PLAY strings from Microsoft's GORILLA.BAS (MS-DOS 5.0, June 1991).
+// Source: github.com/tangentstorm/tangentlabs/blob/master/qbasic/GORILLA.BAS
+// Tchaikovsky's 1812 Overture (1880) is public domain; the BASIC sample code
+// has been freely redistributed since 1991.
+//
+// QBasic MML quirks faithfully implemented:
+//   - O0 maps to scientific octave 1 (offset -1 from scientific pitch)
+//   - Default tempo 120 BPM, default length L4
+//   - MN articulation = note sounds 7/8 of slot, then silence
+//   - 'N0' = rest, 'P' = rest, both with optional length
+//   - Per-note length override (e.g. b9 = B at 1/9 whole)
+//   - Octave is per-string; T/L/articulation persist across PLAYs
+
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// Verbatim PLAY strings from GORILLA.BAS, with their source-line context
+const GORILLA_MML = {
+  // SUB Intro: title screen jingle (1812 Overture excerpt)
+  title:      'MBT160O1L8CDEDCDL4ECC',
+  // SUB DoExplosion: banana hits a building
+  buildBoom:  'MBO0L32EFGEFDC',
+  // FUNCTION ExplodeGorilla: banana hits the opposing gorilla
+  gorillaBoom:'MBO0L16EFGEFDC',
+  // FUNCTION PlotShot: banana throw "whoosh"
+  throwShot:  'MBO0L32A-L64CL16BL64A+',
+  // SUB VictoryDance: the jig, played 8 times per dance
+  victoryJig: 'MFO0L32EFGEFDC',
+};
+
+// Note-name -> chromatic semitone offset from C
+const SEMITONE = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+
+// QBasic O0 == scientific octave 1, so QBasic O0 C maps to scientific C1.
+// We transpose UP by TRANSPOSE_OCTAVES so the music is actually audible on
+// modern speakers (a true O0 sits at 33-49 Hz, near the audible floor).
+const TRANSPOSE_OCTAVES = 2;
+
+function mmlFrequency(qbasicOctave, semitone) {
+  // QBasic octave -> scientific octave (+1) -> add transpose
+  const scientific = qbasicOctave + 1 + TRANSPOSE_OCTAVES;
+  // MIDI: A4 = 69, freq = 440 * 2^((midi-69)/12)
+  // For pitch 'p' (semitones from C in given octave): midi = (scientific+1)*12 + p
+  const midi = (scientific + 1) * 12 + semitone;
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+/**
+ * Parse an MML string into a sequence of {freq, dur, gap} events.
+ * dur = total slot in seconds; gap = silence at the end (for MN/MS articulation).
+ * 'freq' is null for rests.
+ */
+function parseMML(mml, state) {
+  // state carries tempo/octave/length/articulation across PLAY calls
+  state.tempo = state.tempo || 120;
+  state.octave = (state.octave === undefined) ? 4 : state.octave; // QBasic default O4
+  state.length = state.length || 4;
+  state.articulation = state.articulation || 'MN';
+  const events = [];
+
+  const src = mml.toUpperCase();
+  let i = 0;
+
+  function readNumber() {
+    let s = '';
+    while (i < src.length && src[i] >= '0' && src[i] <= '9') {
+      s += src[i++];
+    }
+    return s.length ? parseInt(s, 10) : null;
+  }
+
+  function slotSeconds(lenVal) {
+    // A "length n" note = (1/n) of a whole note; whole note = 60s/tempo * 4
+    return (60 / state.tempo) * 4 / lenVal;
+  }
+
+  function pushNote(freq, lenVal, dotted) {
+    let slot = slotSeconds(lenVal);
+    if (dotted) slot *= 1.5;
+    let sounded, silent;
+    if (freq === null) {
+      sounded = 0; silent = slot;
+    } else if (state.articulation === 'ML') {
+      sounded = slot; silent = 0;
+    } else if (state.articulation === 'MS') {
+      sounded = slot * 0.75; silent = slot * 0.25;
+    } else { // MN (default)
+      sounded = slot * (7 / 8); silent = slot * (1 / 8);
+    }
+    events.push({ freq, dur: sounded, gap: silent });
+  }
+
+  while (i < src.length) {
+    const ch = src[i++];
+    if (ch === ' ' || ch === '\t' || ch === ',') continue;
+
+    if (ch === 'M') {
+      const next = src[i++];
+      if (next === 'B' || next === 'F') {
+        // background/foreground — both render the same in our queueing model
+      } else if (next === 'N' || next === 'L' || next === 'S') {
+        state.articulation = 'M' + next;
+      }
+    } else if (ch === 'T') {
+      const n = readNumber();
+      if (n !== null) state.tempo = n;
+    } else if (ch === 'O') {
+      const n = readNumber();
+      if (n !== null) state.octave = n;
+    } else if (ch === 'L') {
+      const n = readNumber();
+      if (n !== null) state.length = n;
+    } else if (ch === '>') {
+      state.octave++;
+    } else if (ch === '<') {
+      state.octave--;
+    } else if (ch === 'N') {
+      const n = readNumber();
+      if (n === 0 || n === null) {
+        pushNote(null, state.length, false);
+      } else {
+        // N1..N84 chromatic across 7 octaves starting at QBasic O0 C
+        // We'll just convert to a frequency directly
+        const qbOct = Math.floor((n - 1) / 12);
+        const semi = (n - 1) % 12;
+        const scientific = qbOct + 1 + TRANSPOSE_OCTAVES;
+        const midi = (scientific + 1) * 12 + semi;
+        events.push({ freq: 440 * Math.pow(2, (midi - 69) / 12), dur: slotSeconds(state.length) * 7/8, gap: slotSeconds(state.length) * 1/8 });
+      }
+    } else if (ch === 'P') {
+      const n = readNumber();
+      pushNote(null, n !== null ? n : state.length, false);
+    } else if (SEMITONE[ch.toLowerCase()] !== undefined) {
+      let semi = SEMITONE[ch.toLowerCase()];
+      // Accidental
+      if (src[i] === '#' || src[i] === '+') { semi++; i++; }
+      else if (src[i] === '-') { semi--; i++; }
+      // Per-note length override
+      const override = readNumber();
+      // Dotted
+      let dotted = false;
+      if (src[i] === '.') { dotted = true; i++; }
+      const lenVal = override !== null ? override : state.length;
+      pushNote(mmlFrequency(state.octave, semi), lenVal, dotted);
+    }
+    // Anything else ignored
+  }
+  return events;
+}
+
+/**
+ * Schedule an array of MML events through Web Audio. Returns the time at which
+ * the last note finishes (so callers can chain).
+ * voice opts: { type, gain, filterFreq, filterQ }
+ */
+function scheduleEvents(events, startTime, opts) {
+  if (!audioCtx) return startTime;
+  opts = opts || {};
+  const type = opts.type || 'square';
+  const volMax = opts.gain !== undefined ? opts.gain : 0.10;
+  let t = startTime;
+
+  events.forEach(ev => {
+    if (ev.freq !== null && ev.dur > 0.001) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.value = ev.freq;
+
+      // Tiny attack/release ramps avoid clicks but stay tight (~3ms)
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(volMax, t + 0.003);
+      gain.gain.setValueAtTime(volMax, t + Math.max(0.005, ev.dur - 0.005));
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + ev.dur);
+
+      let node = osc.connect(gain);
+
+      // Optional bandpass to evoke PC-speaker resonance
+      if (opts.filterFreq) {
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'lowpass';
+        bp.frequency.value = opts.filterFreq;
+        bp.Q.value = opts.filterQ || 0.7;
+        gain.connect(bp).connect(audioCtx.destination);
+      } else {
+        gain.connect(audioCtx.destination);
+      }
+
+      osc.start(t);
+      osc.stop(t + ev.dur + 0.02);
+    }
+    t += ev.dur + ev.gap;
+  });
+  return t;
+}
+
+// === SOUND EFFECTS (using the actual GORILLA.BAS PLAY strings) ===
+
+function playLaunch() {
+  if (!audioCtx) return;
+  const state = {};
+  const events = parseMML(GORILLA_MML.throwShot, state);
+  scheduleEvents(events, audioCtx.currentTime, {
+    type: 'square', gain: 0.18, filterFreq: 4500, filterQ: 0.6,
+  });
+}
+
+function playBoom(intensity = 1) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+
+  // The MML sting from DoExplosion / ExplodeGorilla (use the gorilla version
+  // for bigger hits, building version for normal building hits)
+  const state = {};
+  const mml = intensity > 1.2 ? GORILLA_MML.gorillaBoom : GORILLA_MML.buildBoom;
+  const events = parseMML(mml, state);
+  scheduleEvents(events, t0, {
+    type: 'square', gain: 0.14 * intensity, filterFreq: 2200, filterQ: 1.2,
+  });
+
+  // Modern layer: a sub-bass thud + noise burst for the impact's body
+  const sub = audioCtx.createOscillator();
+  const subG = audioCtx.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(140 * intensity, t0);
+  sub.frequency.exponentialRampToValueAtTime(32, t0 + 0.4);
+  subG.gain.setValueAtTime(0.55 * intensity, t0);
+  subG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
+  sub.connect(subG).connect(audioCtx.destination);
+  sub.start(t0); sub.stop(t0 + 0.55);
+
+  const noiseDur = 0.35;
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseDur, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 1.5);
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const ng = audioCtx.createGain();
+  ng.gain.value = 0.28 * intensity;
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 1100;
+  src.connect(lp).connect(ng).connect(audioCtx.destination);
+  src.start(t0);
+}
+
+function playVictory() {
+  if (!audioCtx) return;
+  // The original SUB VictoryDance plays the 7-note jig 8 times (2 plays per
+  // arm-swap, 4 swaps). 0.2s Rest between plays. Faithful reproduction:
+  let t = audioCtx.currentTime;
+  const state = { tempo: 120 }; // VictoryDance uses default 120
+  const events = parseMML(GORILLA_MML.victoryJig, state);
+
+  for (let i = 0; i < 8; i++) {
+    t = scheduleEvents(events, t, {
+      type: 'square', gain: 0.16, filterFreq: 3200, filterQ: 0.8,
+    });
+    t += 0.20; // Rest .2 between each PLAY in SUB VictoryDance
+  }
+}
+
+// === TITLE MUSIC ===
+// SUB Intro: "MBT160O1L8CDEDCDL4ECC" — the 1812 Overture excerpt.
+// Plays in the background while the title-screen sparkle border runs.
+// We loop it gently so the player has music while choosing match length.
+
+let titleMusicActive = false;
+let titleMusicTimer = null;
+let titleMusicVoiceStops = [];
+
+function playTitleMusic() {
+  if (!audioCtx || titleMusicActive) return;
+  titleMusicActive = true;
+
+  const scheduleOne = () => {
+    if (!titleMusicActive) return;
+    const state = {};
+    const events = parseMML(GORILLA_MML.title, state);
+    const start = audioCtx.currentTime + 0.05;
+    const end = scheduleEvents(events, start, {
+      type: 'square', gain: 0.10, filterFreq: 3000, filterQ: 0.5,
+    });
+    titleMusicVoiceStops.push(end);
+    // Loop with a brief pause; the original game plays it once per Intro
+    const wait = Math.max(0, (end - audioCtx.currentTime) * 1000) + 900;
+    titleMusicTimer = setTimeout(scheduleOne, wait);
+  };
+  scheduleOne();
+}
+
+function stopTitleMusic() {
+  titleMusicActive = false;
+  if (titleMusicTimer) { clearTimeout(titleMusicTimer); titleMusicTimer = null; }
+  titleMusicVoiceStops = [];
+  // Notes already scheduled will play out their attack/release; nothing to do.
+  // For a hard cutoff we'd need to track every oscillator, but the gentle
+  // tail is more pleasant than an abrupt mute.
+}
+
+// ============== UTIL ==============
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function rand(min, max) { return min + Math.random() * (max - min); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function hex(c) { return Math.round(clamp(c, 0, 255)).toString(16).padStart(2, '0'); }
+function hsl(h, s, l) { return `hsl(${h}, ${s}%, ${l}%)`; }
+
+// ============== PROCEDURAL GENERATION ==============
+function pickPalette() {
+  // Flat saturated colors echoing the original CGA/EGA Gorillas:
+  // red, teal, grey, sand-yellow. We don't randomize hue per building —
+  // each building picks one of these "stock" colors so the city feels
+  // unified in the original's blocky way.
+  return {
+    // Per-round mood shift, but stays within the canonical palette
+    palette: pickRandom([
+      // Classic mix: red/teal/grey
+      [
+        { fill: '#C03020', shadow: '#7A1A12', win: '#FFE15A' },
+        { fill: '#1FA8A8', shadow: '#0E6868', win: '#FFE15A' },
+        { fill: '#B8B8B8', shadow: '#707070', win: '#FFE15A' },
+        { fill: '#D8D0A0', shadow: '#8A8060', win: '#FFE15A' },
+      ],
+      // Twilight-leaning: deeper reds and slate
+      [
+        { fill: '#A82428', shadow: '#62121A', win: '#FFD040' },
+        { fill: '#1A7A8C', shadow: '#0A4858', win: '#FFD040' },
+        { fill: '#7E7080', shadow: '#4A4050', win: '#FFD040' },
+        { fill: '#B8AC80', shadow: '#766C50', win: '#FFD040' },
+      ],
+      // Sun-bleached: warmer overall
+      [
+        { fill: '#D04420', shadow: '#7A2412', win: '#FFEC78' },
+        { fill: '#28A088', shadow: '#125A4C', win: '#FFEC78' },
+        { fill: '#C0C0B0', shadow: '#787868', win: '#FFEC78' },
+        { fill: '#D4B470', shadow: '#8A7240', win: '#FFEC78' },
+      ],
+    ]),
+  };
+}
+
+function generateBuildings() {
+  const buildings = [];
+  const { palette } = pickPalette();
+  let x = 0;
+  // Wider buildings, fewer of them — matches the screenshot's chunky scale
+  while (x < W) {
+    const w = rand(95, 165);
+    const minH = 180;
+    const maxH = Math.min(H * 0.74, 520);
+    const h = rand(minH, maxH);
+    const pal = pickRandom(palette);
+
+    // Window grid — regimented, like the original (yellow squares on dark grid)
+    const wMargin = 8;
+    const colSpacing = rand(12, 16);
+    const rowSpacing = rand(14, 18);
+    const cols = Math.max(2, Math.floor((w - wMargin * 2) / colSpacing));
+    const rows = Math.max(3, Math.floor((h - 18) / rowSpacing));
+    // Lit/unlit pattern — most lit at night, sparser by day
+    const windowsLit = [];
+    const litChance = game.timeOfDay === 'night' ? 0.78
+                    : game.timeOfDay === 'dusk' ? 0.62
+                    : game.timeOfDay === 'dawn' ? 0.55
+                    : 0.74; // day: most windows lit, matches the screenshot
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        windowsLit.push(Math.random() < litChance);
+      }
+    }
+
+    buildings.push({
+      x, w, h,
+      fill: pal.fill,
+      shadow: pal.shadow,
+      winColor: pal.win,
+      windows: { cols, rows, wMargin, colSpacing, rowSpacing, lit: windowsLit },
+      hasRoofTrim: Math.random() < 0.35,
+      hasAntenna: Math.random() < 0.18,
+      hasWaterTank: Math.random() < 0.15,
+    });
+    // Tight packing — buildings touch (no gaps), matching the original
+    x += w;
+  }
+  return buildings;
+}
+
+function placeGorillas() {
+  const n = game.buildings.length;
+  // Player 1 in left ~40%, player 2 in right ~40%
+  const p1Range = [1, Math.max(2, Math.floor(n * 0.4))];
+  const p2Range = [Math.floor(n * 0.6), n - 2];
+
+  // Pick from the top 3 tallest buildings in each zone — gorillas perch high
+  function pickTallish(start, end) {
+    const indices = [];
+    for (let i = start; i <= end; i++) indices.push(i);
+    indices.sort((a, b) => game.buildings[b].h - game.buildings[a].h);
+    const pickFrom = indices.slice(0, Math.min(3, indices.length));
+    return pickFrom[Math.floor(Math.random() * pickFrom.length)];
+  }
+  const p1Idx = pickTallish(p1Range[0], p1Range[1]);
+  const p2Idx = pickTallish(p2Range[0], p2Range[1]);
+
+  const b1 = game.buildings[p1Idx];
+  const b2 = game.buildings[p2Idx];
+
+  // === SHAPE THE SKYLINE FOR PLAYABILITY ===
+  // Cap intermediate buildings so the corridor between gorillas is
+  // navigable. Buildings can be up to 60px ABOVE the lower gorilla's
+  // platform — still an obstacle, but a high arc always clears them.
+  const lo = Math.min(p1Idx, p2Idx);
+  const hi = Math.max(p1Idx, p2Idx);
+  const ceiling = Math.min(b1.h, b2.h) + 60;
+  for (let i = lo + 1; i < hi; i++) {
+    if (game.buildings[i].h > ceiling) {
+      game.buildings[i].h = ceiling;
+    }
+  }
+
+  return [
+    { x: b1.x + b1.w / 2, y: H - b1.h, color: '#C5524C', dark: '#7A2E29', light: '#E2786F', armsUp: false, alive: true, dancing: false, danceStart: 0, buildingIdx: p1Idx },
+    { x: b2.x + b2.w / 2, y: H - b2.h, color: '#3A7CA5', dark: '#1F4663', light: '#5FA0CC', armsUp: false, alive: true, dancing: false, danceStart: 0, buildingIdx: p2Idx },
+  ];
+}
+
+function createWeatherParticles() {
+  const arr = [];
+  if (game.weather === 'rainy' || game.weather === 'stormy') {
+    const count = game.weather === 'stormy' ? 280 : 160;
+    for (let i = 0; i < count; i++) {
+      arr.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vy: 14 + Math.random() * 6,
+        vx: game.wind * 0.4 + (Math.random() - 0.5) * 1,
+        len: 10 + Math.random() * 8,
+        kind: 'rain',
+      });
+    }
+  } else if (game.weather === 'snowy') {
+    for (let i = 0; i < 110; i++) {
+      arr.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vy: 1.2 + Math.random() * 1.5,
+        vx: game.wind * 0.1 + (Math.random() - 0.5) * 0.6,
+        size: 2 + Math.random() * 3,
+        phase: Math.random() * Math.PI * 2,
+        kind: 'snow',
+      });
+    }
+  }
+  return arr;
+}
+
+// ============== SKY / CITY RENDERING ==============
+function getSkyGradient() {
+  // Returns array of color stops
+  if (game.timeOfDay === 'dawn') {
+    return [
+      [0,    '#1A0E33'],
+      [0.4,  '#7A3B6B'],
+      [0.7,  '#E08661'],
+      [1,    '#F5C580'],
+    ];
+  } else if (game.timeOfDay === 'day') {
+    if (game.weather === 'cloudy' || game.weather === 'rainy' || game.weather === 'stormy') {
+      return [
+        [0,    '#3D4A5C'],
+        [0.6,  '#6A7585'],
+        [1,    '#8D95A1'],
+      ];
+    }
+    // Flat saturated navy — like the original GORILLAS title screen
+    return [
+      [0, '#0000A8'],
+      [1, '#0000A8'],
+    ];
+  } else if (game.timeOfDay === 'dusk') {
+    return [
+      [0,    '#1B0F38'],
+      [0.3,  '#552B6B'],
+      [0.65, '#C9542F'],
+      [1,    '#F2A35E'],
+    ];
+  } else { // night
+    return [
+      [0,    '#050518'],
+      [0.5,  '#0C0F35'],
+      [1,    '#1E2554'],
+    ];
+  }
+}
+
+const nightStars = []; // re-seeded each round if night
+function seedNightStars() {
+  nightStars.length = 0;
+  if (game.timeOfDay !== 'night' && game.timeOfDay !== 'dusk') return;
+  const count = game.timeOfDay === 'night' ? 180 : 50;
+  for (let i = 0; i < count; i++) {
+    nightStars.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 0.55,
+      size: 0.5 + Math.random() * 1.8,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: 0.02 + Math.random() * 0.05,
+    });
+  }
+}
+
+function drawSky() {
+  const stops = getSkyGradient();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  stops.forEach(([p, c]) => grad.addColorStop(p, c));
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Lightning flash (overlays sky briefly)
+  if (game.lightningFlash > 0) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${game.lightningFlash * 0.4})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// Chunky pixel-art sun with smiling face — the iconic original mascot.
+// Drawn as a grid of 8px "pixels" so it reads as a sprite even at modern resolution.
+function drawPixelSun(cx, cy) {
+  const px = 5; // size of one pseudo-pixel
+  // Sun body — circular blob made of pixel squares
+  // (precomputed mask: 1 = sun body, 0 = empty, 2 = face dark)
+  const mask = [
+    "...XXXXXX...",
+    "..XXXXXXXX..",
+    ".XXXXXXXXXX.",
+    ".XX2X2XX2X2X",
+    "XXXXXXXXXXXX",
+    "XXXXX22XXXXX",
+    "XXX2XXXX2XXX",
+    "XXXX2222XXXX",
+    ".XXXXXXXXXX.",
+    ".XXXXXXXXXX.",
+    "..XXXXXXXX..",
+    "...XXXXXX...",
+  ];
+  const cols = mask[0].length;
+  const rows = mask.length;
+  const ox = cx - (cols * px) / 2;
+  const oy = cy - (rows * px) / 2;
+
+  // Soft halo glow behind the sun
+  const halo = ctx.createRadialGradient(cx, cy, 10, cx, cy, cols * px * 0.9);
+  halo.addColorStop(0, 'rgba(255, 240, 150, 0.30)');
+  halo.addColorStop(1, 'rgba(255, 240, 150, 0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(cx, cy, cols * px * 0.9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Sun pixels
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const ch = mask[r][c];
+      if (ch === '.') continue;
+      ctx.fillStyle = ch === '2' ? '#000000' : '#FFE066';
+      ctx.fillRect(ox + c * px, oy + r * px, px, px);
+    }
+  }
+
+  // Rays — chunky triangular spokes around the sun
+  const rayDist = (cols * px) / 2 + 8;
+  const rayLen = 12;
+  ctx.fillStyle = '#FFE066';
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2;
+    const x1 = cx + Math.cos(ang) * rayDist;
+    const y1 = cy + Math.sin(ang) * rayDist;
+    const x2 = cx + Math.cos(ang) * (rayDist + rayLen);
+    const y2 = cy + Math.sin(ang) * (rayDist + rayLen);
+    const perp = ang + Math.PI / 2;
+    const wRay = 4;
+    ctx.beginPath();
+    ctx.moveTo(x1 + Math.cos(perp) * wRay, y1 + Math.sin(perp) * wRay);
+    ctx.lineTo(x1 - Math.cos(perp) * wRay, y1 - Math.sin(perp) * wRay);
+    ctx.lineTo(x2, y2);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawCelestial(now) {
+  if (game.timeOfDay === 'night') {
+    // Stars
+    nightStars.forEach(s => {
+      s.twinkle += s.speed;
+      const a = 0.4 + Math.sin(s.twinkle) * 0.5;
+      ctx.fillStyle = `rgba(255, 255, 240, ${Math.max(0, a)})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // Moon
+    const mx = W * 0.78, my = H * 0.18;
+    ctx.fillStyle = 'rgba(255, 245, 210, 0.18)';
+    ctx.beginPath(); ctx.arc(mx, my, 48, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFF4D0';
+    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI * 2); ctx.fill();
+    // Moon craters
+    ctx.fillStyle = 'rgba(180, 170, 140, 0.5)';
+    ctx.beginPath(); ctx.arc(mx - 8, my - 4, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 6, my + 7, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 12, my - 8, 3, 0, Math.PI * 2); ctx.fill();
+  } else if (game.timeOfDay === 'day' && (game.weather === 'clear')) {
+    // Chunky pixel-art sun with smiling face — the original game's mascot
+    drawPixelSun(W * 0.78, H * 0.16);
+  } else if (game.timeOfDay === 'dusk') {
+    // Setting sun
+    const sx = W * 0.85, sy = H * 0.42;
+    ctx.fillStyle = 'rgba(255, 160, 90, 0.4)';
+    ctx.beginPath(); ctx.arc(sx, sy, 90, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FF8844';
+    ctx.beginPath(); ctx.arc(sx, sy, 42, 0, Math.PI * 2); ctx.fill();
+    // Faint stars
+    nightStars.forEach(s => {
+      s.twinkle += s.speed;
+      const a = 0.15 + Math.sin(s.twinkle) * 0.2;
+      ctx.fillStyle = `rgba(255, 255, 240, ${Math.max(0, a)})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  } else if (game.timeOfDay === 'dawn') {
+    // Rising sun
+    const sx = W * 0.18, sy = H * 0.4;
+    ctx.fillStyle = 'rgba(255, 200, 130, 0.35)';
+    ctx.beginPath(); ctx.arc(sx, sy, 85, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFC470';
+    ctx.beginPath(); ctx.arc(sx, sy, 40, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+const drifters = []; // clouds, used when game.weather involves clouds
+function seedClouds() {
+  drifters.length = 0;
+  if (game.weather === 'clear') return;
+  const count = (game.weather === 'cloudy' || game.weather === 'rainy' || game.weather === 'stormy') ? 6 : 0;
+  for (let i = 0; i < count; i++) {
+    drifters.push({
+      x: Math.random() * W,
+      y: 40 + Math.random() * (H * 0.3),
+      r: 30 + Math.random() * 50,
+      speed: 0.15 + Math.random() * 0.25,
+    });
+  }
+}
+
+function drawClouds() {
+  if (drifters.length === 0) return;
+  const isStorm = game.weather === 'stormy' || game.weather === 'rainy';
+  drifters.forEach(c => {
+    c.x += c.speed + game.wind * 0.04;
+    if (c.x > W + c.r * 2) c.x = -c.r * 2;
+    if (c.x < -c.r * 2) c.x = W + c.r * 2;
+    const baseAlpha = isStorm ? 0.75 : 0.85;
+    const tone = isStorm ? '60, 65, 80' : '255, 255, 255';
+    ctx.fillStyle = `rgba(${tone}, ${baseAlpha})`;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r * 0.6, 0, Math.PI * 2);
+    ctx.arc(c.x + c.r * 0.5, c.y - c.r * 0.15, c.r * 0.5, 0, Math.PI * 2);
+    ctx.arc(c.x + c.r, c.y, c.r * 0.55, 0, Math.PI * 2);
+    ctx.arc(c.x + c.r * 0.4, c.y + c.r * 0.2, c.r * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function renderCityToOffscreen() {
+  cityCtx.clearRect(0, 0, W, H);
+
+  game.buildings.forEach(b => {
+    // FLAT building body — single saturated color, no gradient
+    cityCtx.fillStyle = b.fill;
+    cityCtx.fillRect(b.x, H - b.h, b.w, b.h);
+
+    // Single hard shadow line on the right edge (1-2 px), evoking the
+    // chunky-sprite look without a gradient
+    cityCtx.fillStyle = b.shadow;
+    cityCtx.fillRect(b.x + b.w - 2, H - b.h, 2, b.h);
+
+    // === WINDOW GRID ===
+    const win = b.windows;
+    const wW = win.colSpacing - 4;
+    const wH = win.rowSpacing - 5;
+    let wIdx = 0;
+    for (let r = 0; r < win.rows; r++) {
+      for (let c = 0; c < win.cols; c++) {
+        const wx = b.x + win.wMargin + c * win.colSpacing;
+        const wy = (H - b.h) + 10 + r * win.rowSpacing;
+        if (wy + wH >= H - 4) break;
+        cityCtx.fillStyle = win.lit[wIdx++] ? b.winColor : b.shadow;
+        cityCtx.fillRect(wx, wy, wW, wH);
+      }
+    }
+
+    // Optional roof trim — a thin lip at the very top
+    if (b.hasRoofTrim) {
+      cityCtx.fillStyle = b.shadow;
+      cityCtx.fillRect(b.x, H - b.h, b.w, 3);
+    }
+
+    // Water tank — small box on rooftop
+    if (b.hasWaterTank) {
+      const tx = b.x + b.w * 0.3;
+      const ty = H - b.h - 14;
+      cityCtx.fillStyle = '#6B4F35';
+      cityCtx.fillRect(tx, ty, 18, 10);
+      cityCtx.fillStyle = '#3A2A20';
+      cityCtx.fillRect(tx, ty + 10, 2, 4);
+      cityCtx.fillRect(tx + 16, ty + 10, 2, 4);
+    }
+
+    // Antenna — thin vertical pole with crossbar and blinker
+    if (b.hasAntenna) {
+      const ax = Math.floor(b.x + b.w / 2);
+      const ay = H - b.h;
+      cityCtx.fillStyle = '#2A2A35';
+      cityCtx.fillRect(ax - 1, ay - 28, 2, 28);
+      cityCtx.fillRect(ax - 5, ay - 20, 10, 2);
+      const blink = (Math.sin(performance.now() / 400) > 0) ? '#FF3030' : '#5A0A0A';
+      cityCtx.fillStyle = blink;
+      cityCtx.fillRect(ax - 2, ay - 31, 4, 4);
+    }
+  });
+
+  // NOTE: the time-of-day wash is applied as an overlay in the main render
+  // loop, NOT here. If we baked it in, every sky pixel would get alpha ~89
+  // and the collision-detection threshold (80) would treat the sky as a
+  // solid building — making it impossible to fire at night.
+
+  rebuildCityAlpha();
+}
+
+// Cached alpha mask of the city for fast collision queries (per-pixel).
+// Rebuilt whenever the city changes (round start, after each crater).
+let cityAlpha = null;
+function rebuildCityAlpha() {
+  if (W <= 0 || H <= 0) { cityAlpha = null; return; }
+  const data = cityCtx.getImageData(0, 0, W, H).data;
+  cityAlpha = new Uint8Array(W * H);
+  for (let i = 0, j = 3; i < cityAlpha.length; i++, j += 4) {
+    cityAlpha[i] = data[j];
+  }
+}
+function cityHitAt(x, y) {
+  if (!cityAlpha) return false;
+  const ix = x | 0, iy = y | 0;
+  if (ix < 0 || ix >= W || iy < 0 || iy >= H) return false;
+  return cityAlpha[iy * W + ix] > 80;
+}
+function drawGorilla(g, isCurrent, now) {
+  if (!g.alive) {
+    // Smoking ruins where the gorilla once stood
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.fillStyle = 'rgba(60, 50, 50, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(0, -4, 26, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // === DANCE STATE ===
+  // The original SUB VictoryDance loops 4 times, each iteration putting
+  // GorL (left arm raised) then GorR (right arm raised). Each pose is held
+  // for one PLAY (~0.44s) + one Rest .2 (0.2s) = ~0.64s.
+  // 8 arm-swaps total, ~5.12s of dance.
+  let leftArmUp = false;
+  let rightArmUp = false;
+  let isDancing = false;
+  if (g.dancing) {
+    const elapsed = now - g.danceStart;
+    if (elapsed >= 0 && elapsed < 5120) {
+      isDancing = true;
+      const swapIdx = Math.floor(elapsed / 640); // 0..7
+      // Original sequence: GorL first (left arm up), then GorR, alternating
+      if (swapIdx % 2 === 0) leftArmUp = true;
+      else                   rightArmUp = true;
+    } else if (elapsed >= 5120) {
+      // Dance over — drop arms, stand normally for the round transition
+      g.dancing = false;
+    }
+  }
+  // Legacy single-frame celebration (kept as fallback for non-victory poses)
+  const bothArmsUp = g.armsUp && !g.dancing;
+
+  // Subtle idle bob for the active player
+  const idle = isCurrent ? Math.sin(now / 350) * 1.4 : 0;
+  // Tiny bounce on each arm-swap during the dance (sells the percussion)
+  const danceBob = isDancing
+    ? -Math.abs(Math.sin((now - g.danceStart) * Math.PI / 640)) * 3
+    : 0;
+
+  ctx.save();
+  ctx.translate(g.x, g.y + idle + danceBob);
+
+  const body = g.color;
+  const dark = g.dark;
+  const light = g.light;
+  const stroke = g.dark;
+
+  // === LEGS ===
+  ctx.fillStyle = body;
+  ctx.fillRect(-19, -28, 14, 28);
+  ctx.fillRect(5, -28, 14, 28);
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-19, -28, 14, 28);
+  ctx.strokeRect(5, -28, 14, 28);
+
+  // === FEET ===
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(-25, -6, 22, 6, 2) : ctx.rect(-25, -6, 22, 6);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(3, -6, 22, 6, 2) : ctx.rect(3, -6, 22, 6);
+  ctx.fill();
+
+  // === TORSO ===
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.ellipse(0, -52, 26, 30, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // Chest patch
+  ctx.fillStyle = light;
+  ctx.beginPath();
+  ctx.ellipse(0, -50, 15, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // === ARMS ===
+  // Each arm is drawn independently so the dance can raise one at a time.
+  // The original GorL sprite raises the left arm; GorR raises the right.
+  ctx.fillStyle = body;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.5;
+
+  function drawArm(side, raised) {
+    ctx.save();
+    if (raised) {
+      // Arm thrust up & out — fist over head
+      ctx.translate(side * 24, -68);
+      ctx.rotate(side * 0.55);
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.ellipse(0, -22, 9, 26, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Fist
+      ctx.fillStyle = dark;
+      ctx.beginPath();
+      ctx.arc(0, -42, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      // Arm hanging — knuckle low
+      ctx.translate(side * 22, -55);
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.ellipse(0, 10, 10, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Knuckle
+      ctx.fillStyle = dark;
+      ctx.beginPath();
+      ctx.arc(0, 28, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Decide each arm's pose
+  const showLeftUp  = bothArmsUp || leftArmUp;
+  const showRightUp = bothArmsUp || rightArmUp;
+  drawArm(-1, showLeftUp);
+  drawArm( 1, showRightUp);
+  ctx.fillStyle = body; // restore for downstream draws
+
+  // === HEAD ===
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.arc(0, -92, 21, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // Ears
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.arc(-19, -95, 5, 0, Math.PI * 2);
+  ctx.arc(19, -95, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Face plate (lighter)
+  ctx.fillStyle = light;
+  ctx.beginPath();
+  ctx.ellipse(0, -88, 14, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Brow ridge
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.ellipse(0, -98, 14, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.arc(-5, -94, 2.2, 0, Math.PI * 2);
+  ctx.arc(5, -94, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  // Eye glints
+  ctx.fillStyle = 'white';
+  ctx.fillRect(-5.5, -95, 1, 1);
+  ctx.fillRect(4.5, -95, 1, 1);
+
+  // Mouth — winner grins during the dance
+  if (isDancing || bothArmsUp) {
+    // Big grin
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, -84, 6, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.stroke();
+    // Teeth
+    ctx.fillStyle = '#FFF8E0';
+    ctx.fillRect(-4, -82, 8, 3);
+  } else {
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-4, -82);
+    ctx.lineTo(4, -82);
+    ctx.stroke();
+  }
+
+  // Current-player indicator (yellow arrow above head)
+  if (isCurrent) {
+    const pulse = 0.5 + 0.5 * Math.sin(now / 200);
+    ctx.fillStyle = `rgba(255, 224, 102, ${0.6 + pulse * 0.4})`;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -125 - pulse * 4);
+    ctx.lineTo(-10, -140 - pulse * 4);
+    ctx.lineTo(10, -140 - pulse * 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// ============== BANANA ==============
+function drawBanana(b) {
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(b.rot);
+
+  // Banana body — crescent
+  ctx.fillStyle = '#FFD93D';
+  ctx.strokeStyle = '#8B6914';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-12, 2);
+  ctx.quadraticCurveTo(-3, -10, 12, -3);
+  ctx.quadraticCurveTo(8, 0, 12, 3);
+  ctx.quadraticCurveTo(-3, 8, -12, 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Tip
+  ctx.fillStyle = '#6F4A14';
+  ctx.beginPath();
+  ctx.ellipse(-12, 2, 2.5, 1.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ============== EXPLOSION / PARTICLES ==============
+function spawnExplosion(x, y, magnitude) {
+  const count = Math.floor(magnitude * 0.9);
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = rand(2, 9);
+    game.particles.push({
+      x, y,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp - rand(0, 4),
+      life: 1,
+      size: 3 + Math.random() * 6,
+      color: pickRandom(['#FFE066', '#FF8C42', '#FF4444', '#FFFFFF', '#FF6600']),
+      gravity: 0.18,
+    });
+  }
+  // Bright flash
+  game.particles.push({
+    x, y, vx: 0, vy: 0, life: 0.5, size: magnitude * 1.2, color: '#FFE066',
+    gravity: 0, isFlash: true,
+  });
+}
+
+function updateParticles(dt) {
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const p = game.particles[i];
+    if (p.isFlash) {
+      p.life -= 0.06 * dt;
+      p.size *= Math.pow(0.93, dt);
+    } else {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += p.gravity * dt;
+      p.life -= 0.022 * dt;
+    }
+    if (p.life <= 0) game.particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  game.particles.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.life);
+    if (p.isFlash) {
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+      grad.addColorStop(0.3, 'rgba(255, 224, 102, 0.6)');
+      grad.addColorStop(1, 'rgba(255, 100, 30, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  ctx.globalAlpha = 1;
+}
+
+// === EASY MODE TRAJECTORY PREVIEW ===
+// Simulates the banana flight with current angle/velocity inputs and draws
+// the projected path. For new players (Rafa, age 5) — see where it'll land.
+function computeEasyTrajectory() {
+  if (!game.easyMode) return null;
+  if (game.phase !== 'aiming') return null;
+  const g = game.gorillas[game.currentPlayer];
+  if (!g || !g.alive) return null;
+
+  const angle = parseFloat(document.getElementById('angle').value);
+  const vel = parseFloat(document.getElementById('velocity').value);
+  if (!isFinite(angle) || !isFinite(vel) || vel < 5) return null;
+
+  const dir = game.currentPlayer === 0 ? 1 : -1;
+  const rad = angle * Math.PI / 180;
+  const scale = 0.18;
+  let x = g.x + dir * 28;
+  let y = g.y - 95;
+  let vx = dir * vel * Math.cos(rad) * scale;
+  let vy = -vel * Math.sin(rad) * scale;
+
+  const points = [{ x, y }];
+  // Mirror the main banana physics: 4 sub-steps per frame
+  const subSteps = 4;
+  const maxFrames = 360;
+  for (let f = 0; f < maxFrames; f++) {
+    for (let s = 0; s < subSteps; s++) {
+      const sdt = 1 / subSteps;
+      vy += GRAVITY * sdt;
+      vx += game.wind * WIND_FACTOR * sdt;
+      x += vx * sdt;
+      y += vy * sdt;
+      if (cityHitAt(x, y)) {
+        points.push({ x, y, hit: 'city' });
+        return points;
+      }
+      for (let i = 0; i < game.gorillas.length; i++) {
+        const og = game.gorillas[i];
+        if (!og.alive) continue;
+        if (i === game.currentPlayer) continue;
+        const dx = x - og.x;
+        const dy = y - (og.y - 60);
+        if (dx * dx + dy * dy < 28 * 28) {
+          points.push({ x, y, hit: 'gorilla' });
+          return points;
+        }
+      }
+      if (x < -60 || x > W + 60 || y > H + 60) {
+        points.push({ x, y, hit: 'off' });
+        return points;
+      }
+    }
+    points.push({ x, y });
+  }
+  return points;
+}
+
+function drawEasyTrajectory() {
+  const points = computeEasyTrajectory();
+  if (!points || points.length < 2) return;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 224, 102, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([3, 6]);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i].y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Landing marker
+  const last = points[points.length - 1];
+  if (last.hit) {
+    const color = last.hit === 'gorilla' ? '#FFE066' : '#FF7755';
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(last.x - 12, last.y); ctx.lineTo(last.x - 7, last.y);
+    ctx.moveTo(last.x + 7, last.y);  ctx.lineTo(last.x + 12, last.y);
+    ctx.moveTo(last.x, last.y - 12); ctx.lineTo(last.x, last.y - 7);
+    ctx.moveTo(last.x, last.y + 7);  ctx.lineTo(last.x, last.y + 12);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTrajectory() {
+  if (game.trajectory.length < 2) return;
+  ctx.strokeStyle = 'rgba(255, 224, 102, 0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  ctx.moveTo(game.trajectory[0].x, game.trajectory[0].y);
+  for (let i = 1; i < game.trajectory.length; i++) {
+    ctx.lineTo(game.trajectory[i].x, game.trajectory[i].y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ============== WEATHER ==============
+function updateWeather(dt) {
+  // Stormy: random lightning
+  if (game.weather === 'stormy') {
+    if (game.lightningFlash <= 0 && Math.random() < 0.003 * dt) {
+      game.lightningFlash = 1;
+      // Optional thunder via deep noise burst
+      if (audioCtx) {
+        const t = audioCtx.currentTime + rand(0.4, 1.2);
+        const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 1.2, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 0.7);
+        }
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const g = audioCtx.createGain();
+        g.gain.value = 0.18;
+        const lp = audioCtx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 300;
+        src.connect(lp).connect(g).connect(audioCtx.destination);
+        src.start(t);
+      }
+    }
+    if (game.lightningFlash > 0) {
+      game.lightningFlash -= 0.04 * dt;
+      if (game.lightningFlash < 0) game.lightningFlash = 0;
+    }
+  }
+
+  // Precipitation
+  game.weatherParticles.forEach(p => {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.kind === 'snow') {
+      p.phase += 0.04 * dt;
+      p.x += Math.sin(p.phase) * 0.3 * dt;
+    }
+    if (p.y > H + 20) {
+      p.y = -20;
+      p.x = Math.random() * W;
+    }
+    if (p.x > W + 20) p.x = -20;
+    if (p.x < -20) p.x = W + 20;
+  });
+}
+
+function drawWeather() {
+  game.weatherParticles.forEach(p => {
+    if (p.kind === 'rain') {
+      ctx.strokeStyle = 'rgba(180, 200, 230, 0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.vx * 0.6, p.y - p.len);
+      ctx.stroke();
+    } else if (p.kind === 'snow') {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+// ============== WIND INDICATOR ==============
+function drawWindIndicator() {
+  // Free-floating arrow centered horizontally, just below the top HUD.
+  // Length scales linearly with wind strength — gets absurdly long at extremes.
+  const cx = W / 2;
+  const cy = 128;
+
+  // Label
+  ctx.save();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '10px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.85)';
+  ctx.shadowBlur = 4;
+  ctx.fillText('WIND', cx, cy - 22);
+
+  if (Math.abs(game.wind) < 0.3) {
+    ctx.fillStyle = '#aaa';
+    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.fillText('— CALM —', cx, cy + 2);
+    ctx.restore();
+    return;
+  }
+
+  const dir = game.wind > 0 ? 1 : -1;
+  const pxPerUnit = 38;
+  const length = Math.abs(game.wind) * pxPerUnit;
+  const headSize = 16;
+
+  ctx.translate(cx, cy);
+
+  // Shaft
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(dir * (length - headSize * 0.3), 0);
+  ctx.stroke();
+
+  // Arrowhead
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.moveTo(dir * length, 0);
+  ctx.lineTo(dir * (length - headSize), -headSize * 0.7);
+  ctx.lineTo(dir * (length - headSize * 0.5), 0);
+  ctx.lineTo(dir * (length - headSize), headSize * 0.7);
+  ctx.closePath();
+  ctx.fill();
+
+  // Feather fletching at the tail (three chevrons)
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2.4;
+  for (let i = 0; i < 3; i++) {
+    const off = i * 7;
+    ctx.beginPath();
+    ctx.moveTo(-dir * off, -7);
+    ctx.lineTo(-dir * (off + 6), 0);
+    ctx.lineTo(-dir * off, 7);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // Numeric value under the arrow
+  ctx.save();
+  ctx.fillStyle = '#fff';
+  ctx.font = '11px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.85)';
+  ctx.shadowBlur = 4;
+  ctx.fillText(game.wind.toFixed(1), cx, cy + 22);
+  ctx.restore();
+}
+
+// ============== PHYSICS ==============
+const GRAVITY = 0.18;       // px per frame^2
+const WIND_FACTOR = 0.005;  // wind units to px/frame^2 — a meaningful nudge, not a hurricane
+
+function fire() {
+  if (game.phase !== 'aiming') return;
+  ensureAudio();
+  const angle = parseFloat(document.getElementById('angle').value);
+  const vel = parseFloat(document.getElementById('velocity').value);
+  if (!isFinite(angle) || !isFinite(vel)) return;
+  if (angle < 0 || angle > 90 || vel < 5 || vel > 200) return;
+
+  // Remember this player's settings — so when their turn comes back around,
+  // they can iterate one parameter at a time instead of starting from scratch.
+  game.lastInputs[game.currentPlayer] = { angle, velocity: vel };
+
+  const g = game.gorillas[game.currentPlayer];
+  const dir = game.currentPlayer === 0 ? 1 : -1;
+  const rad = angle * Math.PI / 180;
+  const scale = 0.18;       // tunes the velocity input range to a fun feel
+
+  game.banana = {
+    x: g.x + dir * 28,
+    y: g.y - 95,
+    vx: dir * vel * Math.cos(rad) * scale,
+    vy: -vel * Math.sin(rad) * scale,
+    rot: 0,
+    airborneFor: 0,
+  };
+  game.trajectory = [{ x: game.banana.x, y: game.banana.y }];
+  game.phase = 'flying';
+  document.getElementById('fire-btn').disabled = true;
+  playLaunch();
+}
+
+function updateBanana(dt) {
+  const b = game.banana;
+  if (!b) return;
+
+  // Sub-stepping for fast bananas so we don't tunnel through buildings
+  const steps = 4;
+  for (let s = 0; s < steps; s++) {
+    const sdt = dt / steps;
+    b.vy += GRAVITY * sdt;
+    b.vx += game.wind * WIND_FACTOR * sdt;
+    b.x += b.vx * sdt;
+    b.y += b.vy * sdt;
+    b.rot += 0.22 * sdt;
+    b.airborneFor += sdt;
+
+    // Off screen sides or below = miss, end turn
+    if (b.x < -60 || b.x > W + 60 || b.y > H + 60) {
+      missedShot();
+      return;
+    }
+
+    // Gorilla hit?
+    for (let i = 0; i < game.gorillas.length; i++) {
+      const g = game.gorillas[i];
+      if (!g.alive) continue;
+      // Don't allow self-hit in first half-second (banana exits muzzle)
+      if (i === game.currentPlayer && b.airborneFor < 0.4 * 60) continue;
+      const dx = b.x - g.x;
+      const dy = b.y - (g.y - 60); // approximate center of torso/head
+      if (Math.sqrt(dx * dx + dy * dy) < 28) {
+        gorillaHit(i, b.x, b.y);
+        return;
+      }
+    }
+
+    // Building hit? Sample the cached city alpha
+    if (cityHitAt(b.x, b.y)) {
+      buildingHit(b.x, b.y);
+      return;
+    }
+  }
+}
+
+function buildingHit(x, y) {
+  spawnExplosion(x, y, 45);
+  playBoom(1);
+  carveCrater(x, y, 42, 32);
+  game.banana = null;
+  setTimeout(endTurn, 600);
+  game.phase = 'flying'; // remain flying through the explosion fade then endTurn flips
+}
+
+function gorillaHit(idx, x, y) {
+  spawnExplosion(x, y, 70);
+  playBoom(1.4);
+  carveCrater(x, y, 60, 48);
+  game.gorillas[idx].alive = false;
+  game.banana = null;
+
+  // Score goes to the SHOOTER (which might be the other gorilla)
+  const winner = (idx === game.currentPlayer) ? (1 - game.currentPlayer) : game.currentPlayer;
+  game.scores[winner]++;
+  updateHUD();
+  // Trigger the victory music + dance together, 700ms after the explosion
+  // so the boom has room to breathe. Dance lasts ~5.12s (8 arm swaps).
+  setTimeout(() => {
+    game.gorillas[winner].dancing = true;
+    game.gorillas[winner].danceStart = performance.now();
+    playVictory();
+  }, 700);
+
+  game.phase = 'roundOver';
+  const winsNeeded = Math.ceil(game.bestOf / 2);
+  // Dance finishes around 700 + 5120 = 5820ms after the hit. Let it play through.
+  if (game.scores[winner] >= winsNeeded) {
+    setTimeout(() => showMatchOver(winner), 6200);
+  } else {
+    setTimeout(() => showRoundBanner(`PLAYER ${winner + 1} WINS ROUND`, `Score: ${game.scores[0]} – ${game.scores[1]}`), 2400);
+    setTimeout(() => nextRound(), 6400);
+  }
+}
+
+function missedShot() {
+  game.banana = null;
+  setTimeout(endTurn, 300);
+  game.phase = 'flying';
+}
+
+function carveCrater(x, y, rx, ry) {
+  cityCtx.save();
+  cityCtx.globalCompositeOperation = 'destination-out';
+  cityCtx.beginPath();
+  cityCtx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  cityCtx.fill();
+  cityCtx.restore();
+  rebuildCityAlpha();
+
+  // If a gorilla's building gets crater under its feet, the gorilla doesn't fall
+  // (matches original — they remain perched on the carved silhouette)
+}
+
+function endTurn() {
+  if (game.phase === 'roundOver' || game.phase === 'gameOver') return;
+  game.currentPlayer = 1 - game.currentPlayer;
+  game.phase = 'aiming';
+  document.getElementById('fire-btn').disabled = false;
+  // Restore the incoming player's remembered angle/velocity
+  const li = game.lastInputs[game.currentPlayer];
+  document.getElementById('angle').value = li.angle;
+  document.getElementById('velocity').value = li.velocity;
+  updateHUD();
+  updateControls();
+  setTimeout(() => {
+    const ang = document.getElementById('angle');
+    ang.focus(); ang.select();
+  }, 50);
+}
+
+// ============== ROUND / MATCH FLOW ==============
+function nextRound() {
+  hideBanner();
+  game.round++;
+  // Alternate who starts each round
+  game.startingPlayer = (game.round - 1) % 2;
+  game.currentPlayer = game.startingPlayer;
+
+  // Roll variation
+  game.timeOfDay = pickRandom(['dawn', 'day', 'day', 'dusk', 'night']);
+  // Weather weights to favor calmer
+  game.weather = pickRandom(['clear', 'clear', 'clear', 'cloudy', 'cloudy', 'rainy', 'snowy', 'stormy']);
+  game.wind = rand(-5, 5);
+  // Stormy gets stronger wind but still bounded
+  if (game.weather === 'stormy') game.wind *= 1.15;
+
+  game.buildings = generateBuildings();
+  game.gorillas = placeGorillas();
+  renderCityToOffscreen();
+  game.weatherParticles = createWeatherParticles();
+  seedNightStars();
+  seedClouds();
+
+  game.trajectory = [];
+  game.particles = [];
+  game.banana = null;
+  game.phase = 'aiming';
+  document.getElementById('fire-btn').disabled = false;
+  // Restore the starting player's last-used angle/velocity
+  const li = game.lastInputs[game.currentPlayer];
+  document.getElementById('angle').value = li.angle;
+  document.getElementById('velocity').value = li.velocity;
+
+  updateHUD();
+  updateControls();
+  showRoundBanner(`ROUND ${game.round}`, `BEST OF ${game.bestOf}`);
+  setTimeout(() => {
+    hideBanner();
+    document.getElementById('angle').focus();
+    document.getElementById('angle').select();
+  }, 1400);
+}
+
+function showMatchOver(winner) {
+  game.phase = 'gameOver';
+  const winText = document.getElementById('match-winner-text');
+  winText.textContent = `PLAYER ${winner + 1} WINS THE MATCH!`;
+  winText.style.color = winner === 0 ? '#FFAA88' : '#77BBFF';
+  winText.style.textShadow = `4px 4px 0 #000, 0 0 30px ${winner === 0 ? '#FF7755' : '#4DA6FF'}`;
+  document.getElementById('match-final-score').textContent =
+    `${game.scores[0]}  –  ${game.scores[1]}`;
+  document.getElementById('match-over-overlay').classList.add('show');
+}
+
+function showRoundBanner(main, sub) {
+  const el = document.getElementById('round-banner');
+  el.innerHTML = main + (sub ? `<span class="sub">${sub}</span>` : '');
+  el.classList.add('show');
+}
+function hideBanner() {
+  document.getElementById('round-banner').classList.remove('show');
+}
+
+// ============== HUD ==============
+function updateHUD() {
+  document.querySelector('#p1-box .score').textContent = game.scores[0];
+  document.querySelector('#p2-box .score').textContent = game.scores[1];
+  document.getElementById('p1-box').classList.toggle('current', game.currentPlayer === 0 && game.phase === 'aiming');
+  document.getElementById('p2-box').classList.toggle('current', game.currentPlayer === 1 && game.phase === 'aiming');
+  const ri = document.getElementById('round-info');
+  ri.firstChild.textContent = `ROUND ${game.round} OF ${game.bestOf}`;
+  const ws = ri.querySelector('.weather-strip');
+  ws.textContent = `${game.weather.toUpperCase()} · ${game.timeOfDay.toUpperCase()} · WIND ${game.wind.toFixed(1)}`;
+}
+
+function updateControls() {
+  const tl = document.getElementById('turn-label');
+  tl.textContent = `PLAYER ${game.currentPlayer + 1}'s TURN`;
+  tl.style.color = game.currentPlayer === 0 ? '#FFAA88' : '#77BBFF';
+  document.getElementById('controls').style.borderColor = game.currentPlayer === 0 ? '#FF7755' : '#4DA6FF';
+  // Keep angle/velocity from last shot (Original Gorillas did this — handy)
+}
+
+// ============== MAIN LOOP ==============
+function render(now) {
+  drawSky();
+  drawCelestial(now);
+  drawClouds();
+
+  // City (carved)
+  ctx.drawImage(cityCanvas, 0, 0);
+
+  // Time-of-day mood wash — applied here as an overlay rather than baked
+  // into the offscreen city canvas, so the collision alpha mask stays clean.
+  const todWash = game.timeOfDay === 'night' ? 0.35
+                : game.timeOfDay === 'dusk'  ? 0.20
+                : game.timeOfDay === 'dawn'  ? 0.15
+                : 0;
+  if (todWash > 0) {
+    ctx.fillStyle = `rgba(20, 10, 50, ${todWash})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Trajectory breadcrumb from last shot
+  drawTrajectory();
+  // Easy mode trajectory preview (Rafa mode)
+  drawEasyTrajectory();
+
+  // Gorillas
+  game.gorillas.forEach((g, i) => {
+    const isCurrent = i === game.currentPlayer && game.phase === 'aiming';
+    drawGorilla(g, isCurrent, now);
+  });
+
+  // Banana
+  if (game.banana) drawBanana(game.banana);
+
+  // Particles (explosions)
+  drawParticles();
+
+  // Weather (foreground)
+  drawWeather();
+
+  // Wind indicator
+  if (game.phase !== 'setup') drawWindIndicator();
+}
+
+let lastT = performance.now();
+function loop(now) {
+  const dt = Math.min((now - lastT) / 16.67, 2.5);
+  lastT = now;
+
+  if (game.phase === 'flying') updateBanana(dt);
+  updateParticles(dt);
+  updateWeather(dt);
+
+  render(now);
+  requestAnimationFrame(loop);
+}
+
+// ============== INPUT ==============
+
+// Title music starts on the first user gesture (browser autoplay policy).
+// Re-armed on each return to the setup screen.
+let titleMusicArmed = false;
+function armTitleMusic() {
+  if (titleMusicArmed) return;
+  titleMusicArmed = true;
+  const trigger = () => {
+    if (game.phase !== 'setup') return;
+    ensureAudio();
+    playTitleMusic();
+  };
+  document.addEventListener('pointerdown', trigger, { once: true });
+  document.addEventListener('keydown',     trigger, { once: true });
+  document.addEventListener('mousemove',   trigger, { once: true });
+}
+armTitleMusic();
+
+document.querySelectorAll('#setup-overlay button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    ensureAudio();
+    stopTitleMusic();
+    game.bestOf = parseInt(btn.dataset.bestof);
+    game.scores = [0, 0];
+    game.round = 0;
+    game.easyMode = document.getElementById('easy-mode-checkbox').checked;
+    // Reset per-player input memory each new match
+    game.lastInputs = [{ angle: 45, velocity: 80 }, { angle: 45, velocity: 80 }];
+    document.getElementById('setup-overlay').style.display = 'none';
+    document.getElementById('hud').style.display = 'flex';
+    document.getElementById('controls').style.display = 'flex';
+    nextRound();
+  });
+});
+
+document.getElementById('fire-btn').addEventListener('click', fire);
+
+document.addEventListener('keydown', e => {
+  if (game.phase === 'aiming' && e.key === 'Enter') {
+    e.preventDefault();
+    fire();
+  }
+});
+
+document.getElementById('rematch-btn').addEventListener('click', () => {
+  document.getElementById('match-over-overlay').classList.remove('show');
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('controls').style.display = 'none';
+  game.phase = 'setup';
+  game.scores = [0, 0];
+  game.round = 0;
+  document.getElementById('setup-overlay').style.display = 'flex';
+  // Re-arm title music for the new title-screen visit
+  titleMusicArmed = false;
+  armTitleMusic();
+});
+
+// ============== INIT ==============
+window.addEventListener('resize', resize);
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
