@@ -384,4 +384,62 @@ test.describe('TheWeave — the little book (slice 3, part 2)', () => {
     await expect(page.getByRole('button', { name: /Weave/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /the book/i })).toHaveCount(0)
   })
+
+  test('Save the book stitches the kept days into one video and shares it', async ({ page }) => {
+    // Mock the encode worker (capture config) + navigator.share (capture file).
+    await page.addInitScript(() => {
+      const configCalls = []
+      class MockWorker {
+        constructor() { MockWorker.last = this }
+        postMessage(data) {
+          if (data.type === 'config') {
+            configCalls.push({ width: data.width, height: data.height, audio: data.audio, totalFrames: data.totalFrames })
+            setTimeout(() => this.onmessage?.({ data: { type: 'ready' } }), 0)
+          } else if (data.type === 'flush') {
+            const blob = new Blob([new Uint8Array([0, 0, 0, 8, 102, 116, 121, 112])], { type: 'video/mp4' })
+            setTimeout(() => this.onmessage?.({ data: { type: 'done', blob } }), 20)
+          }
+        }
+        terminate() {}
+      }
+      window.Worker = MockWorker
+      window.__weaveBookConfigCalls = configCalls
+      const sharedFiles = []
+      window.__weaveBookSharedFiles = sharedFiles
+      navigator.share = async (d) => { sharedFiles.push(...(d.files || [])) }
+      navigator.canShare = () => true
+    })
+
+    await setup(page)
+    // Two renderable days: day 1 (DAY1_MEMORIES on vb1-3) + a day-2 memory.
+    await seedMemoriesIntoCache(page, [
+      ...DAY1_MEMORIES,
+      {
+        id: 'w-mem-d2', tripId: 'volleyball-2026', stopId: 'vb2-3',
+        authorTraveler: 'jonathan', visibility: 'shared', kind: 'text',
+        text: 'Second day on the road.', createdAt: '2026-05-23T18:00:00.000Z',
+      },
+    ])
+    await mockBook(page, [
+      { ...KEPT_PAGE, dayIso: '2026-05-22', title: 'Day One' },
+      { ...KEPT_PAGE, dayIso: '2026-05-23', title: 'Day Two' },
+    ])
+    await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+    await page.getByRole('button', { name: /the book/i }).click()
+    await expect(page.getByTestId('weave-book')).toBeVisible()
+
+    await page.getByTestId('weave-book-save').click()
+    await expect(page.getByText(/Saved to Photos/i)).toBeVisible({ timeout: 15_000 })
+
+    // Two kept days → one video of 2 × 150 frames, 576×720, no audio.
+    const cfg = await page.evaluate(() => window.__weaveBookConfigCalls)
+    expect(cfg.length).toBeGreaterThan(0)
+    expect(cfg[0].width).toBe(576)
+    expect(cfg[0].height).toBe(720)
+    expect(cfg[0].audio).toBeUndefined()
+    expect(cfg[0].totalFrames).toBe(300)
+
+    const fileType = await page.evaluate(() => window.__weaveBookSharedFiles[0]?.type)
+    expect(fileType).toBe('video/mp4')
+  })
 })

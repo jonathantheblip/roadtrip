@@ -15,7 +15,7 @@ const ENCODE_TIMEOUT_MS = 90_000
 
 // ── Token resolution (main thread only) ──────────────────────────────
 
-function resolveTokens() {
+export function resolveTokens() {
   const s = getComputedStyle(document.body)
   const v = (name) => s.getPropertyValue(name).trim()
   return {
@@ -36,7 +36,7 @@ function resolveTokens() {
 
 // ── Image pre-loading ─────────────────────────────────────────────────
 
-async function preloadImages(beats) {
+export async function preloadImages(beats) {
   const map = new Map()
   const tasks = []
   for (const beat of beats) {
