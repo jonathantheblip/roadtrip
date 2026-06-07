@@ -6,6 +6,7 @@ import { JonathanView } from './views/JonathanView'
 import { HelenView } from './views/HelenView'
 import { AureliaView } from './views/AureliaView'
 import { RafaView } from './views/RafaView'
+import { RafaPad } from './views/RafaPad'
 import { TripIndex } from './views/TripIndex'
 import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
@@ -25,6 +26,7 @@ import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
 import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from './lib/weave'
 import { useTrips } from './hooks/useTrips'
+import { useIsIpad } from './hooks/useMediaQuery'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
@@ -197,6 +199,7 @@ export default function App() {
   function openClaude() { setClaudeOpen(true) }
   function closeClaude() { setClaudeOpen(false) }
   const tripsApi = useTrips()
+  const isIpad = useIsIpad()
   const allTrips = tripsApi.trips
   // Drafts (manual-add, not yet published) never appear in the polished
   // surfaces — not the index, not the trip switcher, not the cold-start
@@ -628,6 +631,8 @@ export default function App() {
   // Render the per-traveler themed surface for the active trip
   function renderTripView() {
     if (!trip) return null
+    // Rafa's iPad command-center home renders only on iPad-sized screens;
+    // phones (and CI's phone-width baselines) keep his RafaView.
     const props = {
       trip,
       traveler,
@@ -645,7 +650,9 @@ export default function App() {
       case 'aurelia':
         return <AureliaView {...props} />
       case 'rafa':
-        return <RafaView {...props} />
+        return isIpad
+          ? <RafaPad {...props} />
+          : <RafaView {...props} />
       case 'jonathan':
       default:
         return <JonathanView {...props} />
@@ -656,7 +663,7 @@ export default function App() {
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && !(traveler === 'rafa' && isIpad) && (
         <div
           className="px-6"
           data-testid="trip-topbar"
