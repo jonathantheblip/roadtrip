@@ -109,7 +109,7 @@ function ashevilleCard(id, secondStopName) {
 // the "Plan with Claude" FAB lives.
 async function gotoIndex(page) {
   const fab = page.getByRole('button', { name: /Plan with Claude/i })
-  const back = page.getByRole('button', { name: /←\s*Trips/i })
+  const back = page.getByRole('button', { name: /back to trips/i })
   await expect(fab.or(back).first()).toBeVisible({ timeout: 7000 })
   if (await fab.isVisible().catch(() => false)) return
   await back.first().click()
@@ -206,7 +206,7 @@ test.describe('Claude-in-App — create_trip', () => {
 
     // From the new trip, step back to the index; the new trip is in the
     // list alongside the fixture trip.
-    await page.getByRole('button', { name: /←\s*Trips/i }).first().click()
+    await page.getByRole('button', { name: /back to trips/i }).first().click()
     await expect(page.getByText('Asheville Long Weekend').first()).toBeVisible({ timeout: 5000 })
 
     // Editable surface: the trip carries the editable structure the

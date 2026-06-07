@@ -689,19 +689,27 @@ export default function App() {
               view.name === 'photos' ||
               view.name === 'all-photos' ||
               view.name === 'import'
-            const label = inDeepView && trip?.title ? `← ${trip.title}` : '← Trips'
+            // On the trip home the title-switcher beside this already names the
+            // trip, so the back link is a bare "←" (kept the word only in deep
+            // views, where there's no switcher). Avoids the "← TRIPS" label
+            // colliding with a long trip title on a phone.
+            const label = inDeepView && trip?.title ? `← ${trip.title}` : '←'
             const handler = inDeepView ? () => setView({ name: 'trip' }) : openIndex
+            // Deep views already name the destination in the link text (a fine
+            // a11y name); only the trip-home bare "←" needs an explicit label.
+            const backAria = inDeepView ? undefined : 'Back to trips'
             return (
               <button
                 type="button"
                 onClick={handler}
+                aria-label={backAria}
                 style={{
                   background: 'transparent',
                   border: 0,
-                  padding: 0,
+                  padding: '4px 2px',
                   cursor: 'pointer',
                   minWidth: 0,
-                  flex: '0 1 auto',
+                  flex: '0 0 auto',
                 }}
               >
                 <span
@@ -728,33 +736,42 @@ export default function App() {
               back button already carries the trip title, and rendering
               the title twice in a fixed-width bar overflows on phones. */}
           {view.name === 'trip' && (
-            <select
-              value={trip?.id || ''}
-              onChange={(e) => openTrip(e.target.value)}
-              aria-label="Switch trip"
-              style={{
-                background: 'transparent',
-                border: 0,
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                opacity: topBar.opacity,
-                color: topBar.text,
-                maxWidth: '60vw',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                flex: '1 1 auto',
-                minWidth: 0,
-                textAlign: 'right',
-              }}
-            >
-              {visibleTrips.map((t) => (
-                <option key={t.id} value={t.id} style={{ color: '#1A1614' }}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
+            // Wrapper clips the native <select> — iOS selects don't reliably
+            // flex-shrink or ellipsize their own text, so an overflow-hidden
+            // flex parent is what actually keeps a long title from spilling
+            // over the back arrow / actions.
+            <div style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', display: 'flex' }}>
+              <select
+                value={trip?.id || ''}
+                onChange={(e) => openTrip(e.target.value)}
+                aria-label="Switch trip"
+                style={{
+                  background: 'transparent',
+                  border: 0,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 10,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  opacity: topBar.opacity,
+                  color: topBar.text,
+                  width: '100%',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  textAlign: 'left',
+                  appearance: 'none',
+                  WebkitAppearance: 'none',
+                }}
+              >
+                {visibleTrips.map((t) => (
+                  <option key={t.id} value={t.id} style={{ color: '#1A1614' }}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
           {/* Modify-with-Claude stays visible — it's the primary trip action.
               Replay / Map / Book / Settings live in the ⋯ overflow menu below

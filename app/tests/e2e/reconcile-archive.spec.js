@@ -211,7 +211,7 @@ test.describe('Trip reconciliation + archiving', () => {
     // trip, then "← Trips" in the trip view → index). The Settings
     // banner's own "Back" sits under that fixed bar and can't be clicked.
     await page.getByRole('button', { name: /←\s*Reconcile Test Roadtrip/ }).click() // Settings → trip
-    await page.getByRole('button', { name: /←\s*Trips/i }).click() // trip → index
+    await page.getByRole('button', { name: /back to trips/i }).click() // trip → index
 
     await expect(page.getByText('ARCHIVE · 2026')).toBeVisible({ timeout: 7000 })
     await expect(page.getByText('MAY', { exact: true })).toBeVisible()
