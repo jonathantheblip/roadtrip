@@ -82,10 +82,16 @@ test('Weave keepsake encodes to MP4 and triggers share sheet on iOS Simulator', 
     navigator.canShare = () => true
   })
 
-  // Open the Weave overlay.
+  // Open the Weave overlay. NOTE: 'button*=Weave' is a WebdriverIO partial-text
+  // selector — valid for browser.$(), but NOT valid CSS, so it must not be
+  // passed to document.querySelector (which would throw SyntaxError). The
+  // JS-level click (filter buttons by text) mirrors import-video's pattern of
+  // clicking via execute() to dodge sticky-header touch interception.
   await browser.$('button*=Weave').then((el) => el.waitForExist({ timeout: 8_000 }))
   await browser.execute(() => {
-    document.querySelector('button*=Weave')?.click()
+    const btn = Array.from(document.querySelectorAll('button'))
+      .find((b) => /Weave/i.test(b.textContent || ''))
+    btn?.click()
   })
 
   // Wait for the overlay to render.
