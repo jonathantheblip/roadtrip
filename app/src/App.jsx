@@ -21,6 +21,7 @@ import { ImportView } from './views/ImportView'
 import { InstallIdentity } from './views/InstallIdentity'
 import { TheWeave } from './views/TheWeave'
 import { WeaveBook } from './views/WeaveBook'
+import { SurprisesView } from './views/SurprisesView'
 // "Show me, me" (the on-device face recognizer) is lazy-loaded so its
 // model + index code stays out of the main bundle until it's opened.
 const PersonView = lazy(() => import('./views/PersonView').then((m) => ({ default: m.PersonView })))
@@ -50,6 +51,9 @@ function initialViewFromUrl() {
     // ?personview=1 opens "Show me, me" directly (also on Rafa's tile +
     // Aurelia's lens).
     if (params.get('personview') === '1') return { name: 'showme', who: null }
+    // ?surprises=1 opens the Surprises & masking surface directly (temp entry,
+    // for on-device testing).
+    if (params.get('surprises') === '1') return { name: 'surprises' }
     if (url || action === 'import') {
       return { name: 'import', importUrl: url }
     }
@@ -625,6 +629,12 @@ export default function App() {
     setView({ name: 'book' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  // SURPRISES & MASKING (Slice 1). TEMP entry in the overflow menu like Map /
+  // Book — the designed affordance is TBD. Trip-scoped.
+  function openSurprises() {
+    setView({ name: 'surprises' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   // Returns the upsert result so NewTrip can show an inline error and
   // stay put on failure (no navigation), per change order §3.4. On
   // success we go straight into the editor — Helen continues adding
@@ -679,7 +689,7 @@ export default function App() {
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && !(traveler === 'rafa' && isIpad) && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && view.name !== 'surprises' && !(traveler === 'rafa' && isIpad) && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -893,6 +903,7 @@ export default function App() {
                       ? [
                           { label: 'Replay', glyph: '▶', onClick: () => openReplay() },
                           { label: 'Live map', glyph: '▣', onClick: openMap },
+                          { label: 'Surprises', glyph: '🎁', onClick: openSurprises },
                         ]
                       : []),
                     ...(trip && bookHasPages ? [{ label: 'The book', glyph: '❏', onClick: openBook }] : []),
@@ -1031,6 +1042,13 @@ export default function App() {
             trips={visibleTrips}
             traveler={traveler}
             onBack={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
+          />
+        )}
+        {view.name === 'surprises' && (
+          <SurprisesView
+            trip={trip}
+            traveler={traveler}
+            onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
           />
         )}
         {view.name === 'showme' && (

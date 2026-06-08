@@ -35,6 +35,8 @@
 // flatten pass falls back to the per-photo `photoRef.capturedAt` and
 // finally to `createdAt`.
 
+import { maskForViewer, isSurprise } from './surprises.js'
+
 const SHARED_KEY = 'rt_memories_shared_v1'
 const PRIVATE_KEY = (traveler) => `rt_memories_private_${traveler}_v1`
 
@@ -73,17 +75,33 @@ export function listAllLocalMemories(traveler) {
 
 // Read every memory the active traveler is allowed to see for a trip.
 // Includes: all shared memories + that traveler's own private ones.
+// Surprise masking (the per-viewer transform) is applied LAST so every surface
+// that reads through here inherits it: a teaser hidden from `traveler` is
+// dropped, a cover is swapped for its stand-in, the author + revealed see the
+// real thing, and normal (non-surprise) memories pass through untouched.
 export function listMemoriesForTrip(tripId, traveler) {
   const shared = readJson(SHARED_KEY).filter((m) => m.tripId === tripId)
   const own = traveler ? readJson(PRIVATE_KEY(traveler)).filter((m) => m.tripId === tripId) : []
-  return [...shared, ...own].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+  const all = [...shared, ...own].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+  return maskForViewer(all, traveler)
 }
 
 // Same, scoped to one stop.
 export function listMemoriesForStop(stopId, traveler) {
   const shared = readJson(SHARED_KEY).filter((m) => m.stopId === stopId)
   const own = traveler ? readJson(PRIVATE_KEY(traveler)).filter((m) => m.stopId === stopId) : []
-  return [...shared, ...own].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+  const all = [...shared, ...own].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+  return maskForViewer(all, traveler)
+}
+
+// RAW (unmasked) surprise records for a trip — every shared memory that carries
+// a masking layer. The Surprises SCREEN is the only caller: it needs to know
+// about masked records to render the author's kept cards + the recipient's
+// blurred teasers, which is exactly what the masked reads above hide. Normal
+// surfaces must never use this — they go through listMemoriesForTrip. Surprises
+// always live in the shared zone (a private memory is already author-only).
+export function listTripSurpriseRecords(tripId) {
+  return readJson(SHARED_KEY).filter((m) => m.tripId === tripId && isSurprise(m))
 }
 
 export function saveMemory({
@@ -107,6 +125,16 @@ export function saveMemory({
   reactions,
   capturedAt,
   interstitial,
+  // ── Surprise / masking layer (optional). Presence of hideFrom MARKS this
+  //    memory a surprise. All preserve-on-undefined so a later content edit
+  //    can't strip a memory's surprise status; an explicit hideFrom:null clears
+  //    it (un-surprises the memory). ──
+  hideFrom,
+  reveal,
+  conceal,
+  cover,
+  revealed,
+  surprise,
 }) {
   const now = new Date().toISOString()
   const key = visibility === 'private' ? PRIVATE_KEY(authorTraveler) : SHARED_KEY
@@ -181,6 +209,73 @@ export function saveMemory({
       existingShared?.interstitial || existingPriv?.interstitial || undefined
   }
 
+  // Masking layer. Explicit hideFrom array → (re)build the surprise; explicit
+  // null → clear it; undefined → preserve whatever the existing record carried
+  // (so a caption/photo-only patch can't silently strip the secret — same
+  // preserve rationale as capturedAt / interstitial above).
+  const existingMaskSource = existingShared || existingPriv
+  let mask
+  if (Array.isArray(hideFrom)) {
+    mask = {
+      hideFrom,
+      reveal:
+        reveal && typeof reveal === 'object'
+          ? { type: reveal.type || 'manual', at: reveal.at ?? '' }
+          : { type: 'manual', at: '' },
+      conceal: conceal === 'cover' ? 'cover' : 'teaser',
+      cover:
+        conceal === 'cover' && cover && typeof cover === 'object'
+          ? {
+              icon: cover.icon || '📍',
+              title: cover.title || '',
+              loc: cover.loc || '',
+              time: cover.time || '',
+              weather: cover.weather || '',
+              packing: cover.packing || '',
+            }
+          : undefined,
+      // New surprises start hidden; preserve a previously-set reveal stamp on edit.
+      revealed: revealed ?? existingMaskSource?.revealed ?? undefined,
+      surprise:
+        surprise && typeof surprise === 'object'
+          ? {
+              what: surprise.what || 'A memory',
+              icon: surprise.icon || '🎁',
+              title: surprise.title || '',
+              detail: surprise.detail || '',
+              tint: surprise.tint || '#5C5048',
+            }
+          : existingMaskSource?.surprise,
+    }
+  } else if (hideFrom === null) {
+    mask = {
+      hideFrom: undefined,
+      reveal: undefined,
+      conceal: undefined,
+      cover: undefined,
+      revealed: undefined,
+      surprise: undefined,
+    }
+  } else {
+    mask = existingMaskSource
+      ? {
+          hideFrom: existingMaskSource.hideFrom,
+          reveal: existingMaskSource.reveal,
+          conceal: existingMaskSource.conceal,
+          cover: existingMaskSource.cover,
+          revealed: existingMaskSource.revealed,
+          surprise: existingMaskSource.surprise,
+        }
+      : {
+          hideFrom: undefined,
+          reveal: undefined,
+          conceal: undefined,
+          cover: undefined,
+          revealed: undefined,
+          surprise: undefined,
+        }
+  }
+
   const record = {
     id: id || makeId(),
     tripId,
@@ -202,6 +297,9 @@ export function saveMemory({
     reactions: reactions || [],
     capturedAt: resolvedCapturedAt,
     interstitial: resolvedInterstitial,
+    // Surprise / masking layer (hideFrom, reveal, conceal, cover, revealed,
+    // surprise) — spread flat so the read-side transform can see m.hideFrom.
+    ...mask,
     createdAt: existingShared?.createdAt || existingPriv?.createdAt || now,
     updatedAt: now,
   }
@@ -418,6 +516,23 @@ export function updateMemoryCapturedAt(memoryId, isoOrNull) {
     if (result) return result
   }
   return null
+}
+
+// Manual reveal: flip a surprise from hidden → visible for its hideFrom list.
+// Stamps `revealed` so the read-side transform stops masking it (everyone sees
+// the real row from now on). Surprises live in the shared zone. Re-mirrors so
+// other devices learn the reveal.
+export function revealSurprise(memoryId) {
+  if (!memoryId) return null
+  const list = readJson(SHARED_KEY)
+  const idx = list.findIndex((m) => m.id === memoryId)
+  if (idx < 0) return null
+  const now = new Date().toISOString()
+  const patched = { ...list[idx], revealed: now, updatedAt: now }
+  list[idx] = patched
+  writeJson(SHARED_KEY, list)
+  scheduleMirror({ type: 'save', record: patched })
+  return patched
 }
 
 // One-shot backfill: walk every local memory and synthesize a top-level

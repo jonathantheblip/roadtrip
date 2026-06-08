@@ -202,3 +202,59 @@ test.describe('a11y (axe, serious+critical) — the book ×4 personas', () => {
     })
   }
 })
+
+// Surprises & Masking (Slice 1) — new full-screen overlay with the recurring
+// risk surfaces: accent-as-text eyebrows ("Something's coming", the CoverCard
+// label, "+ New"), small mono/faint labels, and the accent-fill chips/buttons
+// (the C1/Stage-2 fill-ink trap). Seed per persona so EVERY traveler renders
+// both a kept card (with a CoverCard) AND a coming teaser, then gate contrast.
+test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
+  for (const p of TRAVELERS) {
+    test(`surprises surface — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      const other = TRAVELERS.find((x) => x !== p)
+      await seedMemoriesIntoCache(page, [
+        // `p` authored a cover → renders in "You're keeping" + the CoverCard.
+        {
+          id: 'axe-sx-cover', tripId: 'volleyball-2026', stopId: null, authorTraveler: p,
+          visibility: 'shared', kind: 'text', createdAt: '2026-05-22T18:00:00.000Z',
+          hideFrom: [other], reveal: { type: 'arrival', at: '5th Avenue' }, conceal: 'cover',
+          cover: { icon: '🚶', title: 'A walk down Fifth Avenue', loc: '5th Avenue', time: 'Sat · 1:00 PM', weather: 'Cold & windy', packing: 'Warm coats' },
+          surprise: { what: 'A stop', icon: '🎹', title: 'The giant floor piano', detail: 'Secret detour Saturday.', tint: '#C24B2E' },
+        },
+        // `other` authored a teaser hidden from `p` → renders in "Something's coming".
+        {
+          id: 'axe-sx-teaser', tripId: 'volleyball-2026', stopId: null, authorTraveler: other,
+          visibility: 'shared', kind: 'text', createdAt: '2026-05-22T18:05:00.000Z',
+          hideFrom: [p], reveal: { type: 'date', at: 'June 15' }, conceal: 'teaser',
+          surprise: { what: 'A photo', icon: '🖼️', title: "Father's Day card", detail: 'a printed frame.', tint: '#5C4A52' },
+        },
+      ])
+      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
+      await openTopMenuItem(page, /surprises/i)
+      await expect(page.getByTestId('surprises-view')).toBeVisible()
+      await expectNoSeriousA11y(page, {
+        include: '[data-testid="surprises-view"]',
+        only: ['color-contrast'],
+        label: `surprises surface (${p})`,
+      })
+    })
+
+    test(`surprises composer (cover mode) — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
+      await openTopMenuItem(page, /surprises/i)
+      await expect(page.getByTestId('surprises-view')).toBeVisible()
+      await page.getByRole('button', { name: /New/i }).click()
+      // Toggle to cover-story mode to expose the cover form (the densest set of
+      // controls + the accent-fill chips/submit).
+      await page.getByRole('button', { name: /A cover story/i }).click()
+      await expect(page.getByRole('button', { name: /Hide it behind the cover/i })).toBeVisible()
+      await expectNoSeriousA11y(page, {
+        include: '[data-testid="surprises-view"]',
+        only: ['color-contrast'],
+        label: `surprises composer (${p})`,
+      })
+    })
+  }
+})
