@@ -226,8 +226,16 @@ test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
         {
           id: 'axe-sx-teaser', tripId: 'volleyball-2026', stopId: null, authorTraveler: other,
           visibility: 'shared', kind: 'text', createdAt: '2026-05-22T18:05:00.000Z',
-          hideFrom: [p], reveal: { type: 'date', at: 'June 15' }, conceal: 'teaser',
+          hideFrom: [p], reveal: { type: 'date', at: '2026-06-15' }, conceal: 'teaser',
           surprise: { what: 'A photo', icon: '🖼️', title: "Father's Day card", detail: 'a printed frame.', tint: '#5C4A52' },
+        },
+        // `other` authored a now-REVEALED surprise hidden from `p` → renders in
+        // the "✨ Revealed for you" section (Slice 2).
+        {
+          id: 'axe-sx-revealed', tripId: 'volleyball-2026', stopId: null, authorTraveler: other,
+          visibility: 'shared', kind: 'text', createdAt: '2026-05-22T18:06:00.000Z',
+          hideFrom: [p], reveal: { type: 'manual' }, conceal: 'teaser', revealed: '2026-05-23T00:00:00.000Z',
+          surprise: { what: 'A memory', icon: '🧁', title: 'Birthday cupcake', detail: 'a candle at breakfast.', tint: '#7A5A3A' },
         },
       ])
       await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
@@ -246,6 +254,11 @@ test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
       await openTopMenuItem(page, /surprises/i)
       await expect(page.getByTestId('surprises-view')).toBeVisible()
       await page.getByRole('button', { name: /New/i }).click()
+      // Exercise the Slice-2 reveal pickers (date input + place select) so they
+      // get scanned too, then the cover form.
+      await page.getByRole('button', { name: /On a date/i }).click()
+      await expect(page.getByLabel('Reveal date')).toBeVisible()
+      await page.getByRole('button', { name: /When they arrive/i }).click()
       // Toggle to cover-story mode to expose the cover form (the densest set of
       // controls + the accent-fill chips/submit).
       await page.getByRole('button', { name: /A cover story/i }).click()

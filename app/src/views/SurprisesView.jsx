@@ -22,7 +22,7 @@ import {
   listTripSurpriseRecords,
   revealSurprise,
 } from '../lib/memoryStore'
-import { authoredSurprises, teasersMaskedFrom, displayName, revealLabel } from '../lib/surprises'
+import { authoredSurprises, teasersMaskedFrom, revealedForViewer, displayName, revealLabel } from '../lib/surprises'
 
 // Per-lens corner radius — mirrors themes.css --radius (2 / 18 / 4 / 24). The
 // design does arithmetic on it (Math.min(r,18), r-4, r+6) so we keep the numeric.
@@ -111,11 +111,13 @@ export function SurprisesView({ trip, traveler, onClose }) {
 
   const [tick, setTick] = useState(0) // bump to re-read the store after writes
   const [composing, setComposing] = useState(false)
+  const [editing, setEditing] = useState(null) // the surprise being edited, or null
   const [justRevealed, setJustRevealed] = useState(null)
 
   const raw = useMemo(() => (tripId ? listTripSurpriseRecords(tripId) : []), [tripId, tick])
   const kept = useMemo(() => authoredSurprises(raw, traveler), [raw, traveler])
   const coming = useMemo(() => teasersMaskedFrom(raw, traveler), [raw, traveler])
+  const revealedForMe = useMemo(() => revealedForViewer(raw, traveler), [raw, traveler])
 
   function doReveal(s) {
     setJustRevealed(s)
@@ -127,7 +129,10 @@ export function SurprisesView({ trip, traveler, onClose }) {
   }
 
   function onCreate(payload) {
+    // payload.id present → editing an existing surprise (upsert by id); the
+    // secret-keeper can change how/when it reveals (or who) after the fact.
     saveMemory({
+      id: payload.id,
       tripId,
       stopId: null,
       authorTraveler: traveler,
@@ -139,7 +144,17 @@ export function SurprisesView({ trip, traveler, onClose }) {
       surprise: payload.surprise,
     })
     setComposing(false)
+    setEditing(null)
     setTick((n) => n + 1)
+  }
+
+  function openEdit(s) {
+    setEditing(s)
+    setComposing(true)
+  }
+  function closeComposer() {
+    setComposing(false)
+    setEditing(null)
   }
 
   return (
@@ -154,6 +169,31 @@ export function SurprisesView({ trip, traveler, onClose }) {
         <div style={{ fontFamily: serif, fontSize: 14, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 5, lineHeight: 1.45 }}>
           {traveler === 'rafa' ? 'Some things are a secret until the right moment!' : 'Hide a moment, a photo, or a whole trip — for one person or for everyone — until the moment is right.'}
         </div>
+
+        {/* Revealed for you — surprises that were hidden from you and have since
+            been unwrapped (where the ⋯ cue dot leads). */}
+        {revealedForMe.length > 0 && (
+          <div style={{ marginTop: 22 }}>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', color: 'var(--accent-text, var(--muted))', fontWeight: 600, marginBottom: 11 }}>✨ Revealed for you</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+              {revealedForMe.map((s) => {
+                const disp = s.surprise || {}
+                return (
+                  <div key={s.id} style={{ display: 'flex', gap: 12, padding: 13, borderRadius: Math.min(r, 18), border: '1px solid var(--border)', background: 'var(--card)' }}>
+                    <div style={{ borderRadius: Math.min(r - 4, 12), overflow: 'hidden', flexShrink: 0 }}>
+                      <Thumb tint={disp.tint || '#5C5048'} icon={disp.icon || '🎁'} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: 'var(--font-body)', fontSize: 8.5, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--muted)' }}>{disp.what || 'A surprise'} · from {displayName(s.authorTraveler, traveler)}</div>
+                      <div style={{ fontFamily: serif, fontSize: 16, fontWeight: heavy, fontStyle: ital, marginTop: 2, lineHeight: 1.2 }}>{disp.title || 'A surprise'}</div>
+                      {disp.detail && <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 3, lineHeight: 1.35 }}>{disp.detail}</div>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Something's coming — masked teasers (blurred title, reveal-trigger only) */}
         {coming.length > 0 && (
@@ -213,7 +253,12 @@ export function SurprisesView({ trip, traveler, onClose }) {
                           hidden from {(s.hideFrom || []).map((id) => displayName(id, traveler)).join(' & ')} · {revealLabel(s.reveal)}
                         </span>
                       </div>
-                      {!done && <button onClick={() => doReveal(s)} style={{ background: 'var(--accent)', color: 'var(--accent-ink, #fff)', border: 'none', borderRadius: 999, padding: '6px 12px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>Reveal now</button>}
+                      {!done && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <button onClick={() => openEdit(s)} aria-label="Edit surprise" style={{ background: 'transparent', color: 'var(--accent-text, var(--accent))', border: '1px solid var(--accent)', borderRadius: 999, padding: '6px 12px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>Edit</button>
+                          <button onClick={() => doReveal(s)} style={{ background: 'var(--accent)', color: 'var(--accent-ink, #fff)', border: 'none', borderRadius: 999, padding: '6px 12px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>Reveal now</button>
+                        </div>
+                      )}
                     </div>
                     {s.conceal === 'cover' && s.cover && !done && <CoverCard traveler={traveler} s={s} serif={serif} r={r} />}
                   </div>
@@ -232,7 +277,7 @@ export function SurprisesView({ trip, traveler, onClose }) {
         </div>
       </div>
 
-      {composing && <SurpriseComposer traveler={traveler} onClose={() => setComposing(false)} onCreate={onCreate} />}
+      {composing && <SurpriseComposer traveler={traveler} trip={trip} editing={editing} onClose={closeComposer} onCreate={onCreate} />}
 
       {justRevealed && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -279,7 +324,11 @@ function CoverCard({ traveler, s, serif, r }) {
 }
 
 // ── THE COMPOSER ─────────────────────────────────────────────────────────────
-function SurpriseComposer({ traveler, onClose, onCreate }) {
+// Create OR edit a surprise. `editing` (a surprise record) pre-fills every
+// field so the secret-keeper can change how/when/who it reveals after the fact.
+// "On a date" captures a real date; "When they arrive" captures a real place
+// (any stop with a location — a museum, a hotel, anywhere) for the geofence.
+function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   const serif = 'var(--font-display, var(--font-body, system-ui))'
   const heavy = traveler === 'rafa' ? 700 : 600
   const ital = traveler === 'aurelia' ? 'italic' : 'normal'
@@ -287,50 +336,83 @@ function SurpriseComposer({ traveler, onClose, onCreate }) {
   const whats = [['A stop', '📍'], ['A photo', '🖼️'], ['A memory', '💭'], ['The whole trip', '🗺️']]
   const family = TRAVELER_ORDER.filter((id) => id !== traveler)
   const reveals = [['manual', 'When I choose'], ['arrival', 'When they arrive'], ['date', 'On a date']]
-  const [what, setWhat] = useState('A stop')
-  const [hide, setHide] = useState([family[0]])
-  const [everyone, setEveryone] = useState(false)
-  const [reveal, setReveal] = useState('manual')
-  const [conceal, setConceal] = useState('teaser')
-  const [cov, setCov] = useState({ icon: '🚶', title: '', loc: '', time: '', weather: '', packing: '' })
+
+  // Every place on the trip that has a location — the arrival picker. Any kind
+  // of place qualifies (lodging, a landmark, a restaurant); nothing assumes a
+  // driving route.
+  const stops = useMemo(
+    () =>
+      (trip?.days || []).flatMap((d) =>
+        (d.stops || [])
+          .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng))
+          .map((s) => ({ id: s.id, name: s.name || s.title || 'A place', lat: s.lat, lng: s.lng, day: d.title || d.date || d.isoDate || '' }))
+      ),
+    [trip]
+  )
+
+  const ed = editing || null
+  const edEveryone = !!ed?.hideFrom?.includes('everyone')
+  const [what, setWhat] = useState(ed?.surprise?.what || 'A stop')
+  const [hide, setHide] = useState(ed && !edEveryone ? ed.hideFrom : [family[0]])
+  const [everyone, setEveryone] = useState(edEveryone)
+  const [reveal, setReveal] = useState(ed?.reveal?.type || 'manual')
+  const [revealDate, setRevealDate] = useState(ed?.reveal?.type === 'date' ? (ed.reveal.at || '') : '')
+  const [revealStopId, setRevealStopId] = useState(ed?.reveal?.type === 'arrival' ? (ed.reveal.at || '') : '')
+  const [conceal, setConceal] = useState(ed?.conceal || 'teaser')
+  const [cov, setCov] = useState(ed?.cover || { icon: '🚶', title: '', loc: '', time: '', weather: '', packing: '' })
   const setC = (k, v) => setCov((o) => ({ ...o, [k]: v }))
   const toggleHide = (id) => { setEveryone(false); setHide((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id])) }
   const coverReady = conceal !== 'cover' || (cov.title.trim() && cov.packing.trim())
-  const valid = (everyone || hide.length > 0) && coverReady
+  const revealReady = reveal === 'manual' || (reveal === 'date' && !!revealDate) || (reveal === 'arrival' && !!revealStopId)
+  const valid = (everyone || hide.length > 0) && coverReady && revealReady
   const whoNames = everyone ? 'anyone' : hide.map((id) => displayName(id, traveler)).join(' or ') || 'them'
 
   function create() {
+    let revealObj
+    if (reveal === 'date') revealObj = { type: 'date', at: revealDate }
+    else if (reveal === 'arrival') {
+      const st = stops.find((s) => s.id === revealStopId)
+      revealObj = st ? { type: 'arrival', at: st.id, label: st.name, lat: st.lat, lng: st.lng } : { type: 'arrival' }
+    } else revealObj = { type: 'manual' }
+    const base = ed?.surprise || {}
     onCreate({
+      id: ed?.id,
       hideFrom: everyone ? ['everyone'] : hide,
-      reveal: { type: reveal, at: reveal === 'arrival' ? 'the next stop' : reveal === 'date' ? 'a date you pick' : '' },
+      reveal: revealObj,
       conceal,
       cover: conceal === 'cover'
         ? { icon: cov.icon, title: cov.title.trim() || 'A quiet stop', loc: cov.loc.trim() || 'TBD', time: cov.time.trim() || 'same time', weather: cov.weather.trim() || '—', packing: cov.packing.trim() || '—' }
         : undefined,
       surprise: {
         what,
-        icon: whats.find((w) => w[0] === what)[1],
-        title: `A new ${what.toLowerCase()}`,
-        detail: 'Tap to add the secret details…',
-        tint: '#5C5048',
+        icon: whats.find((w) => w[0] === what)?.[1] || '🎁',
+        title: base.title || `A new ${what.toLowerCase()}`,
+        detail: base.detail || 'Tap to add the secret details…',
+        tint: base.tint || '#5C5048',
       },
     })
   }
 
   const coverFields = [
-    { k: 'title', ph: 'What it looks like — "A walk down 5th Ave"', flex: '1 1 100%' },
+    { k: 'title', ph: 'What it looks like — "A walk in the park"', flex: '1 1 100%' },
     { k: 'loc', ph: 'Where', flex: '1 1 46%' },
     { k: 'time', ph: 'When (same as the real plan)', flex: '1 1 46%' },
     { k: 'weather', ph: 'Weather to plan for', flex: '1 1 46%' },
     { k: 'packing', ph: 'What to bring', flex: '1 1 46%' },
   ]
+  const fieldStyle = {
+    minWidth: 0, padding: '10px 12px', borderRadius: Math.min(r, 12),
+    border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)',
+    fontFamily: 'var(--font-body)', fontSize: 13.5, outline: 'none',
+    colorScheme: traveler === 'helen' ? 'light' : 'dark',
+  }
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 85, display: 'flex', alignItems: 'flex-end' }}>
       <Mounted preset="sheet" onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: 'var(--bg)', color: 'var(--text)', borderTopLeftRadius: Math.min(r + 6, 24), borderTopRightRadius: Math.min(r + 6, 24), maxHeight: '92%', overflow: 'auto', fontFamily: 'var(--font-body)' }}>
         <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom) + 22px)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <div style={{ fontFamily: serif, fontSize: 24, fontWeight: heavy, fontStyle: ital }}>Plan a surprise</div>
+            <div style={{ fontFamily: serif, fontSize: 24, fontWeight: heavy, fontStyle: ital }}>{ed ? 'Edit surprise' : 'Plan a surprise'}</div>
             <button onClick={onClose} aria-label="Close" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted)', display: 'flex' }}><Ic.x s={20} /></button>
           </div>
 
@@ -349,6 +431,21 @@ function SurpriseComposer({ traveler, onClose, onCreate }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {reveals.map(([k, label]) => <Chip key={k} on={reveal === k} onClick={() => setReveal(k)}>{label}</Chip>)}
           </div>
+          {reveal === 'date' && (
+            <input type="date" value={revealDate} onChange={(e) => setRevealDate(e.target.value)} aria-label="Reveal date"
+              style={{ ...fieldStyle, marginTop: 9, width: '100%' }} />
+          )}
+          {reveal === 'arrival' && (
+            stops.length > 0 ? (
+              <select value={revealStopId} onChange={(e) => setRevealStopId(e.target.value)} aria-label="Reveal when arriving at"
+                style={{ ...fieldStyle, marginTop: 9, width: '100%', appearance: 'none' }}>
+                <option value="">Pick a place…</option>
+                {stops.map((s) => <option key={s.id} value={s.id}>{s.name}{s.day ? ` · ${s.day}` : ''}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontFamily: serif, fontSize: 12, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 9, lineHeight: 1.4 }}>No places with a location on this trip yet — add one to reveal on arrival, or pick a date.</div>
+            )
+          )}
 
           <CmpLabel>What will they see?</CmpLabel>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -373,7 +470,7 @@ function SurpriseComposer({ traveler, onClose, onCreate }) {
           )}
 
           <button disabled={!valid} onClick={create} style={{ width: '100%', marginTop: 20, padding: 15, borderRadius: 999, border: 'none', cursor: valid ? 'pointer' : 'default', background: valid ? 'var(--accent)' : 'var(--bg2)', color: valid ? 'var(--accent-ink, #fff)' : 'var(--faint)', fontFamily: 'var(--font-body)', fontSize: 11, letterSpacing: 1.6, textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-            <Ic.lock s={14} /> {conceal === 'cover' ? 'Hide it behind the cover' : 'Keep it secret'}
+            <Ic.lock s={14} /> {ed ? 'Save changes' : conceal === 'cover' ? 'Hide it behind the cover' : 'Keep it secret'}
           </button>
           <div style={{ fontFamily: serif, fontSize: 12, fontStyle: 'italic', color: 'var(--muted)', textAlign: 'center', marginTop: 10 }}>
             {conceal === 'cover'

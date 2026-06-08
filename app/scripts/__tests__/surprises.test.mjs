@@ -12,6 +12,10 @@ import {
   surprisesMaskedFrom,
   displayName,
   revealLabel,
+  formatRevealDate,
+  pendingArrivalSurprises,
+  unseenRevealsForViewer,
+  revealedForViewer,
 } from '../../src/lib/surprises.js'
 
 const SECRET_TITLE = 'FAO Schwarz — the giant floor piano'
@@ -140,6 +144,44 @@ test('displayName + revealLabel', () => {
   assert.equal(revealLabel({ type: 'arrival', at: '5th Avenue' }), 'when you arrive at 5th Avenue')
   assert.equal(revealLabel({ type: 'date', at: 'June 15' }), 'on June 15')
   assert.equal(revealLabel({ type: 'manual' }), 'when they choose to')
+})
+
+// ── Slice 2: reveal targets, geofence, cue ──────────────────────────────────
+
+test('formatRevealDate: ISO → "Month D"; passes non-ISO through', () => {
+  assert.equal(formatRevealDate('2026-06-15'), 'June 15')
+  assert.equal(formatRevealDate('2026-12-01'), 'December 1')
+  assert.equal(formatRevealDate('June 15'), 'June 15') // already friendly
+  assert.equal(formatRevealDate(''), 'a date')
+})
+
+test('revealLabel: arrival uses the place label; date formats ISO', () => {
+  assert.equal(revealLabel({ type: 'arrival', at: 's1', label: 'The Met' }), 'when you arrive at The Met')
+  assert.equal(revealLabel({ type: 'date', at: '2026-06-15' }), 'on June 15')
+})
+
+test('pendingArrivalSurprises: authored, unrevealed, arrival-typed, with coords', () => {
+  const recs = [
+    { id: 'a', authorTraveler: 'jonathan', hideFrom: ['rafa'], reveal: { type: 'arrival', at: 's1', lat: 41.5, lng: -72 } },
+    { id: 'b', authorTraveler: 'jonathan', hideFrom: ['rafa'], reveal: { type: 'arrival', at: 's2' } }, // no coords → excluded
+    { id: 'c', authorTraveler: 'jonathan', hideFrom: ['rafa'], reveal: { type: 'date', at: '2026-06-15' } }, // not arrival
+    { id: 'd', authorTraveler: 'helen', hideFrom: ['rafa'], reveal: { type: 'arrival', at: 's3', lat: 1, lng: 2 } }, // not authored by viewer
+    { id: 'e', authorTraveler: 'jonathan', hideFrom: ['rafa'], revealed: 'x', reveal: { type: 'arrival', at: 's4', lat: 1, lng: 2 } }, // already revealed
+  ]
+  assert.deepEqual(pendingArrivalSurprises(recs, 'jonathan').map((s) => s.id), ['a'])
+})
+
+test('reveal cue: unseen reveals for the viewer; revealedForViewer ignores seen', () => {
+  const recs = [
+    { id: 'r1', authorTraveler: 'jonathan', hideFrom: ['rafa'], revealed: 'x' }, // revealed to rafa
+    { id: 'r2', authorTraveler: 'jonathan', hideFrom: ['everyone'], revealed: 'y' }, // revealed to everyone
+    { id: 'r3', authorTraveler: 'jonathan', hideFrom: ['rafa'] }, // not revealed
+    { id: 'r4', authorTraveler: 'rafa', hideFrom: ['helen'], revealed: 'z' }, // rafa authored → not "for rafa"
+  ]
+  assert.deepEqual(revealedForViewer(recs, 'rafa').map((s) => s.id), ['r1', 'r2'])
+  assert.deepEqual(unseenRevealsForViewer(recs, 'rafa', []).map((s) => s.id), ['r1', 'r2'])
+  assert.deepEqual(unseenRevealsForViewer(recs, 'rafa', ['r1']).map((s) => s.id), ['r2'])
+  assert.deepEqual(revealedForViewer(recs, 'helen').map((s) => s.id), ['r2', 'r4'])
 })
 
 // ── Integration through the real store ───────────────────────────────────────

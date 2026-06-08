@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, lazy, Suspense } from 'react'
+import { useEffect, useRef, useState, useMemo, lazy, Suspense } from 'react'
 import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
@@ -31,6 +31,7 @@ import { cardToTrip } from './lib/createTripCard'
 import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from './lib/weave'
 import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
+import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
@@ -448,6 +449,19 @@ export default function App() {
   const [bookHasPages, setBookHasPages] = useState(false)
   const [topMenuOpen, setTopMenuOpen] = useState(false) // top-bar overflow (⋯)
   const weaveGenRef = useRef(0)
+  // Surprises (Slice 2). `surpriseTick` recomputes the two cheap derived bits
+  // below after a surprise is authored / revealed. Recompute also on view change
+  // so creating a surprise then returning re-reads the store. (Declared here,
+  // after `trip` above, so the memos can read both.)
+  const [surpriseTick, setSurpriseTick] = useState(0)
+  const surpriseRevealCue = useMemo(
+    () => countUnseenReveals(trip, traveler),
+    [trip?.id, traveler, view.name, surpriseTick]
+  )
+  const watchArrival = useMemo(
+    () => hasPendingArrival(trip, traveler),
+    [trip?.id, traveler, view.name, surpriseTick]
+  )
   useEffect(() => {
     setWeaveReady(false)
     setBookHasPages(false)
@@ -632,6 +646,10 @@ export default function App() {
   // SURPRISES & MASKING (Slice 1). TEMP entry in the overflow menu like Map /
   // Book — the designed affordance is TBD. Trip-scoped.
   function openSurprises() {
+    // Opening Surprises acknowledges any freshly-revealed-for-me items → clears
+    // the cue dot. Bump the tick so the dot recomputes to 0.
+    markRevealsSeen(trip, traveler)
+    setSurpriseTick((t) => t + 1)
     setView({ name: 'surprises' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
@@ -687,6 +705,12 @@ export default function App() {
 
   return (
     <>
+      {/* Surprises (Slice 2): arrival-reveal geofence. Mounted ONLY when the
+          active traveler has a pending arrival surprise, so location isn't
+          engaged otherwise. Reveals fire while the app is foreground. */}
+      {watchArrival && (
+        <ArrivalRevealWatcher trip={trip} traveler={traveler} onReveal={() => setSurpriseTick((t) => t + 1)} />
+      )}
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
       {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && view.name !== 'surprises' && !(traveler === 'rafa' && isIpad) && (
@@ -873,6 +897,21 @@ export default function App() {
             >
               ⋯
             </button>
+            {surpriseRevealCue > 0 && (
+              <span
+                aria-label="A surprise was revealed"
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  right: 2,
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: 'var(--accent)',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
             {topMenuOpen && (
               <>
                 {/* tap-anywhere-to-close backdrop */}

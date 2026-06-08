@@ -191,7 +191,37 @@ export default {
         (e) => console.error('[nightly-weave] failed', e?.stack || e)
       )
     )
+    // Surprises (Slice 2): unwrap any date-reveal surprise whose date has
+    // arrived. Server-side so it fires even if nobody opens the app; bumps
+    // updated_at so devices pull the now-revealed (full) record.
+    ctx.waitUntil(
+      runScheduledReveals(env, todayIsoUTC(Date.now())).then(
+        (r) => console.log('[surprise-reveals]', JSON.stringify(r)),
+        (e) => console.error('[surprise-reveals] failed', e?.stack || e)
+      )
+    )
   },
+}
+
+// Flip `revealed_at` for every still-hidden DATE surprise whose date (YYYY-MM-DD,
+// in reveal_json.at) is on or before `todayIso`. ISO date strings compare
+// lexicographically, so `<=` is the right "has the day arrived" test. Bumping
+// updated_at makes the next incremental sync deliver the unmasked record.
+export async function runScheduledReveals(env, todayIso) {
+  const now = Date.now()
+  const res = await env.DB.prepare(
+    `UPDATE memories
+        SET revealed_at = ?, updated_at = ?
+      WHERE revealed_at IS NULL
+        AND hide_from_json IS NOT NULL
+        AND json_extract(reveal_json, '$.type') = 'date'
+        AND json_extract(reveal_json, '$.at') <= ?`
+  ).bind(new Date(now).toISOString(), now, todayIso).run()
+  return { revealed: res?.meta?.changes ?? 0, todayIso }
+}
+
+function todayIsoUTC(ms) {
+  return new Date(ms).toISOString().slice(0, 10)
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────

@@ -41,11 +41,23 @@ export function displayName(id, viewer) {
   return REL[viewer]?.[id] || NAMES[id] || id
 }
 
-// Human label for a reveal trigger. Phrasing matches the design handoff.
+// Format an ISO date (YYYY-MM-DD) as "June 15"; pass anything else through.
+export function formatRevealDate(at) {
+  if (typeof at === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(at)) {
+    const [y, m, d] = at.split('-').map(Number)
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    if (months[m - 1] && d) return `${months[m - 1]} ${d}`
+  }
+  return at || 'a date'
+}
+
+// Human label for a reveal trigger. For 'arrival', `reveal.label` holds the
+// chosen place's name (any place — a museum, a hotel, a landmark — not just a
+// driving waypoint); 'date' formats the ISO date. Phrasing follows the design.
 export function revealLabel(reveal) {
   if (!reveal || typeof reveal !== 'object') return 'when they choose to'
-  if (reveal.type === 'arrival') return `when you arrive at ${reveal.at || 'the next stop'}`
-  if (reveal.type === 'date') return `on ${reveal.at || 'a date'}`
+  if (reveal.type === 'arrival') return `when you arrive at ${reveal.label || reveal.at || 'the place'}`
+  if (reveal.type === 'date') return `on ${formatRevealDate(reveal.at)}`
   return 'when they choose to'
 }
 
@@ -141,4 +153,44 @@ export function surprisesMaskedFrom(records, viewer) {
 // the cover stop on their itinerary, with no hint a surprise exists).
 export function teasersMaskedFrom(records, viewer) {
   return surprisesMaskedFrom(records, viewer).filter((m) => m.conceal !== 'cover')
+}
+
+// ── Slice 2: auto-reveal + cue ───────────────────────────────────────────────
+
+// Surprises authored by `viewer` that should auto-reveal ON ARRIVAL at a place
+// and haven't yet — each carries the target place's lat/lng on its reveal. The
+// author's device geofences these (it holds the full record and can reveal). Any
+// place works (the author picked it); nothing here assumes a driving route.
+export function pendingArrivalSurprises(records, viewer) {
+  return (records || []).filter(
+    (m) =>
+      isSurprise(m) &&
+      m.authorTraveler === viewer &&
+      !m.revealed &&
+      m.reveal?.type === 'arrival' &&
+      Number.isFinite(m.reveal?.lat) &&
+      Number.isFinite(m.reveal?.lng)
+  )
+}
+
+// Surprises that have been REVEALED to `viewer` (they were hidden from them, now
+// unwrapped) and which `viewer` hasn't seen the cue for yet — drives the in-app
+// "✨ a surprise was revealed" cue. After reveal the viewer holds the full record
+// (hideFrom + revealed both set), so this reads straight off the record.
+export function unseenRevealsForViewer(records, viewer, seenIds = []) {
+  const seen = new Set(seenIds)
+  return revealedForViewer(records, viewer).filter((m) => !seen.has(m.id))
+}
+
+// All surprises that were hidden FROM `viewer` and have since been revealed —
+// what the Surprises screen's "✨ Revealed for you" section shows (so the cue
+// dot leads somewhere). After reveal the viewer holds the full record.
+export function revealedForViewer(records, viewer) {
+  return (records || []).filter(
+    (m) =>
+      isSurprise(m) &&
+      m.revealed &&
+      m.authorTraveler !== viewer &&
+      (m.hideFrom.includes('everyone') || m.hideFrom.includes(viewer))
+  )
 }
