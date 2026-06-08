@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
@@ -21,8 +21,9 @@ import { ImportView } from './views/ImportView'
 import { InstallIdentity } from './views/InstallIdentity'
 import { TheWeave } from './views/TheWeave'
 import { WeaveBook } from './views/WeaveBook'
-import { FaceSpike } from './views/FaceSpike'
-import { PersonView } from './views/PersonView'
+// "Show me, me" (the on-device face recognizer) is lazy-loaded so its
+// model + index code stays out of the main bundle until it's opened.
+const PersonView = lazy(() => import('./views/PersonView').then((m) => ({ default: m.PersonView })))
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
@@ -46,9 +47,8 @@ function initialViewFromUrl() {
     const params = new URLSearchParams(window.location.search)
     const action = params.get('action') || ''
     const url = params.get('url') || params.get('text') || ''
-    // Increment C spike: ?facespike=1 opens the on-device face
-    // recognizer prove-it screen (flag-gated, never in the family flow).
-    if (params.get('facespike') === '1') return { name: 'facespike' }
+    // ?personview=1 opens "Show me, me" directly (also on Rafa's tile +
+    // Aurelia's lens).
     if (params.get('personview') === '1') return { name: 'showme', who: null }
     if (url || action === 'import') {
       return { name: 'import', importUrl: url }
@@ -403,10 +403,8 @@ export default function App() {
     // "no trip active today → drop to index" branch would yank the
     // import flow to the trip list).
     if (view.name === 'import') return
-    // The Increment C face-recognizer spike (?facespike=1) gathers photos
-    // across all trips, so it must not be bounced to the index by the
-    // active-trip override when no trip happens to be active today.
-    if (view.name === 'facespike') return
+    // "Show me, me" gathers photos across all trips, so it must not be
+    // bounced to the index when no trip happens to be active today.
     if (view.name === 'showme') return
 
     const today = todayIso()
@@ -681,7 +679,7 @@ export default function App() {
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'facespike' && view.name !== 'showme' && !(traveler === 'rafa' && isIpad) && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && !(traveler === 'rafa' && isIpad) && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -1035,22 +1033,16 @@ export default function App() {
             onBack={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
           />
         )}
-        {view.name === 'facespike' && (
-          <FaceSpike
-            trip={trip}
-            trips={visibleTrips}
-            traveler={traveler}
-            onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
-          />
-        )}
         {view.name === 'showme' && (
-          <PersonView
-            trip={trip}
-            trips={visibleTrips}
-            traveler={traveler}
-            initialWho={view.who}
-            onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
-          />
+          <Suspense fallback={null}>
+            <PersonView
+              trip={trip}
+              trips={visibleTrips}
+              traveler={traveler}
+              initialWho={view.who}
+              onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
+            />
+          </Suspense>
         )}
         {view.name === 'settings' && trip && (
           <Settings

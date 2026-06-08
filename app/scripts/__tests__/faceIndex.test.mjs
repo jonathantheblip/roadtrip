@@ -101,6 +101,17 @@ test('personCounts: counts each enrolled person across the entries', () => {
   assert.deepEqual(personCounts(entries, facesByKey, centroids, 0.36), { rafa: 2, aurelia: 2 })
 })
 
+test('selectPhotosWith: a "not X" correction removes that photo from X only', () => {
+  const { centroids, entries, facesByKey } = scene()
+  const rej = new Set(['p1::rafa']) // user said p1 is NOT rafa
+  const rafa = selectPhotosWith(entries, facesByKey, centroids, 'rafa', 0.36, rej)
+  assert.deepEqual(rafa.map((h) => h.entry.key).sort(), ['p3']) // p1 dropped, p3 stays
+  // the same photo still counts for aurelia (the correction is per-person)
+  const aur = selectPhotosWith(entries, facesByKey, centroids, 'aurelia', 0.36, rej)
+  assert.deepEqual(aur.map((h) => h.entry.key).sort(), ['p2', 'p3'])
+  assert.deepEqual(personCounts(entries, facesByKey, centroids, 0.36, rej), { rafa: 1, aurelia: 2 })
+})
+
 test('selectPhotosWith: a stricter threshold drops weak matches', () => {
   const { centroids, entries, facesByKey } = scene()
   // 0.999 is unreachable for jittered samples → nobody qualifies

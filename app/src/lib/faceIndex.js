@@ -17,9 +17,12 @@
 import { enrollPerson, matchToEnrolled } from './faceMatch.js'
 
 const DB_NAME = 'rt-faces'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_ENROLL = 'enrollment'
 const STORE_FACES = 'faces'
+// corrections — "this photo is NOT person X" overrides (keyed
+// `${entryKey}::${personId}`), so a wrong match can be removed.
+const STORE_CORRECT = 'corrections'
 
 let dbPromise = null
 function openDb() {
@@ -34,6 +37,7 @@ function openDb() {
       const db = req.result
       if (!db.objectStoreNames.contains(STORE_ENROLL)) db.createObjectStore(STORE_ENROLL)
       if (!db.objectStoreNames.contains(STORE_FACES)) db.createObjectStore(STORE_FACES)
+      if (!db.objectStoreNames.contains(STORE_CORRECT)) db.createObjectStore(STORE_CORRECT)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -63,6 +67,19 @@ async function idbPut(store, key, val) {
     t.oncomplete = () => res()
     t.onerror = () => rej(t.error)
   })
+}
+async function idbDelete(store, key) {
+  const db = await openDb()
+  const t = db.transaction(store, 'readwrite')
+  t.objectStore(store).delete(key)
+  return new Promise((res, rej) => {
+    t.oncomplete = () => res()
+    t.onerror = () => rej(t.error)
+  })
+}
+async function idbGetAllKeys(store) {
+  const db = await openDb()
+  return reqP(db.transaction(store).objectStore(store).getAllKeys())
 }
 // ─── enrollment ───────────────────────────────────────────────────
 
@@ -119,16 +136,35 @@ export async function getScannedKeys() {
   return new Set(rows.map((r) => r.key))
 }
 
+// ─── corrections ──────────────────────────────────────────────────
+
+const rejKey = (entryKey, personId) => `${entryKey}::${personId}`
+
+// "This photo is NOT person X" — removes it from X's results.
+export async function addRejection(entryKey, personId) {
+  await idbPut(STORE_CORRECT, rejKey(entryKey, personId), 1)
+}
+// Undo a rejection.
+export async function removeRejection(entryKey, personId) {
+  await idbDelete(STORE_CORRECT, rejKey(entryKey, personId))
+}
+// All rejections as a Set of `${entryKey}::${personId}`.
+export async function getRejections() {
+  return new Set(await idbGetAllKeys(STORE_CORRECT))
+}
+
 // ─── the query ────────────────────────────────────────────────────
 
 // PURE — given photo entries, the scanned-faces map, enrolled centroids,
-// and a person, return the entries that contain that person, each with
-// the matching face's box (for best-light sizing) and similarity. Re-run
-// any time enrollment or the threshold changes; no model needed.
-// → [{ entry, similarity, box }]
-export function selectPhotosWith(entries, facesByKey, centroids, personId, threshold) {
+// a person, and the user's "not X" corrections, return the entries that
+// contain that person, each with the matching face's box (best-light
+// sizing) and similarity. Re-run any time enrollment / threshold /
+// corrections change; no model needed. → [{ entry, similarity, box }]
+export function selectPhotosWith(entries, facesByKey, centroids, personId, threshold, rejections) {
+  const rej = rejections instanceof Set ? rejections : null
   const out = []
   for (const e of entries) {
+    if (rej && rej.has(rejKey(e.key, personId))) continue
     const rec = facesByKey[e.key]
     if (!rec || !rec.faces?.length) continue
     let best = null
@@ -145,10 +181,10 @@ export function selectPhotosWith(entries, facesByKey, centroids, personId, thres
 
 // PURE — count how many entries each enrolled person appears in.
 // → { [personId]: count }
-export function personCounts(entries, facesByKey, centroids, threshold) {
+export function personCounts(entries, facesByKey, centroids, threshold, rejections) {
   const counts = {}
   for (const c of centroids) {
-    counts[c.personId] = selectPhotosWith(entries, facesByKey, centroids, c.personId, threshold).length
+    counts[c.personId] = selectPhotosWith(entries, facesByKey, centroids, c.personId, threshold, rejections).length
   }
   return counts
 }

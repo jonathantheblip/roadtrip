@@ -19,6 +19,9 @@ import {
   addExemplar,
   enrolledCentroids,
   getFacesByKey,
+  getRejections,
+  addRejection,
+  removeRejection,
   selectPhotosWith,
   personCounts,
 } from '../lib/faceIndex'
@@ -85,12 +88,13 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [error, setError] = useState('')
   const [lightbox, setLightbox] = useState(null)
+  const [undo, setUndo] = useState(null) // { entryKey, who } after a "not me"
   // enroll sub-state
   const [activePerson, setActivePerson] = useState(initialWho || traveler)
   const [enrollFaces, setEnrollFaces] = useState(null)
   const [busy, setBusy] = useState('')
   const engineReady = useRef(false)
-  const matchRef = useRef({ facesByKey: {}, centroids: [] })
+  const matchRef = useRef({ facesByKey: {}, centroids: [], rejections: new Set() })
 
   // All scannable entries: current trip first, then the rest.
   const entries = useMemo(() => {
@@ -138,10 +142,36 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
   }, [])
 
   const refreshMatchData = useCallback(async () => {
-    const [facesByKey, centroids] = await Promise.all([getFacesByKey(), enrolledCentroids()])
-    matchRef.current = { facesByKey, centroids }
+    const [facesByKey, centroids, rejections] = await Promise.all([
+      getFacesByKey(),
+      enrolledCentroids(),
+      getRejections(),
+    ])
+    matchRef.current = { facesByKey, centroids, rejections }
     setIndexTick((t) => t + 1)
   }, [])
+
+  // "Not me" correction: drop a wrongly-matched photo from the current
+  // person, with a brief Undo.
+  const rejectFromPerson = useCallback(
+    async (entry) => {
+      await addRejection(entry.key, who)
+      setUndo({ entryKey: entry.key, who })
+      refreshMatchData()
+    },
+    [who, refreshMatchData],
+  )
+  const undoReject = useCallback(async () => {
+    if (!undo) return
+    await removeRejection(undo.entryKey, undo.who)
+    setUndo(null)
+    refreshMatchData()
+  }, [undo, refreshMatchData])
+  useEffect(() => {
+    if (!undo) return undefined
+    const t = setTimeout(() => setUndo(null), 6000)
+    return () => clearTimeout(t)
+  }, [undo])
 
   // Decide the opening phase: ready (nothing new to scan) renders without
   // loading the model; otherwise enroll or scan.
@@ -237,15 +267,14 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
   // ─── derived display data ────────────────────────────────────────
 
   const hits = useMemo(() => {
-    const { facesByKey, centroids } = matchRef.current
-    const list = selectPhotosWith(entries, facesByKey, centroids, who, DEFAULT_MATCH_THRESHOLD)
-    return list
+    const { facesByKey, centroids, rejections } = matchRef.current
+    return selectPhotosWith(entries, facesByKey, centroids, who, DEFAULT_MATCH_THRESHOLD, rejections)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [who, indexTick, entries])
 
   const counts = useMemo(() => {
-    const { facesByKey, centroids } = matchRef.current
-    return personCounts(entries, facesByKey, centroids, DEFAULT_MATCH_THRESHOLD)
+    const { facesByKey, centroids, rejections } = matchRef.current
+    return personCounts(entries, facesByKey, centroids, DEFAULT_MATCH_THRESHOLD, rejections)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indexTick, entries])
 
@@ -464,7 +493,7 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
             <div style={S.h}>▶ {isMe ? 'You' : heroName}, on video</div>
             <Reel>
               {videoHits.map((h) => (
-                <Tile key={h.entry.key} hit={h} onOpen={() => setLightbox(h.entry)} w={140} />
+                <Tile key={h.entry.key} hit={h} onOpen={() => setLightbox(h.entry)} onReject={() => rejectFromPerson(h.entry)} w={140} />
               ))}
             </Reel>
           </div>
@@ -479,7 +508,7 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
             </div>
             <Reel>
               {bestLight.map((h) => (
-                <Tile key={h.entry.key} hit={h} onOpen={() => setLightbox(h.entry)} onSend={() => sharePhoto(h.entry)} w={150} />
+                <Tile key={h.entry.key} hit={h} onOpen={() => setLightbox(h.entry)} onSend={() => sharePhoto(h.entry)} onReject={() => rejectFromPerson(h.entry)} w={150} />
               ))}
             </Reel>
           </div>
@@ -487,7 +516,10 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
 
         {/* every frame grid */}
         <div style={{ marginTop: 24 }}>
-          <div style={S.h}>Every frame</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <div style={S.h}>Every frame</div>
+            {hits.length > 0 && <span style={{ fontSize: 10, color: 'var(--muted)' }}>wrong person? tap ✕</span>}
+          </div>
           {hits.length === 0 ? (
             <div style={{ fontFamily: serifFamily, fontStyle: 'italic', color: 'var(--muted)', fontSize: 14, padding: '8px 0' }} data-testid="person-empty">
               {enrolledIds.includes(who)
@@ -501,13 +533,22 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }} data-testid="person-grid">
               {hits.map((h) => (
-                <Tile key={h.entry.key} hit={h} onOpen={() => setLightbox(h.entry)} />
+                <Tile key={h.entry.key} hit={h} onOpen={() => setLightbox(h.entry)} onReject={() => rejectFromPerson(h.entry)} />
               ))}
             </div>
           )}
         </div>
       </div>
 
+      {undo && (
+        <div
+          style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, background: 'var(--card)', borderTop: '1px solid var(--border)', color: 'var(--text)', zIndex: 81 }}
+          data-testid="person-undo"
+        >
+          <span style={{ fontSize: 13 }}>Removed from {undo.who === traveler ? 'you' : cap(displayName(undo.who, traveler))}</span>
+          <button onClick={undoReject} style={S.btn(true)} data-testid="person-undo-btn">Undo</button>
+        </div>
+      )}
       {lightbox && <Lightbox entry={lightbox} onClose={() => setLightbox(null)} />}
       {error && <Toast tone="bad">{error}</Toast>}
     </div>
@@ -544,7 +585,7 @@ function Reel({ children }) {
   return <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>{children}</div>
 }
 
-function Tile({ hit, onOpen, onSend, w }) {
+function Tile({ hit, onOpen, onSend, onReject, w }) {
   const e = hit.entry
   const img = e.isVideo ? e.posterUrl : e.url
   const style = w
@@ -556,6 +597,20 @@ function Tile({ hit, onOpen, onSend, w }) {
         <img src={img} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
         <div style={{ width: '100%', height: '100%', background: 'var(--card)' }} />
+      )}
+      {onReject && (
+        <button
+          onClick={(ev) => {
+            ev.stopPropagation()
+            onReject()
+          }}
+          aria-label="Not this person"
+          title="Not this person"
+          style={{ position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: '24px', padding: 0 }}
+          data-testid="person-not-me"
+        >
+          ✕
+        </button>
       )}
       {e.isVideo && (
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }} data-testid="person-tile-video">▶</div>

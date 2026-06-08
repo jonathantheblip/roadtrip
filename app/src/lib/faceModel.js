@@ -15,19 +15,19 @@
 // Isolated behind this one module the same way the EXIF library lives
 // behind exifRead.js: a future model swap touches only here.
 //
-// PROVISIONAL model: immich-app/buffalo_s detection + recognition
-// (SCRFD + MobileFaceNet, InsightFace lineage — NON-COMMERCIAL license).
-// Fine for a private family app and proven in production face
-// recognition; the final production model + its license is a follow-up.
-// Runtime WASM + models load from CDN/HF; production can self-host them
-// for full offline use (no privacy change — they are generic, data-free).
+// MODEL (blessed): immich-app/buffalo_s detection + recognition (SCRFD +
+// MobileFaceNet, InsightFace lineage). Chosen as the model for this
+// private family app — its non-commercial license fits personal,
+// non-commercial use, and it's proven in production face recognition.
+// Runtime WASM + models load from CDN/HF; could be self-hosted later for
+// full offline use (no privacy change — they are generic, data-free).
 
 import { l2normalize } from './faceMatch.js'
 import { detectFacesScrfd } from './scrfd.js'
 
 // All external asset URLs in one place, overridable via
 // globalThis.__RT_FACE_CONFIG (test seam / self-host switch).
-export const FACE_CONFIG = {
+const FACE_CONFIG = {
   // onnxruntime-web WASM/glue files — runs BOTH the SCRFD detector and
   // the embedder (one runtime).
   ortWasmBase: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/',
