@@ -32,8 +32,9 @@ import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from '.
 import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
+import { mergeCoverStops } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
-import { backfillCapturedAt, mergeFromRemote, saveMemory } from './lib/memoryStore'
+import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import { applyInstallIdentity } from './lib/appInstall'
 import './styles/platform.css'
@@ -462,6 +463,14 @@ export default function App() {
     () => hasPendingArrival(trip, traveler),
     [trip?.id, traveler, view.name, surpriseTick]
   )
+  // Slice 3a: a cover-story surprise renders as a real stop on the RECIPIENT's
+  // plan. Merge cover stand-ins (from the viewer's masked reads) into the trip
+  // the themed views see — one place, so all four inherit it. A no-op for the
+  // author / non-targeted (their reads carry no cover stand-ins).
+  const tripForView = useMemo(
+    () => (trip?.id ? mergeCoverStops(trip, listMemoriesForTrip(trip.id, traveler)) : trip),
+    [trip, traveler, surpriseTick]
+  )
   useEffect(() => {
     setWeaveReady(false)
     setBookHasPages(false)
@@ -480,7 +489,10 @@ export default function App() {
     return () => { cancelled = true }
   }, [trip?.id])
 
-  const day = view.name === 'stop' && trip ? findDay(trip, view.dayN) : null
+  // Resolve the open stop from tripForView (= trip + merged cover stops, 3a) so
+  // tapping a cover stop opens its believable detail instead of an empty one.
+  // Normal stops are unaffected — mergeCoverStops only appends, never alters them.
+  const day = view.name === 'stop' && tripForView ? findDay(tripForView, view.dayN) : null
   const stop = view.name === 'stop' && day ? findStop(day, view.stopId) : null
 
   function openTrip(id) {
@@ -677,7 +689,7 @@ export default function App() {
     // Rafa's iPad command-center home renders only on iPad-sized screens;
     // phones (and CI's phone-width baselines) keep his RafaView.
     const props = {
-      trip,
+      trip: tripForView, // cover stories merged in as stops for the recipient (3a)
       traveler,
       onOpenStop: openStop,
       onOpenSettings: openSettings,

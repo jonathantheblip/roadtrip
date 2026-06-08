@@ -16,6 +16,8 @@ import {
   pendingArrivalSurprises,
   unseenRevealsForViewer,
   revealedForViewer,
+  coverToStop,
+  mergeCoverStops,
 } from '../../src/lib/surprises.js'
 
 const SECRET_TITLE = 'FAO Schwarz — the giant floor piano'
@@ -169,6 +171,38 @@ test('pendingArrivalSurprises: authored, unrevealed, arrival-typed, with coords'
     { id: 'e', authorTraveler: 'jonathan', hideFrom: ['rafa'], revealed: 'x', reveal: { type: 'arrival', at: 's4', lat: 1, lng: 2 } }, // already revealed
   ]
   assert.deepEqual(pendingArrivalSurprises(recs, 'jonathan').map((s) => s.id), ['a'])
+})
+
+test('coverToStop: maps a cover stand-in to an itinerary stop shape', () => {
+  const m = { id: 'sp9', isCover: true, cover: { title: 'A walk down Fifth Avenue', loc: '5th Ave', time: 'Sat · 1 PM', weather: 'Cold', packing: 'Coats', dayIso: '2026-05-22' } }
+  const stop = coverToStop(m)
+  assert.equal(stop.id, 'cover_sp9')
+  assert.equal(stop.name, 'A walk down Fifth Avenue')
+  assert.equal(stop.time, 'Sat · 1 PM')
+  assert.equal(stop.note, 'Cold · Coats') // weather + packing surfaced as the stop note
+  assert.equal(stop._cover, true)
+})
+
+test('mergeCoverStops: injects cover stops into the matching day; no-op otherwise', () => {
+  const trip = {
+    id: 't', days: [
+      { isoDate: '2026-05-22', stops: [{ id: 's1', name: 'Real stop' }] },
+      { isoDate: '2026-05-23', stops: [] },
+    ],
+  }
+  const covers = [
+    { id: 'c1', isCover: true, cover: { title: 'Cover stop', dayIso: '2026-05-22' } },
+    { id: 'c2', isCover: true, cover: { title: 'No day cover' } }, // no dayIso → not placed
+    { id: 'm1', kind: 'text', text: 'a normal memory' }, // not a cover
+  ]
+  const merged = mergeCoverStops(trip, covers)
+  assert.equal(merged.days[0].stops.length, 2) // real + cover
+  assert.equal(merged.days[0].stops[1].id, 'cover_c1')
+  assert.equal(merged.days[1].stops.length, 0) // untouched
+  // No covers / no trip → referential no-op.
+  assert.equal(mergeCoverStops(trip, []), trip)
+  assert.equal(mergeCoverStops(trip, [{ id: 'x', kind: 'text' }]), trip)
+  assert.equal(mergeCoverStops(null, covers), null)
 })
 
 test('reveal cue: unseen reveals for the viewer; revealedForViewer ignores seen', () => {

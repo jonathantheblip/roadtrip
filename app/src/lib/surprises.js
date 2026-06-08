@@ -111,6 +111,8 @@ export function coverStandIn(m) {
       time: cov.time || '',
       weather: cov.weather || '',
       packing: cov.packing || '',
+      // Where it sits on the recipient's itinerary (Slice 3a); omit when unset.
+      ...(cov.dayIso ? { dayIso: cov.dayIso } : {}),
     },
   }
 }
@@ -193,4 +195,49 @@ export function revealedForViewer(records, viewer) {
       m.authorTraveler !== viewer &&
       (m.hideFrom.includes('everyone') || m.hideFrom.includes(viewer))
   )
+}
+
+// ── Slice 3a: cover stories render as a real stop on the recipient's plan ─────
+
+// A cover stand-in memory → an ordinary itinerary-stop shape. Carries the cover's
+// weather/packing as the stop note so the recipient sees what to bring. `_cover`
+// marks it so a surface can style it if it wants (it renders fine as a plain stop
+// otherwise). id is derived + stable so React keys + findStop resolve it.
+export function coverToStop(m) {
+  const cov = m.cover || {}
+  const bring = [cov.weather, cov.packing].filter(Boolean).join(' · ')
+  return {
+    id: `cover_${m.id}`,
+    name: cov.title || 'A stop',
+    time: cov.time || '',
+    kind: cov.loc || undefined,
+    note: bring || undefined,
+    _cover: true,
+  }
+}
+
+// Merge cover stand-ins into the trip the RECIPIENT sees: each cover whose
+// `cover.dayIso` matches a day is appended to that day's stops as an ordinary
+// stop. Author/non-targeted viewers never have cover stand-ins in `memories`
+// (their reads carry the real row), so this is a no-op for them. `memories` is
+// the already-masked listMemoriesForTrip output. Returns the trip unchanged when
+// nothing applies (referential stability for memo/render).
+export function mergeCoverStops(trip, memories) {
+  if (!trip || !Array.isArray(trip.days)) return trip
+  const covers = (memories || []).filter((m) => m && m.isCover && m.cover?.dayIso)
+  if (!covers.length) return trip
+  const byDay = new Map()
+  for (const m of covers) {
+    const arr = byDay.get(m.cover.dayIso) || []
+    arr.push(coverToStop(m))
+    byDay.set(m.cover.dayIso, arr)
+  }
+  let changed = false
+  const days = trip.days.map((d) => {
+    const extra = d?.isoDate ? byDay.get(d.isoDate) : null
+    if (!extra || !extra.length) return d
+    changed = true
+    return { ...d, stops: [...(d.stops || []), ...extra] }
+  })
+  return changed ? { ...trip, days } : trip
 }

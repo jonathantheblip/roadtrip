@@ -67,6 +67,8 @@ function coverStandIn(m) {
       time: cov.time || '',
       weather: cov.weather || '',
       packing: cov.packing || '',
+      // Where it sits on the recipient's itinerary (Slice 3a); omit when unset.
+      ...(cov.dayIso ? { dayIso: cov.dayIso } : {}),
     },
     reactions: [],
     masked: true,

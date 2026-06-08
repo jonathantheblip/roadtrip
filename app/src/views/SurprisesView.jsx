@@ -381,7 +381,7 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
       reveal: revealObj,
       conceal,
       cover: conceal === 'cover'
-        ? { icon: cov.icon, title: cov.title.trim() || 'A quiet stop', loc: cov.loc.trim() || 'TBD', time: cov.time.trim() || 'same time', weather: cov.weather.trim() || '—', packing: cov.packing.trim() || '—' }
+        ? { icon: cov.icon, title: cov.title.trim() || 'A quiet stop', loc: cov.loc.trim() || 'TBD', time: cov.time.trim() || 'same time', weather: cov.weather.trim() || '—', packing: cov.packing.trim() || '—', ...(cov.dayIso ? { dayIso: cov.dayIso } : {}) }
         : undefined,
       surprise: {
         what,
@@ -457,6 +457,13 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
           ) : (
             <div style={{ marginTop: 11, padding: 13, borderRadius: Math.min(r, 14), border: '1px solid var(--border)', background: 'var(--card)' }}>
               <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', lineHeight: 1.4, marginBottom: 11 }}>A believable stand-in shows on their plan instead — carrying the real timing + weather so they pack and plan right, never knowing.</div>
+              {trip?.days?.length > 0 && (
+                <select value={cov.dayIso || ''} onChange={(e) => setC('dayIso', e.target.value)} aria-label="Which day it appears on"
+                  style={{ ...fieldStyle, width: '100%', marginBottom: 8, appearance: 'none' }}>
+                  <option value="">Which day on their plan… (optional)</option>
+                  {trip.days.map((d) => <option key={d.isoDate} value={d.isoDate}>{d.title || d.date || d.isoDate}</option>)}
+                </select>
+              )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {coverFields.map((f) => (
                   <input key={f.k} value={cov[f.k]} onChange={(e) => setC(f.k, e.target.value)} placeholder={f.ph} aria-label={f.ph} style={{

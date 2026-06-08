@@ -50,18 +50,20 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
           {stop.time} · {stop.kind}
         </p>
         <h1 className="f-news tt-tightest text-5xl leading-95 mb-4">{stop.name}</h1>
-        <div className="flex items-center gap-2 mb-4">
-          <span className="smallcaps f-dm text-[11px] opacity-60">For</span>
-          {stop.for.map((t) => (
-            <span key={t} className="inline-flex items-center gap-1">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ background: TRAVELER_DOT[t] }}
-              />
-              <span className="f-dm text-xs opacity-70">{TRAVELERS[t]?.name}</span>
-            </span>
-          ))}
-        </div>
+        {stop.for?.length > 0 && (
+          <div className="flex items-center gap-2 mb-4">
+            <span className="smallcaps f-dm text-[11px] opacity-60">For</span>
+            {stop.for.map((t) => (
+              <span key={t} className="inline-flex items-center gap-1">
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: TRAVELER_DOT[t] }}
+                />
+                <span className="f-dm text-xs opacity-70">{TRAVELERS[t]?.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
           {stop.address && (
             <a
