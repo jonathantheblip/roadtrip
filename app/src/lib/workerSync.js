@@ -102,6 +102,12 @@ export async function pullAll() {
 
 export async function pushMemory(memory) {
   if (!isWorkerConfigured()) return null
+  // A masked projection (Surprises, 010) — a teaser stub / cover stand-in the
+  // worker emitted for a recipient. It carries stripped content; pushing it back
+  // (e.g. Settings "Push all" on a recipient device) would clobber the author's
+  // real row. It's never authoritative — never push it. (The worker also refuses
+  // it, but skip the round-trip.)
+  if (memory?.masked) return null
   // Upload any IDB-resident blobs first; rewrite the refs to point at R2.
   const updated = { ...memory }
 

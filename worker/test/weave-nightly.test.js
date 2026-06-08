@@ -190,6 +190,23 @@ describe('runNightlyWeave', () => {
     })
     expect(r.skipped).toBe('no-active-day')
   })
+
+  it('excludes an UNREVEALED surprise from the weave (masking, 010); reveal lets it rejoin', async () => {
+    // Aurelia hides a surprise on the woven day. Unrevealed → it must NOT spoil
+    // the shared page → not a beat (so aurelia is NOT a 4th voice). Without the
+    // weave's WHERE filter she would be, so this is non-vacuous.
+    await env.DB.prepare(
+      `INSERT INTO memories (id, trip_id, stop_id, author_traveler, visibility, kind, text, hide_from_json, conceal, surprise_json, created_at, updated_at, deleted_at)
+       VALUES ('sp-w', 'wv-trip', 's2a', 'aurelia', 'shared', 'text', 'the real secret', ?, 'teaser', ?, 2, 2, NULL)`
+    ).bind(JSON.stringify(['everyone']), JSON.stringify({ what: 'A memory', title: 'the real secret' })).run()
+    const masked = await runNightlyWeave(env, { nowMs: 2000, todayIso: '2026-05-22', generateNarrative: fakeNarrator })
+    expect(masked.beats).toBe(3) // jonathan/helen/rafa — aurelia's surprise excluded
+
+    // Reveal it → it rejoins as a 4th voice.
+    await env.DB.prepare(`UPDATE memories SET revealed_at = '2026-05-22T00:00:00Z', updated_at = 3 WHERE id = 'sp-w'`).run()
+    const revealed = await runNightlyWeave(env, { nowMs: 3000, todayIso: '2026-05-22', generateNarrative: fakeNarrator })
+    expect(revealed.beats).toBe(4)
+  })
 })
 
 // ── 3. GET /weave/latest ──────────────────────────────────────────────────

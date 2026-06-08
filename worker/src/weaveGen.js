@@ -141,10 +141,15 @@ export async function runNightlyWeave(env, { nowMs, generateNarrative, todayIso 
     .filter(Boolean)
 
   // Load all non-deleted SHARED memories once (private never enters the weave).
+  // Exclude unrevealed surprises (Surprises masking, 010): the weave is the
+  // family's SHARED day page, so a not-yet-revealed surprise (hidden from
+  // anyone) must not enter it — it would spoil for the hidden-from people. Once
+  // revealed (revealed_at set) it re-joins normally.
   const memRows = await env.DB.prepare(
     `SELECT id, trip_id, stop_id, author_traveler, kind, text, caption, transcript, updated_at
        FROM memories
-      WHERE deleted_at IS NULL AND visibility = 'shared'`
+      WHERE deleted_at IS NULL AND visibility = 'shared'
+        AND (hide_from_json IS NULL OR revealed_at IS NOT NULL)`
   ).all()
   const memByTrip = new Map()
   for (const r of memRows.results || []) {

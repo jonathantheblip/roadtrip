@@ -408,6 +408,13 @@ export function mergeFromRemote(remoteRecords) {
 // switch to the Worker, even though Pull says "0 merged."
 function shouldTakeRemote(remote, local) {
   if (!local) return true
+  // A real row always supersedes a masked projection (Surprises, 010) of the
+  // same id, regardless of timestamp. Without this, an author viewing on a
+  // device that last synced as the hidden-from person would keep seeing the
+  // stripped stub even after re-syncing as themselves (same updated_at, so the
+  // timestamp check below wouldn't fire). Never the reverse: a masked stub must
+  // not replace a real local row a true recipient can never have anyway.
+  if (local.masked && !remote.masked) return true
   if (remote.updatedAt && remote.updatedAt > local.updatedAt) return true
   if (hasR2Asset(remote) && !hasUsableLocalAsset(local)) return true
   return false

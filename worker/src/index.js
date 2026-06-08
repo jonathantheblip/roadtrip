@@ -24,6 +24,7 @@ import {
   straightLineMinutes,
 } from './leaveWhen.js'
 import { runNightlyWeave, beatSignature } from './weaveGen.js'
+import { maskMemoryForViewer } from './surprises.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -244,7 +245,12 @@ async function getMemories(env, traveler, url, cors) {
        AND (visibility = 'shared' OR author_traveler = ?)
      ORDER BY updated_at ASC`
   ).bind(since, traveler).all()
-  const out = results.map((r) => rowToMemory(r, origin))
+  // SECURITY BOUNDARY (Surprises masking, 010): strip/substitute per recipient
+  // BEFORE anything leaves the worker. A teaser hidden from `traveler` becomes a
+  // "something's coming" stub (no real title/detail/media — so even the asset
+  // keys never reach them); a cover becomes its stand-in. Author + revealed +
+  // non-targeted rows pass through untouched.
+  const out = results.map((r) => maskMemoryForViewer(rowToMemory(r, origin), traveler))
   // Tell intermediaries (browser cache, any future CDN) not to hold
   // onto this — pulls must always be fresh, not the snapshot whoever
   // fetched first happened to see.
@@ -254,6 +260,14 @@ async function getMemories(env, traveler, url, cors) {
 async function postMemory(env, traveler, request, url, cors) {
   const body = await request.json()
   if (!body?.id) return json({ error: 'missing id' }, 400, cors)
+  // Masked-projection guard (Surprises, 010). A teaser stub / cover stand-in is
+  // a per-recipient PROJECTION the worker emitted — it carries `masked:true` and
+  // stripped content. If a recipient device ever pushed it back (e.g. Settings
+  // "Push all"), its null text would clobber the author's real row. Refuse it:
+  // a masked projection is never authoritative and must never be persisted.
+  if (body.masked) {
+    return json({ ok: true, skipped: 'masked-projection', id: body.id }, 200, cors)
+  }
   // Server stamps updated_at to ensure monotonic incremental sync.
   const updatedAt = Date.now()
   const createdAt = body.createdAt
@@ -327,6 +341,27 @@ async function postMemory(env, traveler, request, url, cors) {
     })
   }
 
+  // Masking layer (Surprises, 010). Serialize only what the author sends; a
+  // normal memory writes NULL for all six and deserializes unchanged. The
+  // client always pushes the full current state (saveMemory preserves the
+  // masking on a content-only edit), and the upsert COALESCEs these so a stale
+  // partial push can't erase a surprise. hide_from_json's presence is what marks
+  // a row a surprise.
+  const hideFromJson =
+    Array.isArray(body.hideFrom) && body.hideFrom.length ? JSON.stringify(body.hideFrom) : null
+  const revealJson =
+    body.reveal && typeof body.reveal === 'object' ? JSON.stringify(body.reveal) : null
+  const concealVal = hideFromJson ? body.conceal === 'cover' ? 'cover' : 'teaser' : null
+  const coverJson =
+    concealVal === 'cover' && body.cover && typeof body.cover === 'object'
+      ? JSON.stringify(body.cover)
+      : null
+  const surpriseJson =
+    hideFromJson && body.surprise && typeof body.surprise === 'object'
+      ? JSON.stringify(body.surprise)
+      : null
+  const revealedAt = body.revealed ? String(body.revealed) : null
+
   // Defense-in-depth: a 'photo' memory with no R2 keys and no external
   // URLs is unrenderable on every device. Before P0.2's client-side
   // throw in workerSync.pushMemory landed, 21 such half-records leaked
@@ -347,6 +382,7 @@ async function postMemory(env, traveler, request, url, cors) {
        duration_seconds, mood, reactions_json,
        audio_r2_key, audio_mime, photo_r2_key, photo_mime,
        photo_r2_keys_json, photo_external_urls_json, interstitial_json,
+       hide_from_json, reveal_json, conceal, cover_json, surprise_json, revealed_at,
        created_at, updated_at, deleted_at
      ) VALUES (
        ?, ?, ?, ?, ?, ?,
@@ -354,6 +390,7 @@ async function postMemory(env, traveler, request, url, cors) {
        ?, ?, ?,
        ?, ?, ?, ?,
        ?, ?, ?,
+       ?, ?, ?, ?, ?, ?,
        ?, ?, NULL
      )
      ON CONFLICT(id) DO UPDATE SET
@@ -377,6 +414,12 @@ async function postMemory(env, traveler, request, url, cors) {
        photo_r2_keys_json = COALESCE(excluded.photo_r2_keys_json, memories.photo_r2_keys_json),
        photo_external_urls_json = excluded.photo_external_urls_json,
        interstitial_json = COALESCE(excluded.interstitial_json, memories.interstitial_json),
+       hide_from_json = COALESCE(excluded.hide_from_json, memories.hide_from_json),
+       reveal_json = COALESCE(excluded.reveal_json, memories.reveal_json),
+       conceal = COALESCE(excluded.conceal, memories.conceal),
+       cover_json = COALESCE(excluded.cover_json, memories.cover_json),
+       surprise_json = COALESCE(excluded.surprise_json, memories.surprise_json),
+       revealed_at = COALESCE(excluded.revealed_at, memories.revealed_at),
        updated_at = excluded.updated_at,
        deleted_at = NULL`
   ).bind(
@@ -391,6 +434,7 @@ async function postMemory(env, traveler, request, url, cors) {
     reactionsJson,
     audioR2Key, audioMime, photoR2Key, photoMime,
     photoR2KeysJson, photoExternalUrlsJson, interstitialJson,
+    hideFromJson, revealJson, concealVal, coverJson, surpriseJson, revealedAt,
     createdAt, updatedAt
   ).run()
 
@@ -473,6 +517,19 @@ function rowToMemory(r, origin) {
       }
     } catch {}
   }
+  // Migration 010 — surface the masking layer (Surprises) when stored; leave
+  // each undefined for the NULL columns on every legacy row so the deserialized
+  // object is byte-identical to pre-010. hideFrom's presence MARKS a surprise.
+  const parseJson = (s) => {
+    if (!s) return undefined
+    try { return JSON.parse(s) } catch { return undefined }
+  }
+  const hideFrom = parseJson(r.hide_from_json)
+  const reveal = parseJson(r.reveal_json)
+  const cover = parseJson(r.cover_json)
+  const surprise = parseJson(r.surprise_json)
+  const revealed = r.revealed_at || undefined
+  const conceal = r.conceal || undefined
   return {
     id: r.id,
     tripId: r.trip_id || undefined,
@@ -493,6 +550,13 @@ function rowToMemory(r, origin) {
     photoExternalURLs,
     interstitial,
     audioRef,
+    // Masking layer (010) — undefined on every legacy row (omitted from JSON).
+    ...(Array.isArray(hideFrom) && hideFrom.length ? { hideFrom } : {}),
+    ...(reveal ? { reveal } : {}),
+    ...(conceal ? { conceal } : {}),
+    ...(cover ? { cover } : {}),
+    ...(surprise ? { surprise } : {}),
+    ...(revealed ? { revealed } : {}),
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
     deletedAt: r.deleted_at ? new Date(r.deleted_at).toISOString() : undefined,
@@ -2750,6 +2814,7 @@ async function loadTripsSummary(env) {
       `SELECT trip_id, COUNT(*) AS n
          FROM memories
         WHERE trip_id IS NOT NULL AND deleted_at IS NULL
+          AND (hide_from_json IS NULL OR revealed_at IS NOT NULL)
         GROUP BY trip_id`
     ).all()
     const countMap = new Map()
