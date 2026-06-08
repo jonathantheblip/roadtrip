@@ -32,7 +32,7 @@ import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from '.
 import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
-import { mergeCoverStops } from './lib/surprises'
+import { mergeCoverStops, maskTripsForViewer } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
@@ -217,7 +217,11 @@ export default function App() {
   // surfaces — not the index, not the trip switcher, not the cold-start
   // pick. They live only in the editor and the Settings → Drafts list.
   // This is what stops a sparse trip from ever rendering in a view.
-  const visibleTrips = allTrips.filter((t) => !t.draft)
+  // Whole-trip masking (3b): substitute a stand-in for any trip hidden from the
+  // active traveler, so a secret trip never shows its real self in their list /
+  // active-trip pick / themed views. Author + non-targeted + revealed see the
+  // real trip. The worker enforces the same on the sync read (the boundary).
+  const visibleTrips = maskTripsForViewer(allTrips.filter((t) => !t.draft), traveler)
   const topBar = topBarTokens(traveler)
   // Jonathan + Rafa + Aurelia are dark; Helen light (the per-person
   // dark-mode toggle was dropped 2026-06-05; Aurelia inverted to dark in
@@ -1098,8 +1102,10 @@ export default function App() {
         {view.name === 'surprises' && (
           <SurprisesView
             trip={trip}
+            trips={allTrips}
             traveler={traveler}
-            onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
+            tripsApi={tripsApi}
+            onClose={() => { setSurpriseTick((t) => t + 1); setView({ name: trip && !trip.draft ? 'trip' : 'index' }) }}
           />
         )}
         {view.name === 'showme' && (

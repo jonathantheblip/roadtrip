@@ -22,7 +22,25 @@ import {
   listTripSurpriseRecords,
   revealSurprise,
 } from '../lib/memoryStore'
-import { authoredSurprises, teasersMaskedFrom, revealedForViewer, displayName, revealLabel } from '../lib/surprises'
+import { authoredSurprises, teasersMaskedFrom, revealedForViewer, tripSurprisesKeptBy, displayName, revealLabel } from '../lib/surprises'
+
+// Normalize a whole-trip surprise (3b) into the kept-card shape so the same card
+// UI renders it. `isTrip`/`_trip` let doReveal/openEdit route to the trip write.
+function tripAsKept(t) {
+  const s = t.surprise || {}
+  return {
+    id: t.id,
+    isTrip: true,
+    _trip: t,
+    authorTraveler: s.author,
+    hideFrom: s.hideFrom || [],
+    reveal: s.reveal,
+    conceal: s.conceal,
+    cover: s.cover,
+    revealed: s.revealed,
+    surprise: { what: 'The whole trip', icon: '🗺️', title: t.title || 'A trip', detail: t.dateRange || t.subtitle || '', tint: '#3A5A7A' },
+  }
+}
 
 // Per-lens corner radius — mirrors themes.css --radius (2 / 18 / 4 / 24). The
 // design does arithmetic on it (Math.min(r,18), r-4, r+6) so we keep the numeric.
@@ -102,7 +120,7 @@ function Thumb({ tint = '#6A5E4C', icon }) {
 }
 
 // ── THE SURFACE ──────────────────────────────────────────────────────────────
-export function SurprisesView({ trip, traveler, onClose }) {
+export function SurprisesView({ trip, trips, traveler, tripsApi, onClose }) {
   const tripId = trip?.id
   const serif = 'var(--font-display, var(--font-body, system-ui))'
   const ital = traveler === 'aurelia' ? 'italic' : 'normal'
@@ -115,34 +133,62 @@ export function SurprisesView({ trip, traveler, onClose }) {
   const [justRevealed, setJustRevealed] = useState(null)
 
   const raw = useMemo(() => (tripId ? listTripSurpriseRecords(tripId) : []), [tripId, tick])
-  const kept = useMemo(() => authoredSurprises(raw, traveler), [raw, traveler])
+  // "You're keeping" = memory surprises authored by viewer + whole-trip surprises
+  // they authored (3b), normalized to the same card shape.
+  const kept = useMemo(() => {
+    const mems = authoredSurprises(raw, traveler)
+    const tripKept = tripSurprisesKeptBy(trips || [], traveler).map(tripAsKept)
+    return [...tripKept, ...mems]
+  }, [raw, traveler, trips, tick])
   const coming = useMemo(() => teasersMaskedFrom(raw, traveler), [raw, traveler])
   const revealedForMe = useMemo(() => revealedForViewer(raw, traveler), [raw, traveler])
 
   function doReveal(s) {
     setJustRevealed(s)
     setTimeout(() => {
-      revealSurprise(s.id)
+      if (s.isTrip && s._trip && tripsApi) {
+        tripsApi.upsertTrip({ ...s._trip, surprise: { ...s._trip.surprise, revealed: new Date().toISOString() } })
+      } else {
+        revealSurprise(s.id)
+      }
       setJustRevealed(null)
       setTick((n) => n + 1)
     }, 1700)
   }
 
   function onCreate(payload) {
-    // payload.id present → editing an existing surprise (upsert by id); the
-    // secret-keeper can change how/when it reveals (or who) after the fact.
-    saveMemory({
-      id: payload.id,
-      tripId,
-      stopId: null,
-      authorTraveler: traveler,
-      visibility: 'shared',
-      hideFrom: payload.hideFrom,
-      reveal: payload.reveal,
-      conceal: payload.conceal,
-      cover: payload.cover,
-      surprise: payload.surprise,
-    })
+    if (payload.surprise?.what === 'The whole trip') {
+      // Whole-trip surprise (3b): mark a real TRIP hidden (rides in data_json,
+      // no schema change). The target is the edited trip or the active trip.
+      const target = (payload.id && (trips || []).find((t) => t.id === payload.id)) || trip
+      if (target && tripsApi) {
+        tripsApi.upsertTrip({
+          ...target,
+          surprise: {
+            author: traveler,
+            hideFrom: payload.hideFrom,
+            reveal: payload.reveal,
+            conceal: payload.conceal,
+            cover: payload.cover,
+            revealed: target.surprise?.revealed || undefined,
+          },
+        })
+      }
+    } else {
+      // payload.id present → editing an existing memory surprise (upsert by id).
+      saveMemory({
+        id: payload.id,
+        tripId,
+        stopId: null,
+        authorTraveler: traveler,
+        visibility: 'shared',
+        hideFrom: payload.hideFrom,
+        reveal: payload.reveal,
+        conceal: payload.conceal,
+        cover: payload.cover,
+        surprise: payload.surprise,
+      })
+    }
     setComposing(false)
     setEditing(null)
     setTick((n) => n + 1)
@@ -335,7 +381,6 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   const r = RADIUS[traveler] ?? 8
   const whats = [['A stop', '📍'], ['A photo', '🖼️'], ['A memory', '💭'], ['The whole trip', '🗺️']]
   const family = TRAVELER_ORDER.filter((id) => id !== traveler)
-  const reveals = [['manual', 'When I choose'], ['arrival', 'When they arrive'], ['date', 'On a date']]
 
   // Every place on the trip that has a location — the arrival picker. Any kind
   // of place qualifies (lodging, a landmark, a restaurant); nothing assumes a
@@ -366,6 +411,11 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   const revealReady = reveal === 'manual' || (reveal === 'date' && !!revealDate) || (reveal === 'arrival' && !!revealStopId)
   const valid = (everyone || hide.length > 0) && coverReady && revealReady
   const whoNames = everyone ? 'anyone' : hide.map((id) => displayName(id, traveler)).join(' or ') || 'them'
+  // A whole trip has no single arrival point, so it reveals manually or on a date.
+  const isWholeTrip = what === 'The whole trip'
+  const reveals = isWholeTrip
+    ? [['manual', 'When I choose'], ['date', 'On a date']]
+    : [['manual', 'When I choose'], ['arrival', 'When they arrive'], ['date', 'On a date']]
 
   function create() {
     let revealObj
@@ -418,7 +468,7 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
 
           <CmpLabel>What are you hiding?</CmpLabel>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {whats.map(([w, e]) => <Chip key={w} on={what === w} onClick={() => setWhat(w)} icon={e}>{w}</Chip>)}
+            {whats.map(([w, e]) => <Chip key={w} on={what === w} onClick={() => { setWhat(w); if (w === 'The whole trip' && reveal === 'arrival') setReveal('manual') }} icon={e}>{w}</Chip>)}
           </div>
 
           <CmpLabel>Hide it from</CmpLabel>
@@ -457,7 +507,7 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
           ) : (
             <div style={{ marginTop: 11, padding: 13, borderRadius: Math.min(r, 14), border: '1px solid var(--border)', background: 'var(--card)' }}>
               <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', lineHeight: 1.4, marginBottom: 11 }}>A believable stand-in shows on their plan instead — carrying the real timing + weather so they pack and plan right, never knowing.</div>
-              {trip?.days?.length > 0 && (
+              {!isWholeTrip && trip?.days?.length > 0 && (
                 <select value={cov.dayIso || ''} onChange={(e) => setC('dayIso', e.target.value)} aria-label="Which day it appears on"
                   style={{ ...fieldStyle, width: '100%', marginBottom: 8, appearance: 'none' }}>
                   <option value="">Which day on their plan… (optional)</option>

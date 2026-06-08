@@ -24,7 +24,7 @@ import {
   straightLineMinutes,
 } from './leaveWhen.js'
 import { runNightlyWeave, beatSignature } from './weaveGen.js'
-import { maskMemoryForViewer } from './surprises.js'
+import { maskMemoryForViewer, maskTripForViewer } from './surprises.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -92,7 +92,7 @@ export default {
       }
 
       if (path === '/trips' && request.method === 'GET') {
-        return await getTrips(env, url, cors, ctx)
+        return await getTrips(env, traveler, url, cors, ctx)
       }
       if (path === '/trips' && request.method === 'POST') {
         return await postTrip(env, request, cors)
@@ -200,6 +200,12 @@ export default {
         (e) => console.error('[surprise-reveals] failed', e?.stack || e)
       )
     )
+    ctx.waitUntil(
+      runScheduledTripReveals(env, todayIsoUTC(Date.now())).then(
+        (r) => console.log('[trip-surprise-reveals]', JSON.stringify(r)),
+        (e) => console.error('[trip-surprise-reveals] failed', e?.stack || e)
+      )
+    )
   },
 }
 
@@ -222,6 +228,24 @@ export async function runScheduledReveals(env, todayIso) {
 
 function todayIsoUTC(ms) {
   return new Date(ms).toISOString().slice(0, 10)
+}
+
+// Whole-trip date reveals (Slice 3b). Same as runScheduledReveals but the masking
+// lives inside trips.data_json, so we read with json_extract and write with
+// json_set. Flips `.surprise.revealed` for every still-hidden DATE trip-surprise
+// whose date has arrived; bumps updated_at so the next sync unmasks it.
+export async function runScheduledTripReveals(env, todayIso) {
+  const now = Date.now()
+  const res = await env.DB.prepare(
+    `UPDATE trips
+        SET data_json = json_set(data_json, '$.surprise.revealed', ?), updated_at = ?
+      WHERE deleted_at IS NULL
+        AND json_extract(data_json, '$.surprise.revealed') IS NULL
+        AND json_extract(data_json, '$.surprise.hideFrom') IS NOT NULL
+        AND json_extract(data_json, '$.surprise.reveal.type') = 'date'
+        AND json_extract(data_json, '$.surprise.reveal.at') <= ?`
+  ).bind(new Date(now).toISOString(), now, todayIso).run()
+  return { revealed: res?.meta?.changes ?? 0, todayIso }
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────
@@ -621,14 +645,14 @@ function toEpochMs(v) {
 
 // ─── Trips ────────────────────────────────────────────────────────────
 
-async function getTrips(env, url, cors, ctx) {
+async function getTrips(env, traveler, url, cors, ctx) {
   const since = parseInt(url.searchParams.get('since') || '0', 10) || 0
   const { results } = await env.DB.prepare(
     `SELECT * FROM trips
      WHERE updated_at > ? AND deleted_at IS NULL
      ORDER BY updated_at ASC`
   ).bind(since).all()
-  const out = results.map((r) => {
+  const realTrips = results.map((r) => {
     try {
       const trip = JSON.parse(r.data_json)
       if (r.date_range_start) trip.dateRangeStart = r.date_range_start
@@ -640,6 +664,13 @@ async function getTrips(env, url, cors, ctx) {
     }
   }).filter(Boolean)
 
+  // SECURITY BOUNDARY (whole-trip masking, Slice 3b): substitute a stand-in for
+  // any trip masked from `traveler` BEFORE it leaves the worker — the real
+  // title/itinerary never reach the recipient. Hero resolution below runs on the
+  // REAL trips (it's a server-side enrichment of stored data, not viewer-specific
+  // — and the stand-ins are fake, so they must never be sent to Places/R2).
+  const out = realTrips.map((t) => maskTripForViewer(t, traveler))
+
   // §2/§6 — kick off worker-side hero resolution in the BACKGROUND for
   // runtime trips that have no explicit hero and no resolved hero yet.
   // Deliberately never blocks the pull (plan §5: "never on the hot render
@@ -650,7 +681,7 @@ async function getTrips(env, url, cors, ctx) {
   // absent on some non-fetch call paths — guard waitUntil.
   if (ctx?.waitUntil) {
     const origin = workerOrigin(env, url)
-    for (const trip of out) {
+    for (const trip of realTrips) {
       if (hasExplicitHero(trip)) continue
       if (trip.heroResolved?.key) continue
       ctx.waitUntil(resolveTripHero(env, trip, origin))
@@ -662,6 +693,13 @@ async function getTrips(env, url, cors, ctx) {
 async function postTrip(env, request, cors) {
   const trip = await request.json()
   if (!trip?.id) return json({ error: 'missing id' }, 400, cors)
+  // Masked-projection guard (whole-trip masking, 3b). A trip stand-in the worker
+  // emitted for a recipient carries `masked:true` + stripped data. If a recipient
+  // device pushed it back (e.g. archiving the cover trip), it would CLOBBER the
+  // author's real trip. Refuse it — a stand-in is never authoritative.
+  if (trip.masked) {
+    return json({ ok: true, skipped: 'masked-projection', id: trip.id }, 200, cors)
+  }
   const updatedAt = Date.now()
   await env.DB.prepare(
     `INSERT INTO trips (
@@ -2477,12 +2515,25 @@ async function getClaudeConversationMessages(env, conversationId, cors) {
 export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   const profiles = await loadFamilyProfiles(env)
   const reader = profiles[readerUserId] || profiles.helen || profiles.jonathan
-  const trip = tripId ? await loadTrip(env, tripId) : null
+  // Whole-trip masking (3b): if the open trip is hidden from the reader, Claude
+  // gets the COVER stand-in (not the real trip) — so it works from the cover and
+  // can't spoil it. loadTrip wraps the trip as {id,title,…,data}, with the real
+  // title in the column and .surprise inside data; reconstruct the real trip,
+  // mask it, then re-wrap into loadTrip's shape (title=cover, data.days=[]) so
+  // formatTrip shows only the cover. Author/non-targeted pass through unchanged.
+  let trip = tripId ? await loadTrip(env, tripId) : null
+  if (trip) {
+    const realTrip = { ...(trip.data || {}), id: trip.id, title: trip.title, dateRangeStart: trip.dateRangeStart, dateRangeEnd: trip.dateRangeEnd, endCity: trip.endCity }
+    const masked = maskTripForViewer(realTrip, readerUserId)
+    if (masked._maskedTrip) {
+      trip = { id: masked.id, title: masked.title, dateRangeStart: masked.dateRangeStart, dateRangeEnd: masked.dateRangeEnd, endCity: masked.endCity, data: { ...masked, days: [] } }
+    }
+  }
   // When no specific trip is open, Helen still expects "what trips do
   // I have planned this summer" to work. Pull cross-trip summaries so
   // Sonnet can answer without deflecting. See KNOWN_BUGS_HELEN_SURFACE.md
   // P1.3.
-  const tripsSummary = !trip ? await loadTripsSummary(env) : null
+  const tripsSummary = !trip ? await loadTripsSummary(env, readerUserId) : null
 
   const lines = []
   lines.push(
@@ -2833,7 +2884,7 @@ async function loadTrip(env, tripId) {
 // "what trips do I have planned this summer" don't deflect. Returns
 // every non-deleted trip with a date-derived status, day count, and
 // live memory count. See KNOWN_BUGS_HELEN_SURFACE.md P1.3.
-async function loadTripsSummary(env) {
+async function loadTripsSummary(env, readerUserId) {
   try {
     const tripsResult = await env.DB.prepare(
       `SELECT id, title, date_range_start, date_range_end, end_city, data_json
@@ -2858,22 +2909,29 @@ async function loadTripsSummary(env) {
       } catch {}
       const start = row.date_range_start || data?.dateRangeStart || null
       const end = row.date_range_end || data?.dateRangeEnd || null
+      // Whole-trip masking (3b): substitute the stand-in for a trip hidden from
+      // the reader so its real title / cities / day + memory counts never enter
+      // Claude's cross-trip summary. The real dates stay (so "what's this summer"
+      // still works) and the cover title shows instead.
+      const realTrip = { ...(data || {}), id: row.id, title: row.title || data?.title, dateRangeStart: start, dateRangeEnd: end }
+      const t = maskTripForViewer(realTrip, readerUserId)
+      const masked = !!t._maskedTrip
       let status = 'planning'
       if (end && today > end) status = 'completed'
       else if (start && today >= start) status = 'active'
       out.push({
         id: row.id,
-        title: row.title || data?.title || '(untitled)',
+        title: t.title || '(untitled)',
         dateRangeStart: start,
         dateRangeEnd: end,
-        dateRange: data?.dateRange || null,
+        dateRange: masked ? null : data?.dateRange || null,
         status,
-        dayCount: Array.isArray(data?.days) ? data.days.length : 0,
-        memoryCount: countMap.get(row.id) || 0,
-        locationLabel: data?.locationLabel || null,
-        startCity: data?.startCity || null,
-        endCity: row.end_city || data?.endCity || null,
-        subtitle: data?.subtitle || null,
+        dayCount: masked ? 0 : Array.isArray(data?.days) ? data.days.length : 0,
+        memoryCount: masked ? 0 : countMap.get(row.id) || 0,
+        locationLabel: masked ? null : data?.locationLabel || null,
+        startCity: masked ? null : data?.startCity || null,
+        endCity: masked ? null : row.end_city || data?.endCity || null,
+        subtitle: masked ? t.subtitle || null : data?.subtitle || null,
       })
     }
     // Chronological by start date so "what trips do I have this

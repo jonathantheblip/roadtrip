@@ -262,6 +262,9 @@ test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
       // Toggle to cover-story mode to expose the cover form (the densest set of
       // controls + the accent-fill chips/submit).
       await page.getByRole('button', { name: /A cover story/i }).click()
+      // Also switch to the whole-trip variant (3b): reveal options change + the
+      // day picker hides, so this scans that state too.
+      await page.getByRole('button', { name: /The whole trip/i }).click()
       await expect(page.getByRole('button', { name: /Hide it behind the cover/i })).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: '[data-testid="surprises-view"]',

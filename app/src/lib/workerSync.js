@@ -240,6 +240,9 @@ export async function pullTrips() {
 
 export async function pushTrip(trip) {
   if (!isWorkerConfigured()) return false
+  // A masked trip stand-in (3b) is a per-recipient projection — never push it
+  // back (it would clobber the author's real trip). The worker also refuses it.
+  if (trip?.masked) return false
   try {
     await workerFetch('/trips', {
       method: 'POST',

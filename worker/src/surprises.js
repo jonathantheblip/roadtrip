@@ -83,3 +83,47 @@ export function maskMemoryForViewer(m, viewer) {
   if (!isMaskedFrom(m, viewer)) return m
   return m.conceal === 'cover' ? coverStandIn(m) : teaserStub(m)
 }
+
+// ── Whole-trip masking (Slice 3b) — server mirror ────────────────────────────
+// A trip is a surprise when its `.surprise.hideFrom` is non-empty (the masking
+// rides inside data_json, so no schema change). For a masked-from viewer the real
+// trip is SUBSTITUTED with a believable stand-in BEFORE it leaves the worker — the
+// real title/itinerary never reach them. Mirrors app/src/lib/surprises.js.
+
+export function isTripSurprise(trip) {
+  return !!(trip && trip.surprise && Array.isArray(trip.surprise.hideFrom) && trip.surprise.hideFrom.length)
+}
+
+export function isTripMaskedFrom(trip, viewer) {
+  if (!isTripSurprise(trip)) return false
+  const s = trip.surprise
+  if (s.author === viewer) return false
+  if (s.revealed) return false
+  return s.hideFrom.includes('everyone') || s.hideFrom.includes(viewer)
+}
+
+function tripStandIn(trip) {
+  const s = trip.surprise || {}
+  const cov = s.cover || {}
+  const isCover = s.conceal === 'cover'
+  return {
+    id: trip.id,
+    title: isCover ? cov.title || 'A trip' : '🎁 A surprise trip',
+    subtitle: isCover ? cov.loc || '' : 'Someone planned something',
+    dateRange: trip.dateRange,
+    dateRangeStart: trip.dateRangeStart,
+    dateRangeEnd: trip.dateRangeEnd,
+    locationLabel: isCover ? cov.loc || '' : '',
+    startCity: isCover ? cov.loc || '' : '',
+    endCity: isCover ? cov.loc || '' : '',
+    travelers: trip.travelers,
+    days: [],
+    masked: true,
+    _maskedTrip: true,
+    _coverTrip: isCover,
+  }
+}
+
+export function maskTripForViewer(trip, viewer) {
+  return isTripMaskedFrom(trip, viewer) ? tripStandIn(trip) : trip
+}

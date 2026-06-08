@@ -18,6 +18,10 @@ import {
   revealedForViewer,
   coverToStop,
   mergeCoverStops,
+  isTripSurprise,
+  isTripMaskedFrom,
+  maskTripsForViewer,
+  tripSurprisesKeptBy,
 } from '../../src/lib/surprises.js'
 
 const SECRET_TITLE = 'FAO Schwarz — the giant floor piano'
@@ -203,6 +207,62 @@ test('mergeCoverStops: injects cover stops into the matching day; no-op otherwis
   assert.equal(mergeCoverStops(trip, []), trip)
   assert.equal(mergeCoverStops(trip, [{ id: 'x', kind: 'text' }]), trip)
   assert.equal(mergeCoverStops(null, covers), null)
+})
+
+// ── Slice 3b: whole-trip masking ────────────────────────────────────────────
+
+const SECRET_TRIP = {
+  id: 'trip-secret',
+  title: 'Disney World surprise!',
+  dateRange: 'Aug 1 – 5',
+  dateRangeStart: '2026-08-01',
+  dateRangeEnd: '2026-08-05',
+  travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+  days: [{ isoDate: '2026-08-01', title: 'Magic Kingdom', stops: [{ id: 's', name: 'Cinderella Castle' }] }],
+  surprise: { author: 'jonathan', hideFrom: ['rafa', 'aurelia'], reveal: { type: 'manual' }, conceal: 'cover', cover: { title: 'Visiting Grandma', loc: "Grandma's house" } },
+}
+const PLAIN_TRIP = { id: 'trip-plain', title: 'Beach weekend', dateRangeStart: '2026-07-01', days: [] }
+
+test('trip masking: predicates', () => {
+  assert.equal(isTripSurprise(SECRET_TRIP), true)
+  assert.equal(isTripSurprise(PLAIN_TRIP), false)
+  assert.equal(isTripMaskedFrom(SECRET_TRIP, 'rafa'), true)
+  assert.equal(isTripMaskedFrom(SECRET_TRIP, 'jonathan'), false) // author
+  assert.equal(isTripMaskedFrom(SECRET_TRIP, 'helen'), false) // not targeted
+})
+
+test('trip masking: a recipient gets the COVER stand-in — real title/itinerary NEVER', () => {
+  const forRafa = maskTripsForViewer([PLAIN_TRIP, SECRET_TRIP], 'rafa')
+  assert.equal(forRafa.length, 2)
+  const stand = forRafa.find((t) => t.id === 'trip-secret')
+  assert.equal(stand.title, 'Visiting Grandma') // the cover
+  assert.equal(stand.dateRangeStart, '2026-08-01') // real dates kept so they don't double-book
+  assert.deepEqual(stand.days, []) // no real itinerary
+  assert.equal(stand.masked, true)
+  // The load-bearing assertion: nothing secret leaks into the recipient's trip.
+  assert.ok(!JSON.stringify(stand).includes('Disney'))
+  assert.ok(!JSON.stringify(stand).includes('Cinderella'))
+  assert.ok(!JSON.stringify(stand).includes('Magic Kingdom'))
+})
+
+test('trip masking: author + revealed + non-targeted see the real trip', () => {
+  assert.equal(maskTripsForViewer([SECRET_TRIP], 'jonathan')[0].title, 'Disney World surprise!') // author
+  assert.equal(maskTripsForViewer([SECRET_TRIP], 'helen')[0].title, 'Disney World surprise!') // not targeted
+  const revealed = { ...SECRET_TRIP, surprise: { ...SECRET_TRIP.surprise, revealed: 'x' } }
+  assert.equal(maskTripsForViewer([revealed], 'rafa')[0].title, 'Disney World surprise!') // revealed
+})
+
+test('trip masking: a teaser trip substitutes a wrapped-trip card (dates kept)', () => {
+  const teaserTrip = { ...SECRET_TRIP, surprise: { author: 'jonathan', hideFrom: ['everyone'], reveal: { type: 'manual' }, conceal: 'teaser' } }
+  const stand = maskTripsForViewer([teaserTrip], 'rafa')[0]
+  assert.equal(stand.title, '🎁 A surprise trip')
+  assert.equal(stand.dateRangeStart, '2026-08-01')
+  assert.ok(!JSON.stringify(stand).includes('Disney'))
+})
+
+test('trip masking: tripSurprisesKeptBy returns the author\'s whole-trip surprises', () => {
+  assert.deepEqual(tripSurprisesKeptBy([PLAIN_TRIP, SECRET_TRIP], 'jonathan').map((t) => t.id), ['trip-secret'])
+  assert.deepEqual(tripSurprisesKeptBy([PLAIN_TRIP, SECRET_TRIP], 'rafa'), [])
 })
 
 test('reveal cue: unseen reveals for the viewer; revealedForViewer ignores seen', () => {

@@ -207,6 +207,28 @@ describe('runNightlyWeave', () => {
     const revealed = await runNightlyWeave(env, { nowMs: 3000, todayIso: '2026-05-22', generateNarrative: fakeNarrator })
     expect(revealed.beats).toBe(4)
   })
+
+  it('never weaves an unrevealed SECRET TRIP (3b) — it would spoil via /weave/latest', async () => {
+    await env.DB.prepare('DELETE FROM trips').run()
+    await env.DB.prepare('DELETE FROM memories').run()
+    const secret = {
+      id: 'wv-secret', title: 'Secret getaway', dateRangeStart: '2026-05-20', dateRangeEnd: '2026-05-24',
+      days: [{ isoDate: '2026-05-21', stops: [{ id: 'x' }] }],
+      surprise: { author: 'jonathan', hideFrom: ['rafa'], reveal: { type: 'manual' }, conceal: 'cover' },
+    }
+    await env.DB.prepare(
+      `INSERT INTO trips (id, title, date_range_start, date_range_end, end_city, data_json, updated_at, deleted_at)
+       VALUES (?, ?, ?, ?, NULL, ?, 1, NULL)`
+    ).bind(secret.id, secret.title, secret.dateRangeStart, secret.dateRangeEnd, JSON.stringify(secret)).run()
+    await env.DB.prepare(
+      `INSERT INTO memories (id, trip_id, stop_id, author_traveler, visibility, kind, text, created_at, updated_at, deleted_at)
+       VALUES ('sm', 'wv-secret', 'x', 'jonathan', 'shared', 'text', 'a secret moment', 1, 1, NULL)`
+    ).run()
+    // The secret trip is the only one + has a memory → WITHOUT the filter it would
+    // weave. With it, there's nothing weavable.
+    const r = await runNightlyWeave(env, { nowMs: 1000, todayIso: '2026-05-22', generateNarrative: fakeNarrator })
+    expect(r.woven).not.toBe(true)
+  })
 })
 
 // ── 3. GET /weave/latest ──────────────────────────────────────────────────

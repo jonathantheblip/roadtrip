@@ -241,3 +241,65 @@ export function mergeCoverStops(trip, memories) {
   })
   return changed ? { ...trip, days } : trip
 }
+
+// ── Slice 3b: whole-trip masking (a "totally secret trip") ───────────────────
+// A trip is a surprise when its `.surprise.hideFrom` is non-empty. Mirrors the
+// memory contract, applied to the trip object — which rides inside the worker's
+// trips.data_json, so NO schema change. The trip-surprise shape:
+//   trip.surprise = { author, hideFrom, reveal, conceal, cover, revealed }
+// Modes (same teaser/cover semantics as memories): teaser → the recipient sees a
+// "🎁 A surprise trip" card (keeps the dates free, no destination); cover → a
+// believable fake-trip card (fake title, real dates). Both SUBSTITUTE rather than
+// drop — a trip occupies dates, so the recipient must still see *something* there
+// or they'd double-book. Author + revealed always see the real trip.
+
+export function isTripSurprise(trip) {
+  return !!(trip && trip.surprise && Array.isArray(trip.surprise.hideFrom) && trip.surprise.hideFrom.length)
+}
+
+export function isTripMaskedFrom(trip, viewer) {
+  if (!isTripSurprise(trip)) return false
+  const s = trip.surprise
+  if (s.author === viewer) return false
+  if (s.revealed) return false
+  return s.hideFrom.includes('everyone') || s.hideFrom.includes(viewer)
+}
+
+// What a masked-from viewer gets INSTEAD of the real trip: a believable stand-in
+// carrying ONLY non-secret framing (the real dates, so they keep the time free) —
+// never the real title / destination / days / stops. `masked:true` so it can't be
+// pushed back; the server mirrors this so the real trip never reaches them.
+export function tripStandIn(trip) {
+  const s = trip.surprise || {}
+  const cov = s.cover || {}
+  const isCover = s.conceal === 'cover'
+  return {
+    id: trip.id,
+    title: isCover ? cov.title || 'A trip' : '🎁 A surprise trip',
+    subtitle: isCover ? cov.loc || '' : 'Someone planned something',
+    dateRange: trip.dateRange,
+    dateRangeStart: trip.dateRangeStart,
+    dateRangeEnd: trip.dateRangeEnd,
+    locationLabel: isCover ? cov.loc || '' : '',
+    startCity: isCover ? cov.loc || '' : '',
+    endCity: isCover ? cov.loc || '' : '',
+    travelers: trip.travelers,
+    days: [], // NO real itinerary
+    masked: true,
+    _maskedTrip: true,
+    _coverTrip: isCover,
+  }
+}
+
+// The per-viewer transform over the trip LIST — substitute stand-ins, keep the
+// rest. The worker mirrors this server-side (the security boundary).
+export function maskTripsForViewer(trips, viewer) {
+  if (!Array.isArray(trips)) return []
+  return trips.map((t) => (isTripMaskedFrom(t, viewer) ? tripStandIn(t) : t))
+}
+
+// Whole-trip surprises THIS viewer authored — for the Surprises "You're keeping"
+// list (shown in full, with a manual Reveal now).
+export function tripSurprisesKeptBy(trips, viewer) {
+  return (trips || []).filter((t) => isTripSurprise(t) && t.surprise?.author === viewer)
+}

@@ -139,6 +139,10 @@ export async function runNightlyWeave(env, { nowMs, generateNarrative, todayIso 
       }
     })
     .filter(Boolean)
+    // Whole-trip masking (3b): never weave an UNREVEALED secret trip — the weave
+    // is a Claude surface, and the woven page (fetched via /weave/latest) would
+    // spoil it for the hidden-from people. Once revealed it weaves normally.
+    .filter((t) => !(t.surprise && Array.isArray(t.surprise.hideFrom) && t.surprise.hideFrom.length && !t.surprise.revealed))
 
   // Load all non-deleted SHARED memories once (private never enters the weave).
   // Exclude unrevealed surprises (Surprises masking, 010): the weave is the
