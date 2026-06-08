@@ -109,6 +109,21 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
 
   const stillPhotos = useMemo(() => entries.filter((e) => !e.isVideo && e.url), [entries])
 
+  // Enroll strip: shuffle once per session, then ↻ advances through the
+  // shuffle in pages — so a different swath shows each visit AND every
+  // photo is reachable (find the rare ones: the photographer, Helen).
+  const [enrollPage, setEnrollPage] = useState(0)
+  const ENROLL_PAGE = 60
+  const shuffledStills = useMemo(() => sampleShuffle(stillPhotos), [stillPhotos])
+  const enrollPool = useMemo(() => {
+    if (shuffledStills.length <= ENROLL_PAGE) return shuffledStills
+    const start = (enrollPage * ENROLL_PAGE) % shuffledStills.length
+    return Array.from(
+      { length: Math.min(ENROLL_PAGE, shuffledStills.length) },
+      (_, i) => shuffledStills[(start + i) % shuffledStills.length],
+    )
+  }, [shuffledStills, enrollPage])
+
   const enrolledIds = useMemo(
     () => Object.values(enrollment).filter((p) => p.embeddings?.length).map((p) => p.personId),
     [enrollment],
@@ -352,8 +367,18 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
               </div>
             </div>
           )}
+          {stillPhotos.length > ENROLL_PAGE && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                Showing {enrollPool.length} of {stillPhotos.length} — not pictured? tap for a different batch.
+              </span>
+              <button onClick={() => setEnrollPage((p) => p + 1)} style={{ ...S.btn(false), flexShrink: 0 }} data-testid="person-enroll-shuffle">
+                ↻ Different photos
+              </button>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px,1fr))', gap: 6 }}>
-            {stillPhotos.slice(0, 48).map((e) => (
+            {enrollPool.map((e) => (
               <img
                 key={e.key}
                 src={e.url}
@@ -491,6 +516,20 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
 
 function area(box) {
   return Array.isArray(box) && box.length >= 4 ? box[2] * box[3] : 0
+}
+
+// Shuffle a copy (Fisher–Yates) so the enroll strip shows a different
+// swath each session — the photographer and the under-photographed are
+// rarely in the first photos, so a fixed slice never surfaces them.
+function sampleShuffle(arr) {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const t = a[i]
+    a[i] = a[j]
+    a[j] = t
+  }
+  return a
 }
 
 function Centered({ children }) {
