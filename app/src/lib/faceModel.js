@@ -23,20 +23,30 @@
 // generic, data-free).
 
 import { l2normalize } from './faceMatch.js'
+import { detectFacesScrfd } from './scrfd.js'
 
 // All external asset URLs in one place, overridable via
 // globalThis.__RT_FACE_CONFIG (test seam / self-host switch).
 export const FACE_CONFIG = {
-  // onnxruntime-web WASM/glue files (the embedder runtime)
+  // onnxruntime-web WASM/glue files — runs BOTH the SCRFD detector and
+  // the embedder (one runtime).
   ortWasmBase: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/',
-  // MediaPipe tasks-vision WASM fileset (the detector runtime)
-  mpWasmBase: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
-  // MediaPipe BlazeFace short-range detector model (~230 KB)
-  detectorModel:
-    'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+  // SCRFD face detector (InsightFace, ~2.5 MB) — finds faces across
+  // scales incl. small/distant ones. The default detector.
+  scrfdModel:
+    'https://huggingface.co/immich-app/buffalo_s/resolve/main/detection/model.onnx',
   // ONNX face-embedding model (~13.6 MB, 112×112 → 512-d)
   embedderModel:
     'https://huggingface.co/immich-app/buffalo_s/resolve/main/recognition/model.onnx',
+  // 'scrfd' (default — catches small faces) | 'mediapipe' (legacy
+  // short-range, kept selectable for on-device comparison).
+  detector: 'scrfd',
+  detectorInputSize: 1024, // larger = catches smaller/farther faces, slower
+  detectorScoreThresh: 0.5,
+  // MediaPipe (legacy short-range) runtime + model.
+  mpWasmBase: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
+  detectorModel:
+    'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
   embedSize: 112,
   minDetectionConfidence: 0.5,
 }
@@ -52,9 +62,11 @@ function cfg() {
 const TEMPLATE_EYE_0 = [38.2946, 51.6963] // subject's right eye (image-left)
 const TEMPLATE_EYE_1 = [73.5318, 51.5014] // subject's left eye (image-right)
 
-let detectorPromise = null
+let detectorPromise = null // MediaPipe (legacy)
+let scrfdPromise = null // SCRFD detector ORT session
 let embedderPromise = null
-let backendInfo = { embedder: 'unknown', delegate: 'unknown' }
+let ortPromise = null
+let backendInfo = { embedder: 'unknown', detector: 'unknown' }
 
 // ─── lazy model loaders (load once, cached) ───────────────────────
 
@@ -83,28 +95,56 @@ async function loadDetector() {
   return detectorPromise
 }
 
+// onnxruntime-web loaded once; runs both the SCRFD detector and the
+// embedder. The extern-wasm build (vite condition) fetches its wasm from
+// wasmPaths.
+async function loadOrt() {
+  if (ortPromise) return ortPromise
+  ortPromise = (async () => {
+    const ort = await import('onnxruntime-web/webgpu')
+    ort.env.wasm.wasmPaths = cfg().ortWasmBase
+    // Silence the benign VerifyOutputSizes warnings SCRFD emits when run
+    // at an input size other than its 640 export annotation.
+    ort.env.logLevel = 'error'
+    return ort
+  })()
+  return ortPromise
+}
+
+// Create an ORT session, preferring WebGPU when the device offers it
+// (iPadOS 26 does), falling back to WASM if the GPU session won't init.
+async function createSession(ort, modelUrl) {
+  const attempts = globalThis.navigator?.gpu ? [['webgpu', 'wasm'], ['wasm']] : [['wasm']]
+  let lastErr
+  for (const executionProviders of attempts) {
+    try {
+      const session = await ort.InferenceSession.create(modelUrl, { executionProviders })
+      return { session, provider: executionProviders[0] }
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr
+}
+
+async function loadScrfdDetector() {
+  if (scrfdPromise) return scrfdPromise
+  scrfdPromise = (async () => {
+    const ort = await loadOrt()
+    const { session, provider } = await createSession(ort, cfg().scrfdModel)
+    backendInfo.detector = `scrfd/${provider}`
+    return { ort, session }
+  })()
+  return scrfdPromise
+}
+
 async function loadEmbedder() {
   if (embedderPromise) return embedderPromise
   embedderPromise = (async () => {
-    const ort = await import('onnxruntime-web/webgpu')
-    ort.env.wasm.wasmPaths = cfg().ortWasmBase
-    // Prefer WebGPU when the device offers it (iPadOS 26 does); if the
-    // GPU session won't initialize, fall back to WASM so the spike still
-    // produces a result (and reports which backend actually ran).
-    const attempts = globalThis.navigator?.gpu ? [['webgpu', 'wasm'], ['wasm']] : [['wasm']]
-    let lastErr
-    for (const executionProviders of attempts) {
-      try {
-        const session = await ort.InferenceSession.create(cfg().embedderModel, {
-          executionProviders,
-        })
-        backendInfo.embedder = executionProviders[0]
-        return { ort, session }
-      } catch (e) {
-        lastErr = e
-      }
-    }
-    throw lastErr
+    const ort = await loadOrt()
+    const { session, provider } = await createSession(ort, cfg().embedderModel)
+    backendInfo.embedder = provider
+    return { ort, session }
   })()
   return embedderPromise
 }
@@ -176,7 +216,8 @@ function imageDataToTensor(imageData) {
 // Warm both models up front; returns load timing + which backend ran.
 export async function initFaceEngine() {
   const t0 = now()
-  await loadDetector()
+  if (cfg().detector === 'mediapipe') await loadDetector()
+  else await loadScrfdDetector()
   const t1 = now()
   await loadEmbedder()
   const t2 = now()
@@ -184,20 +225,33 @@ export async function initFaceEngine() {
     detectorMs: Math.round(t1 - t0),
     embedderMs: Math.round(t2 - t1),
     totalMs: Math.round(t2 - t0),
-    backend: { ...backendInfo, webgpu: !!globalThis.navigator?.gpu },
+    backend: {
+      ...backendInfo,
+      detectorType: cfg().detector,
+      inputSize: cfg().detectorInputSize,
+      webgpu: !!globalThis.navigator?.gpu,
+    },
   }
 }
 
 // Detect every face in an image source (ImageBitmap / HTMLImageElement
-// / HTMLCanvasElement). → [{ box, score, keypoints }].
+// / HTMLCanvasElement). → [{ box, score, keypoints }]. Default = SCRFD
+// (finds faces across scales); 'mediapipe' selectable for comparison.
 export async function detectFaces(source) {
-  const detector = await loadDetector()
-  const res = detector.detect(source)
-  return (res.detections || []).map((d) => ({
-    box: d.boundingBox,
-    score: d.categories?.[0]?.score ?? null,
-    keypoints: d.keypoints,
-  }))
+  if (cfg().detector === 'mediapipe') {
+    const detector = await loadDetector()
+    const res = detector.detect(source)
+    return (res.detections || []).map((d) => ({
+      box: d.boundingBox,
+      score: d.categories?.[0]?.score ?? null,
+      keypoints: d.keypoints,
+    }))
+  }
+  const { ort, session } = await loadScrfdDetector()
+  return detectFacesScrfd(ort, session, source, {
+    inputSize: cfg().detectorInputSize,
+    scoreThresh: cfg().detectorScoreThresh,
+  })
 }
 
 // Embed a single already-aligned 112×112 tensor → 512-d normalized.

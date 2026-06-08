@@ -14,7 +14,7 @@
 // milliseconds, and the same-vs-different similarity spread (so we tune
 // the accept threshold from real numbers, not a guess).
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { flattenPhotoEntries } from '../lib/photoEntries'
 import {
@@ -64,6 +64,16 @@ export function FaceSpike({ trip, trips, traveler, onClose }) {
   const [threshold, setThreshold] = useState(DEFAULT_MATCH_THRESHOLD)
   const [scan, setScan] = useState(null) // { results, timing }
   const [error, setError] = useState('')
+  const [inputSize, setInputSize] = useState(FACE_CONFIG.detectorInputSize)
+
+  // Push the detect resolution into the engine config (read per-call via
+  // cfg()), so changing it re-detects at the new size without reloading.
+  useEffect(() => {
+    globalThis.__RT_FACE_CONFIG = {
+      ...(globalThis.__RT_FACE_CONFIG || {}),
+      detectorInputSize: inputSize,
+    }
+  }, [inputSize])
 
   // Gather still photos to work with: current trip first, topped up from
   // other trips so there's always enough to test. Videos skipped.
@@ -271,7 +281,7 @@ export function FaceSpike({ trip, trips, traveler, onClose }) {
             ✓ Ready · detector {engine.info.detectorMs}ms · fingerprint {engine.info.embedderMs}ms
             <br />
             engine: <strong>{engine.info.backend.embedder}</strong>
-            {' · '}detector: <strong>{engine.info.backend.delegate}</strong>
+            {' · '}detector: <strong>{engine.info.backend.detector}</strong>
             {' · '}WebGPU available: <strong>{String(engine.info.backend.webgpu)}</strong>
           </div>
         )}
@@ -351,6 +361,21 @@ export function FaceSpike({ trip, trips, traveler, onClose }) {
       {engine.status === 'ready' && (
         <div style={S.card}>
           <div style={S.h}>3 · Find everyone</div>
+          <div style={{ fontSize: 13, marginBottom: 10 }}>
+            Detect resolution <span style={{ color: 'var(--muted)' }}>(bigger finds smaller/farther faces, slower)</span>:
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              {[640, 1024, 1280].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setInputSize(s)}
+                  style={S.btn(inputSize === s)}
+                  data-testid={`face-spike-size-${s}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
           <button onClick={runScan} disabled={!!busy} style={S.btn(true)} data-testid="face-spike-scan">
             Scan {photos.length} photos
           </button>
