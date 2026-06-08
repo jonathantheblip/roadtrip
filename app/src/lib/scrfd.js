@@ -115,6 +115,7 @@ function decode(out, names, S, detScale, scoreThresh) {
 export async function detectFacesScrfd(ort, session, source, opts = {}) {
   const S = opts.inputSize || 1024
   const scoreThresh = opts.scoreThresh ?? 0.5
+  const minFaceSize = opts.minFaceSize ?? 0
   const srcW = source.width ?? source.naturalWidth ?? source.videoWidth
   const srcH = source.height ?? source.naturalHeight ?? source.videoHeight
   const { data, detScale } = preprocess(source, srcW, srcH, S)
@@ -122,14 +123,16 @@ export async function detectFacesScrfd(ort, session, source, opts = {}) {
     [session.inputNames[0]]: new ort.Tensor('float32', data, [1, 3, S, S]),
   })
   const dets = decode(out, session.outputNames, S, detScale, scoreThresh)
-  return dets.map((d) => ({
-    box: {
-      originX: d.box[0],
-      originY: d.box[1],
-      width: d.box[2] - d.box[0],
-      height: d.box[3] - d.box[1],
-    },
-    score: d.score,
-    keypoints: d.kps.map(([x, y]) => ({ x: x / srcW, y: y / srcH })),
-  }))
+  return dets
+    .map((d) => ({
+      box: {
+        originX: d.box[0],
+        originY: d.box[1],
+        width: d.box[2] - d.box[0],
+        height: d.box[3] - d.box[1],
+      },
+      score: d.score,
+      keypoints: d.kps.map(([x, y]) => ({ x: x / srcW, y: y / srcH })),
+    }))
+    .filter((f) => Math.min(f.box.width, f.box.height) >= minFaceSize)
 }

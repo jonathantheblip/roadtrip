@@ -22,6 +22,7 @@ import { InstallIdentity } from './views/InstallIdentity'
 import { TheWeave } from './views/TheWeave'
 import { WeaveBook } from './views/WeaveBook'
 import { FaceSpike } from './views/FaceSpike'
+import { PersonView } from './views/PersonView'
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
@@ -48,6 +49,7 @@ function initialViewFromUrl() {
     // Increment C spike: ?facespike=1 opens the on-device face
     // recognizer prove-it screen (flag-gated, never in the family flow).
     if (params.get('facespike') === '1') return { name: 'facespike' }
+    if (params.get('personview') === '1') return { name: 'showme', who: null }
     if (url || action === 'import') {
       return { name: 'import', importUrl: url }
     }
@@ -405,6 +407,7 @@ export default function App() {
     // across all trips, so it must not be bounced to the index by the
     // active-trip override when no trip happens to be active today.
     if (view.name === 'facespike') return
+    if (view.name === 'showme') return
 
     const today = todayIso()
     const active = pickActiveTrip(visibleTrips, today)
@@ -602,6 +605,12 @@ export default function App() {
     setView({ name: 'map' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  // "Show me, me" — the on-device face recognizer (Increment C). Opens
+  // PersonView, optionally focused on a given person.
+  function openShowMe(who) {
+    setView({ name: 'showme', who: typeof who === 'string' ? who : null })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  }
   // THE WEAVE: nightly auto-woven day page. Temporary top-bar entry
   // like Replay + Map — designed affordance TBD.
   function openWeave() {
@@ -651,6 +660,7 @@ export default function App() {
       onOpenAllPhotos: openAllPhotos,
       onOpenImport: openImport,
       onOpenClaude: openClaude,
+      onShowMe: openShowMe,
     }
     switch (traveler) {
       case 'helen':
@@ -671,7 +681,7 @@ export default function App() {
     <>
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'facespike' && !(traveler === 'rafa' && isIpad) && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'facespike' && view.name !== 'showme' && !(traveler === 'rafa' && isIpad) && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -1030,6 +1040,15 @@ export default function App() {
             trip={trip}
             trips={visibleTrips}
             traveler={traveler}
+            onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
+          />
+        )}
+        {view.name === 'showme' && (
+          <PersonView
+            trip={trip}
+            trips={visibleTrips}
+            traveler={traveler}
+            initialWho={view.who}
             onClose={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
           />
         )}

@@ -21,7 +21,7 @@ const FREDOKA = "'Fredoka', 'Inter Tight', system-ui, sans-serif"
 const ST = ['#FFB12E', '#3DA5E0', '#4CC36E', '#FF6B4D', '#C77DFF']
 const CANDY_INK = '#1B1108'
 
-export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, onOpenPhotos }) {
+export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, onOpenPhotos, onShowMe }) {
   const [gamesOpen, setGamesOpen] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   // randomized big-tile corners each visit (the design's "where is it today?" game)
@@ -50,7 +50,7 @@ export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, o
 
   const bigDefs = {
     games: { label: 'My games', emo: '🎮', tint: ST[2], onClick: () => setGamesOpen(true) },
-    person: { label: 'Show me, me!', emo: '📸', tint: ST[4], onClick: () => onOpenPhotos && onOpenPhotos() },
+    person: { label: 'Show me, me!', emo: '📸', tint: ST[4], onClick: () => (onShowMe ? onShowMe('rafa') : onOpenPhotos && onOpenPhotos()) },
   }
   const A = bigDefs[bigsOrder[0]]
   const B = bigDefs[bigsOrder[1]]

@@ -22,7 +22,6 @@
     "test:simulator": "node tests/simulator/runner.mjs"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.35",
     "exifreader": "^4.40.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.11.0",

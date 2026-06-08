@@ -1,26 +1,26 @@
 // faceModel.js — on-device face DETECTION + EMBEDDING. The browser-only
-// half of the recognizer; faceMatch.js is the pure-math half. Lazy-
-// loads MediaPipe (Google's face finder) + an ONNX face-embedding model
-// run through onnxruntime-web, both ENTIRELY ON THE DEVICE: photos and
-// the resulting fingerprints never leave the iPad (the load-bearing
-// kids'-privacy promise). The model files are generic math downloaded
-// like any web asset — they carry nothing about the family.
+// half of the recognizer; faceMatch.js is the pure-math half. Lazy-loads
+// two ONNX models through ONE onnxruntime-web runtime — SCRFD (face
+// detector, finds faces across scales) + MobileFaceNet (embedding) —
+// ENTIRELY ON THE DEVICE: photos and the resulting fingerprints never
+// leave the iPad (the load-bearing kids'-privacy promise). The model
+// files are generic math downloaded like any web asset; they carry
+// nothing about the family.
 //
-// Per photo: detect faces (MediaPipe BlazeFace) → align each face to a
-// 112×112 crop from the eye keypoints → embed (ONNX MobileFaceNet) →
-// 512-d L2-normalized fingerprint. Deciding which of the 4 enrolled
-// people a fingerprint is = faceMatch.js.
+// Per photo: detect faces (SCRFD @1024, the device-confirmed sweet spot)
+// → drop too-small detections → align each face to a 112×112 crop from
+// the eye keypoints → embed → 512-d L2-normalized fingerprint. Deciding
+// which of the 4 enrolled people a fingerprint is = faceMatch.js.
 //
 // Isolated behind this one module the same way the EXIF library lives
-// behind exifRead.js: a future model/detector swap touches only here.
+// behind exifRead.js: a future model swap touches only here.
 //
-// PROVISIONAL spike model: immich-app/buffalo_s recognition
-// (MobileFaceNet, InsightFace lineage — NON-COMMERCIAL license). Fine
-// for a private family app and proven in production face recognition,
-// but the final production model + its license is a follow-up decision.
-// Detector + runtime WASM load from CDN for the spike; production can
-// self-host these for full offline use (no privacy change — they are
-// generic, data-free).
+// PROVISIONAL model: immich-app/buffalo_s detection + recognition
+// (SCRFD + MobileFaceNet, InsightFace lineage — NON-COMMERCIAL license).
+// Fine for a private family app and proven in production face
+// recognition; the final production model + its license is a follow-up.
+// Runtime WASM + models load from CDN/HF; production can self-host them
+// for full offline use (no privacy change — they are generic, data-free).
 
 import { l2normalize } from './faceMatch.js'
 import { detectFacesScrfd } from './scrfd.js'
@@ -38,17 +38,13 @@ export const FACE_CONFIG = {
   // ONNX face-embedding model (~13.6 MB, 112×112 → 512-d)
   embedderModel:
     'https://huggingface.co/immich-app/buffalo_s/resolve/main/recognition/model.onnx',
-  // 'scrfd' (default — catches small faces) | 'mediapipe' (legacy
-  // short-range, kept selectable for on-device comparison).
-  detector: 'scrfd',
-  detectorInputSize: 1024, // larger = catches smaller/farther faces, slower
+  detectorInputSize: 1024, // device-confirmed sweet spot (1280 over-detects)
   detectorScoreThresh: 0.5,
-  // MediaPipe (legacy short-range) runtime + model.
-  mpWasmBase: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
-  detectorModel:
-    'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+  // Skip detections whose smaller side is under this many original-image
+  // pixels — a guard against the tiny false "faces" SCRFD can fire on
+  // busy patterns (LED boards), and faces too small to recognize anyway.
+  minFaceSize: 24,
   embedSize: 112,
-  minDetectionConfidence: 0.5,
 }
 
 function cfg() {
@@ -62,38 +58,12 @@ function cfg() {
 const TEMPLATE_EYE_0 = [38.2946, 51.6963] // subject's right eye (image-left)
 const TEMPLATE_EYE_1 = [73.5318, 51.5014] // subject's left eye (image-right)
 
-let detectorPromise = null // MediaPipe (legacy)
 let scrfdPromise = null // SCRFD detector ORT session
 let embedderPromise = null
 let ortPromise = null
 let backendInfo = { embedder: 'unknown', detector: 'unknown' }
 
 // ─── lazy model loaders (load once, cached) ───────────────────────
-
-async function loadDetector() {
-  if (detectorPromise) return detectorPromise
-  detectorPromise = (async () => {
-    const vision = await import('@mediapipe/tasks-vision')
-    const { FilesetResolver, FaceDetector } = vision
-    const fileset = await FilesetResolver.forVisionTasks(cfg().mpWasmBase)
-    // GPU delegate first (fast); fall back to CPU if the device/context
-    // rejects it.
-    for (const delegate of ['GPU', 'CPU']) {
-      try {
-        const det = await FaceDetector.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: cfg().detectorModel, delegate },
-          runningMode: 'IMAGE',
-          minDetectionConfidence: cfg().minDetectionConfidence,
-        })
-        backendInfo.delegate = delegate
-        return det
-      } catch (e) {
-        if (delegate === 'CPU') throw e
-      }
-    }
-  })()
-  return detectorPromise
-}
 
 // onnxruntime-web loaded once; runs both the SCRFD detector and the
 // embedder. The extern-wasm build (vite condition) fetches its wasm from
@@ -216,8 +186,7 @@ function imageDataToTensor(imageData) {
 // Warm both models up front; returns load timing + which backend ran.
 export async function initFaceEngine() {
   const t0 = now()
-  if (cfg().detector === 'mediapipe') await loadDetector()
-  else await loadScrfdDetector()
+  await loadScrfdDetector()
   const t1 = now()
   await loadEmbedder()
   const t2 = now()
@@ -227,7 +196,6 @@ export async function initFaceEngine() {
     totalMs: Math.round(t2 - t0),
     backend: {
       ...backendInfo,
-      detectorType: cfg().detector,
       inputSize: cfg().detectorInputSize,
       webgpu: !!globalThis.navigator?.gpu,
     },
@@ -235,22 +203,14 @@ export async function initFaceEngine() {
 }
 
 // Detect every face in an image source (ImageBitmap / HTMLImageElement
-// / HTMLCanvasElement). → [{ box, score, keypoints }]. Default = SCRFD
-// (finds faces across scales); 'mediapipe' selectable for comparison.
+// / HTMLCanvasElement) via SCRFD. → [{ box, score, keypoints }], with
+// too-small detections dropped (minFaceSize guard).
 export async function detectFaces(source) {
-  if (cfg().detector === 'mediapipe') {
-    const detector = await loadDetector()
-    const res = detector.detect(source)
-    return (res.detections || []).map((d) => ({
-      box: d.boundingBox,
-      score: d.categories?.[0]?.score ?? null,
-      keypoints: d.keypoints,
-    }))
-  }
   const { ort, session } = await loadScrfdDetector()
   return detectFacesScrfd(ort, session, source, {
     inputSize: cfg().detectorInputSize,
     scoreThresh: cfg().detectorScoreThresh,
+    minFaceSize: cfg().minFaceSize,
   })
 }
 

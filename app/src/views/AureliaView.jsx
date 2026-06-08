@@ -23,7 +23,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
+export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -187,6 +187,32 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOp
                 }}
               >
                 ✨ Every trip's photos
+              </span>
+              <span style={{ fontSize: 14 }}>→</span>
+            </button>
+          )}
+          {onShowMe && (
+            <button
+              type="button"
+              data-testid="aurelia-showme-entry"
+              onClick={() => onShowMe('aurelia')}
+              style={{
+                width: '100%',
+                padding: '9px 14px',
+                marginTop: 8,
+                borderRadius: 'var(--radius)',
+                border: '1px solid var(--accent)',
+                background: 'var(--accent)',
+                color: 'var(--accent-ink)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>
+                📸 Show me, me — by face
               </span>
               <span style={{ fontSize: 14 }}>→</span>
             </button>
