@@ -1060,7 +1060,7 @@ export default function App() {
             tripsApi={tripsApi}
           />
         )}
-        {view.name === 'all-photos' && (
+        {view.name === 'all-photos' && trip && (
           <AllPhotosView
             trips={visibleTrips}
             traveler={traveler}

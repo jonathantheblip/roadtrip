@@ -216,8 +216,66 @@ export function coverToStop(m) {
   }
 }
 
+// Minutes-into-the-day for a stop's free-text time ('7:00 PM', '14:00', 'evening',
+// '1 PM', ''), used ONLY to ORDER a cover stop among a day's stops. Pure + local on
+// purpose: the masking module stays dependency-free — importing photoBackfill's
+// parseStopTime would drag the EXIF-reader chain into this eagerly-loaded module.
+// Buckets mirror photoBackfill's TIME_BUCKETS; unlike it, this also accepts an
+// hour with no minutes ('1 PM') so a cover authored that way still sorts right.
+const DAY_BUCKETS = {
+  morning: 540, am: 540, noon: 720, afternoon: 840,
+  evening: 1140, pm: 1140, night: 1260, late: 1320, overnight: 1320,
+}
+function stopTimeMinutes(timeStr) {
+  const t = (timeStr || '').trim()
+  if (!t) return 720 // default: noon
+  const ampm = t.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b/i)
+  if (ampm) {
+    let h = parseInt(ampm[1], 10)
+    const m = ampm[2] ? parseInt(ampm[2], 10) : 0
+    const pm = ampm[3].toUpperCase() === 'PM'
+    if (h === 12) h = pm ? 12 : 0
+    else if (pm) h += 12
+    return h * 60 + m
+  }
+  const h24 = t.match(/\b(\d{1,2}):(\d{2})\b/)
+  if (h24) {
+    const h = parseInt(h24[1], 10), m = parseInt(h24[2], 10)
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) return h * 60 + m
+  }
+  for (const key in DAY_BUCKETS) if (t.toLowerCase().includes(key)) return DAY_BUCKETS[key]
+  return 720
+}
+
+// Insert cover stops into a day's real stops BY TIME, without ever reordering the
+// real stops among themselves — their authored order is the source of truth (a real
+// itinerary is built top-to-bottom; G5: don't disturb the working path). Each real
+// stop gets a monotonically non-decreasing time key so reals always keep their
+// sequence even if their times are out of order; each cover is placed before the
+// first real stop that comes later in the day. Falls back to the old append-at-end
+// behavior for a cover later than every real stop.
+function insertCoversByTime(realStops, covers) {
+  let prev = -Infinity
+  const realKeys = realStops.map((s) => {
+    const k = Math.max(stopTimeMinutes(s?.time), prev)
+    prev = k
+    return k
+  })
+  const sorted = covers
+    .map((c) => ({ stop: c, key: stopTimeMinutes(c?.time) }))
+    .sort((a, b) => a.key - b.key)
+  const out = []
+  let ci = 0
+  for (let i = 0; i < realStops.length; i++) {
+    while (ci < sorted.length && sorted[ci].key < realKeys[i]) out.push(sorted[ci++].stop)
+    out.push(realStops[i])
+  }
+  while (ci < sorted.length) out.push(sorted[ci++].stop)
+  return out
+}
+
 // Merge cover stand-ins into the trip the RECIPIENT sees: each cover whose
-// `cover.dayIso` matches a day is appended to that day's stops as an ordinary
+// `cover.dayIso` matches a day is woven into that day's stops BY TIME as an ordinary
 // stop. Author/non-targeted viewers never have cover stand-ins in `memories`
 // (their reads carry the real row), so this is a no-op for them. `memories` is
 // the already-masked listMemoriesForTrip output. Returns the trip unchanged when
@@ -237,7 +295,7 @@ export function mergeCoverStops(trip, memories) {
     const extra = d?.isoDate ? byDay.get(d.isoDate) : null
     if (!extra || !extra.length) return d
     changed = true
-    return { ...d, stops: [...(d.stops || []), ...extra] }
+    return { ...d, stops: insertCoversByTime(d.stops || [], extra) }
   })
   return changed ? { ...trip, days } : trip
 }

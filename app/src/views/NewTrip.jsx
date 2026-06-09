@@ -227,23 +227,34 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
             Saved as a draft and synced to the family. You finish it in the
             editor — it won't show in the trip list until you publish.
           </p>
-          <button
-            type="submit"
-            className="btn-solid"
-            disabled={busy || done}
-            aria-busy={busy}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              opacity: busy || done ? 0.75 : 1,
-              cursor: busy || done ? 'default' : 'pointer',
-            }}
-          >
-            {busy && <Loader size={14} className="rt-spin" />}
-            {done && <Check size={14} />}
-            {busy ? 'Creating…' : done ? 'Created' : 'Create trip'}
-          </button>
+          <div className="flex items-center" style={{ gap: 10, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={onBack}
+              className="btn-pill"
+              disabled={busy}
+              style={{ cursor: busy ? 'default' : 'pointer' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-solid"
+              disabled={busy || done}
+              aria-busy={busy}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                opacity: busy || done ? 0.75 : 1,
+                cursor: busy || done ? 'default' : 'pointer',
+              }}
+            >
+              {busy && <Loader size={14} className="rt-spin" />}
+              {done && <Check size={14} />}
+              {busy ? 'Creating…' : done ? 'Created' : 'Create trip'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

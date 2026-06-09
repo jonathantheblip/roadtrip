@@ -209,6 +209,23 @@ test('mergeCoverStops: injects cover stops into the matching day; no-op otherwis
   assert.equal(mergeCoverStops(null, covers), null)
 })
 
+test('mergeCoverStops: positions a cover by time, keeping real stops in order', () => {
+  const trip = {
+    id: 't', days: [
+      { isoDate: '2026-05-22', stops: [
+        { id: 'r1', name: 'Breakfast', time: '8:00 AM' },
+        { id: 'r2', name: 'Dinner', time: 'evening' },
+      ] },
+    ],
+  }
+  const covers = [
+    { id: 'cv', isCover: true, cover: { title: 'Surprise lunch', time: '1 PM', dayIso: '2026-05-22' } },
+  ]
+  const stops = mergeCoverStops(trip, covers).days[0].stops
+  // '1 PM' (hour, no minutes) sorts after 8 AM and before 'evening'; reals keep order.
+  assert.deepEqual(stops.map((s) => s.id), ['r1', 'cover_cv', 'r2'])
+})
+
 // ── Slice 3b: whole-trip masking ────────────────────────────────────────────
 
 const SECRET_TRIP = {
