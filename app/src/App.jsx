@@ -703,6 +703,16 @@ export default function App() {
       onOpenImport: openImport,
       onOpenClaude: openClaude,
       onShowMe: openShowMe,
+      // Feature entry-points (the per-person home band — entry-points redesign).
+      // These retire the temporary ✦/⋯ glyphs into designed, in-view entries.
+      onOpenMap: openMap,
+      onOpenWeave: openWeave,
+      onOpenReplay: () => openReplay(),
+      onOpenBook: openBook,
+      onOpenSurprises: openSurprises,
+      weaveReady,
+      bookHasPages,
+      surpriseRevealCue,
     }
     switch (traveler) {
       case 'helen':

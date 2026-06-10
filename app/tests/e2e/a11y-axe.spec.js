@@ -38,6 +38,22 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
     await expectNoSeriousA11y(page, { label: `trips index (${persona})` })
   })
 
+  // Entry-points redesign — Jonathan's per-person home band (the designed
+  // feature entries layered above his itinerary). Jonathan-only in slice 1;
+  // scoped to the band so a pre-existing itinerary finding doesn't leak in.
+  for (const who of ['jonathan', 'helen', 'aurelia']) {
+    test(`${who} entry band — no serious/critical violations`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await page.goto(`/?person=${who}&trip=volleyball-2026&nosw=1`)
+      await expect(page.getByTestId(`${who}-entries`)).toBeVisible()
+      await expectNoSeriousA11y(page, {
+        include: `[data-testid="${who}-entries"]`,
+        only: ['color-contrast'],
+        label: `${who} entry band`,
+      })
+    })
+  }
+
   test('Claude-in-app panel — no serious/critical violations', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await mockClaudeChatWorker(page)
@@ -151,7 +167,10 @@ test.describe('a11y (axe, serious+critical) — TheWeave ×4 personas', () => {
         },
       ])
       await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      await page.getByRole('button', { name: /Weave/i }).click()
+      // Either Weave entry opens TheWeave — the temp top-bar glyph or the new
+      // per-person home register (entry-points redesign adds the latter). .first()
+      // is the top-bar one today and the band's register after the glyph retires.
+      await page.getByRole('button', { name: /Weave/i }).first().click()
       await expect(page.getByTestId('the-weave')).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: '[data-testid="the-weave"]',

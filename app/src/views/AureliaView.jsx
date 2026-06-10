@@ -9,6 +9,8 @@ import { Avatar, AvatarStack } from '../components/Avatar'
 import { PostcardComposer } from '../components/PostcardComposer'
 import { allStops } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
+import { AureliaEntries } from './AureliaEntries'
+import { tripPhase } from '../lib/tripPhase'
 
 // Aurelia — "Her roll." Redesign increment 3 (2026-06-05): the big
 // LIGHT→DARK inversion. Was a rose-paper scrapbook; now a near-black
@@ -23,7 +25,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe }) {
+export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, weaveReady, bookHasPages, surpriseRevealCue }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -116,6 +118,20 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOp
           <PersonalLetter note={trip.travelerNotes.aurelia} />
         </div>
       )}
+
+      {/* Entry-points home band (Replay-led, inverted), layered above her
+          existing photos / lens / timeline (all preserved below). */}
+      <AureliaEntries
+        trip={trip}
+        phase={tripPhase(trip)}
+        weaveReady={weaveReady}
+        surpriseRevealCue={surpriseRevealCue}
+        bookHasPages={bookHasPages}
+        onOpenMap={onOpenMap}
+        onOpenWeave={onOpenWeave}
+        onOpenReplay={onOpenReplay}
+        onOpenBook={onOpenBook}
+      />
 
       {/* Photos entry — the foregrounded verb. Styled as a grained film
           frame ("her best frame"), hot-pink CTA. Aurelia uses the album

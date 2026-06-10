@@ -4,6 +4,7 @@ import { allStops } from '../data/trips'
 import { RafaMap, stopArt } from './RafaMap'
 import { RafaGames } from './RafaGames'
 import { RafaSound } from '../lib/rafaSound'
+import { WeaveReady, SurpriseReveal } from '../components/EntryCues'
 
 // RafaPad — Rafa's iPad "command center" home (design_handoff_rafa_adventure_map).
 // Landscape 4×4 quadrant of chunky candy tiles: two BIG tiles (My games / Show
@@ -21,7 +22,11 @@ const FREDOKA = "'Fredoka', 'Inter Tight', system-ui, sans-serif"
 const ST = ['#FFB12E', '#3DA5E0', '#4CC36E', '#FF6B4D', '#C77DFF']
 const CANDY_INK = '#1B1108'
 
-export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, onOpenPhotos, onShowMe }) {
+export function RafaPad({
+  trip, traveler = 'rafa', onOpenStop, onOpenSettings, onOpenPhotos, onShowMe,
+  onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises,
+  weaveReady, bookHasPages, surpriseRevealCue,
+}) {
   const [gamesOpen, setGamesOpen] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   // randomized big-tile corners each visit (the design's "where is it today?" game)
@@ -55,8 +60,20 @@ export function RafaPad({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, o
   const A = bigDefs[bigsOrder[0]]
   const B = bigDefs[bigsOrder[1]]
 
-  // 8 small slots: tell-a-story, the adventure-map tile (absorbs the countdown), then up to 6 highlights
+  // The 4 feature tiles (entry-points redesign) take the top-right quad — the
+  // glyphs retire into candy PLACES. Weave + Surprises carry their cues; the Book
+  // tile appears only once pages are kept. Each is dropped only if its callback
+  // is wired (defensive). Then Tell-a-story + the Adventure Map + highlights fill
+  // the bottom-left quad (all preserved).
+  const featureTiles = [
+    { kind: 'feature', label: "Tonight's story", emo: '🌙', tint: ST[1], onClick: onOpenWeave, cue: weaveReady ? <WeaveReady traveler="rafa" /> : null },
+    { kind: 'feature', label: 'Secrets!', emo: '🎁', tint: ST[3], onClick: onOpenSurprises, cue: surpriseRevealCue > 0 ? <SurpriseReveal traveler="rafa" /> : null },
+    { kind: 'feature', label: 'Watch our trip!', emo: '🎬', tint: ST[2], onClick: onOpenReplay },
+    ...(bookHasPages ? [{ kind: 'feature', label: 'Our big book!', emo: '📖', tint: ST[4], onClick: onOpenBook }] : []),
+  ].filter((t) => typeof t.onClick === 'function')
+  // 8 small slots: the feature tiles, then tell-a-story, the adventure-map tile, highlights.
   const smalls = [
+    ...featureTiles,
     { kind: 'tell', label: 'Tell a story', tint: ST[3], onClick: () => featured && onOpenStop(featured.day, featured.id) },
     { kind: 'map', onClick: () => setMapOpen(true) },
     ...highlights.map((s) => ({ kind: 'stop', label: s.name, emo: emojiFor(s), tint: pickTint(s.id), onClick: () => onOpenStop(s.day, s.id) })),
@@ -137,6 +154,7 @@ function SmallTile({ s, vehicle, destEmoji, countdown, col, row }) {
   return (
     <button type="button" onClick={s.onClick} onPointerDown={() => setPressed(true)} onPointerUp={() => setPressed(false)} onPointerLeave={() => setPressed(false)}
       style={{ gridColumn: col, gridRow: row, border: 'none', cursor: 'pointer', borderRadius: 30, background: `radial-gradient(120% 120% at 50% 25%, ${shade(s.tint, 12)}, ${shade(s.tint, -30)})`, boxShadow: pressed ? `0 3px 0 ${shade(s.tint, -46)}` : `0 9px 0 ${shade(s.tint, -46)}`, transform: pressed ? 'translateY(6px)' : 'none', transition: 'transform .12s, box-shadow .12s', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10 }}>
+      {s.cue && <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 2 }}>{s.cue}</div>}
       {s.kind === 'tell' ? (
         <div style={{ width: 60, height: 60, borderRadius: 20, background: 'rgba(255,255,255,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Mic size={34} color="#fff" strokeWidth={2.2} />

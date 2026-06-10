@@ -8,6 +8,8 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { TRAVELER_DOT } from '../data/travelers'
+import { JonathanEntries } from './JonathanEntries'
+import { tripPhase } from '../lib/tripPhase'
 
 // Jonathan — Ops. Broadsheet mission-control (redesign increment 1,
 // design handoff jonathan.jsx). Two modes off one masthead toggle:
@@ -167,6 +169,14 @@ export function JonathanView({
   onOpenActivities,
   onOpenPhotos,
   onOpenAllPhotos,
+  onOpenMap,
+  onOpenWeave,
+  onOpenReplay,
+  onOpenBook,
+  onOpenSurprises,
+  weaveReady,
+  bookHasPages,
+  surpriseRevealCue,
 }) {
   const [mode, setMode] = useState('ops') // 'ops' | 'record'
   // Default to today if it falls within the trip — Jonathan opens the
@@ -198,6 +208,19 @@ export function JonathanView({
       {mode === 'record' ? (
         <JRecord trip={trip} traveler={traveler} onOpenPhotos={onOpenPhotos} />
       ) : (
+        <>
+        <JonathanEntries
+          trip={trip}
+          phase={tripPhase(trip)}
+          weaveReady={weaveReady}
+          surpriseRevealCue={surpriseRevealCue}
+          bookHasPages={bookHasPages}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onOpenSurprises={onOpenSurprises}
+        />
         <JOps
           trip={trip}
           traveler={traveler}
@@ -213,6 +236,7 @@ export function JonathanView({
           onOpenActivities={onOpenActivities}
           onOpenAllPhotos={onOpenAllPhotos}
         />
+        </>
       )}
     </div>
   )

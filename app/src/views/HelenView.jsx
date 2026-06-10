@@ -7,6 +7,8 @@ import { useInView } from '../lib/useInView'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
+import { HelenEntries } from './HelenEntries'
+import { tripPhase } from '../lib/tripPhase'
 
 // Helen — Keeper + Planner. Warm editorial (redesign increment 2, design
 // handoff helen.jsx). Sage on warm paper, soft 18px corners. Light only —
@@ -32,6 +34,14 @@ export function HelenView({
   onOpenPhotos,
   onOpenAllPhotos,
   onOpenClaude,
+  onOpenMap,
+  onOpenWeave,
+  onOpenReplay,
+  onOpenBook,
+  onOpenSurprises,
+  weaveReady,
+  bookHasPages,
+  surpriseRevealCue,
 }) {
   // Default the active day to today if today is inside the trip — mid-trip
   // openers expect the current day, and the "+" FAB walks to day.stops[0].
@@ -111,6 +121,21 @@ export function HelenView({
           <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
         </div>
       )}
+
+      {/* Entry-points home band (Now stack + Keepsake shelf), layered above the
+          co-planner entry + the threaded timeline (both preserved below). */}
+      <HelenEntries
+        trip={trip}
+        phase={tripPhase(trip)}
+        weaveReady={weaveReady}
+        surpriseRevealCue={surpriseRevealCue}
+        bookHasPages={bookHasPages}
+        onOpenMap={onOpenMap}
+        onOpenWeave={onOpenWeave}
+        onOpenReplay={onOpenReplay}
+        onOpenBook={onOpenBook}
+        onOpenSurprises={onOpenSurprises}
+      />
 
       {/* CO-PLANNER — Helen plans too now. Opens the Claude planning chat
           she already has access to (the locked "Helen = full co-planner"
