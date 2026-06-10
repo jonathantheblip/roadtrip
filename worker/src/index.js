@@ -25,6 +25,8 @@ import {
 } from './leaveWhen.js'
 import { runNightlyWeave, beatSignature } from './weaveGen.js'
 import { maskMemoryForViewer, maskTripForViewer } from './surprises.js'
+import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
+import { renderSharePage, renderShareError } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -72,6 +74,21 @@ export default {
       }
     }
 
+    // Share-out: GET /m/:token is PUBLIC (no bearer) — a non-app family member
+    // opens it from a texted link. Above the auth gate, like /assets. The token
+    // is unguessable; the handler re-derives masking from the live memory row so
+    // a moment that became a secret after the link was made no longer resolves.
+    // (Slice 1 returns the safe view-model as JSON; Slice 2 renders the page.)
+    const shareMatch = path.match(/^\/m\/([A-Za-z0-9_-]+)$/)
+    if (request.method === 'GET' && shareMatch) {
+      try {
+        return await getShare(env, shareMatch[1], url, cors)
+      } catch (err) {
+        console.error('share fetch error', err?.stack || err)
+        return json({ error: err?.message || String(err) }, 500, cors)
+      }
+    }
+
     // Auth: every route below requires a valid family bearer token.
     const traveler = authenticate(request, env)
     if (!traveler) {
@@ -89,6 +106,11 @@ export default {
       const memMatch = path.match(/^\/memories\/([^/]+)$/)
       if (memMatch && request.method === 'DELETE') {
         return await deleteMemory(env, traveler, memMatch[1], cors)
+      }
+
+      // Share-out: mint a public link for one memory (author-side, authed).
+      if (path === '/share' && request.method === 'POST') {
+        return await postShare(env, traveler, request, url, cors)
       }
 
       if (path === '/trips' && request.method === 'GET') {
@@ -504,6 +526,77 @@ async function deleteMemory(env, traveler, id, cors) {
     'UPDATE memories SET deleted_at = ?, updated_at = ? WHERE id = ?'
   ).bind(now, now, id).run()
   return json({ ok: true, id }, 200, cors)
+}
+
+// ── Share-out ────────────────────────────────────────────────────────────────
+// Load one memory (rowToMemory shape) + its trip object, by memory id. Shared by
+// the mint (POST /share) and resolve (GET /m/:token) paths.
+async function loadMemoryAndTrip(env, memoryId, origin) {
+  const row = await env.DB.prepare('SELECT * FROM memories WHERE id = ?').bind(memoryId).first()
+  const memory = rowToMemory(row, origin)
+  let trip = null
+  if (memory?.tripId) {
+    const tRow = await env.DB.prepare(
+      'SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL'
+    ).bind(memory.tripId).first()
+    if (tRow?.data_json) {
+      try { trip = JSON.parse(tRow.data_json) } catch { trip = null }
+    }
+  }
+  return { memory, trip }
+}
+
+// Mint a public share link for one memory (author-side, authed). Refuses a
+// memory the caller can't see (private + not theirs) and — the §6 gate — any
+// memory that isn't shareable (an unrevealed surprise, or deleted).
+async function postShare(env, traveler, request, url, cors) {
+  const body = await request.json().catch(() => null)
+  const memoryId = body?.memoryId
+  if (!memoryId) return json({ error: 'missing memoryId' }, 400, cors)
+  const origin = workerOrigin(env, url)
+  const { memory, trip } = await loadMemoryAndTrip(env, memoryId, origin)
+  if (!memory) return json({ error: 'not found' }, 404, cors)
+  // Only a shared memory, or the author's own, can be shared out.
+  if (memory.visibility !== 'shared' && memory.authorTraveler !== traveler) {
+    return json({ error: 'forbidden' }, 403, cors)
+  }
+  // THE GATE: never mint a link for a hidden surprise (or a deleted memory).
+  if (!isShareable(memory)) {
+    return json({ error: 'not-shareable' }, 409, cors)
+  }
+  const token = newShareToken(findStopName(trip, memory.stopId))
+  await env.DB.prepare(
+    'INSERT INTO shares (token, memory_id, trip_id, author_traveler, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(token, memory.id, memory.tripId || null, traveler, Date.now()).run()
+  return json({ token, url: `${origin}/m/${token}` }, 200, cors)
+}
+
+// Resolve a public share link → the rendered page. PUBLIC (no auth). The
+// security re-check: re-derive isShareable from the LIVE memory row, so a moment
+// that became a secret (or was deleted) AFTER the link was minted stops
+// resolving. `?format=json` returns the raw safe view-model (for the in-app
+// "what they'll see" preview later); otherwise the HTML page.
+async function getShare(env, token, url, cors) {
+  const origin = workerOrigin(env, url)
+  const wantsJson = url.searchParams.get('format') === 'json'
+  const htmlHeaders = { ...cors, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
+
+  const share = await env.DB.prepare(
+    'SELECT * FROM shares WHERE token = ?'
+  ).bind(token).first()
+  if (!share || share.revoked_at) {
+    if (wantsJson) return json({ error: 'not-found' }, 404, { ...cors, 'Cache-Control': 'no-store' })
+    return new Response(renderShareError(false), { status: 404, headers: htmlHeaders })
+  }
+  const { memory, trip } = await loadMemoryAndTrip(env, share.memory_id, origin)
+  if (!isShareable(memory)) {
+    // Became a secret / was deleted since minting — refuse, don't leak.
+    if (wantsJson) return json({ error: 'gone' }, 410, { ...cors, 'Cache-Control': 'no-store' })
+    return new Response(renderShareError(true), { status: 410, headers: htmlHeaders })
+  }
+  const view = shareViewFromMemory(memory, trip)
+  if (wantsJson) return json(view, 200, { ...cors, 'Cache-Control': 'no-store' })
+  return new Response(renderSharePage(view, { pageUrl: `${origin}/m/${token}` }), { status: 200, headers: htmlHeaders })
 }
 
 function rowToMemory(r, origin) {

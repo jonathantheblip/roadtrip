@@ -20,6 +20,7 @@ import interstitialMigration from '../../migrations/007_memory_interstitial.sql?
 import weavesMigration from '../../migrations/008_weaves.sql?raw'
 import weaveKeptMigration from '../../migrations/009_weave_kept.sql?raw'
 import surprisesMigration from '../../migrations/010_memory_surprises.sql?raw'
+import sharesMigration from '../../migrations/011_shares.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -76,6 +77,8 @@ const STATEMENTS = [
   // 008 is CREATE TABLE/INDEX IF NOT EXISTS, so it's idempotent like the
   // baseline and joins the sequential block directly (unlike 007's ALTER).
   ...splitStatements(weavesMigration),
+  // 011 (shares) is also CREATE TABLE/INDEX IF NOT EXISTS — idempotent.
+  ...splitStatements(sharesMigration),
 ]
 
 export async function applySchema(db) {
