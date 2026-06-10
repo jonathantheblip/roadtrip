@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2 } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { updateMemoryCapturedAt } from '../lib/memoryStore'
+import { isWorkerConfigured } from '../lib/workerSync'
+import { ShareMomentSheet } from './ShareMomentSheet'
 import { classifySwipe } from '../lib/swipeClassify'
 import { isDevModeEnabled } from '../lib/uploadLog'
 import { firstLine, formatShortDate, formatFullDate } from '../lib/photoEntries'
@@ -290,10 +292,15 @@ export function PhotoLightbox({
 }) {
   const devMode = isDevModeEnabled()
   const [editingDate, setEditingDate] = useState(false)
-  // Reset the editor whenever we navigate to a different entry —
-  // otherwise prev/next would carry a stale draft forward.
+  const [shareOpen, setShareOpen] = useState(false)
+  // A real, synced memory can be shared out; a local-only photo (no memoryId)
+  // or an unconfigured worker can't.
+  const canShare = !!entry?.memoryId && isWorkerConfigured()
+  // Reset the editor + close the share sheet whenever we navigate to a
+  // different entry — otherwise prev/next would carry stale state forward.
   useEffect(() => {
     setEditingDate(false)
+    setShareOpen(false)
   }, [entry?.memoryId, entry?.key])
   // Keyboard for desktop; touch swipe for phone. Both call into the
   // same nav callbacks the arrow buttons use, so behavior stays
@@ -367,20 +374,46 @@ export function PhotoLightbox({
         <div>
           {index + 1} / {total}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          style={{
-            background: 'transparent',
-            border: 0,
-            color: 'inherit',
-            cursor: 'pointer',
-            padding: 4,
-          }}
-        >
-          <X size={20} />
-        </button>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {canShare && (
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              aria-label="Share this moment"
+              data-testid="lightbox-share"
+              style={{
+                background: 'transparent',
+                border: 0,
+                color: 'inherit',
+                cursor: 'pointer',
+                padding: 4,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+                letterSpacing: 'inherit',
+                textTransform: 'inherit',
+              }}
+            >
+              <Share2 size={16} /> Share
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'transparent',
+              border: 0,
+              color: 'inherit',
+              cursor: 'pointer',
+              padding: 4,
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
       <div
         style={{
@@ -544,6 +577,9 @@ export function PhotoLightbox({
           />
         )}
       </footer>
+      {shareOpen && entry?.memoryId && (
+        <ShareMomentSheet memoryId={entry.memoryId} onClose={() => setShareOpen(false)} />
+      )}
     </div>
   )
 }

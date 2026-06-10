@@ -79,9 +79,23 @@ export async function workerFetch(path, opts = {}) {
   const r = await fetch(`${WORKER_URL}${path}`, { ...opts, headers })
   if (!r.ok) {
     const text = await r.text().catch(() => '')
-    throw new Error(`worker ${r.status}: ${text || r.statusText}`)
+    const err = new Error(`worker ${r.status}: ${text || r.statusText}`)
+    err.status = r.status
+    throw err
   }
   return r
+}
+
+// ─── Share-out ────────────────────────────────────────────────────────────
+// Mint a public link for one memory → { token, url }. The worker refuses a
+// hidden surprise (409) or a memory the caller can't see (403/404) — those
+// surface as a thrown error carrying `.status` so the sheet can explain.
+export async function shareMemory(memoryId) {
+  const r = await workerFetch('/share', {
+    method: 'POST',
+    body: JSON.stringify({ memoryId }),
+  })
+  return r.json()
 }
 
 // ─── Memories ─────────────────────────────────────────────────────────
