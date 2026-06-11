@@ -69,6 +69,54 @@ test('lightbox → Share → sheet mints and shows the link', async ({ page }) =
   expect(errors, errors.join(' | ')).toEqual([])
 })
 
+// Reach-gap close: a TEXT (or voice) memory can be shared from its thread
+// bubble too — the worker share page already renders non-photo memories. Only
+// a SHARED moment gets the affordance; a private note does not.
+const SHARED_TEXT = {
+  id: 'm-text-shared', tripId: 'volleyball-2026', stopId: 'vb2-3', authorTraveler: 'helen',
+  visibility: 'shared', kind: 'text', text: 'a shared note', createdAt: '2026-05-23T19:50:00.000Z',
+}
+const PRIVATE_TEXT = {
+  id: 'm-text-priv', tripId: 'volleyball-2026', stopId: 'vb2-3', authorTraveler: 'jonathan',
+  visibility: 'private', kind: 'text', text: 'a private note', createdAt: '2026-05-23T19:51:00.000Z',
+}
+
+test('a shared TEXT memory shares from the thread; a private one cannot', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.addInitScript(({ trip, shared, priv }) => {
+    for (const k of [
+      'rt_trips_cache_v1', 'rt_memories_shared_v1',
+      'rt_memories_private_jonathan_v1', 'rt_memories_private_helen_v1',
+      'rt_memories_private_aurelia_v1', 'rt_memories_private_rafa_v1',
+    ]) localStorage.removeItem(k)
+    localStorage.setItem('rt_trips_cache_v1', JSON.stringify([trip]))
+    localStorage.setItem('rt_memories_shared_v1', JSON.stringify([shared]))
+    localStorage.setItem('rt_memories_private_jonathan_v1', JSON.stringify([priv]))
+    localStorage.setItem('rt_person_v2', 'jonathan')
+  }, { trip: FIXTURE_TRIP, shared: SHARED_TEXT, priv: PRIVATE_TEXT })
+  await page.route(/workers\.dev\/(memories|trips)(\?|$)/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
+  await page.route(/\/share$/, (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ token: 't-text', url: 'https://roadtrip-sync.test/m/t-text' }) })
+      : route.continue())
+
+  await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+  // Open day-2's stop → its memory thread (the dock ledge also shows the stop
+  // name, but it renders last in the DOM, so .first() is the stop button).
+  await page.getByRole('button', { name: /vs BEV 13 Empire/i }).first().click()
+  await expect(page.getByText('a shared note')).toBeVisible()
+  await expect(page.getByText('a private note')).toBeVisible()
+  // Only the shared note carries a Share affordance.
+  await expect(page.getByTestId('thread-share')).toHaveCount(1)
+  await page.getByTestId('thread-share').click()
+  await expect(page.getByTestId('share-moment-sheet')).toBeVisible()
+  await expect(page.getByTestId('share-link')).toHaveText('roadtrip-sync.test/m/t-text')
+  expect(errors, errors.join(' | ')).toEqual([])
+})
+
 test('a refused (hidden surprise → 409) share shows a calm message, not a crash', async ({ page }) => {
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, Mic, Trash2, Lock, Unlock, Play, X, ImageOff } from 'lucide-react'
+import { Camera, Mic, Trash2, Lock, Unlock, Play, X, ImageOff, Share2 } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import {
   listMemoriesForStop,
@@ -11,6 +11,8 @@ import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
 import { Avatar, AvatarStack } from './Avatar'
 import { VoiceRecorder } from './VoiceRecorder'
 import { PhotoLightbox } from './PhotoAlbum'
+import { ShareMomentSheet } from './ShareMomentSheet'
+import { isWorkerConfigured } from '../lib/workerSync'
 
 const MAX_PHOTOS_PER_ALBUM = 10
 
@@ -42,6 +44,9 @@ export function ThreadedMemories({ trip, stop, traveler }) {
   // ends). PhotoBubble builds the entries array using its resolved
   // urls map so IDB-only memories work the same as R2-backed ones.
   const [lightbox, setLightbox] = useState(null) // { list, index } | null
+  // Share sheet for a text/voice memory (photos share from the lightbox; this
+  // closes the reach gap for non-photo moments). Holds the memory id to share.
+  const [shareId, setShareId] = useState(null)
   function stepLightbox(delta) {
     setLightbox((lb) => {
       if (!lb) return lb
@@ -237,6 +242,7 @@ export function ThreadedMemories({ trip, stop, traveler }) {
               refresh()
             }}
             onOpenLightbox={setLightbox}
+            onShare={() => setShareId(m.id)}
           />
         ))}
       </div>
@@ -302,17 +308,27 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           onCapturedAtChanged={refresh}
         />
       )}
+
+      {shareId && (
+        <ShareMomentSheet memoryId={shareId} onClose={() => setShareId(null)} />
+      )}
     </div>
   )
 }
 
-function ThreadEntry({ mem, traveler, onDelete, onOpenLightbox }) {
+function ThreadEntry({ mem, traveler, onDelete, onOpenLightbox, onShare }) {
   const author = TRAVELERS[mem.authorTraveler]
   if (!author) return null
   const isMe = mem.authorTraveler === traveler
   const dot = TRAVELER_DOT[mem.authorTraveler] || 'var(--text)'
   const time = formatTime(mem.createdAt)
   const kind = mem.kind || 'text'
+  // Text/voice moments can be shared out too (photos share from the lightbox).
+  // Only a SHARED moment, and only when the worker's configured — the worker
+  // re-checks masking/surprise on mint, the sheet shows a calm message on 409.
+  const canShare =
+    !!onShare && (kind === 'text' || kind === 'voice') &&
+    mem.visibility === 'shared' && isWorkerConfigured()
 
   return (
     <div
@@ -362,6 +378,24 @@ function ThreadEntry({ mem, traveler, onDelete, onOpenLightbox }) {
             {time}
             {mem.visibility === 'private' ? ' · private' : ''}
           </span>
+          {canShare && (
+            <button
+              type="button"
+              onClick={onShare}
+              aria-label="Share this memory"
+              data-testid="thread-share"
+              style={{
+                background: 'transparent',
+                border: 0,
+                cursor: 'pointer',
+                padding: 0,
+                opacity: 0.55,
+                color: 'currentColor',
+              }}
+            >
+              <Share2 size={12} />
+            </button>
+          )}
           {isMe && (
             <button
               type="button"
