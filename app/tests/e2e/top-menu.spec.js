@@ -14,7 +14,7 @@ test.describe('Top bar — overflow ⋯ menu', () => {
 
     // Primary actions stay on the bar.
     await expect(page.getByRole('button', { name: /Modify this trip with Claude/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Weave/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Weave/i }).first()).toBeVisible()
 
     // ⋯ opens the overflow with the secondary entries.
     await page.getByRole('button', { name: 'More' }).click()

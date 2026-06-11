@@ -39,7 +39,7 @@ export function AureliaEntries({
   const revealed = surpriseRevealCue > 0
 
   return (
-    <div data-testid="aurelia-entries" style={{ padding: '8px 20px 0' }}>
+    <div data-testid="aurelia-entries" style={{ padding: '4px 20px 0' }}>
       {/* reveal-only — a quiet cue when something unlocked for her (no planner UI) */}
       {revealed && (
         <div data-testid="aurelia-reveal-note" style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
@@ -52,7 +52,7 @@ export function AureliaEntries({
         type="button" onClick={onOpenReplay} aria-label="Replay the trip" data-testid="aurelia-replay-hero"
         style={{ position: 'relative', width: '100%', textAlign: 'left', cursor: 'pointer', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border)', background: 'linear-gradient(160deg, #2A2230, var(--bg2))', padding: 0, color: 'var(--text)' }}
       >
-        <div style={{ position: 'relative', aspectRatio: '1.5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'relative', aspectRatio: '2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Sprockets pos="top" /><Sprockets pos="bottom" />
           <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(70% 70% at 50% 45%, transparent, rgba(0,0,0,0.45))' }} />
           <span style={{ width: 60, height: 60, borderRadius: '50%', border: '1.5px solid var(--accent)', background: 'rgba(11,10,12,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 26px color-mix(in srgb, var(--accent) 40%, transparent)', zIndex: 1 }}>
@@ -95,7 +95,7 @@ export function AureliaEntries({
       {!after && (
         <button
           type="button" onClick={onOpenMap} aria-label="Open the live map"
-          style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 9, padding: '11px 2px', marginTop: 20, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}
+          style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 9, padding: '11px 2px', marginTop: 12, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}
         >
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--live, var(--accent))' }} />
           <span style={{ fontFamily: 'var(--font-body)', fontSize: 12.5, color: 'var(--muted)' }}>where we are now</span>

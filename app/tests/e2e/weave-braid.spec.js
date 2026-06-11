@@ -107,7 +107,7 @@ async function openWeave(page) {
   // skips the index and auto-opens the trip, so there's no "Fun @ the Sun"
   // entry to click from the index.
   await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-  await page.getByRole('button', { name: /Weave/i }).click()
+  await page.getByRole('button', { name: /Weave/i }).first().click()
   await expect(page.getByTestId('the-weave')).toBeVisible()
 }
 
@@ -161,7 +161,7 @@ test.describe('TheWeave — braid rendering', () => {
     for (const person of ['jonathan', 'helen', 'aurelia', 'rafa']) {
       await page.goto(`/?person=${person}&trip=volleyball-2026&nosw=1`)
       await expect(
-        page.getByRole('button', { name: /Weave/i }),
+        page.getByRole('button', { name: /Weave/i }).first(),
         `${person} should see the Weave button`
       ).toBeVisible()
     }
@@ -299,7 +299,7 @@ test.describe('TheWeave — pre-made nightly weave (slice 3)', () => {
     await expect(page.getByTestId('weave-ready-dot')).toBeVisible()
 
     // Opening it marks it seen.
-    await page.getByRole('button', { name: /Weave/i }).click()
+    await page.getByRole('button', { name: /Weave/i }).first().click()
     await expect(page.getByTestId('the-weave')).toBeVisible()
 
     // Back on the trip view, the cue is gone.
@@ -311,7 +311,7 @@ test.describe('TheWeave — pre-made nightly weave (slice 3)', () => {
     await setup(page) // /weave/latest → 204
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
     // The ✦ entry is present, but with no stored weave the cue dot never shows.
-    await expect(page.getByRole('button', { name: /Weave/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Weave/i }).first()).toBeVisible()
     await expect(page.getByTestId('weave-ready-dot')).toHaveCount(0)
   })
 })
@@ -384,7 +384,7 @@ test.describe('TheWeave — the little book (slice 3, part 2)', () => {
     await setup(page)
     await mockBook(page, []) // empty book
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-    await expect(page.getByRole('button', { name: /Weave/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Weave/i }).first()).toBeVisible()
     // Open the ⋯ menu — with no kept pages there's no Book item in it.
     await page.getByRole('button', { name: 'More' }).click()
     await expect(page.getByRole('menuitem', { name: /the book/i })).toHaveCount(0)
