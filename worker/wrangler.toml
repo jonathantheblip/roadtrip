@@ -1,6 +1,10 @@
 name = "roadtrip-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-01"
+# @cloudflare/puppeteer (Browser Rendering, for the share Card A) imports
+# node:buffer; nodejs_compat enables the Node built-ins it needs. Additive —
+# enables node: imports without removing any Web API the worker already uses.
+compatibility_flags = ["nodejs_compat"]
 
 # Bundle .wasm modules as Cloudflare Workers CompiledWasm imports.
 # Required for @cf-wasm/photon (the photo resize/JPEG encoder used

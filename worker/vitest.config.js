@@ -25,6 +25,12 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: './wrangler.toml' },
+      // The deploy needs `nodejs_compat` (for @cloudflare/puppeteer → node:buffer),
+      // but that flag breaks pool-workers' `cloudflare:test` module injection. The
+      // tests never execute puppeteer (the dynamic import is gated on env.BROWSER,
+      // which the card test strips), so they don't need it — override the flag OFF
+      // for the test runtime only. The card render itself is deploy-validated.
+      miniflare: { compatibilityFlags: [] },
     }),
   ],
 })
