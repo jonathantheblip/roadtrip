@@ -140,6 +140,9 @@ export default {
       if (path === '/route' && request.method === 'POST') {
         return await postRouteDistance(env, request, ctx, cors)
       }
+      if (path === '/drive-eta' && request.method === 'POST') {
+        return await postDriveEta(env, request, ctx, cors)
+      }
       if (path === '/places/nearby' && request.method === 'POST') {
         return await postPlacesNearby(env, request, cors)
       }
@@ -1149,6 +1152,63 @@ async function postRouteDistance(env, request, ctx, cors) {
     },
   })
   ctx?.waitUntil?.(cache.put(cacheKey, cacheable).catch((err) => console.error('route cache put failed', err?.stack || err)))
+  return json({ ...payload, cached: false }, 200, cors)
+}
+
+// POST /drive-eta { origin:{lat,lng}, destination:{lat,lng} } →
+// { durationMinutes, cached }. Traffic-aware ONE-WAY drive time (wraps
+// callRoutesDriveDuration) for the LiveDock's live ETA. Only called when the
+// viewer's own device is actually ON the trip route (the client's off-route
+// guard), so the origin is a real live GPS position. SHORT cache: a moving car
+// would otherwise re-bill Routes every GPS tick — unlike /route this must NOT
+// cache forever, so the key rounds coords to ~110 m and buckets time to 60 s,
+// and the entry carries max-age 60 to expire as traffic moves.
+async function postDriveEta(env, request, ctx, cors) {
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    return json({ error: 'Routes API not configured on worker' }, 500, cors)
+  }
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON' }, 400, cors)
+  }
+  const o = body?.origin
+  const d = body?.destination
+  if (![o?.lat, o?.lng, d?.lat, d?.lng].every((n) => Number.isFinite(n))) {
+    return json({ error: 'drive-eta needs origin{lat,lng} and destination{lat,lng}' }, 400, cors)
+  }
+
+  const r3 = (n) => Math.round(n * 1e3) / 1e3 // ~110 m grid
+  const bucket = Math.floor(Date.now() / 60000) // 60 s
+  const keyStr = `${r3(o.lat)},${r3(o.lng)}>${r3(d.lat)},${r3(d.lng)}@${bucket}`
+  const cacheKey = new Request(`https://drive-eta-cache.internal/v1/${encodeURIComponent(keyStr)}`)
+  const cache = caches.default
+  const hit = await cache.match(cacheKey).catch(() => null)
+  if (hit) {
+    const data = await hit.json().catch(() => null)
+    if (data) return json({ ...data, cached: true }, 200, cors)
+  }
+
+  let durationMinutes
+  try {
+    ;({ durationMinutes } = await callRoutesDriveDuration({
+      apiKey: env.GOOGLE_PLACES_API_KEY,
+      origin: { lat: o.lat, lng: o.lng },
+      destination: { lat: d.lat, lng: d.lng },
+      departureISO: new Date().toISOString(),
+    }))
+  } catch (err) {
+    return json({ error: `drive-eta lookup failed: ${err?.message || String(err)}` }, 502, cors)
+  }
+
+  const payload = { durationMinutes }
+  const cacheable = new Response(JSON.stringify(payload), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' },
+  })
+  ctx?.waitUntil?.(
+    cache.put(cacheKey, cacheable).catch((err) => console.error('drive-eta cache put failed', err?.stack || err))
+  )
   return json({ ...payload, cached: false }, 200, cors)
 }
 

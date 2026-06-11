@@ -266,6 +266,16 @@ button { font: inherit; }
 }
 
 /* ---- Switcher ---------------------------------------------------------- */
+/* Dock tokens — CONSTANT across every skin (the glass is dark even over
+   Helen's paper). Only the live-dot color (--live, per-theme) belongs to the
+   active lens. Ink tier is readable (--dock-muted); --dock-faint is decorative
+   only (aria-hidden eyebrow/chevron) — never load-bearing readable text. */
+:root {
+  --dock-ink:   #F4F1EA;
+  --dock-muted: rgba(244,241,234,0.66);
+  --dock-faint: rgba(244,241,234,0.40);
+  --dock-line:  rgba(255,255,255,0.10);
+}
 .switcher {
   position: fixed;
   left: 0; right: 0; bottom: 0;
@@ -275,33 +285,47 @@ button { font: inherit; }
 }
 .switcher-inner {
   /* FamilyDock glass pill — design system.jsx values (cooler/darker tint,
-     deeper blur, inset hairline edge). Cross-cutting polish 2026-06-05. */
+     deeper blur, inset hairline edge). Cross-cutting polish 2026-06-05.
+     The live ledge (when present) docks IN above the pills inside this same
+     glass — the radius opens 999 → 26 so the unit reads as one card. The
+     pills never move; the glass grows upward from its fixed bottom. */
   background: rgba(10,10,12,0.82);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-radius: 9999px;
+  overflow: hidden;
   display: flex;
-  gap: 3px;
-  padding: 5px;
+  flex-direction: column;
   max-width: 28rem;
   margin: 0 auto;
   box-shadow: 0 10px 30px rgba(0,0,0,0.40), inset 0 0 0 1px rgba(255,255,255,0.08);
   pointer-events: auto;
+  transition: border-radius 240ms cubic-bezier(.2,.8,.2,1);
 }
-.switcher button {
+.switcher-inner.has-ledge { border-radius: 26px; }
+
+/* The switcher pills — the shipped dock, geometry/type/behaviour UNCHANGED.
+   The flex/gap/padding moved here (off .switcher-inner) when the ledge column
+   was introduced, so the pill row looks identical with or without a ledge. */
+.switcher-pills {
+  display: flex;
+  gap: 3px;
+  padding: 5px;
+}
+.switcher-pills button {
   flex: 1; appearance: none; border: 0; background: transparent;
   border-radius: 9999px; padding: 6px 8px; min-height: 46px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   color: #FBF8F2; cursor: pointer;
   transition: background .2s ease, opacity .2s ease;
 }
-.switcher button .label {
+.switcher-pills button .label {
   /* Design = Inter 12.5/600; kept on the LOADED DM Sans (not system Inter)
      to avoid the off-runner system-font AA churn the top bar hit. */
   font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 12.5px; font-weight: 600; line-height: 1.1;
 }
-.switcher button .sub {
+.switcher-pills button .sub {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 7.5px; letter-spacing: .16em; text-transform: uppercase;
   line-height: 1; margin-top: 2px;
@@ -311,6 +335,62 @@ button { font: inherit; }
 /* C2: inactive is expressed by a readable-secondary TEXT color (Switcher.jsx:
    rgba(255,255,255,0.6) on the dark pill = 5.85:1 worst), NOT opacity:.5 — which
    compounded to effective 0.425 and failed contrast (label 3.72–4.18, sub 2.57–2.64). */
+
+/* ---- Live ledge (NowBar × FamilyDock) — above the pills, on a live trip -- */
+.switcher-hairline { height: 1px; background: var(--dock-line); margin: 0 16px; }
+.dock-ledge { animation: dockUnfurl 240ms cubic-bezier(.2,.8,.2,1); }
+.dock-ledge-live {
+  display: flex; align-items: center; gap: 11px;
+  padding: 6px 16px 5px; min-height: 46px;
+}
+.dock-ledge-cueonly {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 46px; padding: 0 16px;
+  appearance: none; border: 0; background: transparent; cursor: pointer; text-align: left;
+}
+.dock-ledge-body {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px;
+  appearance: none; border: 0; background: transparent; padding: 0;
+  cursor: pointer; text-align: left; color: var(--dock-ink);
+}
+.dock-ledge-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dock-ledge-kicker {
+  /* Readable eyebrow — --dock-muted, NOT --dock-faint: axe color-contrast does
+     NOT exempt aria-hidden text, and faint (0.40) fails AA on the glass
+     (3.48:1). Muted (0.66) passes ×4 (the recurring --faint-as-text trap). */
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 7.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--dock-muted);
+}
+.dock-ledge-readout {
+  color: var(--dock-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dock-ledge-next { color: var(--dock-muted); font-weight: 400; }
+.dock-ledge-cuebtn {
+  flex-shrink: 0; appearance: none; border: 0; background: transparent; padding: 0;
+  min-height: 44px; display: inline-flex; align-items: center; cursor: pointer;
+}
+.dock-ledge-open {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 8px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--dock-muted);
+}
+.dock-ledge-chev { flex-shrink: 0; color: var(--dock-faint); }
+.dock-livedot { position: relative; display: inline-flex; flex-shrink: 0; }
+.dock-livedot-core { width: 9px; height: 9px; border-radius: 50%; background: var(--live, var(--accent)); }
+.dock-livedot-ring {
+  position: absolute; inset: -4px; border-radius: 50%;
+  border: 1.5px solid var(--live, var(--accent)); opacity: .5;
+  animation: dockPulse 2s ease-out infinite;
+}
+@keyframes dockPulse {
+  0%   { transform: scale(.7); opacity: .5; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+@keyframes dockUnfurl {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
 
 /* ---- Buttons / link styling ------------------------------------------- */
 .btn-pill {

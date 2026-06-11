@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useMemo, lazy, Suspense } from 'react'
 import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
+import { buildLedgeModel } from './lib/liveDock'
+import { useLiveEta } from './hooks/useLiveEta'
 import { JonathanView } from './views/JonathanView'
 import { HelenView } from './views/HelenView'
 import { AureliaView } from './views/AureliaView'
@@ -475,6 +477,21 @@ export default function App() {
     () => (trip?.id ? mergeCoverStops(trip, listMemoriesForTrip(trip.id, traveler)) : trip),
     [trip, traveler, surpriseTick]
   )
+  // LiveDock ledge model (NowBar × FamilyDock reconciliation): system-driven
+  // by the VIEWED trip + person, rendered above the switcher pills. Uses
+  // tripForView so the schedule now/next matches the stops the themed view
+  // shows. Recomputed each render (reads the wall clock for now/next).
+  const dockLedge = buildLedgeModel({
+    trip: tripForView,
+    traveler,
+    weaveReady,
+    surpriseRevealCue,
+  })
+  // Live-GPS ETA upgrade: when this device is actually ON the trip route (and
+  // location was granted via the Live Map — read passively, never prompts), the
+  // ledge's now/next become "{heading-to} · ETA {time}" (real traffic-aware
+  // drive time). Off-route / no GPS → null → the honest schedule readout stays.
+  const liveEta = useLiveEta(tripForView, dockLedge.mode === 'live')
   useEffect(() => {
     setWeaveReady(false)
     setBookHasPages(false)
@@ -1152,7 +1169,18 @@ export default function App() {
       {/* Bottom switcher visible everywhere except the index (and replay,
           which is immersive and owns its own bottom transport bar). */}
       {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && (
-        <Switcher active={traveler} onSwitch={handleTravelerSwitch} />
+        <Switcher
+          active={traveler}
+          onSwitch={handleTravelerSwitch}
+          ledge={dockLedge.mode}
+          now={liveEta?.now ?? dockLedge.now}
+          next={liveEta?.next ?? dockLedge.next}
+          cueKind={dockLedge.cueKind}
+          onLedge={openMap}
+          onCue={() =>
+            dockLedge.cueKind === 'surprise-revealed' ? openSurprises() : openWeave()
+          }
+        />
       )}
 
       {/* Claude-in-App M1 — floating entry on the trips index.

@@ -86,3 +86,23 @@ export function useGeolocation() {
 
   return snapshot
 }
+
+// Passive variant: subscribe to the SHARED geolocation state WITHOUT starting
+// the watch. Lets global chrome (the LiveDock) show a live ETA once location is
+// already granted — the watch is started by the Live Map (where the prompt
+// belongs) — but NEVER triggers a permission prompt on its own. Returns the
+// shared state (position null / status 'idle' until some active useGeolocation
+// elsewhere starts the watch).
+export function useGeolocationPassive() {
+  const [snapshot, setSnapshot] = useState(state)
+
+  useEffect(() => {
+    listeners.add(setSnapshot)
+    setSnapshot(state)
+    return () => {
+      listeners.delete(setSnapshot)
+    }
+  }, [])
+
+  return snapshot
+}
