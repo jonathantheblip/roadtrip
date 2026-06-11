@@ -26,7 +26,7 @@ import {
 import { runNightlyWeave, beatSignature } from './weaveGen.js'
 import { maskMemoryForViewer, maskTripForViewer } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
-import { renderSharePage, renderShareError } from './sharePage.js'
+import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -86,6 +86,18 @@ export default {
       } catch (err) {
         console.error('share fetch error', err?.stack || err)
         return json({ error: err?.message || String(err) }, 500, cors)
+      }
+    }
+    // The link-preview card image (Card A) — PUBLIC, same masking re-check.
+    // og:image points here; rendered to a PNG by Browser Rendering, cached
+    // forever per token. Falls back to the raw photo if rendering is unavailable.
+    const cardMatch = path.match(/^\/m\/([A-Za-z0-9_-]+)\/card\.png$/)
+    if (request.method === 'GET' && cardMatch) {
+      try {
+        return await getShareCard(env, cardMatch[1], url, ctx, cors)
+      } catch (err) {
+        console.error('share card error', err?.stack || err)
+        return new Response('card error', { status: 500, headers: cors })
       }
     }
 
@@ -600,6 +612,60 @@ async function getShare(env, token, url, cors) {
   const view = shareViewFromMemory(memory, trip)
   if (wantsJson) return json(view, 200, { ...cors, 'Cache-Control': 'no-store' })
   return new Response(renderSharePage(view, { pageUrl: `${origin}/m/${token}` }), { status: 200, headers: htmlHeaders })
+}
+
+// The link-preview card PNG for a share token (Card A). PUBLIC. Runs the SAME
+// masking re-check as getShare (a surprise/deleted memory yields no card), then
+// renders the 1200×630 card HTML to a PNG via Browser Rendering, cached forever
+// per token (deterministic → render-once). Graceful fallback when Browser
+// Rendering isn't configured / errors: redirect to the raw photo (photo memory)
+// or 404 (no photo) — i.e. exactly the pre-card behaviour, never a broken unfurl.
+async function getShareCard(env, token, url, ctx, cors) {
+  const origin = workerOrigin(env, url)
+  const share = await env.DB.prepare('SELECT * FROM shares WHERE token = ?').bind(token).first()
+  if (!share || share.revoked_at) return new Response('not found', { status: 404, headers: cors })
+  const { memory, trip } = await loadMemoryAndTrip(env, share.memory_id, origin)
+  // THE MASK (same seam as the page): never render a card for a hidden surprise
+  // or a deleted memory.
+  if (!isShareable(memory)) return new Response('gone', { status: 404, headers: cors })
+  const view = shareViewFromMemory(memory, trip)
+
+  const fallback = () => {
+    const photoUrl = view.photos?.[0]?.url || view.photos?.[0]?.posterUrl
+    return photoUrl
+      ? Response.redirect(photoUrl, 302) // unfurlers follow → the raw photo
+      : new Response('no card', { status: 404, headers: cors })
+  }
+
+  // Forever-cache the rendered PNG (the card is deterministic per token).
+  const cacheKey = new Request(`https://share-card.internal/v1/${token}`)
+  const cache = caches.default
+  const hit = await cache.match(cacheKey).catch(() => null)
+  if (hit) return hit
+
+  // No Browser Rendering binding → don't attempt a launch; fall back cleanly.
+  if (!env.BROWSER) return fallback()
+
+  try {
+    const puppeteer = (await import('@cloudflare/puppeteer')).default
+    const browser = await puppeteer.launch(env.BROWSER)
+    try {
+      const page = await browser.newPage()
+      await page.setViewport({ width: 1200, height: 630 })
+      await page.setContent(renderShareCard(view), { waitUntil: 'networkidle0' })
+      const png = await page.screenshot({ type: 'png' })
+      const res = new Response(png, {
+        headers: { ...cors, 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' },
+      })
+      ctx?.waitUntil?.(cache.put(cacheKey, res.clone()).catch((e) => console.error('card cache put failed', e?.stack || e)))
+      return res
+    } finally {
+      await browser.close()
+    }
+  } catch (err) {
+    console.error('card render failed', err?.stack || err)
+    return fallback()
+  }
 }
 
 function rowToMemory(r, origin) {

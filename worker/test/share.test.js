@@ -127,8 +127,9 @@ describe('share-out — mint + resolve, and the masking is enforced', () => {
     expect(html).toContain('from <b>Aurelia</b>') // attribution
     expect(html).toContain('Mystic Seaport') // place
     expect(html).toContain('Family Trips') // footer
-    expect(html).toContain('og:image') // raw photo unfurl
-    expect(html).toContain('/assets/aurelia/m-photo/photo-abc')
+    expect(html).toContain('og:image') // the composed Card A
+    expect(html).toContain(`/m/${token}/card.png`) // og:image → the card route
+    expect(html).toContain('/assets/aurelia/m-photo/photo-abc') // raw photo in the body hero
   })
 
   it('XSS: user text is HTML-escaped in the rendered page', async () => {

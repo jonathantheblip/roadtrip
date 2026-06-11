@@ -337,9 +337,15 @@ function head(view, pageUrl) {
   const title = view.caption || view.note || (view.place ? `A moment · ${view.place}` : 'A moment')
   const desc = [view.place, view.tripName, view.authorName && `from ${view.authorName}`]
     .filter(Boolean).join(' · ') || "A moment from the Jackson-Hemleys’ trip"
-  const ogImg = (view.photos && view.photos[0] && (view.photos[0].posterUrl || view.photos[0].url)) || ''
-  const og = ogImg
-    ? `<meta property="og:image" content="${esc(ogImg)}"><meta name="twitter:card" content="summary_large_image">`
+  // og:image = the composed 1200×630 Card A (rendered by the worker's
+  // /m/:token/card.png route; it falls back to the raw photo if rendering is
+  // unavailable). Without a pageUrl (shouldn't happen for the real page), fall
+  // straight back to the raw photo.
+  const cardImg = pageUrl
+    ? `${pageUrl}/card.png`
+    : (view.photos && view.photos[0] && (view.photos[0].posterUrl || view.photos[0].url)) || ''
+  const og = cardImg
+    ? `<meta property="og:image" content="${esc(cardImg)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">`
     : '<meta name="twitter:card" content="summary">'
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -349,7 +355,7 @@ function head(view, pageUrl) {
 <meta property="og:type" content="article">
 <meta property="og:title" content="${esc(title.slice(0, 110))}">
 <meta property="og:description" content="${esc(desc.slice(0, 160))}">
-${ogImg ? '' : ''}${og}
+${og}
 ${pageUrl ? `<meta property="og:url" content="${esc(pageUrl)}">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="${FONT_LINK}" rel="stylesheet">
@@ -417,4 +423,96 @@ export function renderShareError(gone) {
 .err p{font-family:var(--sans);font-size:14.5px;color:var(--soft);margin:0}
 .err .house-mark{margin-bottom:22px}</style></head>
 <body><div class="err"><span class="house-mark"></span><h1>${esc(msg)}</h1><p>Ask whoever sent it for a fresh link.</p></div></body></html>`
+}
+
+// ── Card A — the 1200×630 link-preview ("unfurl") image ──────────────────────
+// A self-contained HTML doc rendered to a PNG by Browser Rendering (see
+// getShareCard in index.js). Forced to the PAPER (light) ground — the unfurl
+// image is static, so it does NOT theme to the viewer. Photo memory → the split
+// photo/panel card (design 03); text/voice → the centered note card (design 05).
+// Reuses the page's stamp / glyph / grain primitives + house palette; every
+// piece of user text goes through esc() (the XSS boundary).
+function cardStyles() {
+  return `*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#EFE7D6;--mat:#FCFAF4;--ink:#211E18;--soft:#574F42;--line:rgba(33,30,24,0.14);--line-bold:rgba(33,30,24,0.26);--accent:#A84B31;--postmark:rgba(33,30,24,0.46);--serif:"Fraunces","Iowan Old Style",Georgia,serif;--sans:"Inter Tight",-apple-system,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace}
+body{width:1200px;height:630px;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+.card{position:relative;width:1200px;height:630px;overflow:hidden;background:var(--bg)}
+.grain{position:absolute;inset:0;pointer-events:none;z-index:3;background-image:${grainBg()};background-size:160px 160px;mix-blend-mode:multiply;opacity:0.45}
+.glyph-chip{flex:0 0 auto;width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,0.22),0 1px 2px rgba(0,0,0,0.18)}
+.glyph-chip svg{width:22px;height:22px}
+.stamp{position:relative;transform:rotate(5deg);filter:drop-shadow(0 4px 7px rgba(70,52,30,0.28))}
+.stamp svg{display:block}
+.stamp-inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:14px 8px 12px}
+.stamp-top{font-family:var(--mono);font-size:7.5px;letter-spacing:1.2px;color:rgba(168,75,49,0.8)}
+.stamp-bot{font-family:var(--mono);font-size:8px;letter-spacing:1px;color:rgba(33,30,24,0.62)}
+.cd-diamond{width:11px;height:11px;background:var(--accent);transform:rotate(45deg);border-radius:1px;display:inline-block}
+.cd-wordmark{font-family:var(--mono);font-size:15px;letter-spacing:2px;text-transform:uppercase;color:var(--soft)}
+.cd-from{font-family:var(--sans);font-size:20px;color:var(--ink);line-height:1.2}
+.cd-from b{font-family:var(--serif);font-weight:600}
+.cd-trip{font-family:var(--mono);font-size:13px;letter-spacing:1.2px;text-transform:uppercase;color:var(--soft)}
+.card-photo{display:flex}
+.cd-img{width:686px;height:630px;flex:0 0 auto}
+.cd-img img{width:100%;height:100%;object-fit:cover;display:block}
+.cd-panel{flex:1;padding:60px 56px;display:flex;flex-direction:column;position:relative;z-index:2}
+.cd-eyebrow{font-family:var(--mono);font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--soft)}
+.cd-title{font-family:var(--serif);font-weight:500;font-size:46px;line-height:1.12;color:var(--ink);letter-spacing:-0.6px;max-width:330px;margin-top:22px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.cd-foot{margin-top:auto}
+.cd-hair{height:1px;background:var(--line);margin-bottom:22px}
+.cd-attrib{display:flex;align-items:center;gap:12px}
+.cd-mark{margin-top:30px;display:inline-flex;align-items:center;gap:9px}
+.cd-stamp{position:absolute;top:46px;right:48px;z-index:4}
+.card-note{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 130px;text-align:center}
+.cd-note-mark{position:absolute;top:44px;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:9px;z-index:2}
+.cd-quote{font-family:var(--serif);font-size:96px;line-height:0.3;color:var(--accent);height:44px}
+.cd-note-text{font-family:var(--serif);font-weight:400;font-size:44px;line-height:1.3;color:var(--ink);letter-spacing:-0.3px;max-width:900px;position:relative;z-index:2}
+.cd-note-foot{position:absolute;bottom:52px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:12px;z-index:2}
+.cd-note-foot .cd-trip{margin-top:0}
+.cd-note-rule{width:40px;height:1px;background:var(--line-bold)}`
+}
+
+export function renderShareCard(view) {
+  const from = view.authorName || ''
+  const place = view.place || ''
+  const trip = view.tripName || ''
+  const photo = view.photos && view.photos[0]
+  const photoUrl = photo && (photo.url || photo.posterUrl)
+  const mark = `<span class="cd-diamond"></span><span class="cd-wordmark">Family Trips</span>`
+
+  let card
+  if (photoUrl) {
+    const title = view.caption || place || 'A moment'
+    card = `<div class="card card-photo">
+  <div class="cd-img"><img src="${esc(photoUrl)}" alt=""></div>
+  <div class="cd-panel">
+    <div class="cd-eyebrow">A moment${place ? ` &middot; ${esc(place)}` : ''}</div>
+    <h1 class="cd-title">${esc(title)}</h1>
+    <div class="cd-foot">
+      <div class="cd-hair"></div>
+      <div class="cd-attrib">${glyphChip(from)}<span class="cd-from">from <b>${esc(from)}</b></span></div>
+      ${trip ? `<div class="cd-trip" style="margin-top:10px">${esc(trip)}</div>` : ''}
+      <div class="cd-mark">${mark}</div>
+    </div>
+  </div>
+  <div class="cd-stamp">${stampSvg(from)}</div>
+  <div class="grain"></div>
+</div>`
+  } else {
+    const noteText = view.note || view.caption || 'A moment'
+    card = `<div class="card card-note">
+  <div class="cd-note-mark">${mark}</div>
+  <div class="cd-quote" aria-hidden="true">&ldquo;</div>
+  <p class="cd-note-text">${esc(noteText)}</p>
+  <div class="cd-note-foot">
+    <div class="cd-note-rule"></div>
+    ${glyphChip(from)}
+    <span class="cd-from">from <b>${esc(from)}</b></span>
+    ${trip ? `<div class="cd-trip">${esc(trip)}</div>` : ''}
+  </div>
+  <div class="grain"></div>
+</div>`
+  }
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<link href="${FONT_LINK}" rel="stylesheet"><style>${cardStyles()}</style></head>
+<body>${card}</body></html>`
 }

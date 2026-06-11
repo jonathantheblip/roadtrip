@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@cloudflare/puppeteer": "^1.1.0",
     "@cloudflare/vitest-pool-workers": "^0.16.10",
     "vitest": "^4.1.7",
     "wrangler": "^4.94.0"

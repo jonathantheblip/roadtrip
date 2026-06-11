@@ -21,6 +21,14 @@ database_id = "33bb806c-1c1d-4268-830f-7bad3e49711f"
 binding = "ASSETS"
 bucket_name = "roadtrip-assets"
 
+# Browser Rendering: headless Chromium for the share-out link-preview card
+# (Card A — GET /m/:token/card.png renders the 1200×630 card HTML to a PNG).
+# Requires Browser Rendering enabled on the account (billed; usage bounded by a
+# forever cache — each shared memory renders once). The card route guards on
+# `env.BROWSER` and falls back to the raw photo if the binding is absent.
+[browser]
+binding = "BROWSER"
+
 # Non-secret config. Secrets (set via `wrangler secret put`, NOT listed
 # here): the 4 FAMILY_TOKEN_* values, GOOGLE_PLACES_API_KEY (geocoding +
 # /leave-when + /places/nearby + trip-hero resolution on GET /trips),
