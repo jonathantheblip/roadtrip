@@ -18,11 +18,12 @@
 // and hands the user-edited copy back via onSave, which the chat panel
 // commits through tripsApi.upsertTrip.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { TRAVELER_DOT } from '../data/travelers'
 import { travelerNameToId, humanDateRange } from '../lib/createTripCard'
 import { userFacingApplyError } from '../lib/claudeCardApply'
 import { logUploadEvent } from '../lib/uploadLog'
+import { isUnsynced, subscribe as subscribeUnsynced } from '../lib/tripSyncQueue'
 
 // ─── Card-framing + draft-slip text tokens — UNIVERSAL / persona-invariant
 // (interim) ──────────────────────────────────────────────────────────
@@ -1041,6 +1042,21 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
   const [draft, setDraft] = useState(() => seedDraft(card))
   const [commit, setCommit] = useState({ phase: initialPhase, error: null })
 
+  // Whether THIS card's trip currently has an edit that hasn't reached the
+  // family yet (lib/tripSyncQueue, keyed by trip id). Drives the honest
+  // saved-note: "syncing to the family" while unsynced, "Saved ✓" once the
+  // self-heal lands. Read live (subscribed) so it's correct even when the
+  // saved note is reconstructed from `initialPhase` after a re-render — and so
+  // it flips to "Saved ✓" on its own the moment the background resync succeeds.
+  const tripId = card?.target?.tripId || card?.trip?.id || null
+  const [tripUnsynced, setTripUnsynced] = useState(() => (tripId ? isUnsynced(tripId) : false))
+  useEffect(() => {
+    if (!tripId) return undefined
+    const update = () => setTripUnsynced(isUnsynced(tripId))
+    update()
+    return subscribeUnsynced(update)
+  }, [tripId])
+
   // Re-seed when a different card arrives (e.g., new stream completes).
   // Use card.id as the identity. Cards without ids re-seed on every render
   // of a new object; that's fine, they're transient.
@@ -1097,9 +1113,9 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
   // purpose; the chat surface carries the conversational reply.
   if (commit.phase === 'saved') {
     if (card.type === 'create_trip') {
-      return <CardSavedNote action="create_trip" title={card.trip?.title} />
+      return <CardSavedNote action="create_trip" title={card.trip?.title} synced={!tripUnsynced} />
     }
-    return <CardSavedNote action={card.action} title={card.title} />
+    return <CardSavedNote action={card.action} title={card.title} synced={!tripUnsynced} />
   }
   if (commit.phase === 'discarded') {
     return null
@@ -1195,7 +1211,7 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
   }
 }
 
-function CardSavedNote({ action, title }) {
+function CardSavedNote({ action, title, synced = true }) {
   const verb =
     action === 'cancel'
       ? 'Removed'
@@ -1208,6 +1224,41 @@ function CardSavedNote({ action, title }) {
       : action === 'trip-settings'
       ? 'Updated'
       : 'Added'
+
+  // Honest not-yet-synced state. The change IS saved on this device, but the
+  // push to the family hasn't landed — so we never show the plain "Saved ✓"
+  // green check (that would promise the family has it when they don't, G6).
+  // Resync keeps retrying in the background (reopen / network back / interval),
+  // so this is calm reassurance, not an error.
+  if (!synced) {
+    return (
+      <div
+        data-testid="confirm-card-saved-unsynced"
+        style={{
+          marginBottom: 14,
+          padding: '8px 12px',
+          borderRadius: 10,
+          background: 'rgba(178,128,40,0.08)',
+          border: `1px solid ${T.draftBorder}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: T.draftEyebrow, flexShrink: 0 }} />
+        <span style={{ fontFamily: FONT.mono, fontSize: 9, letterSpacing: 1.4, textTransform: 'uppercase', color: 'var(--text)', fontWeight: 600 }}>
+          Saved on your phone
+        </span>
+        {title && (
+          <span style={{ fontFamily: FONT.serif, fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{title}</span>
+        )}
+        <span style={{ flexBasis: '100%', fontFamily: FONT.serif, fontStyle: 'italic', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.4 }}>
+          Syncing to the family — we&rsquo;ll keep trying until it reaches them.
+        </span>
+      </div>
+    )
+  }
   return (
     <div
       data-testid="confirm-card-saved"

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { TRIPS as SEED_TRIPS } from '../data/trips'
 import { pullTrips, pushTrip, deleteTrip, isWorkerConfigured } from '../lib/workerSync'
+import {
+  markUnsynced,
+  markSynced,
+  pendingIds,
+  count as unsyncedCountNow,
+  subscribe as subscribeUnsynced,
+} from '../lib/tripSyncQueue'
 
 // useTrips — single source of truth for the trip list.
 //
@@ -21,6 +28,10 @@ import { pullTrips, pushTrip, deleteTrip, isWorkerConfigured } from '../lib/work
 //   • removeTrip(id), seed() helper for the Settings button.
 
 const CACHE_KEY = 'rt_trips_cache_v1'
+// How often to re-attempt pushing trip edits that haven't reached the family.
+// Short enough that a stranded edit clears within seconds of reconnect (the
+// `online` event is unreliable on iOS), but not a tight loop.
+const TRIP_RESYNC_INTERVAL_MS = 20000
 
 function readCache() {
   try {
@@ -68,6 +79,9 @@ export function useTrips() {
   const [source, setSource] = useState(() => (readCache() ? 'cache' : 'seed'))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  // How many trip edits haven't reached the family yet (for an honest "syncing…"
+  // cue). Driven by lib/tripSyncQueue, which survives reloads.
+  const [unsyncedCount, setUnsyncedCount] = useState(() => unsyncedCountNow())
 
   const refresh = useCallback(async () => {
     if (!isWorkerConfigured()) {
@@ -81,7 +95,22 @@ export function useTrips() {
       if (remote.length) {
         // Overlay seed-authoritative letters so a stale remote copy that
         // predates a travelerNotes addition doesn't drop it (see above).
-        const merged = withSeedNotes(remote)
+        let merged = withSeedNotes(remote)
+        // CLOBBER GUARD: a trip with a local edit that hasn't reached the
+        // family yet must NOT be overwritten by the Worker's older copy on
+        // pull — that would lose the edit even on the author's device. Keep
+        // the local version for any unsynced id until resync pushes it; the
+        // resync (below) then makes the Worker canonical again.
+        const unsynced = pendingIds()
+        if (unsynced.length) {
+          const localCache = readCache() || []
+          const byId = new Map(merged.map((t) => [t.id, t]))
+          for (const id of unsynced) {
+            const localT = localCache.find((t) => t.id === id)
+            if (localT) byId.set(id, localT)
+          }
+          merged = [...byId.values()]
+        }
         writeCache(merged)
         setTrips(merged)
         setSource('worker')
@@ -129,14 +158,76 @@ export function useTrips() {
     }
     try {
       await pushTrip(trip)
+      markSynced(trip.id) // reached the family — clear any prior unsynced flag
       return { ok: true, synced: true }
     } catch (err) {
-      // Kept locally; caller decides whether to block (create flow) or
-      // proceed (incremental editor autosave). Never silently swallowed.
+      // The push didn't reach the family. Remember it so resync can re-push it
+      // on the next opportunity (reopen / network back / interval), instead of
+      // stranding the edit on this device forever. The caller still gets a
+      // synced:false result so its UI can be honest about it.
+      markUnsynced(trip.id)
       console.warn('useTrips upsertTrip: Worker push failed; kept locally', err)
       return { ok: false, synced: false, error: err?.message || String(err) }
     }
   }, [])
+
+  // Self-healing: re-push any trip edit that hasn't reached the family yet,
+  // from the freshest cached version. Best-effort — a still-failing push leaves
+  // the id queued for the next attempt. Pure local read of the cache (not the
+  // `trips` closure) so it always pushes the latest persisted state.
+  const resyncPending = useCallback(async () => {
+    if (!isWorkerConfigured()) return { resynced: 0, remaining: pendingIds().length }
+    const ids = pendingIds()
+    if (!ids.length) return { resynced: 0, remaining: 0 }
+    const cache = readCache() || []
+    let resynced = 0
+    for (const id of ids) {
+      const t = cache.find((x) => x.id === id)
+      if (!t || t.masked) {
+        // Trip gone locally, or a masked projection that must never be pushed —
+        // either way it's not ours to sync. Drop it from the queue.
+        markSynced(id)
+        continue
+      }
+      try {
+        await pushTrip(t)
+        markSynced(id)
+        resynced += 1
+      } catch {
+        /* leave it queued; the next trigger retries */
+      }
+    }
+    return { resynced, remaining: pendingIds().length }
+  }, [])
+
+  // Reflect the unsynced-count so an indicator can show "N changes haven't
+  // reached the family yet."
+  useEffect(() => subscribeUnsynced(setUnsyncedCount), [])
+
+  // Self-healing lifecycle: attempt a resync on cold load (pick up edits
+  // stranded by a prior session), when the network returns, when the app comes
+  // back to the foreground, and on a short interval (the iOS `online` event is
+  // unreliable). Mirrors the photo upload-queue drain triggers in App.jsx.
+  useEffect(() => {
+    let stopped = false
+    const attempt = () => {
+      if (!stopped) resyncPending()
+    }
+    attempt()
+    const onOnline = () => attempt()
+    const onVis = () => {
+      if (document.visibilityState === 'visible') attempt()
+    }
+    window.addEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVis)
+    const iv = setInterval(attempt, TRIP_RESYNC_INTERVAL_MS)
+    return () => {
+      stopped = true
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVis)
+      clearInterval(iv)
+    }
+  }, [resyncPending])
 
   // Back-compat aliases — existing callers (Settings album URL, App
   // create handler) keep working without learning a new name.
@@ -194,5 +285,5 @@ export function useTrips() {
     return { pushed, errors }
   }, [refresh])
 
-  return { trips, source, loading, error, refresh, upsertTrip, addTrip, saveTrip, removeTrip, seed, forcePushSeed }
+  return { trips, source, loading, error, refresh, upsertTrip, addTrip, saveTrip, removeTrip, seed, forcePushSeed, resyncPending, unsyncedCount }
 }
