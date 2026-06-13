@@ -38,10 +38,12 @@ function ReadCta({ children = 'Read the page' }) {
   )
 }
 // A soft white card that opens a feature (the whole card is the button).
-function Card({ onClick, label, children, style }) {
+// Forwards data-testid so callers can hook a specific card (e.g. the after-trip
+// replay hero) — without it, the prop is silently dropped and the hook is dead.
+function Card({ onClick, label, children, style, 'data-testid': testId }) {
   return (
     <button
-      type="button" onClick={onClick} aria-label={label}
+      type="button" onClick={onClick} aria-label={label} data-testid={testId}
       style={{ width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 18, boxShadow: 'var(--shadow-card)', padding: 16, color: 'var(--text)', fontFamily: 'var(--font-body)', ...style }}
     >
       {children}
