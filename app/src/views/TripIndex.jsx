@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Plus, Clock } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { effectiveStatus } from '../data/trips'
@@ -6,6 +6,7 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { thumbUrl } from '../lib/thumbUrl'
 import { pickResurface } from '../lib/resurface'
 import { hasExplicitHero } from '../lib/tripHero'
+import { heroRotationExtras, pickRotatingHero } from '../lib/heroRotation'
 import { AvatarStack } from '../components/Avatar'
 
 // Trip index — the platform's home. Direct port of the Design bundle's
@@ -495,6 +496,20 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
   const dayCount = trip.days?.length || 0
   const titleLines = (trip.title || '').split(/[—:]/).map((s) => s.trim())
 
+  // Per-visit rotating hero (the Vermont Juneteenth trip): a random pick among
+  // [the current cascade hero, ...extra committed images], fixed for this visit.
+  // The seed is set once per mount, so it re-rolls each time the index is opened
+  // rather than flickering on every re-render. Empty extras (most trips) → null
+  // → the normal precedence cascade below renders unchanged.
+  const baseHeroUrl = hasExplicitHero(trip)
+    ? trip.heroImage
+    : heroPhotoUrl || trip.heroResolved?.url || null
+  const rotationExtras = heroRotationExtras(trip)
+  const [heroSeed] = useState(() => Math.random())
+  const rotatedHero = rotationExtras.length
+    ? pickRotatingHero([baseHeroUrl, ...rotationExtras], heroSeed)
+    : null
+
   return (
     <button
       type="button"
@@ -567,7 +582,9 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
           4. <TripCardFloor>     — the themed floor (replaces the old `: null`;
                                     can never 404, so a card is never blank).
           The placeholder is gone: there is no branch that renders nothing. */}
-      {hasExplicitHero(trip) ? (
+      {rotatedHero ? (
+        <img src={rotatedHero} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+      ) : hasExplicitHero(trip) ? (
         <img src={trip.heroImage} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
       ) : heroPhotoUrl ? (
         <img src={heroPhotoUrl} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />

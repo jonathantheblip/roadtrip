@@ -50,3 +50,4 @@ worker/.wrangler
 # go here for validation/threshold-tuning. PRIVATE: never committed. The
 # report (scripts/reconcile-report.mjs) reads them locally and prints text only.
 app/.reconcile-input/
+/downloads/
