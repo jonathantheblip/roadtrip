@@ -244,6 +244,12 @@ export function saveMemory({
               title: surprise.title || '',
               detail: surprise.detail || '',
               tint: surprise.tint || '#5C5048',
+              // Composer rebuild: how the surprise was authored — 'wrap' (an
+              // existing memory carries the secret) or 'describe' (typed-from-
+              // scratch). Lets the editor re-open in the right mode. Omitted
+              // (undefined) for legacy surprises → the editor treats them as
+              // 'describe' (their content is the typed title/detail).
+              source: surprise.source || undefined,
             }
           : existingMaskSource?.surprise,
     }

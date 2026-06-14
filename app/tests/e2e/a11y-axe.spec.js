@@ -1,6 +1,6 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { openTopMenuItem } from './_fixtures/topNav.js'
-import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
 import { mockClaudeChatWorker } from './_fixtures/mockUpload.js'
 import { resolvePersona, TRAVELERS } from './_fixtures/persona.js'
 import { expectNoSeriousA11y } from './_fixtures/axe.js'
@@ -269,21 +269,27 @@ test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
 
     test(`surprises composer (cover mode) — ${p}`, async ({ page }) => {
       await seedTripIntoCache(page, FIXTURE_TRIP)
+      // A p-authored photo so the rebuilt composer's "wrap" picker has a real
+      // item to choose (the masking model only lets you wrap your OWN memory),
+      // which is what discloses the ②③④ sections + the cover form.
+      await seedMemoriesIntoCache(page, [{
+        id: 'axe-wrap-photo', tripId: 'volleyball-2026', stopId: 'vb1-3', authorTraveler: p,
+        visibility: 'shared', kind: 'photo', caption: 'a wrappable photo',
+        photoExternalURLs: [TINY_RED_PNG_DATA_URL], createdAt: '2026-05-22T18:10:00.000Z', capturedAt: '2026-05-22T18:10:00.000Z',
+      }])
       await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
       await openTopMenuItem(page, /surprises/i)
       await expect(page.getByTestId('surprises-view')).toBeVisible()
       await page.getByRole('button', { name: /New/i }).click()
-      // Exercise the Slice-2 reveal pickers (date input + place select) so they
-      // get scanned too, then the cover form.
+      // Pick "A photo" and wrap the real one → content step satisfied, so the
+      // reveal pickers (date input + place select) + cover form disclose.
+      await page.getByRole('button', { name: 'A photo' }).click()
+      await page.getByRole('button', { name: 'a wrappable photo' }).first().click()
       await page.getByRole('button', { name: /On a date/i }).click()
       await expect(page.getByLabel('Reveal date')).toBeVisible()
       await page.getByRole('button', { name: /When they arrive/i }).click()
-      // Toggle to cover-story mode to expose the cover form (the densest set of
-      // controls + the accent-fill chips/submit).
+      // Cover-story mode → the densest control set (cover fields + accent submit).
       await page.getByRole('button', { name: /A cover story/i }).click()
-      // Also switch to the whole-trip variant (3b): reveal options change + the
-      // day picker hides, so this scans that state too.
-      await page.getByRole('button', { name: /The whole trip/i }).click()
       await expect(page.getByRole('button', { name: /Hide it behind the cover/i })).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: '[data-testid="surprises-view"]',

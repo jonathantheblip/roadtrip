@@ -149,7 +149,10 @@ test('displayName + revealLabel', () => {
   assert.equal(displayName('rafa', 'rafa'), 'you')
   assert.equal(revealLabel({ type: 'arrival', at: '5th Avenue' }), 'when you arrive at 5th Avenue')
   assert.equal(revealLabel({ type: 'date', at: 'June 15' }), 'on June 15')
-  assert.equal(revealLabel({ type: 'manual' }), 'when they choose to')
+  // Copy fix (2026-06-13): manual reveal no longer reads "when they choose to"
+  // (it's the author who reveals); recipient/default view → "when the moment's right".
+  assert.equal(revealLabel({ type: 'manual' }), "when the moment's right")
+  assert.equal(revealLabel({ type: 'manual' }, true), 'until you reveal it')
 })
 
 // ── Slice 2: reveal targets, geofence, cue ──────────────────────────────────

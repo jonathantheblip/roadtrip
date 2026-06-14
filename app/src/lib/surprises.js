@@ -51,14 +51,106 @@ export function formatRevealDate(at) {
   return at || 'a date'
 }
 
-// Human label for a reveal trigger. For 'arrival', `reveal.label` holds the
-// chosen place's name (any place — a museum, a hotel, a landmark — not just a
-// driving waypoint); 'date' formats the ISO date. Phrasing follows the design.
-export function revealLabel(reveal) {
-  if (!reveal || typeof reveal !== 'object') return 'when they choose to'
-  if (reveal.type === 'arrival') return `when you arrive at ${reveal.label || reveal.at || 'the place'}`
+// Human label for a reveal trigger, phrased for the viewer. `asAuthor` is the
+// secret-keeper's own view (the "You're keeping" list / the composer
+// consequence); the default is the recipient/teaser view. For 'arrival',
+// `reveal.label` holds the chosen place's name (any place — a museum, a hotel,
+// a landmark — not just a driving waypoint); 'date' formats the ISO date.
+// (Copy fix 2026-06-13: manual reveal read "when they choose to" — wrong for
+// both viewers; it's the AUTHOR who reveals it manually.)
+export function revealLabel(reveal, asAuthor = false) {
+  const manual = asAuthor ? 'until you reveal it' : "when the moment's right"
+  if (!reveal || typeof reveal !== 'object') return manual
+  if (reveal.type === 'arrival') {
+    const place = reveal.label || reveal.at || 'the place'
+    return asAuthor ? `when they arrive at ${place}` : `when you arrive at ${place}`
+  }
   if (reveal.type === 'date') return `on ${formatRevealDate(reveal.at)}`
-  return 'when they choose to'
+  return manual
+}
+
+// ── Wrap pickers (composer rebuild) — map REAL trip data into the item shape
+//    the "wrap something real" pickers render: { id, kind, icon, title, meta }.
+//    A wrapped photo/memory's `id` IS the real memory id → wrapping attaches the
+//    masking layer to that memory (so it actually disappears for the hidden-from
+//    person). A stop's id is the itinerary stop id. ───────────────────────────
+const STOP_GLYPH = {
+  lodging: '🛏️', breakfast: '🍳', lunch: '🥪', dinner: '🍽️', snack: '🍪',
+  museum: '🏛️', art: '🎨', history: '🏛️', show: '🎭', theater: '🎭',
+  beach: '🏖️', walk: '🚶', tour: '🧭', sights: '📸', browse: '🛍️',
+  drive: '🚗', travel: '✈️', arrival: '📍', lodging_default: '📍',
+}
+export function stopGlyph(kind) {
+  return STOP_GLYPH[String(kind || '').toLowerCase()] || '📍'
+}
+export function memGlyph(kind) {
+  return kind === 'photo' ? '🖼️' : kind === 'voice' ? '🎙️' : '✍️'
+}
+
+// "Sat · 9:34 AM"-style meta from a memory's capture/creation time + its place.
+function wrapMeta(m, trip) {
+  const iso = m.capturedAt || m.createdAt || null
+  let when = ''
+  if (typeof iso === 'string') {
+    const d = new Date(iso)
+    if (!Number.isNaN(d.getTime())) {
+      const day = d.toLocaleDateString(undefined, { weekday: 'short' })
+      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      when = `${day} · ${time}`
+    }
+  }
+  const place = stopName(trip, m.stopId)
+  return [place, when].filter(Boolean).join(' · ')
+}
+
+function stopName(trip, stopId) {
+  if (!trip || !stopId) return ''
+  for (const d of trip.days || []) {
+    for (const s of d.stops || []) {
+      if (s?.id === stopId) return s.name || s.title || ''
+    }
+  }
+  return ''
+}
+
+// Items for the "A photo" / "A memory" / "A stop" wrap pickers. Excludes
+// memories that are ALREADY surprises (you don't wrap a surprise). Photo kind →
+// photo memories; memory kind → note/voice memories; stop kind → located stops.
+export function wrapItemsForKind(kind, { memories = [], trip = null } = {}) {
+  if (kind === 'A stop') {
+    const out = []
+    for (const d of trip?.days || []) {
+      for (const s of d.stops || []) {
+        if (s && s.id && Number.isFinite(s.lat) && Number.isFinite(s.lng)) {
+          out.push({
+            id: s.id, kind: 'stop', icon: stopGlyph(s.kind),
+            title: s.name || s.title || 'A place',
+            meta: [s.time, s.name].filter(Boolean).join(' · '),
+            loc: s.name || s.title || 'the stop', stopId: s.id,
+          })
+        }
+      }
+    }
+    return out
+  }
+  const wantPhoto = kind === 'A photo'
+  return (Array.isArray(memories) ? memories : [])
+    .filter((m) => m && m.id && !isSurprise(m) && !m.masked)
+    .filter((m) => (wantPhoto ? m.kind === 'photo' : m.kind === 'text' || m.kind === 'voice'))
+    .map((m) => ({
+      id: m.id,
+      kind: wantPhoto ? 'photo' : 'memory',
+      icon: memGlyph(m.kind),
+      title: m.caption || m.text || (wantPhoto ? 'A photo' : 'A note'),
+      meta: wrapMeta(m, trip),
+      memory: m,
+    }))
+}
+
+// Resolve a wrapped item back from its refId (for edit pre-fill).
+export function findWrapItem(kind, refId, ctx) {
+  if (!refId) return null
+  return wrapItemsForKind(kind, ctx).find((i) => i.id === refId) || null
 }
 
 // ── Predicates ───────────────────────────────────────────────────────────────

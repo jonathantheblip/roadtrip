@@ -20,9 +20,10 @@ import { TRAVELER_ORDER, TRAVELER_DOT } from '../data/travelers'
 import {
   saveMemory,
   listTripSurpriseRecords,
+  listMemoriesForTrip,
   revealSurprise,
 } from '../lib/memoryStore'
-import { authoredSurprises, teasersMaskedFrom, revealedForViewer, tripSurprisesKeptBy, displayName, revealLabel } from '../lib/surprises'
+import { authoredSurprises, teasersMaskedFrom, revealedForViewer, tripSurprisesKeptBy, displayName, revealLabel, wrapItemsForKind, memGlyph } from '../lib/surprises'
 
 // Normalize a whole-trip surprise (3b) into the kept-card shape so the same card
 // UI renders it. `isTrip`/`_trip` let doReveal/openEdit route to the trip write.
@@ -61,6 +62,12 @@ const Ic = {
   plus: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>,
   x: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>,
   eye: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>,
+  eyeOff: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M6.1 6.1A18.4 18.4 0 0 0 2 12s3.6 8 10 8a9 9 0 0 0 5.9-2.1M2 2l20 20" /></svg>,
+  check: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>,
+  right: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>,
+  search: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>,
+  gift: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M12 8v13M5 12v9h14v-9M12 8S10 2 7.5 4 12 8 12 8zM12 8s2-6 4.5-4S12 8 12 8z" /></svg>,
+  pencil: (p) => <svg width={p.s || 18} height={p.s || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>,
 }
 
 // Mount transition. presets: 'sheet' (slide up) | 'pop'. Settles to a visible
@@ -157,35 +164,38 @@ export function SurprisesView({ trip, trips, traveler, tripsApi, onClose }) {
   }
 
   function onCreate(payload) {
-    if (payload.surprise?.what === 'The whole trip') {
+    const mask = {
+      hideFrom: payload.hideFrom,
+      reveal: payload.reveal,
+      conceal: payload.conceal,
+      cover: payload.cover,
+    }
+    if (payload.source === 'trip') {
       // Whole-trip surprise (3b): mark a real TRIP hidden (rides in data_json,
       // no schema change). The target is the edited trip or the active trip.
-      const target = (payload.id && (trips || []).find((t) => t.id === payload.id)) || trip
+      const target = (payload.refId && (trips || []).find((t) => t.id === payload.refId)) || trip
       if (target && tripsApi) {
-        tripsApi.upsertTrip({
-          ...target,
-          surprise: {
-            author: traveler,
-            hideFrom: payload.hideFrom,
-            reveal: payload.reveal,
-            conceal: payload.conceal,
-            cover: payload.cover,
-            revealed: target.surprise?.revealed || undefined,
-          },
-        })
+        tripsApi.upsertTrip({ ...target, surprise: { author: traveler, ...mask, revealed: target.surprise?.revealed || undefined } })
       }
+    } else if (payload.source === 'wrap' && payload.memory) {
+      // WRAP: attach the masking layer to the REAL memory so it actually
+      // disappears for the hidden-from person. Spread the whole memory first —
+      // saveMemory builds the record from its args, so the content (text /
+      // caption / photoRefs / stopId / kind) must ride along or it'd be wiped.
+      saveMemory({ ...payload.memory, ...mask, surprise: payload.surprise })
     } else {
-      // payload.id present → editing an existing memory surprise (upsert by id).
+      // DESCRIBE: a new (or edited) content memory carrying the typed secret +
+      // masking. The typed title becomes the memory's text so it reads as a
+      // real memory once revealed.
       saveMemory({
-        id: payload.id,
+        id: payload.id || undefined,
         tripId,
         stopId: null,
         authorTraveler: traveler,
         visibility: 'shared',
-        hideFrom: payload.hideFrom,
-        reveal: payload.reveal,
-        conceal: payload.conceal,
-        cover: payload.cover,
+        kind: 'text',
+        text: payload.surprise.title,
+        ...mask,
         surprise: payload.surprise,
       })
     }
@@ -296,7 +306,7 @@ export function SurprisesView({ trip, trips, traveler, tripsApi, onClose }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                         <span style={{ color: 'var(--faint)', display: 'flex' }}><Ic.lock s={12} /></span>
                         <span style={{ fontFamily: 'var(--font-body)', fontSize: 9, letterSpacing: 0.5, color: 'var(--muted)' }}>
-                          hidden from {(s.hideFrom || []).map((id) => displayName(id, traveler)).join(' & ')} · {revealLabel(s.reveal)}
+                          hidden from {(s.hideFrom || []).map((id) => displayName(id, traveler)).join(' & ')} · {revealLabel(s.reveal, true)}
                         </span>
                       </div>
                       {!done && (
@@ -370,21 +380,135 @@ function CoverCard({ traveler, s, serif, r }) {
 }
 
 // ── THE COMPOSER ─────────────────────────────────────────────────────────────
-// Create OR edit a surprise. `editing` (a surprise record) pre-fills every
-// field so the secret-keeper can change how/when/who it reveals after the fact.
-// "On a date" captures a real date; "When they arrive" captures a real place
-// (any stop with a location — a museum, a hotel, anywhere) for the geofence.
+// Create OR edit a surprise (Design's "Plan a surprise" rebuild). After the KIND
+// chip, a CONTENT STEP unfolds: WRAP a real photo/memory (so the surprise carries
+// real content + actually disappears for the hidden-from person) OR DESCRIBE a new
+// one (a typed title + details). "The whole trip" binds to the real trip.
+// SLICE 1 scope: photo / memory / describe / whole-trip. "A stop" wrapping needs
+// the per-stop hiding machinery (Slice 2); the Claude cover-assist is Slice 3.
+const WHAT_ICON = { 'A stop': '📍', 'A photo': '🖼️', 'A memory': '💭', 'The whole trip': '🗺️' }
+const WHAT_NOUN = { 'A stop': 'stop', 'A photo': 'photo', 'A memory': 'memory', 'The whole trip': 'trip' }
+
+// A wrapped item rebuilt from an existing surprise record (for edit pre-fill).
+// The wrap picker filters OUT surprises, so the editor can't re-find it there.
+function wrapItemFromRecord(rec) {
+  if (!rec) return null
+  return {
+    id: rec.id,
+    kind: rec.kind === 'photo' ? 'photo' : 'memory',
+    icon: rec.surprise?.icon || memGlyph(rec.kind),
+    title: rec.surprise?.title || rec.caption || rec.text || 'A memory',
+    meta: rec.surprise?.detail || '',
+    tint: rec.surprise?.tint || '#5C5048',
+    memory: rec,
+  }
+}
+
+// Gradient thumb placeholder (real media swap is a later polish; the prototype
+// uses the same gradient + glyph). Reuses the file's `shade`.
+function ThumbBox({ size = 44, tint = '#5C5048', icon, radius = 10 }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: radius, flexShrink: 0, position: 'relative', overflow: 'hidden', background: `linear-gradient(150deg, ${shade(tint, 22)}, ${tint} 48%, ${shade(tint, -20)})` }}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(size * 0.42) }}>{icon}</div>
+    </div>
+  )
+}
+
+const MONO = { fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }
+
+function TInput({ r, value, onChange, placeholder, area }) {
+  const common = { width: '100%', boxSizing: 'border-box', padding: '11px 13px', borderRadius: Math.min(r, 12), border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)', fontFamily: 'var(--font-body)', fontSize: 14, outline: 'none', resize: 'none', lineHeight: 1.4 }
+  return area
+    ? <textarea rows={2} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} style={common} />
+    : <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} style={common} />
+}
+
+function ItemRow({ r, serif, traveler, item, on, onClick }) {
+  return (
+    <button type="button" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: 8, borderRadius: Math.min(r, 13), cursor: 'pointer', border: `1px solid ${on ? 'var(--accent)' : 'transparent'}`, background: on ? 'var(--bg2)' : 'transparent', color: 'var(--text)' }}>
+      <ThumbBox size={44} tint={item.tint} icon={item.icon} radius={Math.min(r - 4, 10)} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontFamily: serif, fontSize: 14, fontWeight: traveler === 'rafa' ? 600 : 500, fontStyle: traveler === 'aurelia' ? 'italic' : 'normal', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</span>
+        {item.meta && <span style={{ display: 'block', ...MONO, fontSize: 8.5, letterSpacing: 0.6, color: 'var(--muted)', marginTop: 3 }}>{item.meta}</span>}
+      </span>
+      {on
+        ? <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink, #fff)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Ic.check s={12} /></span>
+        : <span style={{ color: 'var(--muted)', display: 'flex' }}><Ic.right s={15} /></span>}
+    </button>
+  )
+}
+
+function StripCard({ r, serif, traveler, item, on, onClick, big }) {
+  const w = big ? 116 : 92
+  return (
+    <button type="button" onClick={onClick} aria-label={item.title} style={{ flexShrink: 0, width: w, textAlign: 'left', cursor: 'pointer', background: 'transparent', border: 'none', padding: 0, color: 'var(--text)' }}>
+      <div style={{ width: w, height: big ? 116 : 92, borderRadius: Math.min(r, big ? 18 : 13), overflow: 'hidden', position: 'relative', boxShadow: on ? '0 0 0 3px var(--accent), 0 0 0 5px var(--bg)' : 'none' }}>
+        <ThumbBox size={w} tint={item.tint} icon={item.icon} radius={0} />
+        {on && <span style={{ position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink, #fff)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Ic.check s={13} /></span>}
+      </div>
+      <div style={{ fontFamily: serif, fontSize: big ? 12.5 : 11, fontStyle: traveler === 'aurelia' ? 'italic' : 'normal', color: 'var(--muted)', marginTop: 6, lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.title}</div>
+    </button>
+  )
+}
+
+function WrapPicker({ r, serif, traveler, items, picked, onPick, big }) {
+  const [q, setQ] = useState('')
+  const ql = q.trim().toLowerCase()
+  const filtered = ql ? items.filter((i) => `${i.title} ${i.meta}`.toLowerCase().includes(ql)) : items
+  return (
+    <div>
+      {!ql && items.length > 0 && (
+        <div style={{ display: 'flex', gap: 11, overflowX: 'auto', padding: '2px 0 4px', margin: '0 -2px' }}>
+          {items.slice(0, big ? 5 : 7).map((i) => <StripCard key={i.id} r={r} serif={serif} traveler={traveler} item={i} on={picked && picked.id === i.id} onClick={() => onPick(i)} big={big} />)}
+        </div>
+      )}
+      <div style={{ position: 'relative', marginTop: 12 }}>
+        <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--muted)', display: 'flex' }}><Ic.search s={15} /></span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search this trip…" aria-label="Search this trip" style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px 10px 36px', borderRadius: 999, border: '1px solid var(--line-bold)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'var(--font-body)', fontSize: 13.5, outline: 'none' }} />
+      </div>
+      <div style={{ marginTop: 8, maxHeight: 196, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {filtered.length === 0
+          ? <div style={{ fontFamily: serif, fontSize: 13, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', padding: '14px 8px' }}>{items.length === 0 ? 'Nothing of yours to wrap on this trip yet — try “Describe something new”.' : `Nothing matches “${q}”.`}</div>
+          : filtered.map((i) => <ItemRow key={i.id} r={r} serif={serif} traveler={traveler} item={i} on={picked && picked.id === i.id} onClick={() => onPick(i)} />)}
+      </div>
+    </div>
+  )
+}
+
+function SelectedSecret({ r, serif, traveler, isNew, item, onClear }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 11, borderRadius: Math.min(r, 14), border: '1px solid var(--accent)', background: 'var(--card)' }}>
+      <ThumbBox size={46} tint={item.tint} icon={item.icon} radius={Math.min(r - 4, 11)} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ ...MONO, fontSize: 8, letterSpacing: 1, color: 'var(--accent-text)', fontWeight: 600 }}>{isNew ? 'New · not on the trip yet' : 'Wrapped from the trip'}</div>
+        <div style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, fontStyle: traveler === 'aurelia' ? 'italic' : 'normal', lineHeight: 1.2, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || 'Untitled'}</div>
+        {item.meta && <div style={{ ...MONO, fontSize: 8.5, letterSpacing: 0.4, color: 'var(--muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.meta}</div>}
+      </div>
+      <button type="button" onClick={onClear} aria-label="Change" style={{ flexShrink: 0, background: 'transparent', border: '1px solid var(--line-bold)', borderRadius: 999, padding: '6px 11px', cursor: 'pointer', color: 'var(--muted)', ...MONO, fontSize: 8.5, letterSpacing: 0.8, fontWeight: 600 }}>Change</button>
+    </div>
+  )
+}
+
 function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   const serif = 'var(--font-display, var(--font-body, system-ui))'
   const heavy = traveler === 'rafa' ? 700 : 600
   const ital = traveler === 'aurelia' ? 'italic' : 'normal'
   const r = RADIUS[traveler] ?? 8
-  const whats = [['A stop', '📍'], ['A photo', '🖼️'], ['A memory', '💭'], ['The whole trip', '🗺️']]
   const family = TRAVELER_ORDER.filter((id) => id !== traveler)
+  const allowDescribe = traveler !== 'rafa' // kids wrap real photos, no typing
+  const bigThumbs = traveler === 'rafa'
+  // SLICE 1 kinds: Rafa = just photos; others = photo / memory / whole-trip.
+  // "A stop" is held for Slice 2 (it needs per-stop hiding).
+  const kinds = bigThumbs ? [['A photo', '🖼️']] : [['A photo', '🖼️'], ['A memory', '💭'], ['The whole trip', '🗺️']]
 
-  // Every place on the trip that has a location — the arrival picker. Any kind
-  // of place qualifies (lodging, a landmark, a restaurant); nothing assumes a
-  // driving route.
+  // The author's OWN trip memories — the masking model only lets you hide your
+  // own (the original author always sees their own memory), so the wrap picker
+  // is scoped to what the secret-keeper authored. Excludes existing surprises.
+  const myMemories = useMemo(
+    () => (trip?.id ? listMemoriesForTrip(trip.id, traveler).filter((m) => m.authorTraveler === traveler) : []),
+    [trip?.id, traveler]
+  )
+  // Located stops for the ARRIVAL reveal trigger (geofence target).
   const stops = useMemo(
     () =>
       (trip?.days || []).flatMap((d) =>
@@ -396,50 +520,66 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   )
 
   const ed = editing || null
+  const edTrip = !!ed?.isTrip || ed?.surprise?.what === 'The whole trip'
+  const edSource = ed ? (edTrip ? 'trip' : ed.surprise?.source || 'describe') : null
   const edEveryone = !!ed?.hideFrom?.includes('everyone')
-  const [what, setWhat] = useState(ed?.surprise?.what || 'A stop')
+  const [what, setWhat] = useState(ed ? ed.surprise?.what || 'A photo' : bigThumbs ? 'A photo' : null)
+  const [source, setSource] = useState(ed ? edSource : 'wrap')
+  const [picked, setPicked] = useState(ed && edSource === 'wrap' ? wrapItemFromRecord(ed) : null)
+  const [desc, setDesc] = useState(ed && edSource === 'describe' ? { title: ed.surprise?.title || '', detail: ed.surprise?.detail || '' } : { title: '', detail: '' })
   const [hide, setHide] = useState(ed && !edEveryone ? ed.hideFrom : [family[0]])
   const [everyone, setEveryone] = useState(edEveryone)
   const [reveal, setReveal] = useState(ed?.reveal?.type || 'manual')
-  const [revealDate, setRevealDate] = useState(ed?.reveal?.type === 'date' ? (ed.reveal.at || '') : '')
-  const [revealStopId, setRevealStopId] = useState(ed?.reveal?.type === 'arrival' ? (ed.reveal.at || '') : '')
+  const [revealDate, setRevealDate] = useState(ed?.reveal?.type === 'date' ? ed.reveal.at || '' : '')
+  const [revealStopId, setRevealStopId] = useState(ed?.reveal?.type === 'arrival' ? ed.reveal.at || '' : '')
   const [conceal, setConceal] = useState(ed?.conceal || 'teaser')
   const [cov, setCov] = useState(ed?.cover || { icon: '🚶', title: '', loc: '', time: '', weather: '', packing: '' })
   const setC = (k, v) => setCov((o) => ({ ...o, [k]: v }))
   const toggleHide = (id) => { setEveryone(false); setHide((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id])) }
-  const coverReady = conceal !== 'cover' || (cov.title.trim() && cov.packing.trim())
+
+  const isTrip = what === 'The whole trip'
+  const noun = WHAT_NOUN[what || 'A photo'] || 'thing'
+  const setKind = (k) => {
+    setWhat(k)
+    if (k === 'The whole trip') { setSource('trip'); if (reveal === 'arrival') setReveal('manual') }
+    else if (source === 'trip') setSource('wrap')
+    setPicked(null)
+  }
+
+  const contentReady = isTrip || (source === 'wrap' ? !!picked : !!desc.title.trim())
   const revealReady = reveal === 'manual' || (reveal === 'date' && !!revealDate) || (reveal === 'arrival' && !!revealStopId)
-  const valid = (everyone || hide.length > 0) && coverReady && revealReady
-  const whoNames = everyone ? 'anyone' : hide.map((id) => displayName(id, traveler)).join(' or ') || 'them'
-  // A whole trip has no single arrival point, so it reveals manually or on a date.
-  const isWholeTrip = what === 'The whole trip'
-  const reveals = isWholeTrip
+  const coverReady = conceal !== 'cover' || (cov.title.trim() && cov.packing.trim())
+  const whoReady = everyone || hide.length > 0
+  const valid = contentReady && whoReady && revealReady && coverReady
+  const whoNames = everyone ? 'everyone else' : hide.map((id) => displayName(id, traveler)).join(' & ') || 'them'
+  const reveals = isTrip
     ? [['manual', 'When I choose'], ['date', 'On a date']]
     : [['manual', 'When I choose'], ['arrival', 'When they arrive'], ['date', 'On a date']]
+  const arrivalStop = stops.find((s) => s.id === revealStopId)
+  const consequenceReveal = revealLabel({ type: reveal, label: arrivalStop?.name, at: revealDate }, true)
 
   function create() {
     let revealObj
     if (reveal === 'date') revealObj = { type: 'date', at: revealDate }
-    else if (reveal === 'arrival') {
-      const st = stops.find((s) => s.id === revealStopId)
-      revealObj = st ? { type: 'arrival', at: st.id, label: st.name, lat: st.lat, lng: st.lng } : { type: 'arrival' }
-    } else revealObj = { type: 'manual' }
-    const base = ed?.surprise || {}
+    else if (reveal === 'arrival') revealObj = arrivalStop ? { type: 'arrival', at: arrivalStop.id, label: arrivalStop.name, lat: arrivalStop.lat, lng: arrivalStop.lng } : { type: 'arrival' }
+    else revealObj = { type: 'manual' }
+    const cover = conceal === 'cover'
+      ? { icon: cov.icon, title: cov.title.trim() || 'A quiet stop', loc: cov.loc.trim() || 'TBD', time: cov.time.trim() || 'same time', weather: cov.weather.trim() || '—', packing: cov.packing.trim() || '—', ...(cov.dayIso ? { dayIso: cov.dayIso } : {}) }
+      : undefined
+    let blob
+    if (isTrip) blob = { what, icon: '🗺️', title: trip?.title || 'The whole trip', detail: trip?.dateRange || '', tint: '#3A5A7A', source: 'trip' }
+    else if (source === 'wrap') blob = { what, icon: picked.icon, title: picked.title, detail: picked.meta || '', tint: picked.tint || '#5C5048', source: 'wrap' }
+    else blob = { what, icon: WHAT_ICON[what] || '🎁', title: desc.title.trim(), detail: desc.detail.trim() || `A new ${noun} you're keeping secret.`, tint: '#5C5048', source: 'describe' }
     onCreate({
-      id: ed?.id,
+      source: isTrip ? 'trip' : source,
+      id: ed ? ed.id : undefined,
+      refId: isTrip ? trip?.id : source === 'wrap' ? picked?.id : undefined,
+      memory: !isTrip && source === 'wrap' ? picked?.memory : undefined,
       hideFrom: everyone ? ['everyone'] : hide,
       reveal: revealObj,
       conceal,
-      cover: conceal === 'cover'
-        ? { icon: cov.icon, title: cov.title.trim() || 'A quiet stop', loc: cov.loc.trim() || 'TBD', time: cov.time.trim() || 'same time', weather: cov.weather.trim() || '—', packing: cov.packing.trim() || '—', ...(cov.dayIso ? { dayIso: cov.dayIso } : {}) }
-        : undefined,
-      surprise: {
-        what,
-        icon: whats.find((w) => w[0] === what)?.[1] || '🎁',
-        title: base.title || `A new ${what.toLowerCase()}`,
-        detail: base.detail || 'Tap to add the secret details…',
-        tint: base.tint || '#5C5048',
-      },
+      cover,
+      surprise: blob,
     })
   }
 
@@ -456,83 +596,144 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
     fontFamily: 'var(--font-body)', fontSize: 13.5, outline: 'none',
     colorScheme: traveler === 'helen' ? 'light' : 'dark',
   }
+  const wrapItems = !isTrip && source === 'wrap' ? wrapItemsForKind(what || 'A photo', { memories: myMemories, trip }) : []
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 85, display: 'flex', alignItems: 'flex-end' }}>
       <Mounted preset="sheet" onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: 'var(--bg)', color: 'var(--text)', borderTopLeftRadius: Math.min(r + 6, 24), borderTopRightRadius: Math.min(r + 6, 24), maxHeight: '92%', overflow: 'auto', fontFamily: 'var(--font-body)' }}>
         <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom) + 22px)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <div style={{ fontFamily: serif, fontSize: 24, fontWeight: heavy, fontStyle: ital }}>{ed ? 'Edit surprise' : 'Plan a surprise'}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+            <div>
+              <div style={{ fontFamily: serif, fontSize: 24, fontWeight: heavy, fontStyle: ital }}>{ed ? 'Edit surprise' : 'Plan a surprise'}</div>
+              <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 3 }}>{traveler === 'rafa' ? 'Hide something special for someone!' : "Hide a piece of the trip until the moment's right."}</div>
+            </div>
             <button onClick={onClose} aria-label="Close" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted)', display: 'flex' }}><Ic.x s={20} /></button>
           </div>
 
-          <CmpLabel>What are you hiding?</CmpLabel>
+          {/* ① WHAT */}
+          <CmpLabel>{traveler === 'rafa' ? "What's the secret?" : 'What are you hiding?'}</CmpLabel>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {whats.map(([w, e]) => <Chip key={w} on={what === w} onClick={() => { setWhat(w); if (w === 'The whole trip' && reveal === 'arrival') setReveal('manual') }} icon={e}>{w}</Chip>)}
+            {kinds.map(([w, ic]) => <Chip key={w} on={what === w} onClick={() => setKind(w)} icon={ic}>{w}</Chip>)}
           </div>
 
-          <CmpLabel>Hide it from</CmpLabel>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {family.map((id) => <Chip key={id} on={!everyone && hide.includes(id)} onClick={() => toggleHide(id)} dot={TRAVELER_DOT[id]}>{displayName(id, traveler)}</Chip>)}
-            <Chip on={everyone} onClick={() => { setEveryone(true); setHide([]) }} icon="🤫">Everyone</Chip>
-          </div>
-
-          <CmpLabel>Reveal it</CmpLabel>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {reveals.map(([k, label]) => <Chip key={k} on={reveal === k} onClick={() => setReveal(k)}>{label}</Chip>)}
-          </div>
-          {reveal === 'date' && (
-            <input type="date" value={revealDate} onChange={(e) => setRevealDate(e.target.value)} aria-label="Reveal date"
-              style={{ ...fieldStyle, marginTop: 9, width: '100%' }} />
-          )}
-          {reveal === 'arrival' && (
-            stops.length > 0 ? (
-              <select value={revealStopId} onChange={(e) => setRevealStopId(e.target.value)} aria-label="Reveal when arriving at"
-                style={{ ...fieldStyle, marginTop: 9, width: '100%', appearance: 'none' }}>
-                <option value="">Pick a place…</option>
-                {stops.map((s) => <option key={s.id} value={s.id}>{s.name}{s.day ? ` · ${s.day}` : ''}</option>)}
-              </select>
-            ) : (
-              <div style={{ fontFamily: serif, fontSize: 12, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 9, lineHeight: 1.4 }}>No places with a location on this trip yet — add one to reveal on arrival, or pick a date.</div>
-            )
-          )}
-
-          <CmpLabel>What will they see?</CmpLabel>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <Chip on={conceal === 'teaser'} onClick={() => setConceal('teaser')} icon="🎁">A wrapped teaser</Chip>
-            <Chip on={conceal === 'cover'} onClick={() => setConceal('cover')} icon="🪄">A cover story</Chip>
-          </div>
-          {conceal === 'teaser' ? (
-            <div style={{ fontFamily: serif, fontSize: 12, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 9, lineHeight: 1.4 }}>They'll know a surprise is coming — just not what.</div>
-          ) : (
-            <div style={{ marginTop: 11, padding: 13, borderRadius: Math.min(r, 14), border: '1px solid var(--border)', background: 'var(--card)' }}>
-              <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', lineHeight: 1.4, marginBottom: 11 }}>A believable stand-in shows on their plan instead — carrying the real timing + weather so they pack and plan right, never knowing.</div>
-              {!isWholeTrip && trip?.days?.length > 0 && (
-                <select value={cov.dayIso || ''} onChange={(e) => setC('dayIso', e.target.value)} aria-label="Which day it appears on"
-                  style={{ ...fieldStyle, width: '100%', marginBottom: 8, appearance: 'none' }}>
-                  <option value="">Which day on their plan… (optional)</option>
-                  {trip.days.map((d) => <option key={d.isoDate} value={d.isoDate}>{d.title || d.date || d.isoDate}</option>)}
-                </select>
+          {/* CONTENT STEP — discloses once a kind is chosen */}
+          {what && !isTrip && (
+            <div style={{ marginTop: 14 }}>
+              {allowDescribe && (
+                <div style={{ display: 'flex', gap: 6, padding: 4, borderRadius: 999, background: 'var(--bg2)', marginBottom: 14 }}>
+                  {[['wrap', 'Wrap something real', Ic.gift], ['describe', 'Describe something new', Ic.pencil]].map(([k, label, I]) => {
+                    const on = source === k
+                    return (
+                      <button key={k} type="button" onClick={() => { setSource(k); setPicked(null) }} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 8px', borderRadius: 999, border: 'none', cursor: 'pointer', background: on ? 'var(--card)' : 'transparent', color: 'var(--text)', boxShadow: on ? '0 1px 3px rgba(0,0,0,0.14)' : 'none', fontFamily: 'var(--font-body)', fontSize: 12.5, fontWeight: on ? 700 : 500 }}>
+                        <I s={14} />{label}
+                      </button>
+                    )
+                  })}
+                </div>
               )}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {coverFields.map((f) => (
-                  <input key={f.k} value={cov[f.k]} onChange={(e) => setC(f.k, e.target.value)} placeholder={f.ph} aria-label={f.ph} style={{
-                    flex: f.flex, minWidth: 0, padding: '10px 12px', borderRadius: Math.min(r, 12),
-                    border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)',
-                    fontFamily: 'var(--font-body)', fontSize: 13.5, outline: 'none',
-                  }} />
-                ))}
+
+              {source === 'wrap'
+                ? (picked
+                    ? <SelectedSecret r={r} serif={serif} traveler={traveler} isNew={false} item={picked} onClear={() => setPicked(null)} />
+                    : <WrapPicker r={r} serif={serif} traveler={traveler} items={wrapItems} picked={picked} onPick={setPicked} big={bigThumbs} />)
+                : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      <TInput r={r} value={desc.title} onChange={(v) => setDesc((d) => ({ ...d, title: v }))} placeholder={`Title — e.g. ${what === 'A photo' ? "The framed Father's Day print" : 'A note for the thread'}`} />
+                      <TInput r={r} area value={desc.detail} onChange={(v) => setDesc((d) => ({ ...d, detail: v }))} placeholder="Details (optional) — what makes it special" />
+                    </div>
+                  )}
+
+              {contentReady && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 9, fontFamily: serif, fontSize: 12, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', lineHeight: 1.4 }}>
+                  {source === 'wrap'
+                    ? <><Ic.eyeOff s={13} />Hiding it removes this {noun} from their view until it&rsquo;s revealed.</>
+                    : <><Ic.pencil s={12} />New — it isn&rsquo;t on the trip yet, so only you can see it.</>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* whole-trip — bound to the real trip, no picker */}
+          {isTrip && (
+            <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, padding: 13, borderRadius: Math.min(r, 14), border: '1px solid var(--accent)', background: 'var(--card)' }}>
+              <ThumbBox size={46} tint="#3A5A7A" icon="🗺️" radius={Math.min(r - 4, 11)} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ ...MONO, fontSize: 8, letterSpacing: 1, color: 'var(--accent-text)', fontWeight: 600 }}>Bound to the real trip</div>
+                <div style={{ fontFamily: serif, fontSize: 16, fontWeight: heavy, fontStyle: ital, marginTop: 2 }}>{trip?.title || 'This trip'}</div>
+                {trip?.dateRange && <div style={{ ...MONO, fontSize: 8.5, letterSpacing: 0.4, color: 'var(--muted)', marginTop: 3 }}>{trip.dateRange}</div>}
               </div>
             </div>
+          )}
+
+          {/* ② / ③ / ④ — disclose once content is ready */}
+          {contentReady && (
+            <>
+              <CmpLabel>Hide it from</CmpLabel>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {family.map((id) => <Chip key={id} on={!everyone && hide.includes(id)} onClick={() => toggleHide(id)} dot={TRAVELER_DOT[id]}>{displayName(id, traveler)}</Chip>)}
+                <Chip on={everyone} onClick={() => { setEveryone(true); setHide([]) }} icon="🤫">Everyone</Chip>
+              </div>
+              {source === 'wrap' && !isTrip && whoReady && (
+                <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', marginTop: 11, padding: '10px 12px', borderRadius: Math.min(r, 13), background: 'color-mix(in srgb, var(--accent) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 26%, transparent)' }}>
+                  <span style={{ marginTop: 1, color: 'var(--accent-text)', display: 'flex' }}><Ic.eyeOff s={15} /></span>
+                  <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--text)', lineHeight: 1.4 }}>
+                    <b style={{ fontWeight: 600 }}>{whoNames === 'everyone else' ? 'Everyone else' : whoNames}</b> won&rsquo;t see this {noun} in the trip {consequenceReveal}.
+                  </div>
+                </div>
+              )}
+
+              <CmpLabel>Reveal it</CmpLabel>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {reveals.map(([k, label]) => <Chip key={k} on={reveal === k} onClick={() => setReveal(k)}>{label}</Chip>)}
+              </div>
+              {reveal === 'date' && (
+                <input type="date" value={revealDate} onChange={(e) => setRevealDate(e.target.value)} aria-label="Reveal date" style={{ ...fieldStyle, marginTop: 9, width: '100%' }} />
+              )}
+              {reveal === 'arrival' && (
+                stops.length > 0 ? (
+                  <select value={revealStopId} onChange={(e) => setRevealStopId(e.target.value)} aria-label="Reveal when arriving at" style={{ ...fieldStyle, marginTop: 9, width: '100%', appearance: 'none' }}>
+                    <option value="">Pick a place…</option>
+                    {stops.map((s) => <option key={s.id} value={s.id}>{s.name}{s.day ? ` · ${s.day}` : ''}</option>)}
+                  </select>
+                ) : (
+                  <div style={{ fontFamily: serif, fontSize: 12, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 9, lineHeight: 1.4 }}>No places with a location on this trip yet — add one to reveal on arrival, or pick a date.</div>
+                )
+              )}
+
+              <CmpLabel>What will they see?</CmpLabel>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <Chip on={conceal === 'teaser'} onClick={() => setConceal('teaser')} icon="🎁">A wrapped teaser</Chip>
+                <Chip on={conceal === 'cover'} onClick={() => setConceal('cover')} icon="🪄">A cover story</Chip>
+              </div>
+              {conceal === 'teaser' ? (
+                <div style={{ fontFamily: serif, fontSize: 12, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 9, lineHeight: 1.4 }}>They&rsquo;ll know a surprise is coming — just not what.</div>
+              ) : (
+                <div style={{ marginTop: 11, padding: 13, borderRadius: Math.min(r, 14), border: '1px solid var(--border)', background: 'var(--card)' }}>
+                  <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', lineHeight: 1.4, marginBottom: 11 }}>A believable stand-in shows on their plan instead — carrying the real timing + weather so they pack and plan right, never knowing.</div>
+                  {!isTrip && trip?.days?.length > 0 && (
+                    <select value={cov.dayIso || ''} onChange={(e) => setC('dayIso', e.target.value)} aria-label="Which day it appears on" style={{ ...fieldStyle, width: '100%', marginBottom: 8, appearance: 'none' }}>
+                      <option value="">Which day on their plan… (optional)</option>
+                      {trip.days.map((d) => <option key={d.isoDate} value={d.isoDate}>{d.title || d.date || d.isoDate}</option>)}
+                    </select>
+                  )}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {coverFields.map((f) => (
+                      <input key={f.k} value={cov[f.k]} onChange={(e) => setC(f.k, e.target.value)} placeholder={f.ph} aria-label={f.ph} style={{ flex: f.flex, minWidth: 0, padding: '10px 12px', borderRadius: Math.min(r, 12), border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)', fontFamily: 'var(--font-body)', fontSize: 13.5, outline: 'none' }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           <button disabled={!valid} onClick={create} style={{ width: '100%', marginTop: 20, padding: 15, borderRadius: 999, border: 'none', cursor: valid ? 'pointer' : 'default', background: valid ? 'var(--accent)' : 'var(--bg2)', color: valid ? 'var(--accent-ink, #fff)' : 'var(--faint)', fontFamily: 'var(--font-body)', fontSize: 11, letterSpacing: 1.6, textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
             <Ic.lock s={14} /> {ed ? 'Save changes' : conceal === 'cover' ? 'Hide it behind the cover' : 'Keep it secret'}
           </button>
           <div style={{ fontFamily: serif, fontSize: 12, fontStyle: 'italic', color: 'var(--muted)', textAlign: 'center', marginTop: 10 }}>
-            {conceal === 'cover'
-              ? `${whoNames === 'anyone' ? 'Everyone else' : whoNames} will see the cover — Claude plans them around it, never the real thing.`
-              : `Claude won't see it for ${whoNames} until it's revealed.`}
+            {!contentReady ? "Pick what you're hiding to continue."
+              : conceal === 'cover'
+                ? `${whoNames === 'everyone else' ? 'Everyone else' : whoNames} will see the cover — Claude plans them around it, never the real thing.`
+                : `Claude won't see it for ${whoNames} until it's revealed.`}
           </div>
         </div>
       </Mounted>
