@@ -24,6 +24,7 @@ import {
   revealSurprise,
 } from '../lib/memoryStore'
 import { authoredSurprises, teasersMaskedFrom, revealedForViewer, tripSurprisesKeptBy, stopSurprisesKeptBy, displayName, revealLabel, wrapItemsForKind, memGlyph, stopGlyph } from '../lib/surprises'
+import { draftCover } from '../lib/workerSync'
 
 // Normalize a whole-trip surprise (3b) into the kept-card shape so the same card
 // UI renders it. `isTrip`/`_trip` let doReveal/openEdit route to the trip write.
@@ -605,6 +606,8 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   const [conceal, setConceal] = useState(ed?.conceal || 'teaser')
   const [cov, setCov] = useState(ed?.cover || { icon: '🚶', title: '', loc: '', time: '', weather: '', packing: '' })
   const setC = (k, v) => setCov((o) => ({ ...o, [k]: v }))
+  const [coverBusy, setCoverBusy] = useState(false)
+  const [coverErr, setCoverErr] = useState('')
   const toggleHide = (id) => { setEveryone(false); setHide((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id])) }
 
   const isTrip = what === 'The whole trip'
@@ -628,6 +631,49 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
     : [['manual', 'When I choose'], ['arrival', 'When they arrive'], ['date', 'On a date']]
   const arrivalStop = stops.find((s) => s.id === revealStopId)
   const consequenceReveal = revealLabel({ type: reveal, label: arrivalStop?.name, at: revealDate }, true)
+
+  // Slice 3: ask the worker (Claude) to draft a believable cover from the REAL
+  // hidden thing + trip + reveal timing + whatever the author has typed. Only the
+  // author runs this (they know the secret), so sending the real thing leaks
+  // nothing. On any failure → an honest "fill it in by hand" note (no throw).
+  async function suggestCover() {
+    if (coverBusy) return
+    setCoverErr('')
+    setCoverBusy(true)
+    try {
+      const realTitle = isTrip ? trip?.title : (isStop || source === 'wrap') ? picked?.title : desc.title
+      const realDetail = isTrip ? trip?.dateRange : (isStop || source === 'wrap') ? picked?.meta : desc.detail
+      const stopNames = (trip?.days || [])
+        .flatMap((d) => (d.stops || []).map((s) => s.name || s.title))
+        .filter(Boolean).slice(0, 12).join(', ')
+      const out = await draftCover({
+        kind: noun,
+        title: realTitle || 'a surprise',
+        detail: realDetail || '',
+        trip: [trip?.title, trip?.dateRange].filter(Boolean).join(' · '),
+        stops: stopNames,
+        when: consequenceReveal,
+        hideFrom: whoNames,
+        seed: { icon: cov.icon, title: cov.title, loc: cov.loc, time: cov.time, weather: cov.weather, packing: cov.packing },
+      })
+      if (!out) { setCoverErr("Couldn't reach Claude — fill it in by hand."); return }
+      // Keep whatever the author already typed only where Claude returned blank;
+      // preserve the chosen day. The author can still edit every field after.
+      setCov((prev) => ({
+        icon: out.icon || prev.icon,
+        title: out.title || prev.title,
+        loc: out.loc || prev.loc,
+        time: out.time || prev.time,
+        weather: out.weather || prev.weather,
+        packing: out.packing || prev.packing,
+        ...(prev.dayIso ? { dayIso: prev.dayIso } : {}),
+      }))
+    } catch {
+      setCoverErr("Couldn't reach Claude — fill it in by hand.")
+    } finally {
+      setCoverBusy(false)
+    }
+  }
 
   function create() {
     let revealObj
@@ -792,6 +838,11 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
                       {trip.days.map((d) => <option key={d.isoDate} value={d.isoDate}>{d.title || d.date || d.isoDate}</option>)}
                     </select>
                   )}
+                  {/* Slice 3 — Claude cover-assist: drafts a believable stand-in. */}
+                  <button type="button" onClick={suggestCover} disabled={coverBusy} aria-label="Suggest a cover with Claude" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', marginBottom: 9, padding: '11px 12px', borderRadius: Math.min(r, 12), cursor: coverBusy ? 'default' : 'pointer', border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent-text, var(--accent))', fontFamily: 'var(--font-body)', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
+                    {coverBusy ? '✦ Writing a cover…' : (cov.title.trim() ? '✦ Fill in the rest with Claude' : '✦ Suggest a cover with Claude')}
+                  </button>
+                  {coverErr && <div style={{ fontFamily: serif, fontSize: 11.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginBottom: 9, lineHeight: 1.4 }}>{coverErr}</div>}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {coverFields.map((f) => (
                       <input key={f.k} value={cov[f.k]} onChange={(e) => setC(f.k, e.target.value)} placeholder={f.ph} aria-label={f.ph} style={{ flex: f.flex, minWidth: 0, padding: '10px 12px', borderRadius: Math.min(r, 12), border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)', fontFamily: 'var(--font-body)', fontSize: 13.5, outline: 'none' }} />

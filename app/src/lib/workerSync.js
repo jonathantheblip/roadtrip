@@ -98,6 +98,35 @@ export async function shareMemory(memoryId) {
   return r.json()
 }
 
+// ─── Surprises: Claude cover-assist (Slice 3) ───────────────────────────────
+// Ask the worker to draft a believable cover story for a surprise. The worker
+// owns the prompt + the Anthropic key. Returns the 6 normalized cover fields, or
+// null on ANY failure (worker not configured / 503 no key / network / parse) so
+// the composer cleanly falls back to "fill it in by hand". `context` =
+// { kind, title, detail, trip, stops, when, hideFrom, seed }.
+export async function draftCover(context) {
+  if (!isWorkerConfigured()) return null
+  try {
+    const r = await workerFetch('/cover', {
+      method: 'POST',
+      body: JSON.stringify({ context }),
+    })
+    const data = await r.json()
+    if (!data || typeof data.title !== 'string' || !data.title.trim()) return null
+    const s = (v) => (typeof v === 'string' ? v.trim() : '')
+    return {
+      icon: s(data.icon).slice(0, 4),
+      title: s(data.title),
+      loc: s(data.loc),
+      time: s(data.time),
+      weather: s(data.weather),
+      packing: s(data.packing),
+    }
+  } catch {
+    return null
+  }
+}
+
 // ─── Memories ─────────────────────────────────────────────────────────
 
 export async function pullAll() {
