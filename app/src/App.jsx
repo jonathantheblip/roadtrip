@@ -24,6 +24,7 @@ import { InstallIdentity } from './views/InstallIdentity'
 import { TheWeave } from './views/TheWeave'
 import { WeaveBook } from './views/WeaveBook'
 import { SurprisesView } from './views/SurprisesView'
+import { ShareComposer } from './components/ShareComposer'
 // "Show me, me" (the on-device face recognizer) is lazy-loaded so its
 // model + index code stays out of the main bundle until it's opened.
 const PersonView = lazy(() => import('./views/PersonView').then((m) => ({ default: m.PersonView })))
@@ -455,6 +456,13 @@ export default function App() {
   const [weaveReady, setWeaveReady] = useState(false)
   const [bookHasPages, setBookHasPages] = useState(false)
   const [topMenuOpen, setTopMenuOpen] = useState(false) // top-bar overflow (⋯)
+  const [composeOpen, setComposeOpen] = useState(false) // share-out Composer (E1) overlay
+  // ?compose=1 opens the Composer directly (temp deep-link, like ?surprises=1).
+  useEffect(() => {
+    try {
+      if (new URL(window.location.href).searchParams.get('compose') === '1') setComposeOpen(true)
+    } catch { /* ignore */ }
+  }, [])
   const weaveGenRef = useRef(0)
   // Surprises (Slice 2). `surpriseTick` recomputes the two cheap derived bits
   // below after a surprise is authored / revealed. Recompute also on view change
@@ -698,6 +706,11 @@ export default function App() {
     setView({ name: 'surprises' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
+  // SHARE-OUT Phase 2 / Composer (E1). TEMP entry in the overflow menu (designed
+  // placement TBD). A bottom-sheet overlay over the current surface — not a view.
+  function openCompose() {
+    setComposeOpen(true)
+  }
   // Returns the upsert result so NewTrip can show an inline error and
   // stay put on failure (no navigation), per change order §3.4. On
   // success we go straight into the editor — Helen continues adding
@@ -765,6 +778,11 @@ export default function App() {
           engaged otherwise. Reveals fire while the app is foreground. */}
       {watchArrival && (
         <ArrivalRevealWatcher trip={trip} traveler={traveler} trips={visibleTrips} tripsApi={tripsApi} onReveal={() => setSurpriseTick((t) => t + 1)} />
+      )}
+      {/* Share-out Composer (E1) — a bottom-sheet overlay over the current
+          surface; trip-scoped (composes from the open trip's shared photos). */}
+      {composeOpen && (tripForView || trip) && (
+        <ShareComposer trip={tripForView || trip} traveler={traveler} onClose={() => setComposeOpen(false)} />
       )}
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
@@ -998,6 +1016,7 @@ export default function App() {
                           { label: 'Replay', glyph: '▶', onClick: () => openReplay() },
                           { label: 'Live map', glyph: '▣', onClick: openMap },
                           { label: 'Surprises', glyph: '🎁', onClick: openSurprises },
+                          { label: 'Share a moment', glyph: '🖼', onClick: openCompose },
                         ]
                       : []),
                     ...(trip && bookHasPages ? [{ label: 'The book', glyph: '❏', onClick: openBook }] : []),

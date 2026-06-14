@@ -299,3 +299,29 @@ test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
     })
   }
 })
+
+// Share-out Phase 2 / E1 — the in-app Composer (a new visible surface). Seed a
+// shared photo so the select grid + caption + Share button render, then gate
+// contrast per persona (the sheet themes via the app's vars like the others).
+test.describe('a11y (axe, serious+critical) — Share Composer ×4 personas', () => {
+  for (const p of TRAVELERS) {
+    test(`share composer — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await seedMemoriesIntoCache(page, [{
+        id: 'axe-compose-photo', tripId: 'volleyball-2026', stopId: 'vb1-3', authorTraveler: p,
+        visibility: 'shared', kind: 'photo', caption: 'a shared photo',
+        photoRefs: [{ storage: 'r2', key: 'k-axe', url: TINY_RED_PNG_DATA_URL }],
+        createdAt: '2026-05-22T18:00:00.000Z', capturedAt: '2026-05-22T18:00:00.000Z',
+      }])
+      await page.goto(`/?person=${p}&trip=volleyball-2026&compose=1&nosw=1`)
+      await expect(page.getByTestId('share-composer')).toBeVisible()
+      // Select the photo so the "selected" badge + active Share button also render.
+      await page.getByRole('button', { name: 'Select photo' }).first().click()
+      await expectNoSeriousA11y(page, {
+        include: '[data-testid="share-composer"]',
+        only: ['color-contrast'],
+        label: `share composer (${p})`,
+      })
+    })
+  }
+})
