@@ -16,6 +16,8 @@
 // the masking allowlist (see share.js shareViewFromMemory); this file renders
 // ONLY those fields.
 
+import { buildWallTiles } from './share.js'
+
 const FONT_LINK =
   'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap'
 
@@ -166,6 +168,44 @@ function printPhoto(url, h, rotate, withTape) {
   </div>`
 }
 
+// ── the scrapbook WALL (Phase 2 collage hero for a multi-piece share) ──
+// One auto-balancing masonry of the share's REAL pieces (no paper/film
+// duplication — a cold-opened album page can carry up to 30 images, so we render
+// each ONCE and theme the mat via @media). Tiles: photo print, video still
+// (poster + play badge), voice note (waveform pill). buildWallTiles (share.js)
+// owns the layout math; this only renders it. Tape is paper-only.
+const PLAY_SVG_SM =
+  '<svg width="9" height="10" viewBox="0 0 10 11" fill="var(--accent-ink)" aria-hidden="true"><path d="M0 1v9a.5.5 0 0 0 .8.4l7.5-4.5a.5.5 0 0 0 0-.8L.8.6A.5.5 0 0 0 0 1Z"/></svg>'
+function wallHtml(view) {
+  const { cols, compact, summary, tiles } = buildWallTiles(view)
+  const tileHtml = tiles
+    .map((t) => {
+      const wrapStyle = `${t.rot ? `transform:rotate(${t.rot}deg);` : ''}${t.tape && !compact ? 'margin-top:12px;' : ''}`
+      if (t.kind === 'voice') {
+        const dur = clock(t.dur) || '0:18'
+        return `<div class="wall-tile" style="${wrapStyle}"><div class="wt-voice">
+          <span class="voice-play sm">${PLAY_SVG_SM}</span>
+          <span class="wave wave-sm">${waveBars(22, 0.8, 9)}</span>
+          <span class="voice-chip-dur">${esc(dur)}</span>
+        </div></div>`
+      }
+      const img = t.url
+        ? `<img src="${esc(t.url)}" alt="" style="height:${t.h}px"/>`
+        : `<div class="ph" style="height:${t.h}px"></div>`
+      const badge =
+        t.kind === 'video'
+          ? `<span class="play-badge">${PLAY_SVG}</span><span class="video-tag"><span class="dot"></span>VIDEO</span>`
+          : ''
+      const tapeEl = t.tape && !compact ? `<span class="print-tape paper-only">${tape(70, t.rot < 0 ? 4 : -5)}</span>` : ''
+      return `<div class="wall-tile" style="${wrapStyle}"><div class="wt-mat">${img}${badge}</div>${tapeEl}</div>`
+    })
+    .join('')
+  return `<div class="hero wall-hero">
+    <div class="wall-head"><span class="wall-count">${tiles.length} pieces</span>${summary ? `<span class="wall-summary">${esc(summary)}</span>` : ''}</div>
+    <div class="wall cols-${cols}">${tileHtml}</div>
+  </div>`
+}
+
 // Build the hero block(s). For photo/album/video we render BOTH a paper print
 // and a film frame, toggled by the prefers-color-scheme media query (so it
 // themes with no JS). Note/voice are theme-shared (colors via vars).
@@ -207,6 +247,9 @@ function heroHtml(view) {
     </div></div>`
   }
 
+  // ALBUM / multi-piece (Phase 2 collage) — the auto-balancing scrapbook wall.
+  if (photos.length > 1) return wallHtml(view)
+
   // PHOTO / ALBUM / VIDEO — paper print + film frame, toggled by theme.
   const tall = false
   const videoTag = (cls) =>
@@ -223,7 +266,9 @@ function heroHtml(view) {
 // The voice chip that attaches under a photo/album/video memory that ALSO has a
 // voice note. (We only attach when there are photos AND audio.)
 function voiceChipHtml(view) {
-  if (!view.audio || !(view.photos && view.photos.length)) return ''
+  // Single photo + voice → a chip under the hero. An ALBUM + voice is handled
+  // inside the wall (a voice tile), so don't double it here.
+  if (!view.audio || !(view.photos && view.photos.length === 1)) return ''
   const dur = clock(view.audio.durationSeconds) || '0:20'
   return `<div class="voice-chip-wrap"><div class="voice-chip">
     <span class="voice-play sm"><svg width="9" height="10" viewBox="0 0 10 11" fill="var(--accent-ink)" aria-hidden="true"><path d="M0 1v9a.5.5 0 0 0 .8.4l7.5-4.5a.5.5 0 0 0 0-.8L.8.6A.5.5 0 0 0 0 1Z"/></svg></span>
@@ -327,6 +372,23 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-
 .footer-l{font-family:var(--sans);font-size:12.5px;color:var(--soft);line-height:1.4}
 .footer-r{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto}
 .footer-r .mono{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--soft)}
+.wall-hero{position:relative;z-index:2;margin-top:10px;padding:0 22px}
+.wall-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:0 4px 10px}
+.wall-count{font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--soft)}
+.wall-summary{font-family:var(--mono);font-size:10.5px;letter-spacing:0.8px;color:var(--faint);text-align:right}
+.wall{column-count:2;column-gap:8px}
+.wall.cols-3{column-count:3;column-gap:6px}
+.wall-tile{position:relative;break-inside:avoid;-webkit-column-break-inside:avoid;margin-bottom:8px}
+.wall.cols-3 .wall-tile{margin-bottom:6px}
+.wt-mat{position:relative;background:#FCFAF4;padding:6px 6px 9px;border-radius:2px;box-shadow:0 1px 0 rgba(255,255,255,0.8) inset,0 2px 4px rgba(70,52,30,0.14),0 12px 26px -16px rgba(70,52,30,0.40)}
+.wt-mat img{display:block;width:100%;object-fit:cover;border-radius:1px}
+.wt-voice{display:flex;align-items:center;gap:10px;background:var(--mat);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.wall-tile .play-badge{width:42px;height:42px}
+.wall-tile .play-badge svg{width:16px;height:16px}
+.wall-tile .video-tag{bottom:6px;left:6px;padding:3px 6px;font-size:9px;letter-spacing:0.8px}
+@media (prefers-color-scheme:dark){
+  .wt-mat{background:#211D19;padding:4px;box-shadow:0 14px 30px -18px rgba(0,0,0,0.85)}
+}
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
 `
 }

@@ -63,6 +63,77 @@ export function travelerName(id) {
   return id ? id.charAt(0).toUpperCase() + id.slice(1) : undefined
 }
 
+// ── Phase 2: the auto-balancing scrapbook WALL (collage) layout ──────────────
+// Pure layout math, ported from the design's share-collage.jsx `buildWall` /
+// `WallHero`. It takes the REAL pieces of a multi-photo share (the view-model's
+// allowlisted photos + an attached voice) and decorates each with the masonry
+// recipe — it does NOT synthesize fake media (the prototype's count→mix is a
+// specimen tool; production has real pieces). sharePage.js renders the result.
+//
+// Recipe (authoritative = the runnable prototype): photo heights cycle
+// [150,124,168,134,156,120,162,140]; tape on every 5th tile; rotation
+// (i%3-1)*1.2°; columns = count>16 ? 3 : 2; the 3-col "compact" mode scales photo
+// heights ×0.74 / video ×0.78 and drops tape. A single attached voice note is
+// placed at an evenly-spread slot (spreadSlots(1,count,5)) so it doesn't clump.
+const WALL_HEIGHTS = [150, 124, 168, 134, 156, 120, 162, 140]
+
+// Evenly-spread indices for `n` specials across `count` slots (design parity).
+export function spreadSlots(n, count, offset) {
+  const out = new Set()
+  if (n <= 0 || count <= 0) return out
+  const step = count / n
+  for (let k = 0; k < n; k++) out.add(Math.min(count - 1, Math.floor(offset + k * step) % count))
+  return out
+}
+
+// Is a share-view photo a video? (mime starts with video, or it has a poster.)
+function isVideoRef(p) {
+  return !!(p && ((p.mime || '').startsWith('video') || p.posterUrl))
+}
+
+// Build the decorated wall tiles for a multi-piece share view. Returns
+// { cols, compact, summary, tiles:[{kind, url?, posterUrl?, h, tape, rot, dur?}] }.
+// `tiles` order = the album's photo order, with one voice tile spread in.
+export function buildWallTiles(view) {
+  const photos = (view?.photos || []).filter((p) => p && (p.url || p.posterUrl))
+  const hasVoice = !!(view?.audio && view.audio.url)
+  const count = photos.length + (hasVoice ? 1 : 0)
+  const cols = count > 16 ? 3 : 2
+  const compact = cols === 3
+  const voiceAt = hasVoice ? spreadSlots(1, count, 5) : new Set()
+
+  const tiles = []
+  let pi = 0
+  for (let i = 0; i < count; i++) {
+    if (hasVoice && voiceAt.has(i)) {
+      tiles.push({ kind: 'voice', dur: view.audio.durationSeconds, rot: 0, tape: false })
+      continue
+    }
+    const p = photos[pi++]
+    if (!p) continue
+    const baseH = WALL_HEIGHTS[i % WALL_HEIGHTS.length]
+    const video = isVideoRef(p)
+    tiles.push({
+      kind: video ? 'video' : 'photo',
+      url: video ? p.posterUrl || p.url : p.url,
+      h: compact ? Math.round(baseH * (video ? 0.78 : 0.74)) : baseH,
+      tape: !compact && i % 5 === 0,
+      rot: (i % 3 - 1) * 1.2,
+    })
+  }
+
+  const nPhoto = tiles.filter((t) => t.kind === 'photo').length
+  const nVideo = tiles.filter((t) => t.kind === 'video').length
+  const nVoice = tiles.filter((t) => t.kind === 'voice').length
+  const summary = [
+    nPhoto && `${nPhoto} photo${nPhoto === 1 ? '' : 's'}`,
+    nVideo && `${nVideo} clip${nVideo === 1 ? '' : 's'}`,
+    nVoice && `${nVoice} voice`,
+  ].filter(Boolean).join(' · ')
+
+  return { cols, compact, summary, tiles }
+}
+
 // The allowlist projection — the ONLY shape that reaches a public viewer.
 // `memory` is the rowToMemory shape (absolute asset URLs already baked in).
 export function shareViewFromMemory(memory, trip) {
