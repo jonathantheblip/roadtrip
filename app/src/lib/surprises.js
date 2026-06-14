@@ -118,15 +118,19 @@ function stopName(trip, stopId) {
 // photo memories; memory kind → note/voice memories; stop kind → located stops.
 export function wrapItemsForKind(kind, { memories = [], trip = null } = {}) {
   if (kind === 'A stop') {
+    // Any NAMED stop can be wrapped to hide it — lat/lng is not required (that
+    // was the old arrival-target constraint, a separate concern). Exclude stops
+    // that are ALREADY a surprise (you don't wrap a surprise). Each item carries
+    // its dayIso so the create path can find the exact stop to mark.
     const out = []
     for (const d of trip?.days || []) {
       for (const s of d.stops || []) {
-        if (s && s.id && Number.isFinite(s.lat) && Number.isFinite(s.lng)) {
+        if (s && s.id && (s.name || s.title) && !isStopSurprise(s) && !s.masked) {
           out.push({
             id: s.id, kind: 'stop', icon: stopGlyph(s.kind),
             title: s.name || s.title || 'A place',
-            meta: [s.time, s.name].filter(Boolean).join(' · '),
-            loc: s.name || s.title || 'the stop', stopId: s.id,
+            meta: [d.title || d.date || d.isoDate, s.time].filter(Boolean).join(' · '),
+            loc: s.name || s.title || 'the stop', stopId: s.id, dayIso: d.isoDate || null,
           })
         }
       }
@@ -441,15 +445,159 @@ export function tripStandIn(trip) {
   }
 }
 
-// The per-viewer transform over the trip LIST — substitute stand-ins, keep the
-// rest. The worker mirrors this server-side (the security boundary).
+// The per-viewer transform over ONE trip — a whole-trip stand-in if the whole
+// trip is hidden (3b), else mask any hidden STOP within it (Slice 2), else keep it
+// untouched (same ref). Mirrors the worker's maskTripForViewer. The client copy
+// protects the in-app persona switcher (the local store holds real data synced
+// under one token, then re-viewed as another person on the same device) — used by
+// BOTH the index (maskTripsForViewer below) AND the open-trip view (App.jsx).
+export function maskTripForViewer(trip, viewer) {
+  if (isTripMaskedFrom(trip, viewer)) return tripStandIn(trip)
+  return maskTripStops(trip, viewer)
+}
+
+// The per-viewer transform over the trip LIST (the index / switcher).
 export function maskTripsForViewer(trips, viewer) {
   if (!Array.isArray(trips)) return []
-  return trips.map((t) => (isTripMaskedFrom(t, viewer) ? tripStandIn(t) : t))
+  return trips.map((t) => maskTripForViewer(t, viewer))
 }
 
 // Whole-trip surprises THIS viewer authored — for the Surprises "You're keeping"
 // list (shown in full, with a manual Reveal now).
 export function tripSurprisesKeptBy(trips, viewer) {
   return (trips || []).filter((t) => isTripSurprise(t) && t.surprise?.author === viewer)
+}
+
+// ── Slice 2: per-stop masking (hide ONE place on a trip) ─────────────────────
+// A single STOP inside trip.days[].stops[] can carry the same masking layer as a
+// memory or a whole trip — it rides inside trips.data_json, so NO schema change:
+//   stop.surprise = { author, hideFrom, reveal, conceal, cover, revealed }
+// Modes:
+//   teaser → the hidden-from viewer sees a "🎁 Something's coming" PLACEHOLDER at
+//            that time slot — the day still reads in order, but the real
+//            name/place/coords are stripped to a SANITIZED stub.
+//   cover  → the hidden-from viewer sees a believable fake stop (the cover) there.
+// Both SUBSTITUTE (never drop) so the day still renders in order and the worker
+// can hand the device a safe row. Author + revealed always see the real stop. The
+// worker mirrors this (worker/src/surprises.js) — that mirror is the boundary.
+
+export function isStopSurprise(stop) {
+  return !!(stop && stop.surprise && Array.isArray(stop.surprise.hideFrom) && stop.surprise.hideFrom.length)
+}
+
+export function isStopMaskedFrom(stop, viewer) {
+  if (!isStopSurprise(stop)) return false
+  const s = stop.surprise
+  if (s.author === viewer) return false
+  if (s.revealed) return false
+  return s.hideFrom.includes('everyone') || s.hideFrom.includes(viewer)
+}
+
+// The believable cover stand-in stop (cover mode): keeps ONLY the cover's fields
+// + the structural id. Never the real name/kind/address/note/who/coords. Mirrors
+// coverToStop's shape (kind carries the cover location label; weather+packing
+// become the note so the recipient still knows what to bring).
+export function stopCoverStandIn(stop) {
+  const cov = stop.surprise?.cover || {}
+  const bring = [cov.weather, cov.packing].filter(Boolean).join(' · ')
+  return {
+    id: stop.id,
+    name: cov.title || 'A stop',
+    time: cov.time || stop.time || '',
+    kind: cov.loc || undefined,
+    note: bring || undefined,
+    masked: true,
+    _cover: true,
+  }
+}
+
+// The sanitized teaser placeholder stop (teaser mode): the time slot is kept so
+// the day reads in order, but the ONLY content is "🎁 Something's coming" + a
+// SANITIZED reveal hint. Critically, an arrival reveal's place name + coords are
+// DROPPED here — naming "reveals when you arrive at <place>" could name the very
+// secret. The author's device does the geofencing, so the recipient never needs
+// the coords. Date is safe to show ("reveals June 15").
+export function stopTeaserStub(stop) {
+  const rv = stop.surprise?.reveal || {}
+  const reveal =
+    rv.type === 'date' ? { type: 'date', at: rv.at }
+      : rv.type === 'arrival' ? { type: 'arrival' }
+        : { type: 'manual' }
+  return {
+    id: stop.id,
+    name: "🎁 Something's coming",
+    time: stop.time || '',
+    note: `reveals ${revealLabel(reveal)}`,
+    masked: true,
+    _teaser: true,
+  }
+}
+
+// Mask one stop for a viewer: cover → stand-in, teaser → stub, else untouched.
+export function maskStopForViewer(stop, viewer) {
+  if (!isStopMaskedFrom(stop, viewer)) return stop
+  return stop.surprise.conceal === 'cover' ? stopCoverStandIn(stop) : stopTeaserStub(stop)
+}
+
+// Apply per-stop masking across a trip's days for a viewer. Returns the trip
+// unchanged (referential stability for memo/render) when nothing applies — so the
+// common no-surprise path costs nothing and never re-renders.
+export function maskTripStops(trip, viewer) {
+  if (!trip || !Array.isArray(trip.days)) return trip
+  let changed = false
+  const days = trip.days.map((d) => {
+    const stops = d.stops || []
+    let dayChanged = false
+    const out = stops.map((s) => {
+      const m = maskStopForViewer(s, viewer)
+      if (m !== s) dayChanged = true
+      return m
+    })
+    if (!dayChanged) return d
+    changed = true
+    return { ...d, stops: out }
+  })
+  return changed ? { ...trip, days } : trip
+}
+
+// Stop surprises THIS viewer authored — for the Surprises "You're keeping" list.
+// Returns [{ stop, tripId, dayIso }] so the screen can normalize + reveal/edit.
+export function stopSurprisesKeptBy(trips, viewer) {
+  const out = []
+  for (const t of trips || []) {
+    for (const d of t.days || []) {
+      for (const s of d.stops || []) {
+        if (isStopSurprise(s) && s.surprise?.author === viewer) {
+          out.push({ stop: s, tripId: t.id, dayIso: d.isoDate || null })
+        }
+      }
+    }
+  }
+  return out
+}
+
+// Stop surprises authored by `viewer` with an ARRIVAL reveal still pending — the
+// per-stop analogue of pendingArrivalSurprises. The author's device geofences
+// these (it holds the full trip + can reveal). Each carries the target's
+// lat/lng on its reveal. Returns [{ stop, tripId }].
+export function pendingArrivalStopSurprises(trips, viewer) {
+  const out = []
+  for (const t of trips || []) {
+    for (const d of t.days || []) {
+      for (const s of d.stops || []) {
+        const r = s.surprise?.reveal
+        if (
+          isStopSurprise(s) &&
+          s.surprise.author === viewer &&
+          !s.surprise.revealed &&
+          r?.type === 'arrival' &&
+          Number.isFinite(r.lat) &&
+          Number.isFinite(r.lng)
+        ) {
+          out.push({ stop: s, tripId: t.id })
+        }
+      }
+    }
+  }
+  return out
 }

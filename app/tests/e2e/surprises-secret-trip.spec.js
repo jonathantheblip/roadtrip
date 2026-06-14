@@ -60,3 +60,28 @@ test('the RECIPIENT sees the cover stand-in, never the real trip', async ({ page
   await expect(page.getByText('Magic Kingdom')).toHaveCount(0)
   expect(errors, errors.join(' | ')).toEqual([])
 })
+
+// Shared-device switcher: the OPEN-trip view (not just the index) must mask too.
+// `trip` comes from the RAW cache by id, so without masking on the render path a
+// recipient opening the cover trip on a shared device would see the real trip.
+test('the RECIPIENT opening the (active) secret trip sees the stand-in, never the real itinerary', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  // An ACTIVE secret trip (its window contains the clock-stub "today" 2026-05-23)
+  // so direct nav opens it without the cold-load bounce — the recipient is viewing
+  // the open trip on a shared device.
+  const ACTIVE_SECRET = {
+    ...SECRET_TRIP,
+    id: 'secret-active',
+    dateRangeStart: '2026-05-20',
+    dateRangeEnd: '2026-05-28',
+    days: [{ n: 1, isoDate: '2026-05-23', title: 'Magic Kingdom', stops: [{ id: 'ms-1', name: 'Cinderella Castle', time: '10:00 AM' }] }],
+  }
+  await seedTripIntoCache(page, ACTIVE_SECRET)
+  await page.goto('/?person=rafa&trip=secret-active&nosw=1')
+  // The open-trip view shows the cover; the real itinerary never renders.
+  await expect(page.getByText('Disney World surprise!')).toHaveCount(0)
+  await expect(page.getByText('Magic Kingdom')).toHaveCount(0)
+  await expect(page.getByText('Cinderella Castle')).toHaveCount(0)
+  expect(errors, errors.join(' | ')).toEqual([])
+})

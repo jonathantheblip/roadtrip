@@ -34,7 +34,7 @@ import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from '.
 import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
-import { mergeCoverStops, maskTripsForViewer } from './lib/surprises'
+import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
@@ -466,16 +466,28 @@ export default function App() {
     [trip?.id, traveler, view.name, surpriseTick]
   )
   const watchArrival = useMemo(
-    () => hasPendingArrival(trip, traveler),
-    [trip?.id, traveler, view.name, surpriseTick]
+    () => hasPendingArrival(trip, traveler, visibleTrips),
+    [trip?.id, traveler, view.name, surpriseTick, visibleTrips]
+  )
+  // Surprise masking on the OPEN-trip render path. `trip` is the RAW trip from
+  // allTrips (raw so it can include drafts) — so the themed render must mask it for
+  // the current traveler HERE, or the in-app persona switcher on a shared device
+  // would show a secret (the worker protects each person's own device; this guards
+  // the same-device switch). maskTripForViewer covers BOTH a whole hidden trip (3b
+  // — substitutes the stand-in) AND a single hidden stop (Slice 2). No-op for the
+  // author / non-targeted / a non-surprise trip (same ref → no extra render).
+  const selfMaskedTrip = useMemo(
+    () => (trip?.id ? maskTripForViewer(trip, traveler) : trip),
+    [trip, traveler, surpriseTick]
   )
   // Slice 3a: a cover-story surprise renders as a real stop on the RECIPIENT's
   // plan. Merge cover stand-ins (from the viewer's masked reads) into the trip
   // the themed views see — one place, so all four inherit it. A no-op for the
-  // author / non-targeted (their reads carry no cover stand-ins).
+  // author / non-targeted (their reads carry no cover stand-ins). Built on the
+  // per-stop-masked trip so a hidden stop never reaches the themed views.
   const tripForView = useMemo(
-    () => (trip?.id ? mergeCoverStops(trip, listMemoriesForTrip(trip.id, traveler)) : trip),
-    [trip, traveler, surpriseTick]
+    () => (selfMaskedTrip?.id ? mergeCoverStops(selfMaskedTrip, listMemoriesForTrip(selfMaskedTrip.id, traveler)) : selfMaskedTrip),
+    [selfMaskedTrip, traveler, surpriseTick]
   )
   // LiveDock ledge model (NowBar × FamilyDock reconciliation): system-driven
   // by the VIEWED trip + person, rendered above the switcher pills. Uses
@@ -752,7 +764,7 @@ export default function App() {
           active traveler has a pending arrival surprise, so location isn't
           engaged otherwise. Reveals fire while the app is foreground. */}
       {watchArrival && (
-        <ArrivalRevealWatcher trip={trip} traveler={traveler} onReveal={() => setSurpriseTick((t) => t + 1)} />
+        <ArrivalRevealWatcher trip={trip} traveler={traveler} trips={visibleTrips} tripsApi={tripsApi} onReveal={() => setSurpriseTick((t) => t + 1)} />
       )}
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
@@ -1128,7 +1140,7 @@ export default function App() {
         )}
         {view.name === 'surprises' && (
           <SurprisesView
-            trip={trip}
+            trip={selfMaskedTrip}
             trips={allTrips}
             traveler={traveler}
             tripsApi={tripsApi}

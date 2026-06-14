@@ -10,9 +10,12 @@ const TRIP = {
   days: [
     {
       n: 1,
+      isoDate: '2026-05-22',
       stops: [
         { id: 's1', name: 'Beach Bungalow', kind: 'lodging', time: 'Evening', lat: 41.3, lng: -72.0 },
-        { id: 's2', name: 'No-coords stop', kind: 'sights', time: '9 AM' }, // no lat/lng → excluded
+        { id: 's2', name: 'No-coords stop', kind: 'sights', time: '9 AM' }, // wrap-to-hide: now INCLUDED (coords no longer required)
+        { id: 's3', name: 'Already secret', kind: 'museum', surprise: { author: 'jonathan', hideFrom: ['helen'] } }, // already a surprise → excluded
+        { id: 's4', kind: 'walk' }, // no name → excluded
       ],
     },
   ],
@@ -50,11 +53,13 @@ test('wrapItemsForKind A memory — note + voice memories', () => {
   assert.equal(items.find((i) => i.id === 'm2').title, 'a note for the thread')
 })
 
-test('wrapItemsForKind A stop — only located stops', () => {
+test('wrapItemsForKind A stop — all named non-surprise stops (Slice 2: coords no longer required)', () => {
   const items = wrapItemsForKind('A stop', { trip: TRIP })
-  assert.deepEqual(items.map((i) => i.id), ['s1']) // s2 has no coords
+  assert.deepEqual(items.map((i) => i.id), ['s1', 's2']) // s3 (already a surprise) + s4 (nameless) excluded
   assert.equal(items[0].title, 'Beach Bungalow')
   assert.equal(items[0].stopId, 's1')
+  assert.equal(items[0].dayIso, '2026-05-22') // carries dayIso so create can find the exact stop
+  assert.equal(items[1].title, 'No-coords stop')
 })
 
 test('empty / missing inputs never throw', () => {

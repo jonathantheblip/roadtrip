@@ -23,7 +23,7 @@ import {
   listMemoriesForTrip,
   revealSurprise,
 } from '../lib/memoryStore'
-import { authoredSurprises, teasersMaskedFrom, revealedForViewer, tripSurprisesKeptBy, displayName, revealLabel, wrapItemsForKind, memGlyph } from '../lib/surprises'
+import { authoredSurprises, teasersMaskedFrom, revealedForViewer, tripSurprisesKeptBy, stopSurprisesKeptBy, displayName, revealLabel, wrapItemsForKind, memGlyph, stopGlyph } from '../lib/surprises'
 
 // Normalize a whole-trip surprise (3b) into the kept-card shape so the same card
 // UI renders it. `isTrip`/`_trip` let doReveal/openEdit route to the trip write.
@@ -40,6 +40,25 @@ function tripAsKept(t) {
     cover: s.cover,
     revealed: s.revealed,
     surprise: { what: 'The whole trip', icon: '🗺️', title: t.title || 'A trip', detail: t.dateRange || t.subtitle || '', tint: '#3A5A7A' },
+  }
+}
+
+// Normalize a per-stop surprise (Slice 2) into the kept-card shape. `isStop`/
+// `_stopRef` let doReveal/openEdit route to the trip write (the stop rides inside
+// the trip's data_json). Returned by stopSurprisesKeptBy as { stop, tripId, dayIso }.
+function stopAsKept({ stop, tripId, dayIso }) {
+  const s = stop.surprise || {}
+  return {
+    id: stop.id,
+    isStop: true,
+    _stopRef: { tripId, dayIso, stopId: stop.id },
+    authorTraveler: s.author,
+    hideFrom: s.hideFrom || [],
+    reveal: s.reveal,
+    conceal: s.conceal,
+    cover: s.cover,
+    revealed: s.revealed,
+    surprise: { what: 'A stop', source: 'stop', icon: stopGlyph(stop.kind), title: stop.name || stop.title || 'A place', detail: [dayIso, stop.time].filter(Boolean).join(' · '), tint: '#3A5A7A' },
   }
 }
 
@@ -145,7 +164,8 @@ export function SurprisesView({ trip, trips, traveler, tripsApi, onClose }) {
   const kept = useMemo(() => {
     const mems = authoredSurprises(raw, traveler)
     const tripKept = tripSurprisesKeptBy(trips || [], traveler).map(tripAsKept)
-    return [...tripKept, ...mems]
+    const stopKept = stopSurprisesKeptBy(trips || [], traveler).map(stopAsKept)
+    return [...tripKept, ...stopKept, ...mems]
   }, [raw, traveler, trips, tick])
   const coming = useMemo(() => teasersMaskedFrom(raw, traveler), [raw, traveler])
   const revealedForMe = useMemo(() => revealedForViewer(raw, traveler), [raw, traveler])
@@ -155,6 +175,16 @@ export function SurprisesView({ trip, trips, traveler, tripsApi, onClose }) {
     setTimeout(() => {
       if (s.isTrip && s._trip && tripsApi) {
         tripsApi.upsertTrip({ ...s._trip, surprise: { ...s._trip.surprise, revealed: new Date().toISOString() } })
+      } else if (s.isStop && s._stopRef && tripsApi) {
+        const { tripId, dayIso, stopId } = s._stopRef
+        const target = (trips || []).find((t) => t.id === tripId) || trip
+        if (target) {
+          const days = (target.days || []).map((d) => {
+            if (dayIso && d.isoDate !== dayIso) return d
+            return { ...d, stops: (d.stops || []).map((st) => (st.id === stopId ? { ...st, surprise: { ...st.surprise, revealed: new Date().toISOString() } } : st)) }
+          })
+          tripsApi.upsertTrip({ ...target, days })
+        }
       } else {
         revealSurprise(s.id)
       }
@@ -176,6 +206,28 @@ export function SurprisesView({ trip, trips, traveler, tripsApi, onClose }) {
       const target = (payload.refId && (trips || []).find((t) => t.id === payload.refId)) || trip
       if (target && tripsApi) {
         tripsApi.upsertTrip({ ...target, surprise: { author: traveler, ...mask, revealed: target.surprise?.revealed || undefined } })
+      }
+    } else if (payload.source === 'stop') {
+      // Per-stop surprise (Slice 2): mark ONE stop hidden inside the trip's
+      // days[] (rides in data_json, no schema change). Mark the RAW trip (from
+      // `trips`/allTrips), not the self-masked `trip` prop, so it attaches to the
+      // real stop. Find by dayIso+id, attach the masking layer, upsert. Preserve a
+      // prior `revealed` on edit. The worker's preserveHiddenStops guard protects
+      // it on save-back.
+      const target = (trips || []).find((t) => t.id === trip?.id) || trip
+      if (target && tripsApi && payload.stopId) {
+        const days = (target.days || []).map((d) => {
+          if (payload.dayIso && d.isoDate !== payload.dayIso) return d
+          return {
+            ...d,
+            stops: (d.stops || []).map((s) =>
+              s.id === payload.stopId
+                ? { ...s, surprise: { author: traveler, ...mask, revealed: s.surprise?.revealed || undefined } }
+                : s
+            ),
+          }
+        })
+        tripsApi.upsertTrip({ ...target, days })
       }
     } else if (payload.source === 'wrap' && payload.memory) {
       // WRAP: attach the masking layer to the REAL memory so it actually
@@ -389,6 +441,21 @@ function CoverCard({ traveler, s, serif, r }) {
 const WHAT_ICON = { 'A stop': '📍', 'A photo': '🖼️', 'A memory': '💭', 'The whole trip': '🗺️' }
 const WHAT_NOUN = { 'A stop': 'stop', 'A photo': 'photo', 'A memory': 'memory', 'The whole trip': 'trip' }
 
+// A stop wrap item rebuilt from a kept stop-surprise (for edit pre-fill). The wrap
+// picker filters OUT existing surprises, so the editor can't re-find it there.
+function stopWrapItemFromKept(rec) {
+  const ref = rec._stopRef || {}
+  return {
+    id: ref.stopId || rec.id,
+    kind: 'stop',
+    icon: rec.surprise?.icon || '📍',
+    title: rec.surprise?.title || 'A place',
+    meta: rec.surprise?.detail || '',
+    stopId: ref.stopId || rec.id,
+    dayIso: ref.dayIso || null,
+  }
+}
+
 // A wrapped item rebuilt from an existing surprise record (for edit pre-fill).
 // The wrap picker filters OUT surprises, so the editor can't re-find it there.
 function wrapItemFromRecord(rec) {
@@ -497,9 +564,10 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   const family = TRAVELER_ORDER.filter((id) => id !== traveler)
   const allowDescribe = traveler !== 'rafa' // kids wrap real photos, no typing
   const bigThumbs = traveler === 'rafa'
-  // SLICE 1 kinds: Rafa = just photos; others = photo / memory / whole-trip.
-  // "A stop" is held for Slice 2 (it needs per-stop hiding).
-  const kinds = bigThumbs ? [['A photo', '🖼️']] : [['A photo', '🖼️'], ['A memory', '💭'], ['The whole trip', '🗺️']]
+  // Kinds: Rafa = just photos; others = photo / memory / stop / whole-trip.
+  // "A stop" (Slice 2) hides one place on the itinerary — WRAP-only (you can't
+  // hide a stop that isn't on the plan), so it skips the "describe new" toggle.
+  const kinds = bigThumbs ? [['A photo', '🖼️']] : [['A photo', '🖼️'], ['A memory', '💭'], ['A stop', '📍'], ['The whole trip', '🗺️']]
 
   // The author's OWN trip memories — the masking model only lets you hide your
   // own (the original author always sees their own memory), so the wrap picker
@@ -521,11 +589,13 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
 
   const ed = editing || null
   const edTrip = !!ed?.isTrip || ed?.surprise?.what === 'The whole trip'
-  const edSource = ed ? (edTrip ? 'trip' : ed.surprise?.source || 'describe') : null
+  const edStop = !!ed?.isStop || ed?.surprise?.what === 'A stop'
+  // A stop edits through the WRAP picker (source 'wrap'), pre-filled with the stop.
+  const edSource = ed ? (edTrip ? 'trip' : edStop ? 'wrap' : ed.surprise?.source || 'describe') : null
   const edEveryone = !!ed?.hideFrom?.includes('everyone')
   const [what, setWhat] = useState(ed ? ed.surprise?.what || 'A photo' : bigThumbs ? 'A photo' : null)
   const [source, setSource] = useState(ed ? edSource : 'wrap')
-  const [picked, setPicked] = useState(ed && edSource === 'wrap' ? wrapItemFromRecord(ed) : null)
+  const [picked, setPicked] = useState(ed && edSource === 'wrap' ? (edStop ? stopWrapItemFromKept(ed) : wrapItemFromRecord(ed)) : null)
   const [desc, setDesc] = useState(ed && edSource === 'describe' ? { title: ed.surprise?.title || '', detail: ed.surprise?.detail || '' } : { title: '', detail: '' })
   const [hide, setHide] = useState(ed && !edEveryone ? ed.hideFrom : [family[0]])
   const [everyone, setEveryone] = useState(edEveryone)
@@ -538,11 +608,12 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
   const toggleHide = (id) => { setEveryone(false); setHide((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id])) }
 
   const isTrip = what === 'The whole trip'
+  const isStop = what === 'A stop'
   const noun = WHAT_NOUN[what || 'A photo'] || 'thing'
   const setKind = (k) => {
     setWhat(k)
     if (k === 'The whole trip') { setSource('trip'); if (reveal === 'arrival') setReveal('manual') }
-    else if (source === 'trip') setSource('wrap')
+    else if (k === 'A stop' || source === 'trip') setSource('wrap') // stop = wrap-only
     setPicked(null)
   }
 
@@ -568,13 +639,18 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
       : undefined
     let blob
     if (isTrip) blob = { what, icon: '🗺️', title: trip?.title || 'The whole trip', detail: trip?.dateRange || '', tint: '#3A5A7A', source: 'trip' }
+    else if (isStop) blob = { what, icon: picked.icon, title: picked.title, detail: picked.meta || '', tint: '#3A5A7A', source: 'stop' }
     else if (source === 'wrap') blob = { what, icon: picked.icon, title: picked.title, detail: picked.meta || '', tint: picked.tint || '#5C5048', source: 'wrap' }
     else blob = { what, icon: WHAT_ICON[what] || '🎁', title: desc.title.trim(), detail: desc.detail.trim() || `A new ${noun} you're keeping secret.`, tint: '#5C5048', source: 'describe' }
     onCreate({
-      source: isTrip ? 'trip' : source,
+      // A stop wraps the itinerary stop itself (rides in the trip), so it routes
+      // to upsertTrip — not saveMemory. stopId/dayIso locate the exact stop.
+      source: isTrip ? 'trip' : isStop ? 'stop' : source,
       id: ed ? ed.id : undefined,
       refId: isTrip ? trip?.id : source === 'wrap' ? picked?.id : undefined,
-      memory: !isTrip && source === 'wrap' ? picked?.memory : undefined,
+      stopId: isStop ? picked?.stopId || picked?.id : undefined,
+      dayIso: isStop ? picked?.dayIso || null : undefined,
+      memory: !isTrip && !isStop && source === 'wrap' ? picked?.memory : undefined,
       hideFrom: everyone ? ['everyone'] : hide,
       reveal: revealObj,
       conceal,
@@ -619,7 +695,7 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
           {/* CONTENT STEP — discloses once a kind is chosen */}
           {what && !isTrip && (
             <div style={{ marginTop: 14 }}>
-              {allowDescribe && (
+              {allowDescribe && !isStop && (
                 <div style={{ display: 'flex', gap: 6, padding: 4, borderRadius: 999, background: 'var(--bg2)', marginBottom: 14 }}>
                   {[['wrap', 'Wrap something real', Ic.gift], ['describe', 'Describe something new', Ic.pencil]].map(([k, label, I]) => {
                     const on = source === k
@@ -710,7 +786,7 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
               ) : (
                 <div style={{ marginTop: 11, padding: 13, borderRadius: Math.min(r, 14), border: '1px solid var(--border)', background: 'var(--card)' }}>
                   <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', lineHeight: 1.4, marginBottom: 11 }}>A believable stand-in shows on their plan instead — carrying the real timing + weather so they pack and plan right, never knowing.</div>
-                  {!isTrip && trip?.days?.length > 0 && (
+                  {!isTrip && !isStop && trip?.days?.length > 0 && (
                     <select value={cov.dayIso || ''} onChange={(e) => setC('dayIso', e.target.value)} aria-label="Which day it appears on" style={{ ...fieldStyle, width: '100%', marginBottom: 8, appearance: 'none' }}>
                       <option value="">Which day on their plan… (optional)</option>
                       {trip.days.map((d) => <option key={d.isoDate} value={d.isoDate}>{d.title || d.date || d.isoDate}</option>)}
