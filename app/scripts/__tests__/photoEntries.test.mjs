@@ -353,3 +353,57 @@ test('flattenPhotoEntries detects a video by posterUrl alone (cross-device ref m
   assert.equal(entries[0].isVideo, true)
   assert.equal(entries[0].posterUrl, 'u://p')
 })
+
+// ─── Composed share-moments: each photo shows once in the library grid ───
+
+test('groupByStop collapses a composed moment that re-uses existing photos (each photo once, the original tile wins)', () => {
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-05-22',
+    days: [{ n: 1, date: 'May 22', isoDate: '2026-05-22', stops: [{ id: 'a', name: 'Bungalow' }] }],
+  })
+  // Two original single-photo memories filed to the stop. Synced refs carry an
+  // R2 key — that key is the identity, not the URL.
+  const orig1 = photoMem({ id: 'orig1', tripId: 't', stopId: 'a', refs: [{ url: 'u://p1', key: 'photo-1' }], capturedAt: '2026-05-22T10:00:00.000Z', createdAt: '2026-05-22T10:00:00.000Z' })
+  const orig2 = photoMem({ id: 'orig2', tripId: 't', stopId: 'a', refs: [{ url: 'u://p2', key: 'photo-2' }], capturedAt: '2026-05-22T11:00:00.000Z', createdAt: '2026-05-22T11:00:00.000Z' })
+  // ...and a composed album made LATER that re-uses the same keyed refs. Filed
+  // to the same stop so the duplicate would survive grouping if dedup were gone
+  // (i.e. this test fails the moment the collapse stops working).
+  const composed = photoMem({ id: 'composed', tripId: 't', stopId: 'a', refs: [{ url: 'u://p1', key: 'photo-1' }, { url: 'u://p2', key: 'photo-2' }], createdAt: '2026-06-14T09:00:00.000Z' })
+
+  // Raw flatten is honest: 2 originals + 2 re-uses = 4 entries.
+  const entries = flattenPhotoEntries([orig1, orig2, composed])
+  assert.equal(entries.length, 4)
+
+  // The library grid collapses by stored-object key → each photo once, kept on
+  // its ORIGINAL (older) memory, not the composed grouping.
+  const grouped = groupByStop(entries, t).flatMap((g) => g.entries)
+  assert.equal(grouped.length, 2)
+  const byKey = Object.fromEntries(grouped.map((e) => [e.refKey, e]))
+  assert.equal(byKey['photo-1'].memoryId, 'orig1')
+  assert.equal(byKey['photo-2'].memoryId, 'orig2')
+  // The survivors render as standalone photos (count 1), not "1 of 2".
+  assert.equal(byKey['photo-1'].photoCountInMemory, 1)
+})
+
+test('groupByStop does NOT collapse distinct photos that merely share a URL (no key, or different keys)', () => {
+  // The precision guard: identity is the stored-object KEY, never the URL. Two
+  // memories reusing one placeholder URL (keyless, like every test fixture) are
+  // two real tiles; only a genuine same-key composed re-use collapses.
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-05-22',
+    days: [{ n: 1, date: 'May 22', isoDate: '2026-05-22', stops: [{ id: 'a', name: 'A' }] }],
+  })
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'm1', tripId: 't', stopId: 'a', refs: ['u://same'], capturedAt: '2026-05-22T10:00:00.000Z' }),
+    photoMem({ id: 'm2', tripId: 't', stopId: 'a', refs: ['u://same'], capturedAt: '2026-05-22T11:00:00.000Z' }),
+    photoMem({ id: 'm3', tripId: 't', stopId: 'a', refs: [{ url: 'u://same', key: 'k-a' }], capturedAt: '2026-05-22T12:00:00.000Z' }),
+    photoMem({ id: 'm4', tripId: 't', stopId: 'a', refs: [{ url: 'u://same', key: 'k-b' }], capturedAt: '2026-05-22T13:00:00.000Z' }),
+  ])
+  // All four survive: shared URL is not identity; the two keyed ones differ.
+  const grouped = groupByStop(entries, t).flatMap((g) => g.entries)
+  assert.equal(grouped.length, 4)
+})

@@ -111,6 +111,11 @@ export function flattenPhotoEntries(memories) {
         isVideo,
         posterUrl,
         url,
+        // The stored-object key (R2). Identity for cross-memory dedup: a
+        // composed share-moment re-uses the SAME key as the photos it was built
+        // from. Null for unsynced/local/external refs (no shared object), which
+        // are therefore never collapsed.
+        refKey: typeof ref?.key === 'string' && ref.key ? ref.key : null,
       })
     })
   }
@@ -124,11 +129,55 @@ function refUrl(ref) {
   return null
 }
 
+// Keep one tile per STORED-OBJECT key. The only thing that legitimately shares
+// an R2 key across memories is a composed share-moment re-using the exact
+// photos it was built from — so this collapses that duplicate and nothing else.
+// Entries without a key (unsynced/local/external refs, and every test fixture's
+// placeholder data-URL) are passed through untouched: a shared URL is NOT
+// identity (two distinct photos can reuse one placeholder), only a shared key
+// is. On a collision keep the entry from the OLDER memory (the original always
+// predates the composed grouping); order is otherwise preserved.
+function dedupeByPhoto(entries) {
+  const slotByKey = new Map()
+  const out = []
+  for (const e of entries) {
+    const id = e?.refKey
+    if (!id) {
+      out.push(e)
+      continue
+    }
+    const at = slotByKey.get(id)
+    if (at === undefined) {
+      slotByKey.set(id, out.length)
+      out.push(e)
+    } else if (memCreatedMs(e) < memCreatedMs(out[at])) {
+      out[at] = e // older memory wins the tile
+    }
+  }
+  return out
+}
+
+function memCreatedMs(e) {
+  const t = e?.memoryCreatedAt ? Date.parse(e.memoryCreatedAt) : NaN
+  // Unknown create-time sorts last so it never displaces a dated entry.
+  return Number.isFinite(t) ? t : Infinity
+}
+
 // Per-trip grouping — used by PhotosView. Returns an array of
 // { stopKey, stopName, dayLabel, timeLabel, _dayN, _stopOrder,
 //   entries[] } sorted by day then stop position.
 export function groupByStop(entries, trip) {
   if (!entries.length) return []
+  // Collapse the SAME photo referenced by more than one memory down to a
+  // single library tile. A composed share-moment (ShareComposer) re-uses the
+  // EXACT refs of the photos you picked, so without this the grid would show
+  // each picked photo twice — once in its original spot, once under the moment.
+  // Keep the entry from the OLDER memory (the original always predates the
+  // composed grouping), so the surviving tile stays the photo's real home.
+  // Only the library grids (PhotosView / Jonathan's JRecord / AllPhotosView via
+  // groupAcrossTrips) route through groupByStop; the count/scan callers of
+  // flattenPhotoEntries do not, so they keep every raw entry.
+  entries = dedupeByPhoto(entries)
   const stopIndex = new Map()
   for (const day of trip?.days || []) {
     for (const stop of day.stops || []) {

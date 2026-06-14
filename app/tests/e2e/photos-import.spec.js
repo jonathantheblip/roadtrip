@@ -37,15 +37,22 @@ const TRIP = {
   ],
 }
 
+let uploadSeq = 0
 async function mockWorker200(page) {
+  uploadSeq = 0
   await page.route(
     /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/assets\/(photo|video)/,
-    (route) =>
+    (route) => {
+      // Each upload gets a UNIQUE r2 key, exactly as the real worker does
+      // (traveler/memoryId/kind-rand). Distinct photos must never share a key,
+      // or the library grid's same-key dedup would fold them into one tile.
+      const n = ++uploadSeq
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ key: 'helen/flow/photo', url: 'https://example.test/flow-photo', mime: 'image/jpeg' }),
+        body: JSON.stringify({ key: `helen/flow/photo-${n}`, url: `https://example.test/flow-photo-${n}`, mime: 'image/jpeg' }),
       })
+    }
   )
   await page.route(
     /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/(memories|trips)/,
