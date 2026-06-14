@@ -188,3 +188,45 @@ describe('share-out — mint + resolve, and the masking is enforced', () => {
     expect((await call(`/m/${token}`)).status).toBe(200)
   })
 })
+
+describe('share-out E2 — the collage layout is stored on mint + honored on resolve', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+    await env.DB.prepare('DELETE FROM memories').run()
+    await env.DB.prepare('DELETE FROM trips').run()
+    await env.DB.prepare('DELETE FROM shares').run()
+    await seedTrip()
+  })
+
+  // A 2-photo (album) memory so the page renders a collage.
+  async function saveAlbum() {
+    return savePhoto({
+      id: 'm-album',
+      photoRefs: [
+        { storage: 'r2', key: 'aurelia/m-album/p1', mime: 'image/jpeg' },
+        { storage: 'r2', key: 'aurelia/m-album/p2', mime: 'image/jpeg' },
+      ],
+    })
+  }
+
+  it('a chosen layout is stored on the share and rendered on the page', async () => {
+    await saveAlbum()
+    const { token } = await (await call('/share', { method: 'POST', token: TOKENS.aurelia, body: { memoryId: 'm-album', layout: 'mosaic' } })).json()
+    const html = await (await call(`/m/${token}`)).text()
+    expect(html).toContain('layout-mosaic')
+  })
+
+  it('no layout → the page defaults to the wall (existing shares unaffected)', async () => {
+    await saveAlbum()
+    const { token } = await (await mint('m-album')).json()
+    const html = await (await call(`/m/${token}`)).text()
+    expect(html).toContain('layout-wall')
+  })
+
+  it('an invalid layout is rejected → stored NULL → wall', async () => {
+    await saveAlbum()
+    const { token } = await (await call('/share', { method: 'POST', token: TOKENS.aurelia, body: { memoryId: 'm-album', layout: 'evil' } })).json()
+    const html = await (await call(`/m/${token}`)).text()
+    expect(html).toContain('layout-wall')
+  })
+})

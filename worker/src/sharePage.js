@@ -176,40 +176,74 @@ function printPhoto(url, h, rotate, withTape) {
 // owns the layout math; this only renders it. Tape is paper-only.
 const PLAY_SVG_SM =
   '<svg width="9" height="10" viewBox="0 0 10 11" fill="var(--accent-ink)" aria-hidden="true"><path d="M0 1v9a.5.5 0 0 0 .8.4l7.5-4.5a.5.5 0 0 0 0-.8L.8.6A.5.5 0 0 0 0 1Z"/></svg>'
-function wallHtml(view) {
-  const { cols, compact, summary, tiles } = buildWallTiles(view)
-  const tileHtml = tiles
-    .map((t) => {
-      const wrapStyle = `${t.rot ? `transform:rotate(${t.rot}deg);` : ''}${t.tape && !compact ? 'margin-top:12px;' : ''}`
-      if (t.kind === 'voice') {
-        const dur = clock(t.dur) || '0:18'
-        return `<div class="wall-tile" style="${wrapStyle}"><div class="wt-voice">
-          <span class="voice-play sm">${PLAY_SVG_SM}</span>
-          <span class="wave wave-sm">${waveBars(22, 0.8, 9)}</span>
-          <span class="voice-chip-dur">${esc(dur)}</span>
-        </div></div>`
-      }
-      const img = t.url
-        ? `<img src="${esc(t.url)}" alt="" style="height:${t.h}px"/>`
-        : `<div class="ph" style="height:${t.h}px"></div>`
-      const badge =
-        t.kind === 'video'
-          ? `<span class="play-badge">${PLAY_SVG}</span><span class="video-tag"><span class="dot"></span>VIDEO</span>`
-          : ''
-      const tapeEl = t.tape && !compact ? `<span class="print-tape paper-only">${tape(70, t.rot < 0 ? 4 : -5)}</span>` : ''
-      return `<div class="wall-tile" style="${wrapStyle}"><div class="wt-mat">${img}${badge}</div>${tapeEl}</div>`
-    })
-    .join('')
-  return `<div class="hero wall-hero">
-    <div class="wall-head"><span class="wall-count">${tiles.length} pieces</span>${summary ? `<span class="wall-summary">${esc(summary)}</span>` : ''}</div>
-    <div class="wall cols-${cols}">${tileHtml}</div>
-  </div>`
+
+// A voice tile (compact pill) — shared by every collage layout.
+function voiceTileHtml(t) {
+  const dur = clock(t.dur) || '0:18'
+  return `<div class="wt-voice"><span class="voice-play sm">${PLAY_SVG_SM}</span><span class="wave wave-sm">${waveBars(22, 0.8, 9)}</span><span class="voice-chip-dur">${esc(dur)}</span></div>`
+}
+// A photo/video mat tile — shared by every collage layout. `h` overrides the
+// tile's own height; `taped`/`rot` are wall-only flourishes (omit elsewhere).
+function matTileHtml(t, { h, taped = false, rot = 0, border = true } = {}) {
+  const useH = h != null ? h : t.h
+  const img = t.url ? `<img src="${esc(t.url)}" alt="" style="height:${useH}px"/>` : `<div class="ph" style="height:${useH}px"></div>`
+  const badge = t.kind === 'video' ? `<span class="play-badge">${PLAY_SVG}</span><span class="video-tag"><span class="dot"></span>VIDEO</span>` : ''
+  const tapeEl = taped ? `<span class="print-tape paper-only">${tape(70, rot < 0 ? 4 : -5)}</span>` : ''
+  return `<div class="wt-mat${border ? '' : ' wt-bare'}">${img}${badge}</div>${tapeEl}`
+}
+function collageHead(tiles, summary) {
+  return `<div class="wall-head"><span class="wall-count">${tiles.length} pieces</span>${summary ? `<span class="wall-summary">${esc(summary)}</span>` : ''}</div>`
+}
+
+// Mosaic heights (design ComposerPreview) — a calmer grid: no tape, no rotation.
+const MOSAIC_H = [128, 104, 150, 116, 138, 110]
+
+// The collage hero — dispatch on the author-chosen layout. wall (default) /
+// mosaic / stack / filmstrip, all over the SAME ordered pieces (buildWallTiles).
+function collageHtml(view, layout) {
+  const built = buildWallTiles(view)
+  const { tiles, cols, compact, summary } = built
+  let body
+  if (layout === 'mosaic') {
+    const mcols = tiles.length > 10 ? 3 : 2
+    body = `<div class="wall cols-${mcols}">${tiles
+      .map((t, i) => `<div class="wall-tile">${t.kind === 'voice' ? voiceTileHtml(t) : matTileHtml(t, { h: MOSAIC_H[i % MOSAIC_H.length] })}</div>`)
+      .join('')}</div>`
+  } else if (layout === 'stack') {
+    const photos = tiles.filter((t) => t.kind !== 'voice').slice(0, 5)
+    const extras = tiles.filter((t) => t.kind === 'voice')
+    const stackTiles = photos
+      .map((t, i) => `<div class="stack-card" style="top:${10 + i * 8}px;z-index:${i};transform:rotate(${(i - 2) * 4}deg)">${matTileHtml(t, { h: 150 })}</div>`)
+      .join('')
+    const below = extras.map((t) => `<div class="wall-tile">${voiceTileHtml(t)}</div>`).join('')
+    body = `<div class="stack-wrap">${stackTiles}</div>${below ? `<div class="stack-extras">${below}</div>` : ''}`
+  } else if (layout === 'filmstrip') {
+    let holes = ''
+    for (let i = 0; i < 12; i++) holes += '<span></span>'
+    const frames = tiles
+      .filter((t) => t.kind !== 'voice')
+      .map((t) => `<div class="strip-frame">${matTileHtml(t, { h: 150, border: false })}</div>`)
+      .join('')
+    const below = tiles.filter((t) => t.kind === 'voice').map((t) => `<div class="wall-tile">${voiceTileHtml(t)}</div>`).join('')
+    body = `<div class="strip"><div class="strip-holes">${holes}</div><div class="strip-frames">${frames}</div><div class="strip-holes">${holes}</div></div>${below ? `<div class="stack-extras">${below}</div>` : ''}`
+  } else {
+    // wall (default) — the Slice-1 masonry, with the per-tile heights/tape/rot.
+    body = `<div class="wall cols-${cols}">${tiles
+      .map((t) => {
+        const wrapStyle = `${t.rot ? `transform:rotate(${t.rot}deg);` : ''}${t.tape && !compact ? 'margin-top:12px;' : ''}`
+        const inner = t.kind === 'voice' ? voiceTileHtml(t) : matTileHtml(t, { taped: t.tape && !compact, rot: t.rot })
+        return `<div class="wall-tile" style="${wrapStyle}">${inner}</div>`
+      })
+      .join('')}</div>`
+  }
+  const cls = ['wall', 'mosaic', 'stack', 'filmstrip'].includes(layout) ? layout : 'wall'
+  return `<div class="hero wall-hero layout-${cls}">${collageHead(tiles, summary)}${body}</div>`
 }
 
 // Build the hero block(s). For photo/album/video we render BOTH a paper print
 // and a film frame, toggled by the prefers-color-scheme media query (so it
 // themes with no JS). Note/voice are theme-shared (colors via vars).
-function heroHtml(view) {
+function heroHtml(view, layout) {
   const photos = view.photos || []
   const first = photos[0]
   const isVideo = view.kind === 'video' || (first && (first.posterUrl || (first.mime || '').startsWith('video')))
@@ -247,8 +281,9 @@ function heroHtml(view) {
     </div></div>`
   }
 
-  // ALBUM / multi-piece (Phase 2 collage) — the auto-balancing scrapbook wall.
-  if (photos.length > 1) return wallHtml(view)
+  // ALBUM / multi-piece (Phase 2 collage) — render in the author-chosen layout
+  // (wall default / mosaic / stack / filmstrip).
+  if (photos.length > 1) return collageHtml(view, layout)
 
   // PHOTO / ALBUM / VIDEO — paper print + film frame, toggled by theme.
   const tall = false
@@ -386,8 +421,20 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-
 .wall-tile .play-badge{width:42px;height:42px}
 .wall-tile .play-badge svg{width:16px;height:16px}
 .wall-tile .video-tag{bottom:6px;left:6px;padding:3px 6px;font-size:9px;letter-spacing:0.8px}
+.wt-bare{background:transparent;padding:0;box-shadow:none}
+/* stack layout — overlapping tilted prints, centered */
+.stack-wrap{position:relative;height:250px;margin-top:4px}
+.stack-card{position:absolute;left:50%;width:190px;margin-left:-95px}
+.stack-extras{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+/* filmstrip layout — dark strip, horizontal-scroll frames, sprocket rows */
+.strip{background:#0C0A09;border-radius:4px;padding:6px 4px;overflow:hidden}
+.strip-holes{display:flex;justify-content:space-between;padding:3px 8px}
+.strip-holes span{width:7px;height:9px;border-radius:1.5px;background:#2A2521}
+.strip-frames{display:flex;gap:4px;overflow-x:auto;padding:4px 2px}
+.strip-frame{flex:0 0 116px}
 @media (prefers-color-scheme:dark){
   .wt-mat{background:#211D19;padding:4px;box-shadow:0 14px 30px -18px rgba(0,0,0,0.85)}
+  .wt-bare{background:transparent;padding:0;box-shadow:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
 `
@@ -425,7 +472,7 @@ ${pageUrl ? `<meta property="og:url" content="${esc(pageUrl)}">` : ''}
 }
 
 // PUBLIC: render the full page for one memory's safe view-model.
-export function renderSharePage(view, { pageUrl } = {}) {
+export function renderSharePage(view, { pageUrl, layout } = {}) {
   const from = view.authorName || 'A friend'
   const tripLine = [view.tripName, view.tripDateRange].filter(Boolean).join(' · ')
   const date = prettyDate(view.date)
@@ -449,7 +496,7 @@ export function renderSharePage(view, { pageUrl } = {}) {
       <span class="film-only roll-label">roll 02 &middot; ${esc(from)}</span>
     </div>
   </header>
-  ${heroHtml(view)}
+  ${heroHtml(view, layout)}
   ${voiceChipHtml(view)}
   <div class="content">
     ${captionHtml}

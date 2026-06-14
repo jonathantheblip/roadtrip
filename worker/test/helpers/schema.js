@@ -21,6 +21,7 @@ import weavesMigration from '../../migrations/008_weaves.sql?raw'
 import weaveKeptMigration from '../../migrations/009_weave_kept.sql?raw'
 import surprisesMigration from '../../migrations/010_memory_surprises.sql?raw'
 import sharesMigration from '../../migrations/011_shares.sql?raw'
+import shareLayoutMigration from '../../migrations/012_share_layout.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -96,7 +97,7 @@ export async function applySchema(db) {
   // throw "duplicate column name" on the second call. Swallow exactly
   // that error to keep this idempotent like the CREATE IF NOT EXISTS
   // statements above — any other failure still propagates.
-  for (const migration of [interstitialMigration, weaveKeptMigration, surprisesMigration]) {
+  for (const migration of [interstitialMigration, weaveKeptMigration, surprisesMigration, shareLayoutMigration]) {
     for (const stmt of splitStatements(migration)) {
       try {
         await db.prepare(stmt).run()

@@ -118,3 +118,30 @@ describe('renderSharePage — album renders the wall; single photo unchanged', (
     expect(html).toContain('note-text')
   })
 })
+
+describe('renderSharePage — the 4 collage layouts (E2)', () => {
+  const album = (n) => ({ kind: 'photo', author: 'helen', authorName: 'Helen', photos: Array.from({ length: n }, (_, i) => ({ url: `https://x/${i}.jpg` })) })
+
+  it('default (no layout) renders the wall', () => {
+    expect(renderSharePage(album(6), { pageUrl: 'https://w/m/t' })).toContain('layout-wall')
+  })
+  it('mosaic / stack / filmstrip each render their own layout', () => {
+    expect(renderSharePage(album(6), { layout: 'mosaic', pageUrl: 'https://w/m/t' })).toContain('layout-mosaic')
+    const stack = renderSharePage(album(6), { layout: 'stack', pageUrl: 'https://w/m/t' })
+    expect(stack).toContain('layout-stack')
+    expect(stack).toContain('class="stack-wrap"')
+    const strip = renderSharePage(album(6), { layout: 'filmstrip', pageUrl: 'https://w/m/t' })
+    expect(strip).toContain('layout-filmstrip')
+    expect(strip).toContain('class="strip"')
+  })
+  it('an unknown layout falls back to the wall', () => {
+    expect(renderSharePage(album(6), { layout: 'bogus', pageUrl: 'https://w/m/t' })).toContain('layout-wall')
+  })
+  it('every layout still renders all the photos (nothing dropped)', () => {
+    for (const layout of ['wall', 'mosaic', 'stack', 'filmstrip']) {
+      const html = renderSharePage(album(4), { layout, pageUrl: 'https://w/m/t' })
+      // stack caps the overlapping pile at 5, but 4 ≤ 5 so all appear; assert each url present.
+      for (let i = 0; i < 4; i++) expect(html, `${layout} missing photo ${i}`).toContain(`https://x/${i}.jpg`)
+    }
+  })
+})

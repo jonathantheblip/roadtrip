@@ -629,10 +629,15 @@ async function postShare(env, traveler, request, url, cors) {
   if (!isShareable(memory)) {
     return json({ error: 'not-shareable' }, 409, cors)
   }
+  // E2: an optional author-chosen collage layout for a composed share. Validate
+  // against the known set; anything else (incl. absent) stores NULL → the page
+  // defaults to the wall. Layout is a presentation choice of the share.
+  const ALLOWED_LAYOUTS = ['wall', 'mosaic', 'stack', 'filmstrip']
+  const layout = ALLOWED_LAYOUTS.includes(body?.layout) ? body.layout : null
   const token = newShareToken(findStopName(trip, memory.stopId))
   await env.DB.prepare(
-    'INSERT INTO shares (token, memory_id, trip_id, author_traveler, created_at) VALUES (?, ?, ?, ?, ?)'
-  ).bind(token, memory.id, memory.tripId || null, traveler, Date.now()).run()
+    'INSERT INTO shares (token, memory_id, trip_id, author_traveler, created_at, layout) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(token, memory.id, memory.tripId || null, traveler, Date.now(), layout).run()
   return json({ token, url: `${origin}/m/${token}` }, 200, cors)
 }
 
@@ -661,7 +666,9 @@ async function getShare(env, token, url, cors) {
   }
   const view = shareViewFromMemory(memory, trip)
   if (wantsJson) return json(view, 200, { ...cors, 'Cache-Control': 'no-store' })
-  return new Response(renderSharePage(view, { pageUrl: `${origin}/m/${token}` }), { status: 200, headers: htmlHeaders })
+  // E2: the author-chosen collage layout (composed shares); NULL → the default
+  // wall, so every existing / single-piece share is unaffected.
+  return new Response(renderSharePage(view, { pageUrl: `${origin}/m/${token}`, layout: share.layout }), { status: 200, headers: htmlHeaders })
 }
 
 // The link-preview card PNG for a share token (Card A). PUBLIC. Runs the SAME
