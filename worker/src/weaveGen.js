@@ -91,7 +91,12 @@ export function buildBeatsServer(day, sharedMemories) {
 export function weaveStatLine(trip, day) {
   const idx = (trip.days || []).findIndex((d) => d.isoDate === day.isoDate)
   const dayNum = idx >= 0 ? idx + 1 : null
-  const stops = (day.stops || []).length
+  // Per-stop masking (Slice 2): the weave is the SHARED family page, so its stop
+  // count must not betray a still-hidden surprise stop — exclude unrevealed
+  // stop-surprises so a recipient never sees "5 stops" when only 4 are theirs.
+  const stops = (day.stops || []).filter(
+    (s) => !(s?.surprise && Array.isArray(s.surprise.hideFrom) && s.surprise.hideFrom.length && !s.surprise.revealed)
+  ).length
   const parts = []
   if (dayNum) parts.push(`Day ${dayNum}`)
   if (stops) parts.push(`${stops} stop${stops === 1 ? '' : 's'}`)

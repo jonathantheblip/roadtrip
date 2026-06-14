@@ -124,6 +124,144 @@ function tripStandIn(trip) {
   }
 }
 
+// ── Per-stop masking (Slice 2) — server mirror + the save-back clobber guard ──
+// A single STOP inside trip.days[].stops[] can carry the same masking layer as a
+// memory or a whole trip (rides inside data_json, no schema change):
+//   stop.surprise = { author, hideFrom, reveal, conceal, cover, revealed }
+// teaser → a sanitized "🎁 Something's coming" placeholder; cover → a believable
+// stand-in. Both SUBSTITUTE (never drop) so the day still reads in order. Mirrors
+// app/src/lib/surprises.js. maskTripForViewer below folds this into the trip read,
+// so getTrips / loadTripsSummary / the Claude trip context all inherit it.
+
+export function isStopSurprise(stop) {
+  return !!(stop && stop.surprise && Array.isArray(stop.surprise.hideFrom) && stop.surprise.hideFrom.length)
+}
+
+export function isStopMaskedFrom(stop, viewer) {
+  if (!isStopSurprise(stop)) return false
+  const s = stop.surprise
+  if (s.author === viewer) return false
+  if (s.revealed) return false
+  return s.hideFrom.includes('everyone') || s.hideFrom.includes(viewer)
+}
+
+function stopCoverStandIn(stop) {
+  const cov = stop.surprise?.cover || {}
+  const bring = [cov.weather, cov.packing].filter(Boolean).join(' · ')
+  return {
+    id: stop.id,
+    name: cov.title || 'A stop',
+    time: cov.time || stop.time || '',
+    kind: cov.loc || undefined,
+    note: bring || undefined,
+    masked: true,
+    _cover: true,
+  }
+}
+
+function fmtRevealDate(at) {
+  if (typeof at === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(at)) {
+    const [, m, d] = at.split('-').map(Number)
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    if (months[m - 1] && d) return `${months[m - 1]} ${d}`
+  }
+  return at || 'a date'
+}
+
+// SANITIZED reveal hint for the teaser stub — mirrors the client's
+// `reveals ${revealLabel(...)}`. An arrival reveal's place name + coords are
+// DROPPED (they'd name the secret); only a generic "when you arrive" survives.
+function revealHint(reveal) {
+  if (reveal?.type === 'date') return `reveals on ${fmtRevealDate(reveal.at)}`
+  if (reveal?.type === 'arrival') return 'reveals when you arrive at the place'
+  return "reveals when the moment's right"
+}
+
+function stopTeaserStub(stop) {
+  return {
+    id: stop.id,
+    name: "🎁 Something's coming",
+    time: stop.time || '',
+    note: revealHint(stop.surprise?.reveal),
+    masked: true,
+    _teaser: true,
+  }
+}
+
+function maskStopForViewer(stop, viewer) {
+  if (!isStopMaskedFrom(stop, viewer)) return stop
+  return stop.surprise.conceal === 'cover' ? stopCoverStandIn(stop) : stopTeaserStub(stop)
+}
+
+// Apply per-stop masking across a trip's days. Referential stability: returns the
+// trip unchanged when nothing applies (the common no-surprise path costs nothing).
+export function maskTripStops(trip, viewer) {
+  if (!trip || !Array.isArray(trip.days)) return trip
+  let changed = false
+  const days = trip.days.map((d) => {
+    const stops = d.stops || []
+    let dayChanged = false
+    const out = stops.map((s) => {
+      const m = maskStopForViewer(s, viewer)
+      if (m !== s) dayChanged = true
+      return m
+    })
+    if (!dayChanged) return d
+    changed = true
+    return { ...d, stops: out }
+  })
+  return changed ? { ...trip, days } : trip
+}
+
 export function maskTripForViewer(trip, viewer) {
-  return isTripMaskedFrom(trip, viewer) ? tripStandIn(trip) : trip
+  if (isTripMaskedFrom(trip, viewer)) return tripStandIn(trip)
+  return maskTripStops(trip, viewer)
+}
+
+// ── The save-back clobber guard (the NEW per-stop danger) ─────────────────────
+// A whole-trip stand-in carries `masked:true` so postTrip can refuse it. But a
+// PER-STOP-masked trip is otherwise a REAL, editable trip — a recipient can
+// legitimately co-plan it. The danger: a writer who had a stop hidden from them
+// never received it (they got a stub/cover), so their saved copy is MISSING the
+// real stop. Writing that back would erase the hidden stop for everyone — the
+// surprise destroyed. So before persisting, restore from the STORED trip every
+// stop hidden from the writer: drop the writer's projection of it, then re-insert
+// the real stored stop at its stored position. The author / non-targeted / a
+// revealed stop are never masked-from the writer → nothing to restore (fast path).
+//
+// Returns the reconciled days array (the writer's edits to everything they COULD
+// see, plus the protected stops restored). Pure — index.js does the D1 read/write.
+export function preserveHiddenStops(storedTrip, incomingTrip, writer) {
+  const incomingDays = Array.isArray(incomingTrip?.days) ? incomingTrip.days : []
+  const storedDays = Array.isArray(storedTrip?.days) ? storedTrip.days : []
+
+  // Every stored stop hidden FROM this writer, with where it lived.
+  const protectedStops = []
+  storedDays.forEach((d, di) => {
+    ;(d.stops || []).forEach((s, si) => {
+      if (isStopMaskedFrom(s, writer)) protectedStops.push({ stop: s, dayIso: d.isoDate || null, di, si })
+    })
+  })
+  if (!protectedStops.length) return incomingDays // fast path: nothing to protect
+
+  // Work on a shallow clone (clone the day objects + stops we touch).
+  const days = incomingDays.map((d) => ({ ...d, stops: Array.isArray(d.stops) ? d.stops.slice() : [] }))
+  const protectedIds = new Set(protectedStops.map((p) => p.stop.id))
+  // Drop any echo of a protected id from the writer's incoming stops (a cover
+  // stand-in or stub carries the same id; a teaser-dropped stop won't be present).
+  for (const d of days) d.stops = d.stops.filter((s) => !protectedIds.has(s?.id))
+
+  for (const p of protectedStops) {
+    // Destination day: by isoDate, else by stored index, else recreate (the
+    // writer dropped the whole day the secret lived on).
+    let dest = p.dayIso ? days.find((d) => d.isoDate === p.dayIso) : days[p.di]
+    if (!dest) {
+      const sd = storedDays[p.di] || { isoDate: p.dayIso }
+      dest = { ...sd, stops: [] }
+      days.splice(Math.min(p.di, days.length), 0, dest)
+    }
+    if (!Array.isArray(dest.stops)) dest.stops = []
+    dest.stops.splice(Math.min(p.si, dest.stops.length), 0, p.stop)
+  }
+  return days
 }

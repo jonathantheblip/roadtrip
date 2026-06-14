@@ -24,7 +24,7 @@ import {
   straightLineMinutes,
 } from './leaveWhen.js'
 import { runNightlyWeave, beatSignature } from './weaveGen.js'
-import { maskMemoryForViewer, maskTripForViewer } from './surprises.js'
+import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
@@ -129,7 +129,7 @@ export default {
         return await getTrips(env, traveler, url, cors, ctx)
       }
       if (path === '/trips' && request.method === 'POST') {
-        return await postTrip(env, request, cors)
+        return await postTrip(env, request, cors, traveler)
       }
       const tripMatch = path.match(/^\/trips\/([^/]+)$/)
       if (tripMatch && request.method === 'DELETE') {
@@ -243,6 +243,12 @@ export default {
         (e) => console.error('[trip-surprise-reveals] failed', e?.stack || e)
       )
     )
+    ctx.waitUntil(
+      runScheduledStopReveals(env, todayIsoUTC(Date.now())).then(
+        (r) => console.log('[stop-surprise-reveals]', JSON.stringify(r)),
+        (e) => console.error('[stop-surprise-reveals] failed', e?.stack || e)
+      )
+    )
   },
 }
 
@@ -283,6 +289,45 @@ export async function runScheduledTripReveals(env, todayIso) {
         AND json_extract(data_json, '$.surprise.reveal.at') <= ?`
   ).bind(new Date(now).toISOString(), now, todayIso).run()
   return { revealed: res?.meta?.changes ?? 0, todayIso }
+}
+
+// Per-stop date reveals (Slice 2). A stop's surprise sits at a DYNAMIC array index
+// inside data_json (days[i].stops[j].surprise) — a single json_set path can't
+// target it the way the whole-trip cron does. So load candidate trips (a cheap
+// LIKE prefilter on the marker), flip due reveals in JS, write back. Server-side
+// so a date reveal fires even if nobody opens the app; bumps updated_at so the
+// next sync delivers the now-revealed (full) stop.
+export async function runScheduledStopReveals(env, todayIso) {
+  const now = Date.now()
+  const { results } = await env.DB.prepare(
+    `SELECT id, data_json FROM trips
+      WHERE deleted_at IS NULL AND data_json LIKE '%"reveal"%'`
+  ).all()
+  let revealed = 0
+  for (const row of results || []) {
+    let trip
+    try { trip = JSON.parse(row.data_json) } catch { continue }
+    let changed = false
+    for (const d of trip.days || []) {
+      for (const s of d.stops || []) {
+        const sp = s?.surprise
+        const r = sp?.reveal
+        if (
+          sp && Array.isArray(sp.hideFrom) && sp.hideFrom.length &&
+          !sp.revealed && r?.type === 'date' && r.at && r.at <= todayIso
+        ) {
+          sp.revealed = new Date(now).toISOString()
+          changed = true
+          revealed++
+        }
+      }
+    }
+    if (changed) {
+      await env.DB.prepare('UPDATE trips SET data_json = ?, updated_at = ? WHERE id = ?')
+        .bind(JSON.stringify(trip), now, row.id).run()
+    }
+  }
+  return { revealed, todayIso }
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────
@@ -826,11 +871,13 @@ async function getTrips(env, traveler, url, cors, ctx) {
     }
   }).filter(Boolean)
 
-  // SECURITY BOUNDARY (whole-trip masking, Slice 3b): substitute a stand-in for
-  // any trip masked from `traveler` BEFORE it leaves the worker — the real
-  // title/itinerary never reach the recipient. Hero resolution below runs on the
-  // REAL trips (it's a server-side enrichment of stored data, not viewer-specific
-  // — and the stand-ins are fake, so they must never be sent to Places/R2).
+  // SECURITY BOUNDARY (Slice 3b whole-trip + Slice 2 per-stop masking):
+  // maskTripForViewer substitutes a whole stand-in for a trip masked from
+  // `traveler`, OR strips/covers any single hidden STOP within an otherwise-
+  // visible trip — BEFORE it leaves the worker, so the real title/itinerary/stop
+  // never reach the recipient. Hero resolution below runs on the REAL trips (it's
+  // a server-side enrichment of stored data, not viewer-specific — and the
+  // stand-ins are fake, so they must never be sent to Places/R2).
   const out = realTrips.map((t) => maskTripForViewer(t, traveler))
 
   // §2/§6 — kick off worker-side hero resolution in the BACKGROUND for
@@ -852,7 +899,7 @@ async function getTrips(env, traveler, url, cors, ctx) {
   return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
-async function postTrip(env, request, cors) {
+async function postTrip(env, request, cors, traveler) {
   const trip = await request.json()
   if (!trip?.id) return json({ error: 'missing id' }, 400, cors)
   // Masked-projection guard (whole-trip masking, 3b). A trip stand-in the worker
@@ -861,6 +908,27 @@ async function postTrip(env, request, cors) {
   // author's real trip. Refuse it — a stand-in is never authoritative.
   if (trip.masked) {
     return json({ ok: true, skipped: 'masked-projection', id: trip.id }, 200, cors)
+  }
+  // Per-stop clobber guard (Slice 2). A writer who had a STOP hidden from them
+  // never received the real stop (they got a stub/cover). Saving their copy back
+  // would erase the hidden stop for everyone. Before persisting, restore from the
+  // stored trip every stop hidden from THIS writer. No-op for the author /
+  // non-targeted (preserveHiddenStops fast-paths when nothing's protected). A
+  // failed reconcile read is logged and the write proceeds (a single PK lookup is
+  // highly reliable; rejecting normal saves on a transient miss would be worse).
+  if (traveler) {
+    try {
+      const { results } = await env.DB.prepare(
+        'SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL'
+      ).bind(trip.id).all()
+      const storedJson = results?.[0]?.data_json
+      if (storedJson) {
+        const stored = JSON.parse(storedJson)
+        trip.days = preserveHiddenStops(stored, trip, traveler)
+      }
+    } catch (e) {
+      console.error('postTrip preserveHiddenStops failed', e?.stack || e)
+    }
   }
   const updatedAt = Date.now()
   await env.DB.prepare(
@@ -2746,6 +2814,12 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     const masked = maskTripForViewer(realTrip, readerUserId)
     if (masked._maskedTrip) {
       trip = { id: masked.id, title: masked.title, dateRangeStart: masked.dateRangeStart, dateRangeEnd: masked.dateRangeEnd, endCity: masked.endCity, data: { ...masked, days: [] } }
+    } else if (masked !== realTrip) {
+      // Per-stop masking (Slice 2): a hidden stop on an otherwise-visible trip.
+      // maskTripForViewer returned a new trip with the stop stubbed/covered —
+      // re-wrap so formatTrip reads the masked days, never the real stop. (Same
+      // ref when nothing's hidden → this branch doesn't fire on normal trips.)
+      trip = { ...trip, data: masked }
     }
   }
   // When no specific trip is open, Helen still expects "what trips do
