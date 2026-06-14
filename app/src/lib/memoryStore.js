@@ -121,6 +121,7 @@ export function saveMemory({
   transcriptionStatus,
   photoRef,
   photoRefs,
+  pieces, // E4 — ordered heterogeneous moment pieces (photo/video/voice/note)
   mood,
   reactions,
   capturedAt,
@@ -208,6 +209,14 @@ export function saveMemory({
     resolvedInterstitial =
       existingShared?.interstitial || existingPriv?.interstitial || undefined
   }
+
+  // E4 — the ordered heterogeneous pieces (photos + voice + note slips) of a
+  // composed moment. Explicit array sets it; null clears; undefined PRESERVES
+  // (a later caption-only re-save can't strip it). Mirrors interstitial above.
+  let resolvedPieces
+  if (Array.isArray(pieces)) resolvedPieces = pieces.length ? pieces : undefined
+  else if (pieces === null) resolvedPieces = undefined
+  else resolvedPieces = existingShared?.pieces || existingPriv?.pieces || undefined
 
   // Masking layer. Explicit hideFrom array → (re)build the surprise; explicit
   // null → clear it; undefined → preserve whatever the existing record carried
@@ -299,6 +308,7 @@ export function saveMemory({
     transcriptionStatus,
     photoRef: resolvedPhotoRef,
     photoRefs: photoRefs && photoRefs.length > 0 ? photoRefs : undefined,
+    ...(resolvedPieces ? { pieces: resolvedPieces } : {}),
     mood,
     reactions: reactions || [],
     capturedAt: resolvedCapturedAt,

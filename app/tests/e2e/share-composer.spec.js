@@ -83,6 +83,36 @@ test('surprise + private photos are NOT offered for composing (safety guard)', a
   await expect(page.getByRole('button', { name: 'Select photo' })).toHaveCount(2)
 })
 
+test('E4: a note slip makes the moment an ORDERED pieces memory (photo → note), no crash', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await seedAndOpen(page, [sharedPhoto('p1', 'a shared photo')])
+
+  // Select a trip photo, THEN add a note — order is preserved in the selection.
+  await page.getByRole('button', { name: 'Select photo' }).first().click()
+  await page.getByRole('button', { name: /Write a note/i }).click()
+  await page.getByLabel('Note').fill('What a day at the seaport')
+  await page.getByRole('button', { name: /Add note/i }).click()
+  await expect(page.getByText(/2 selected/i)).toBeVisible()
+  // the note chip shows its selection-order badge + text
+  await expect(page.getByText('What a day at the seaport')).toBeVisible()
+
+  await page.getByRole('button', { name: /Next . Arrange/i }).click()
+  // the live preview renders the note slip (parity with the public page)
+  await expect(page.getByText('What a day at the seaport')).toBeVisible()
+  await page.getByRole('button', { name: /Share this moment/i }).click()
+  await expect(page.getByText(/Shared to the family/i)).toBeVisible()
+
+  // The composed memory is now a heterogeneous ORDERED pieces moment.
+  const composed = (await sharedMemories(page)).find((m) => Array.isArray(m.pieces))
+  expect(composed, 'a pieces-carrying composed memory was created').toBeTruthy()
+  expect(composed.pieces.map((p) => p.kind)).toEqual(['photo', 'note'])
+  expect(composed.pieces[1].text).toBe('What a day at the seaport')
+  // photoRefs subset still present (back-compat surfaces render the photo).
+  expect(composed.photoRefs).toHaveLength(1)
+  expect(errors, errors.join(' | ')).toHaveLength(0)
+})
+
 test('no shared photos → an honest empty state, no crash', async ({ page }) => {
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))

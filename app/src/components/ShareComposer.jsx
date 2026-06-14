@@ -16,12 +16,13 @@
 // uses var(--accent-text); the primary button is an --accent FILL with
 // --accent-ink on top — same conventions as ShareMomentSheet / SurpriseComposer.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Copy, Check, Share2, X, Image as ImageIcon, Plus, UploadCloud } from 'lucide-react'
+import { Copy, Check, Share2, X, Image as ImageIcon, Plus, UploadCloud, Mic, Pencil } from 'lucide-react'
 import { listMemoriesForTrip, saveMemory } from '../lib/memoryStore'
 import { isSurprise } from '../lib/surprises'
-import { shareMemory, pushMemory } from '../lib/workerSync'
+import { shareMemory, pushMemory, uploadBlob } from '../lib/workerSync'
 import { subscribe as subscribeQueue } from '../lib/uploadQueue'
 import { importComposerFile, importAccept, canImportVideo } from '../lib/composerImport'
+import { VoiceRecorder } from './VoiceRecorder'
 
 const MAX_ITEMS = 25
 
@@ -63,42 +64,80 @@ function VideoDot() {
 function PrevMat({ p, h, border = true, rot = 0 }) {
   return (
     <div style={{ transform: rot ? `rotate(${rot}deg)` : 'none', background: border ? '#FCFAF4' : 'transparent', padding: border ? 3 : 0, borderRadius: 2, boxShadow: border ? '0 1px 2px rgba(70,52,30,0.18)' : 'none', position: 'relative' }}>
-      <div style={{ position: 'relative', height: h, borderRadius: 1, overflow: 'hidden' }}>
-        <img src={p.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      <div style={{ position: 'relative', height: h, borderRadius: 1, overflow: 'hidden', background: 'var(--bg2)' }}>
+        {p.url && <img src={p.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
         {p.isVideo && <VideoDot />}
       </div>
     </div>
   )
 }
+function fmtDur(s) {
+  if (!Number.isFinite(s)) return '0:00'
+  return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
+}
+// E4 preview tiles — mirror the worker's voice pill + note slip (sharePage.js
+// .wt-voice / .wt-note) so the in-app "what they'll see" matches the public page.
+function PrevVoice({ p }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FCFAF4', border: '1px solid rgba(70,52,30,0.18)', borderRadius: 12, padding: '9px 11px' }}>
+      <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink, #fff)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Mic size={12} /></span>
+      <span style={{ flex: 1, height: 8, borderRadius: 4, background: 'repeating-linear-gradient(90deg, rgba(168,75,49,0.55) 0 2px, transparent 2px 4px)' }} />
+      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'rgba(70,52,30,0.7)' }}>{fmtDur(p.durationSeconds)}</span>
+    </div>
+  )
+}
+function PrevNote({ p }) {
+  return (
+    <div style={{ position: 'relative', background: '#F7F2E7', borderRadius: 3, padding: '14px 12px 12px', boxShadow: '0 1px 2px rgba(70,52,30,0.18)' }}>
+      <span aria-hidden="true" style={{ position: 'absolute', top: 0, left: 7, fontFamily: '"Fraunces", Georgia, serif', fontSize: 26, color: 'var(--accent)', opacity: 0.5 }}>&ldquo;</span>
+      <p style={{ margin: '5px 0 0', fontFamily: '"Fraunces", Georgia, serif', fontStyle: 'italic', fontSize: 13.5, lineHeight: 1.4, color: '#211E18', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{p.text}</p>
+    </div>
+  )
+}
+function PrevTile({ p, h }) {
+  if (p.kind === 'voice') return <PrevVoice p={p} />
+  if (p.kind === 'note') return <PrevNote p={p} />
+  return <PrevMat p={p} h={h} />
+}
 function ComposerPreview({ items, layout }) {
   if (!items.length) return null
+  const isMain = (p) => !(p.kind === 'voice' || p.kind === 'note')
   if (layout === 'mosaic') {
     const cols = items.length > 10 ? 3 : 2
-    return <div style={{ columnCount: cols, columnGap: 6 }}>{items.map((p, i) => <div key={p.id} style={{ breakInside: 'avoid', marginBottom: 6 }}><PrevMat p={p} h={PREV_H[i % PREV_H.length]} /></div>)}</div>
+    return <div style={{ columnCount: cols, columnGap: 6 }}>{items.map((p, i) => <div key={p.id} style={{ breakInside: 'avoid', marginBottom: 6 }}><PrevTile p={p} h={PREV_H[i % PREV_H.length]} /></div>)}</div>
   }
   if (layout === 'stack') {
-    const photos = items.slice(0, 5)
+    const photos = items.filter(isMain).slice(0, 5)
+    const extras = items.filter((p) => !isMain(p))
     return (
-      <div style={{ position: 'relative', height: 150 }}>
-        {photos.map((p, i) => (
-          <div key={p.id} style={{ position: 'absolute', top: 6 + i * 5, left: '50%', width: 120, marginLeft: -60, zIndex: i, transform: `rotate(${(i - 2) * 4}deg)` }}><PrevMat p={p} h={92} /></div>
-        ))}
-      </div>
+      <>
+        <div style={{ position: 'relative', height: 150 }}>
+          {photos.map((p, i) => (
+            <div key={p.id} style={{ position: 'absolute', top: 6 + i * 5, left: '50%', width: 120, marginLeft: -60, zIndex: i, transform: `rotate(${(i - 2) * 4}deg)` }}><PrevMat p={p} h={92} /></div>
+          ))}
+        </div>
+        {extras.length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{extras.map((p) => <PrevTile key={p.id} p={p} />)}</div>}
+      </>
     )
   }
   if (layout === 'filmstrip') {
     const holes = Array.from({ length: 10 }, (_, i) => <span key={i} style={{ width: 5, height: 7, borderRadius: 1.5, background: '#2A2521' }} />)
+    const photos = items.filter(isMain)
+    const extras = items.filter((p) => !isMain(p))
     return (
-      <div style={{ background: '#0C0A09', borderRadius: 4, padding: '5px 4px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 6px 4px' }}>{holes}</div>
-        <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>{items.map((p) => <div key={p.id} style={{ flex: '0 0 80px' }}><PrevMat p={p} h={92} border={false} /></div>)}</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px 2px' }}>{holes}</div>
-      </div>
+      <>
+        <div style={{ background: '#0C0A09', borderRadius: 4, padding: '5px 4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 6px 4px' }}>{holes}</div>
+          <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>{photos.map((p) => <div key={p.id} style={{ flex: '0 0 80px' }}><PrevMat p={p} h={92} border={false} /></div>)}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px 2px' }}>{holes}</div>
+        </div>
+        {extras.length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{extras.map((p) => <PrevTile key={p.id} p={p} />)}</div>}
+      </>
     )
   }
   // wall (default) — masonry with slight rotations
   const cols = items.length > 16 ? 3 : 2
-  return <div style={{ columnCount: cols, columnGap: 6 }}>{items.map((p, i) => <div key={p.id} style={{ breakInside: 'avoid', marginBottom: 6, transform: (i % 3 - 1) ? `rotate(${(i % 3 - 1) * 1.1}deg)` : 'none' }}><PrevMat p={p} h={PREV_H[i % PREV_H.length]} /></div>)}</div>
+  return <div style={{ columnCount: cols, columnGap: 6 }}>{items.map((p, i) => <div key={p.id} style={{ breakInside: 'avoid', marginBottom: 6, transform: (i % 3 - 1) ? `rotate(${(i % 3 - 1) * 1.1}deg)` : 'none' }}><PrevTile p={p} h={PREV_H[i % PREV_H.length]} /></div>)}</div>
 }
 
 export function ShareComposer({ trip, traveler, onClose }) {
@@ -122,6 +161,12 @@ export function ShareComposer({ trip, traveler, onClose }) {
   const [qTick, setQTick] = useState(0) // bumped on upload-queue changes → re-read refs
   const fileInputRef = useRef(null)
   const objectUrlsRef = useRef([]) // pending-import blob: urls, revoked on unmount
+  // E4 — voice clips + note slips added this session, ordered into the selection.
+  const [extras, setExtras] = useState([])
+  const [recording, setRecording] = useState(false)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [extrasErr, setExtrasErr] = useState('') // voice/note add failures (shown in both tabs)
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -137,7 +182,7 @@ export function ShareComposer({ trip, traveler, onClose }) {
 
   // All selectable pieces: imported-this-session first, then the trip's existing
   // shared photos. Selection (selIds) spans both sources.
-  const allPieces = useMemo(() => [...imported, ...pieces], [imported, pieces])
+  const allPieces = useMemo(() => [...imported, ...extras, ...pieces], [imported, extras, pieces])
   const sel = selIds.map((id) => allPieces.find((p) => p.id === id)).filter(Boolean)
   const atMax = sel.length >= MAX_ITEMS
   const toggle = (id) =>
@@ -156,8 +201,18 @@ export function ShareComposer({ trip, traveler, onClose }) {
   // covers EVERY selected piece — not just imports — so a not-yet-uploaded photo
   // from any source can never ship a broken ref into the share.
   const isReady = (ref) => !!(ref && ref.url && ref.storage !== 'pending' && !String(ref.url).startsWith('blob:'))
-  const pendingSel = sel.filter((p) => !isReady(currentRef(p)))
-  const allReady = pendingSel.length === 0 // every selected piece is uploaded
+  const pieceKind = (p) => p?.kind || (p?.isVideo ? 'video' : 'photo')
+  // Readiness per piece: a note is always ready (text); a voice is ready once its
+  // audio is uploaded (r2 — only added after a successful upload); a photo/video
+  // is ready when its ref is r2 (the E3 offline gate).
+  const pieceReady = (p) => {
+    const k = pieceKind(p)
+    if (k === 'note') return true
+    if (k === 'voice') return !!(p.audioRef && p.audioRef.storage === 'r2' && p.audioRef.url)
+    return isReady(currentRef(p))
+  }
+  const pendingSel = sel.filter((p) => !pieceReady(p))
+  const allReady = pendingSel.length === 0 // every selected piece is shareable
 
   // Import each picked file through the proven offline-safe pipeline → a trip
   // memory + a selectable piece. Auto-selects it (respecting the cap).
@@ -182,15 +237,66 @@ export function ShareComposer({ trip, traveler, onClose }) {
     setImporting(false)
   }
 
+  // Voice note — upload the recorded clip to R2 immediately (a share needs a
+  // connection anyway; audio isn't offline-queue-backed), then add it as an
+  // ordered voice piece. Offline / no worker → an honest message, nothing added.
+  async function handleVoiceStop(payload) {
+    setRecording(false)
+    if (!payload?.blob) return
+    if (sel.length >= MAX_ITEMS) { setExtrasErr(`You can add up to ${MAX_ITEMS} pieces — remove one first.`); return }
+    setExtrasErr('')
+    try {
+      const vid = `vc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const remote = await uploadBlob('audio', vid, payload.blob)
+      const piece = {
+        id: `voice::${vid}`,
+        kind: 'voice',
+        audioRef: { storage: 'r2', key: remote.key, url: remote.url, mime: remote.mime || payload.mime },
+        durationSeconds: payload.durationSeconds,
+        url: remote.url,
+      }
+      setExtras((prev) => [...prev, piece])
+      setSelIds((s) => (s.length >= MAX_ITEMS ? s : [...s, piece.id]))
+    } catch {
+      setExtrasErr('Couldn’t add the voice note — you may be offline. Connect and try again.')
+    }
+  }
+
+  function addNote() {
+    const t = noteText.trim()
+    if (!t) return
+    if (sel.length >= MAX_ITEMS) { setExtrasErr(`You can add up to ${MAX_ITEMS} pieces — remove one first.`); return }
+    const piece = { id: `note::${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`, kind: 'note', text: t }
+    setExtras((prev) => [...prev, piece])
+    setSelIds((s) => (s.length >= MAX_ITEMS ? s : [...s, piece.id]))
+    setNoteText('')
+    setNoteOpen(false)
+  }
+  function removeExtra(id) {
+    setExtras((prev) => prev.filter((p) => p.id !== id))
+    setSelIds((s) => s.filter((x) => x !== id))
+  }
+
   async function share() {
     if (!sel.length || step === 'working') return
     if (!allReady) return // Share is UI-gated while imports upload; defensive no-op
     setStep('working')
     setErrMsg('')
     try {
-      // The composed album memory — reuse each piece's CURRENT r2 ref. For an
-      // imported piece that's the now-uploaded ref (re-read by memory id), never
-      // the stale pending object-URL, so a recipient never gets a blob: tile.
+      // Build the ordered heterogeneous pieces from the selection. Photo/video use
+      // each piece's CURRENT r2 ref (re-read by memory id — never the stale pending
+      // object-URL); voice carries its uploaded audio; a note is pure text. A
+      // pure-photo moment sends NO pieces (the worker renders it via photoRefs,
+      // exactly as E2/E3) — pieces only rides when there's a voice or note.
+      const orderedPieces = sel.map((p) => {
+        const k = pieceKind(p)
+        if (k === 'note') return { kind: 'note', text: p.text }
+        if (k === 'voice') return { kind: 'voice', key: p.audioRef.key, mime: p.audioRef.mime, url: p.audioRef.url, durationSeconds: p.durationSeconds }
+        const ref = currentRef(p)
+        return { kind: k, key: ref.key, mime: ref.mime, url: ref.url, ...(ref.capturedAt ? { capturedAt: ref.capturedAt } : {}), ...(ref.posterKey ? { posterKey: ref.posterKey, posterUrl: ref.posterUrl } : {}) }
+      })
+      const photoRefs = sel.filter((p) => pieceKind(p) === 'photo' || pieceKind(p) === 'video').map((p) => currentRef(p)).filter(Boolean)
+      const hasExtras = sel.some((p) => pieceKind(p) === 'voice' || pieceKind(p) === 'note')
       const saved = saveMemory({
         tripId,
         stopId: null, // a trip-level composed memory (no single stop)
@@ -198,7 +304,8 @@ export function ShareComposer({ trip, traveler, onClose }) {
         visibility: 'shared',
         kind: 'photo',
         caption: caption.trim() || undefined,
-        photoRefs: sel.map((p) => currentRef(p)).filter(Boolean),
+        photoRefs,
+        ...(hasExtras ? { pieces: orderedPieces } : {}),
       })
       const id = saved?.id
       if (!id) throw new Error('save failed')
@@ -260,7 +367,7 @@ export function ShareComposer({ trip, traveler, onClose }) {
         return (
           <button key={p.id} type="button" onClick={() => toggle(p.id)} aria-label={on ? `Selected, position ${n + 1}` : 'Select photo'} aria-pressed={on}
             style={{ position: 'relative', padding: 0, border: 'none', cursor: 'pointer', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', background: 'var(--bg2)', boxShadow: on ? '0 0 0 3px var(--accent)' : 'none' }}>
-            <img src={p.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.92 }} />
+            {p.url && <img src={p.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.92 }} />}
             {p.isVideo && <span aria-hidden="true" style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 11 }}>▶</span>}
             {uploading && (
               <span aria-hidden="true" title="Uploading…" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}><UploadCloud size={18} /></span>
@@ -275,6 +382,7 @@ export function ShareComposer({ trip, traveler, onClose }) {
   )
 
   return (
+    <>
     <div onClick={onClose} data-testid="share-composer" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 90, display: 'flex', alignItems: 'flex-end' }}>
       <div onClick={(e) => e.stopPropagation()} style={sheet}>
         <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom) + 22px)' }}>
@@ -346,6 +454,44 @@ export function ShareComposer({ trip, traveler, onClose }) {
                 </>
               )}
 
+              {/* E4 — add a voice note or a typed note slip (moment-level). */}
+              <div style={{ display: 'flex', gap: 9, marginBottom: 12 }}>
+                <button type="button" onClick={() => { setNoteOpen(false); setExtrasErr(''); setRecording(true) }}
+                  style={{ flex: 1, height: 44, borderRadius: 10, border: '1.5px solid var(--line-bold)', background: 'transparent', color: 'var(--accent-text, var(--accent))', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                  <Mic size={15} /> Voice note
+                </button>
+                <button type="button" onClick={() => { setRecording(false); setExtrasErr(''); setNoteOpen((o) => !o) }} aria-pressed={noteOpen}
+                  style={{ flex: 1, height: 44, borderRadius: 10, border: `1.5px solid ${noteOpen ? 'var(--accent)' : 'var(--line-bold)'}`, background: noteOpen ? 'var(--accent)' : 'transparent', color: noteOpen ? 'var(--accent-ink, #fff)' : 'var(--accent-text, var(--accent))', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                  <Pencil size={15} /> Write a note
+                </button>
+              </div>
+              {extrasErr && <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginBottom: 10, lineHeight: 1.4 }}>{extrasErr}</div>}
+              {noteOpen && (
+                <div style={{ marginBottom: 12 }}>
+                  <textarea autoFocus rows={2} maxLength={500} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Write a little note…" aria-label="Note"
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: Math.min(r, 10), border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)', fontFamily: serif, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', fontSize: 15, lineHeight: 1.4, outline: 'none', resize: 'vertical', colorScheme: traveler === 'helen' ? 'light' : 'dark' }} />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                    <button type="button" onClick={() => { setNoteOpen(false); setNoteText('') }} style={{ padding: '8px 14px', borderRadius: 999, border: '1px solid var(--line-bold)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>Cancel</button>
+                    <button type="button" onClick={addNote} disabled={!noteText.trim()} style={{ padding: '8px 16px', borderRadius: 999, border: 'none', cursor: noteText.trim() ? 'pointer' : 'default', background: noteText.trim() ? 'var(--accent)' : 'var(--bg2)', color: noteText.trim() ? 'var(--accent-ink, #fff)' : 'var(--muted)', fontFamily: 'var(--font-body)', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>Add note</button>
+                  </div>
+                </div>
+              )}
+              {extras.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                  {extras.map((p) => {
+                    const n = selIds.indexOf(p.id)
+                    return (
+                      <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, maxWidth: '100%', padding: '7px 9px 7px 10px', borderRadius: 999, border: '1px solid var(--line-bold)', background: 'var(--card)' }}>
+                        {n >= 0 && <span aria-hidden="true" style={{ width: 17, height: 17, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink, #fff)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>{n + 1}</span>}
+                        {p.kind === 'voice' ? <Mic size={13} style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0 }} /> : <Pencil size={13} style={{ color: 'var(--accent-text, var(--accent))', flexShrink: 0 }} />}
+                        <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{p.kind === 'voice' ? `Voice · ${fmtDur(p.durationSeconds)}` : p.text}</span>
+                        <button type="button" onClick={() => removeExtra(p.id)} aria-label="Remove" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted)', display: 'flex', padding: 0, flexShrink: 0 }}><X size={14} /></button>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+
               {sel.length > 0 && (
                 <>
                   <button onClick={() => setStep('arrange')} style={primaryBtn(true)}>Next · Arrange →</button>
@@ -412,5 +558,9 @@ export function ShareComposer({ trip, traveler, onClose }) {
         </div>
       </div>
     </div>
+    {/* The voice recorder is a full-screen overlay; render it as a SIBLING of the
+        backdrop so its clicks don't bubble to onClose and dismiss the sheet. */}
+    {recording && <VoiceRecorder onStop={handleVoiceStop} onCancel={() => setRecording(false)} />}
+    </>
   )
 }

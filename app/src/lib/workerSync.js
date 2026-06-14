@@ -226,7 +226,7 @@ export async function deleteRemote(memory) {
   }
 }
 
-async function uploadBlob(kind, memoryId, blob) {
+export async function uploadBlob(kind, memoryId, blob) {
   const r = await workerFetch(
     `/assets/${kind}/${encodeURIComponent(memoryId)}`,
     {

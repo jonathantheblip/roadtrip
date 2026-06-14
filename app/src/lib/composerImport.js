@@ -64,7 +64,9 @@ function pieceFromImport({ id, ref, pending }) {
     id: `imp::${id}`,
     importId: id, // the new memory's id — re-read its ref after the queue drains
     ref,
-    url: ref.posterUrl || ref.url,
+    // A video shows its poster; a posterless video → no url (the grid/preview
+    // renders a placeholder, never an <img src=.mp4>).
+    url: ref.posterUrl || (isVideo ? undefined : ref.url),
     isVideo,
     pending,
   }
