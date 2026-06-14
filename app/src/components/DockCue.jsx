@@ -31,7 +31,9 @@ export function DockCue({ kind, traveler }) {
     // light-paper chip would not.
     return (
       <span style={{ ...wrap, gap: 7, padding: '4px 11px 4px 9px', borderRadius: 999, background: 'var(--accent)', color: 'var(--accent-ink)', fontFamily: 'var(--font-body)', fontSize: 11.5, fontWeight: 600 }}>
-        <span aria-hidden="true">{surprise ? '🎁' : '✦'}</span>
+        <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {surprise ? '🎁' : <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-ink)' }} />}
+        </span>
         {surprise ? 'Revealed for you' : 'New page'}
       </span>
     )

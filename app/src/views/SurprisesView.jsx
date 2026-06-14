@@ -25,6 +25,7 @@ import {
 } from '../lib/memoryStore'
 import { authoredSurprises, teasersMaskedFrom, revealedForViewer, tripSurprisesKeptBy, stopSurprisesKeptBy, displayName, revealLabel, wrapItemsForKind, memGlyph, stopGlyph } from '../lib/surprises'
 import { draftCover } from '../lib/workerSync'
+import { ClaudeGlyph } from '../components/Glyphs'
 
 // Normalize a whole-trip surprise (3b) into the kept-card shape so the same card
 // UI renders it. `isTrip`/`_trip` let doReveal/openEdit route to the trip write.
@@ -840,7 +841,8 @@ function SurpriseComposer({ traveler, trip, editing, onClose, onCreate }) {
                   )}
                   {/* Slice 3 — Claude cover-assist: drafts a believable stand-in. */}
                   <button type="button" onClick={suggestCover} disabled={coverBusy} aria-label="Suggest a cover with Claude" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', marginBottom: 9, padding: '11px 12px', borderRadius: Math.min(r, 12), cursor: coverBusy ? 'default' : 'pointer', border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent-text, var(--accent))', fontFamily: 'var(--font-body)', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
-                    {coverBusy ? '✦ Writing a cover…' : (cov.title.trim() ? '✦ Fill in the rest with Claude' : '✦ Suggest a cover with Claude')}
+                    <ClaudeGlyph size={13} />
+                    {coverBusy ? 'Writing a cover…' : (cov.title.trim() ? 'Fill in the rest with Claude' : 'Suggest a cover with Claude')}
                   </button>
                   {coverErr && <div style={{ fontFamily: serif, fontSize: 11.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginBottom: 9, lineHeight: 1.4 }}>{coverErr}</div>}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

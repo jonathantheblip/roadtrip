@@ -516,6 +516,8 @@
   margin-bottom: 8px;
 }
 .rpl-dayweave-eyebrow {
+  display: inline-flex;
+  align-items: center;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   letter-spacing: 0.18em;

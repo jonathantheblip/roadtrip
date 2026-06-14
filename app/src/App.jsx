@@ -29,6 +29,7 @@ import { ShareComposer } from './components/ShareComposer'
 // model + index code stays out of the main bundle until it's opened.
 const PersonView = lazy(() => import('./views/PersonView').then((m) => ({ default: m.PersonView })))
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
+import { WeaveMark } from './components/Glyphs'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
 import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from './lib/weave'
@@ -927,9 +928,15 @@ export default function App() {
                 textTransform: 'uppercase',
                 opacity: topBar.opacity,
                 color: topBar.text,
+                // inline-flex + nowrap so the braid sits beside the label on one
+                // line — the wider braid (vs the old narrow ✦) would otherwise
+                // wrap the label under it in this narrow flex item.
+                display: 'inline-flex',
+                alignItems: 'center',
+                whiteSpace: 'nowrap',
               }}
             >
-              ✦ Weave
+              <WeaveMark size={15} style={{ marginRight: 5 }} /> Weave
               {weaveReady && (
                 <span
                   data-testid="weave-ready-dot"

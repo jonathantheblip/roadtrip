@@ -7,6 +7,7 @@ import { humanDateRange } from '../lib/createTripCard'
 import { thumbUrl } from '../lib/thumbUrl'
 import { fetchStoredWeave } from '../lib/weave'
 import { Avatar, AvatarStack } from '../components/Avatar'
+import { WeaveMark } from '../components/Glyphs'
 import { TRAVELERS } from '../data/travelers'
 import './ReplayView.css'
 
@@ -602,7 +603,7 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
         <div className="rpl-spine">
           {dayWeave && (
             <div className="rpl-dayweave" data-testid="rpl-dayweave">
-              <span className="rpl-dayweave-eyebrow">✦ The weave</span>
+              <span className="rpl-dayweave-eyebrow"><WeaveMark size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> The weave</span>
               <h2 className="rpl-dayweave-title">{dayWeave.title}</h2>
               {dayWeave.opening && <p className="rpl-dayweave-opening">{dayWeave.opening}</p>}
             </div>

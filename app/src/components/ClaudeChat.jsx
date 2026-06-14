@@ -28,6 +28,7 @@ import {
   isClaudeChatConfigured,
 } from '../lib/claudeChat'
 import { ConfirmCard } from './ConfirmCard'
+import { ClaudeGlyph } from './Glyphs'
 
 // Markdown pipeline: remark-gfm gives us tables, strikethrough,
 // task lists, autolinks; remark-breaks preserves the single-newline
@@ -51,35 +52,17 @@ const FONT = {
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────
-// The Claude mark — a four-pointed spark, the Anthropic Claude logo
-// glyph. Replaces the earlier dot+asterisk pair (which read as a
-// "glowing dot" at small sizes) with a clean vector spark. Inline
-// SVG so it's instant and theme-responsive. Default color is
-// `currentColor`, so callers control hue via the parent's `color`
-// CSS — that lets the same component render sage in Helen's panel,
-// oxblood on Jonathan's surface, etc., without prop drilling.
+// The Claude mark — the new family-trips Claude glyph: a bold filled
+// crescent cradling a thin uneven spark that peeks past the curve
+// (design-handoffs/claude-glyph). Replaces the old four-point Anthropic
+// spark everywhere ClaudeMark renders (FAB, dock, lockup, panel). Thin
+// wrapper over the shared <ClaudeGlyph> so its single-ink, currentColor
+// contract lives in one place; the size/color API is preserved so every
+// call site stays untouched. `color` sets the local ink; the default
+// 'currentColor' inherits the parent's hue (sage in Helen's panel,
+// oxblood on Jonathan's surface, etc.) without prop drilling.
 function ClaudeMark({ size = 16, color = 'currentColor' }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      {/* One four-point star with concave sides — the Anthropic spark
-          silhouette. Tips at top/bottom (y 1.5 / 22.5) run longer than
-          the left/right tips (x 5 / 19), a taller-than-wide proportion.
-          Control points sit near the center so each edge bows inward,
-          giving sharp points and a filled body that reads at 16-24px
-          instead of the thin-cross the four-petal version became. */}
-      <path
-        d="M12 1.5 Q13.5 10.5 19 12 Q13.5 13.5 12 22.5 Q10.5 13.5 5 12 Q10.5 10.5 12 1.5 Z"
-        fill={color}
-      />
-    </svg>
-  )
+  return <ClaudeGlyph size={size} color={color} />
 }
 
 function XIcon({ size = 14, color = 'currentColor' }) {
