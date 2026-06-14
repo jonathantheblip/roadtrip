@@ -445,8 +445,26 @@ async function postMemory(env, traveler, request, url, cors) {
     Number.isFinite(r?.lng) ||
     (typeof r?.capturedAt === 'string' && r.capturedAt)
   const refHasPoster = (r) => typeof r?.posterKey === 'string' && !!r.posterKey
+  // E4 — an ordered heterogeneous "moment" piece. Photos/videos reuse photoEntry
+  // (+ an explicit `kind`); a voice clip carries its audio r2 key + duration; a
+  // note slip is pure author text. All ride the SAME photo_r2_keys_json column
+  // (no migration), interleaved in author order. rowToMemory branches on `kind`;
+  // legacy entries (no kind) deserialize as photos, unchanged.
+  const pieceEntry = (p) => {
+    if (p?.kind === 'note') return { kind: 'note', text: (typeof p.text === 'string' ? p.text : '').slice(0, 500) }
+    if (p?.kind === 'voice') {
+      const e = { kind: 'voice', key: p.key, mime: p.mime || null }
+      if (Number.isFinite(p.durationSeconds)) e.durationSeconds = p.durationSeconds
+      return e
+    }
+    const e = photoEntry(p)
+    e.kind = p?.kind === 'video' || (p?.mime || '').startsWith('video') || refHasPoster(p) ? 'video' : 'photo'
+    return e
+  }
   let photoR2KeysJson = null
-  if (body.photoRefs?.length) {
+  if (body.pieces?.length) {
+    photoR2KeysJson = JSON.stringify(body.pieces.map(pieceEntry))
+  } else if (body.photoRefs?.length) {
     photoR2KeysJson = JSON.stringify(body.photoRefs.map(photoEntry))
   } else if (body.photoRef?.storage === 'r2' && (refHasExif(body.photoRef) || refHasPoster(body.photoRef))) {
     // Single-photo dispatch / single-video path: the scalar photo_r2_key column
@@ -457,6 +475,20 @@ async function postMemory(env, traveler, request, url, cors) {
     // mirrors (on posterKey) so its poster isn't lost; a coordless plain photo
     // stays scalar-only, unchanged.
     photoR2KeysJson = JSON.stringify([photoEntry(body.photoRef)])
+  }
+  // E4 clobber guard — a re-save carrying ONLY photoRefs (no pieces) must not
+  // overwrite a stored heterogeneous moment (the COALESCE protects NULL, not a
+  // subset overwrite). If the stored row already holds voice/note pieces and this
+  // body brought none, keep the stored column (null → COALESCE preserves it). Only
+  // costs a SELECT on the rare photoRefs-without-pieces re-save.
+  if (photoR2KeysJson && body.photoRefs?.length && !body.pieces?.length && body.id) {
+    try {
+      const existing = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind(body.id).first()
+      const stored = existing?.photo_r2_keys_json ? JSON.parse(existing.photo_r2_keys_json) : null
+      if (Array.isArray(stored) && stored.some((e) => e && (e.kind === 'note' || e.kind === 'voice'))) {
+        photoR2KeysJson = null // preserve the stored moment's pieces
+      }
+    } catch { /* fall through — best-effort guard */ }
   }
   let audioR2Key = null
   let audioMime = null
@@ -736,10 +768,28 @@ function rowToMemory(r, origin) {
       }
     : undefined
   let photoRefs
+  let pieces
   if (r.photo_r2_keys_json) {
     try {
       const arr = JSON.parse(r.photo_r2_keys_json)
-      photoRefs = arr.map((a) => {
+      const refs = []
+      const ordered = []
+      let mixed = false // any voice/note entry → this is an E4 heterogeneous moment
+      for (const a of arr) {
+        if (a && a.kind === 'note') {
+          mixed = true
+          ordered.push({ kind: 'note', text: typeof a.text === 'string' ? a.text : '' })
+          continue
+        }
+        if (a && a.kind === 'voice') {
+          if (!a.key) continue // drop a malformed keyless voice, don't nuke the moment
+          mixed = true
+          const v = { kind: 'voice', storage: 'r2', key: a.key, url: assetUrl(a.key, origin), mime: a.mime || undefined }
+          if (Number.isFinite(a.durationSeconds)) v.durationSeconds = a.durationSeconds
+          ordered.push(v)
+          continue
+        }
+        if (!a || !a.key) continue // a malformed/keyless photo entry → skip it, keep the rest
         const ref = {
           storage: 'r2',
           key: a.key,
@@ -758,8 +808,14 @@ function rowToMemory(r, origin) {
           ref.posterKey = a.posterKey
           ref.posterUrl = assetUrl(a.posterKey, origin)
         }
-        return ref
-      })
+        refs.push(ref)
+        ordered.push({ kind: ref.posterUrl ? 'video' : 'photo', ...ref })
+      }
+      photoRefs = refs
+      // pieces (the ORDERED heterogeneous list) only when there's a non-photo
+      // entry — so an ordinary photo album is byte-identical to before (E4 is
+      // additive; photoRefs is still the photo/video subset for every surface).
+      if (mixed) pieces = ordered
     } catch {}
   }
   const audioRef = r.audio_r2_key
@@ -820,6 +876,7 @@ function rowToMemory(r, origin) {
     reactions,
     photoRef,
     photoRefs,
+    ...(pieces ? { pieces } : {}),
     photoExternalURLs,
     interstitial,
     audioRef,
@@ -837,6 +894,7 @@ function rowToMemory(r, origin) {
 }
 
 function assetUrl(key, origin) {
+  if (!key) return '' // defense: never throw on a malformed (keyless) ref
   const enc = key.split('/').map(encodeURIComponent).join('/')
   return `${origin || ''}/assets/${enc}`
 }

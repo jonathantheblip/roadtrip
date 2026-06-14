@@ -176,11 +176,34 @@ function printPhoto(url, h, rotate, withTape) {
 // owns the layout math; this only renders it. Tape is paper-only.
 const PLAY_SVG_SM =
   '<svg width="9" height="10" viewBox="0 0 10 11" fill="var(--accent-ink)" aria-hidden="true"><path d="M0 1v9a.5.5 0 0 0 .8.4l7.5-4.5a.5.5 0 0 0 0-.8L.8.6A.5.5 0 0 0 0 1Z"/></svg>'
+const PLAY_SVG_LG =
+  '<svg width="16" height="18" viewBox="0 0 16 18" fill="var(--accent-ink)" aria-hidden="true"><path d="M0 1.5v15a1 1 0 0 0 1.5.87l13-7.5a1 1 0 0 0 0-1.74l-13-7.5A1 1 0 0 0 0 1.5Z"/></svg>'
+// E4 — the play control for a voice note. With the audio url it's a real
+// tap-to-play button (wired by the page script's [data-audio] handler); without
+// a url it's a decorative glyph (legacy/teaser). The url is allowlisted (it's the
+// memory's r2 audio url surfaced by shareViewFromMemory).
+function voicePlayHtml(url, size) {
+  const cls = size === 'lg' ? 'voice-play' : 'voice-play sm'
+  const svg = size === 'lg' ? PLAY_SVG_LG : PLAY_SVG_SM
+  if (!url) return `<span class="${cls}">${svg}</span>`
+  return `<button type="button" class="${cls}" data-audio="${esc(url)}" aria-label="Play voice note">${svg}</button>`
+}
 
 // A voice tile (compact pill) — shared by every collage layout.
 function voiceTileHtml(t) {
   const dur = clock(t.dur) || '0:18'
-  return `<div class="wt-voice"><span class="voice-play sm">${PLAY_SVG_SM}</span><span class="wave wave-sm">${waveBars(22, 0.8, 9)}</span><span class="voice-chip-dur">${esc(dur)}</span></div>`
+  return `<div class="wt-voice">${voicePlayHtml(t.url, 'sm')}<span class="wave wave-sm">${waveBars(22, 0.8, 9)}</span><span class="voice-chip-dur">${esc(dur)}</span></div>`
+}
+// A note-slip tile (E4) — a small cream card with the author's words in the
+// keepsake serif. Shared by the collage layouts; text is esc()'d (author input).
+function noteTileHtml(t) {
+  return `<div class="wt-note"><span class="wt-note-quote" aria-hidden="true">&ldquo;</span><p class="wt-note-text">${esc(t.text || '')}</p></div>`
+}
+// One collage tile by kind — voice pill / note slip / photo-video mat.
+function pieceTileHtml(t, matOpts) {
+  if (t.kind === 'voice') return voiceTileHtml(t)
+  if (t.kind === 'note') return noteTileHtml(t)
+  return matTileHtml(t, matOpts)
 }
 // A photo/video mat tile — shared by every collage layout. `h` overrides the
 // tile's own height; `taped`/`rot` are wall-only flourishes (omit elsewhere).
@@ -204,34 +227,38 @@ function collageHtml(view, layout) {
   const built = buildWallTiles(view)
   const { tiles, cols, compact, summary } = built
   let body
+  // Photo-centric layouts (stack/filmstrip) keep photos/videos as the visual; a
+  // voice pill or note slip rides in the "extras" row below. Wall/mosaic render
+  // every piece — incl. note slips — inline, in author order.
+  const isMain = (t) => t.kind === 'photo' || t.kind === 'video'
   if (layout === 'mosaic') {
     const mcols = tiles.length > 10 ? 3 : 2
     body = `<div class="wall cols-${mcols}">${tiles
-      .map((t, i) => `<div class="wall-tile">${t.kind === 'voice' ? voiceTileHtml(t) : matTileHtml(t, { h: MOSAIC_H[i % MOSAIC_H.length] })}</div>`)
+      .map((t, i) => `<div class="wall-tile">${pieceTileHtml(t, { h: MOSAIC_H[i % MOSAIC_H.length] })}</div>`)
       .join('')}</div>`
   } else if (layout === 'stack') {
-    const photos = tiles.filter((t) => t.kind !== 'voice').slice(0, 5)
-    const extras = tiles.filter((t) => t.kind === 'voice')
+    const photos = tiles.filter(isMain).slice(0, 5)
+    const extras = tiles.filter((t) => !isMain(t))
     const stackTiles = photos
       .map((t, i) => `<div class="stack-card" style="top:${10 + i * 8}px;z-index:${i};transform:rotate(${(i - 2) * 4}deg)">${matTileHtml(t, { h: 150 })}</div>`)
       .join('')
-    const below = extras.map((t) => `<div class="wall-tile">${voiceTileHtml(t)}</div>`).join('')
+    const below = extras.map((t) => `<div class="wall-tile">${pieceTileHtml(t)}</div>`).join('')
     body = `<div class="stack-wrap">${stackTiles}</div>${below ? `<div class="stack-extras">${below}</div>` : ''}`
   } else if (layout === 'filmstrip') {
     let holes = ''
     for (let i = 0; i < 12; i++) holes += '<span></span>'
     const frames = tiles
-      .filter((t) => t.kind !== 'voice')
+      .filter(isMain)
       .map((t) => `<div class="strip-frame">${matTileHtml(t, { h: 150, border: false })}</div>`)
       .join('')
-    const below = tiles.filter((t) => t.kind === 'voice').map((t) => `<div class="wall-tile">${voiceTileHtml(t)}</div>`).join('')
+    const below = tiles.filter((t) => !isMain(t)).map((t) => `<div class="wall-tile">${pieceTileHtml(t)}</div>`).join('')
     body = `<div class="strip"><div class="strip-holes">${holes}</div><div class="strip-frames">${frames}</div><div class="strip-holes">${holes}</div></div>${below ? `<div class="stack-extras">${below}</div>` : ''}`
   } else {
     // wall (default) — the Slice-1 masonry, with the per-tile heights/tape/rot.
     body = `<div class="wall cols-${cols}">${tiles
       .map((t) => {
         const wrapStyle = `${t.rot ? `transform:rotate(${t.rot}deg);` : ''}${t.tape && !compact ? 'margin-top:12px;' : ''}`
-        const inner = t.kind === 'voice' ? voiceTileHtml(t) : matTileHtml(t, { taped: t.tape && !compact, rot: t.rot })
+        const inner = pieceTileHtml(t, { taped: t.tape && !compact, rot: t.rot })
         return `<div class="wall-tile" style="${wrapStyle}">${inner}</div>`
       })
       .join('')}</div>`
@@ -248,6 +275,11 @@ function heroHtml(view, layout) {
   const first = photos[0]
   const isVideo = view.kind === 'video' || (first && (first.posterUrl || (first.mime || '').startsWith('video')))
   const posterUrl = first ? (first.posterUrl || first.url) : ''
+
+  // E4 — a heterogeneous moment (photos + voice + note slips) always renders as
+  // the collage so the notes/voice show (a pure-photo album leaves `pieces`
+  // unset and falls through to the photos.length>1 path below, unchanged).
+  if (view.pieces && view.pieces.length) return collageHtml(view, layout)
 
   if (view.kind === 'text' || (!photos.length && !view.audio)) {
     // NOTE (text-only)
@@ -274,7 +306,7 @@ function heroHtml(view, layout) {
       <span class="print-tape paper-only" style="left:28px">${tape(72, -5)}</span>
       <div class="voice-label">Voice note</div>
       <div class="voice-row">
-        <span class="voice-play"><svg width="16" height="18" viewBox="0 0 16 18" fill="var(--accent-ink)" aria-hidden="true"><path d="M0 1.5v15a1 1 0 0 0 1.5.87l13-7.5a1 1 0 0 0 0-1.74l-13-7.5A1 1 0 0 0 0 1.5Z"/></svg></span>
+        ${voicePlayHtml(view.audio.url, 'lg')}
         <span class="wave wave-tall">${waveBars(48, 1.5, 18)}</span>
       </div>
       <div class="voice-time"><span>0:12</span><span>${esc(dur)}</span></div>
@@ -306,7 +338,7 @@ function voiceChipHtml(view) {
   if (!view.audio || !(view.photos && view.photos.length === 1)) return ''
   const dur = clock(view.audio.durationSeconds) || '0:20'
   return `<div class="voice-chip-wrap"><div class="voice-chip">
-    <span class="voice-play sm"><svg width="9" height="10" viewBox="0 0 10 11" fill="var(--accent-ink)" aria-hidden="true"><path d="M0 1v9a.5.5 0 0 0 .8.4l7.5-4.5a.5.5 0 0 0 0-.8L.8.6A.5.5 0 0 0 0 1Z"/></svg></span>
+    ${voicePlayHtml(view.audio.url, 'sm')}
     <span class="wave wave-sm">${waveBars(30, 0.8, 11)}</span>
     <span class="voice-chip-dur">${esc(dur)}</span>
   </div></div>`
@@ -381,6 +413,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-
 .voice-label{font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--soft);margin-bottom:16px}
 .voice-row{display:flex;align-items:center;gap:14px}
 .voice-play{flex:0 0 auto;width:52px;height:52px;border-radius:50%;background:var(--accent);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px -4px rgba(0,0,0,0.4)}
+button.voice-play{border:none;padding:0;cursor:pointer}
+button.voice-play:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.voice-play.playing{filter:brightness(0.9)}
 .voice-play.sm{width:28px;height:28px}
 .wave{flex:1;display:flex;align-items:center;gap:2.5px;overflow:hidden}
 .wave-tall{height:50px}.wave-sm{height:24px}
@@ -418,6 +453,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-
 .wt-mat{position:relative;background:#FCFAF4;padding:6px 6px 9px;border-radius:2px;box-shadow:0 1px 0 rgba(255,255,255,0.8) inset,0 2px 4px rgba(70,52,30,0.14),0 12px 26px -16px rgba(70,52,30,0.40)}
 .wt-mat img{display:block;width:100%;object-fit:cover;border-radius:1px}
 .wt-voice{display:flex;align-items:center;gap:10px;background:var(--mat);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.wt-note{position:relative;background:#F7F2E7;border-radius:3px;padding:16px 15px 15px;box-shadow:0 1px 0 rgba(255,255,255,0.7) inset,0 2px 5px rgba(70,52,30,0.16),0 12px 24px -16px rgba(70,52,30,0.40)}
+.wt-note-quote{position:absolute;top:2px;left:9px;font-family:var(--serif);font-size:30px;line-height:1;color:var(--accent);opacity:0.5}
+.wt-note-text{margin:6px 0 0;font-family:var(--serif);font-style:italic;font-size:15px;line-height:1.45;color:#211E18;white-space:pre-wrap;word-break:break-word}
 .wall-tile .play-badge{width:42px;height:42px}
 .wall-tile .play-badge svg{width:16px;height:16px}
 .wall-tile .video-tag{bottom:6px;left:6px;padding:3px 6px;font-size:9px;letter-spacing:0.8px}
@@ -513,6 +551,15 @@ if(navigator.share){navigator.share({title:"A moment from the Jackson-Hemleys\\u
 if(navigator.clipboard){navigator.clipboard.writeText(u).catch(function(){});}
 if(l){l.textContent='Link copied';setTimeout(function(){l.textContent='Share this moment';},1900);}});
 })();
+(function(){var cur=null,curBtn=null;
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-audio]');if(!b)return;
+var u=b.getAttribute('data-audio');if(!u)return;
+if(curBtn===b&&cur){if(cur.paused){cur.play().catch(function(){});}else{cur.pause();}return;}
+if(cur){cur.pause();}if(curBtn){curBtn.classList.remove('playing');}
+cur=new Audio(u);curBtn=b;b.classList.add('playing');
+cur.addEventListener('ended',function(){b.classList.remove('playing');});
+cur.play().catch(function(){});});
+})();
 </script>`
 
   return `<!doctype html><html lang="en"><head>${head(view, pageUrl)}</head><body>${body}</body></html>`
@@ -606,7 +653,7 @@ export function renderShareCard(view) {
   <div class="grain"></div>
 </div>`
   } else {
-    const noteText = view.note || view.caption || 'A moment'
+    const noteText = view.note || (view.pieces || []).find((p) => p.kind === 'note')?.text || view.caption || 'A moment'
     card = `<div class="card card-note">
   <div class="cd-note-mark">${mark}</div>
   <div class="cd-quote" aria-hidden="true">&ldquo;</div>

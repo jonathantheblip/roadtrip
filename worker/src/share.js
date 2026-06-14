@@ -95,6 +95,11 @@ function isVideoRef(p) {
 // { cols, compact, summary, tiles:[{kind, url?, posterUrl?, h, tape, rot, dur?}] }.
 // `tiles` order = the album's photo order, with one voice tile spread in.
 export function buildWallTiles(view) {
+  // E4 — an ordered heterogeneous moment (photos + voice + note slips). Honor the
+  // author's order (the masonry just flows it; heights auto-balance = the
+  // pragmatic auto-arrange). Falls through to the photos+one-voice path below for
+  // every pre-E4 share, byte-identical.
+  if (view?.pieces && view.pieces.length) return buildPieceTiles(view.pieces)
   const photos = (view?.photos || []).filter((p) => p && (p.url || p.posterUrl))
   const hasVoice = !!(view?.audio && view.audio.url)
   const count = photos.length + (hasVoice ? 1 : 0)
@@ -106,7 +111,7 @@ export function buildWallTiles(view) {
   let pi = 0
   for (let i = 0; i < count; i++) {
     if (hasVoice && voiceAt.has(i)) {
-      tiles.push({ kind: 'voice', dur: view.audio.durationSeconds, rot: 0, tape: false })
+      tiles.push({ kind: 'voice', dur: view.audio.durationSeconds, url: view.audio.url, rot: 0, tape: false })
       continue
     }
     const p = photos[pi++]
@@ -115,7 +120,8 @@ export function buildWallTiles(view) {
     const video = isVideoRef(p)
     tiles.push({
       kind: video ? 'video' : 'photo',
-      url: video ? p.posterUrl || p.url : p.url,
+      url: video ? p.posterUrl || undefined : p.url, // posterless video → placeholder, never <img src=.mp4>
+
       h: compact ? Math.round(baseH * (video ? 0.78 : 0.74)) : baseH,
       tape: !compact && i % 5 === 0,
       rot: (i % 3 - 1) * 1.2,
@@ -131,6 +137,38 @@ export function buildWallTiles(view) {
     nVoice && `${nVoice} voice`,
   ].filter(Boolean).join(' · ')
 
+  return { cols, compact, summary, tiles }
+}
+
+// E4 — build the decorated tiles for an ordered heterogeneous moment. One tile
+// per piece in AUTHOR ORDER (photo/video/voice/note); the wall masonry balances
+// heights. Returns the same { cols, compact, summary, tiles } shape as the
+// pre-E4 path so every collage layout renders it unchanged (+ a note tile).
+function buildPieceTiles(pieces) {
+  const count = pieces.length
+  const cols = count > 16 ? 3 : 2
+  const compact = cols === 3
+  const tiles = pieces.map((p, i) => {
+    if (p.kind === 'note') return { kind: 'note', text: p.text || '', rot: (i % 3 - 1) * 1.2, tape: false }
+    if (p.kind === 'voice') return { kind: 'voice', dur: p.durationSeconds, url: p.url, rot: 0, tape: false }
+    const baseH = WALL_HEIGHTS[i % WALL_HEIGHTS.length]
+    const video = isVideoRef(p)
+    return {
+      kind: video ? 'video' : 'photo',
+      url: video ? p.posterUrl || undefined : p.url, // posterless video → placeholder, never <img src=.mp4>
+
+      h: compact ? Math.round(baseH * (video ? 0.78 : 0.74)) : baseH,
+      tape: !compact && i % 5 === 0,
+      rot: (i % 3 - 1) * 1.2,
+    }
+  })
+  const n = (k) => tiles.filter((t) => t.kind === k).length
+  const summary = [
+    n('photo') && `${n('photo')} photo${n('photo') === 1 ? '' : 's'}`,
+    n('video') && `${n('video')} clip${n('video') === 1 ? '' : 's'}`,
+    n('voice') && `${n('voice')} voice`,
+    n('note') && `${n('note')} note${n('note') === 1 ? '' : 's'}`,
+  ].filter(Boolean).join(' · ')
   return { cols, compact, summary, tiles }
 }
 
@@ -161,12 +199,38 @@ export function shareViewFromMemory(memory, trip) {
       : undefined
   const captured = refs.find((r) => r && r.capturedAt)?.capturedAt
   const id = memory.authorTraveler
+  // E4 — the ORDERED heterogeneous pieces (photos + voice + note slips). Allowlist
+  // each: a note is pure text, a voice is its r2 url + duration, a photo/video its
+  // url(+poster). `photos`/`audio` above remain for the card + single-piece heroes.
+  const pieces =
+    memory.pieces && memory.pieces.length
+      ? memory.pieces
+          .map((p) => {
+            if (p.kind === 'note') return { kind: 'note', text: p.text || '' }
+            if (p.kind === 'voice')
+              return {
+                kind: 'voice',
+                ...(p.url ? { url: p.url } : {}),
+                ...(p.mime ? { mime: p.mime } : {}),
+                ...(p.durationSeconds != null ? { durationSeconds: p.durationSeconds } : {}),
+              }
+            const video = !!(p.posterUrl || (p.mime || '').startsWith('video'))
+            return {
+              kind: video ? 'video' : 'photo',
+              url: p.url,
+              ...(p.mime ? { mime: p.mime } : {}),
+              ...(p.posterUrl ? { posterUrl: p.posterUrl } : {}),
+            }
+          })
+          .filter((p) => (p.kind === 'note' ? typeof p.text === 'string' : !!(p.url || p.posterUrl)))
+      : undefined
   return {
     kind: memory.kind || (photos.length ? 'photo' : audio ? 'audio' : 'text'),
     caption: memory.caption || undefined,
     // A text-only memory carries its body in `text`; that's the note hero.
     note: memory.kind === 'text' ? memory.text || undefined : undefined,
     photos,
+    ...(pieces ? { pieces } : {}),
     ...(audio ? { audio } : {}),
     place: findStopName(trip, memory.stopId),
     date: captured || memory.createdAt || undefined,
