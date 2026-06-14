@@ -277,3 +277,39 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     return pendingRef()
   }
 }
+
+// ── Composer import (share-out E3) ──────────────────────────────────────
+// Import ONE picked file into a "moment": upload-or-queue it (offline-safe,
+// the SAME proven path the bulk importer uses) and create a trip-LEVEL memory
+// (stopId:null — composer imports aren't stop-filed). Returns { id, ref,
+// pending } so the composer can select the piece and, after the queue drains,
+// re-read the now-r2 ref off this memory id. Reuses the private cores so there
+// is ONE upload/queue contract; uploadBackfillPhotos (ImportFlow) is untouched.
+//
+// Video must already be encoded (entry.encoded shape from videoPipeline); the
+// composer runs the WebCodecs encode before calling this, exactly as ImportFlow
+// does in its PREPARE phase.
+export async function saveImportedMedia({ file, kind, exif, encoded, trip, traveler }) {
+  const memoryId = makeMemoryId()
+  const capturedAt = exif?.capturedAt || null
+  const stopId = null
+  const results = { ok: 0, reattached: 0, queued: 0, failed: 0, errors: [] }
+  const ref =
+    kind === 'video'
+      ? await uploadOrQueueVideo({ entry: { encoded }, memoryId, trip, traveler, stopId, capturedAt, results })
+      : await uploadOrQueueNewPhoto({ entry: { file }, memoryId, trip, traveler, stopId, capturedAt, results })
+  // A video is stored as a kind:'photo' memory whose photoRef carries the video
+  // (ref.kind/mime/posterUrl distinguish it) — mirroring uploadBackfillPhotos.
+  saveMemory({
+    id: memoryId,
+    tripId: trip.id,
+    stopId,
+    authorTraveler: traveler,
+    visibility: 'shared',
+    kind: 'photo',
+    caption: '',
+    photoRef: ref,
+    capturedAt,
+  })
+  return { id: memoryId, ref, pending: ref.storage === 'pending' }
+}

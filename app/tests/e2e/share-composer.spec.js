@@ -21,6 +21,11 @@ const sharedMemories = (page) =>
 async function seedAndOpen(page, mems, shareBodies) {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await seedMemoriesIntoCache(page, mems)
+  // share() now awaits pushMemory (the album must reach D1 before the link is
+  // minted), so the worker must look reachable for /memories + /trips.
+  await page.route(/workers\.dev\/(memories|trips)\b/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+  )
   // Mock the worker /share mint (registered after the seed catch-all → wins).
   // Capture the request bodies so we can assert the chosen layout was sent.
   await page.route(/workers\.dev\/share\b/, async (route) => {
