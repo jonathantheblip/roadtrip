@@ -186,6 +186,11 @@ export default {
         return await postTranscribe(env, request, cors)
       }
 
+      // Surprises Slice 3: Claude drafts a believable cover story for a surprise.
+      if (path === '/cover' && request.method === 'POST') {
+        return await postCover(env, request, cors)
+      }
+
       // Claude-in-App (M1)
       if (path === '/claude/chat' && request.method === 'POST') {
         return await postClaudeChat(env, traveler, request, cors)
@@ -1863,6 +1868,132 @@ async function postGame(env, request, cors) {
   if (!html || !/</.test(html)) return json({ error: 'no game produced' }, 502, cors)
   if (html.length > MAX_GAME_BYTES) return json({ error: 'game too large' }, 502, cors)
   return json({ html }, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+// POST /cover (auth-gated) — Surprises Slice 3. Claude drafts a believable COVER
+// STORY for a surprise so the author doesn't have to invent the fake stand-in by
+// hand. The worker owns the prompt + the API key (the prototype called the model
+// from the client). The AUTHOR is the only caller (they know the secret + draft
+// their own cover), so sending the real hidden thing here leaks nothing.
+//   Input:  { context: { kind, title, detail, trip, stops, when, hideFrom, seed } }
+//           seed = the author's partial cover fields (object).
+//   Output: { icon, title, loc, time, weather, packing }
+// Gated like /game: no key → 503 so the client cleanly falls back to manual entry.
+const DEFAULT_COVER_MODEL = 'claude-sonnet-4-6'
+export function coverModel(env) {
+  const override = typeof env?.COVER_MODEL === 'string' ? env.COVER_MODEL.trim() : ''
+  return override || DEFAULT_COVER_MODEL
+}
+
+const COVER_SYSTEM =
+  'You write believable COVER STORIES for a family-trip app. A family member is hiding a real surprise ' +
+  'and needs a plausible, ORDINARY stand-in to show the hidden-from person instead — so they pack and ' +
+  'plan correctly while never suspecting a surprise. Reply with ONLY a JSON object, no prose, no code fences.'
+
+const coverClip = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
+
+async function postCover(env, request, cors) {
+  if (!env.ANTHROPIC_API_KEY) {
+    // No key → the assist is unavailable; the client falls back to manual entry.
+    return json({ error: 'cover assist not configured' }, 503, cors)
+  }
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const ctx = (body && typeof body.context === 'object' && body.context) || body || {}
+  const kind = coverClip(ctx.kind, 40) || 'surprise'
+  const title = coverClip(ctx.title, 200)
+  const detail = coverClip(ctx.detail, 400)
+  const trip = coverClip(ctx.trip, 200)
+  const stops = coverClip(ctx.stops, 600)
+  const when = coverClip(ctx.when, 160)
+  const hideFrom = coverClip(ctx.hideFrom, 160)
+  const seedObj = ctx.seed && typeof ctx.seed === 'object' ? ctx.seed : {}
+  const seed = ['title', 'loc', 'time', 'weather', 'packing']
+    .map((k) => (coverClip(seedObj[k], 120) ? `${k}: ${coverClip(seedObj[k], 120)}` : null))
+    .filter(Boolean)
+    .join('; ')
+
+  const userPrompt = [
+    `The real (secret) thing being hidden: a ${kind}${title ? ` — "${title}"` : ''}${detail ? ` (${detail})` : ''}.`,
+    trip ? `The trip: ${trip}.` : '',
+    stops ? `Places already on the itinerary: ${stops}.` : '',
+    when
+      ? `It reveals ${when}. The cover MUST appear to happen at the SAME time as the real plan, so the hidden person keeps that slot free.`
+      : '',
+    hideFrom ? `It is hidden from: ${hideFrom}.` : '',
+    seed
+      ? `The author started these hints — build on them, keep what they gave: ${seed}.`
+      : 'The author gave no details — invent a plausible cover from scratch.',
+    '',
+    'Invent an unremarkable, easily-believed activity that fits this trip and time of year, near the real plan. The weather + packing must be REALISTIC for that place and date and must match what the real plan would actually require, so the cover quietly carries the true constraints.',
+    'Reply with ONLY this JSON object, no prose, no code fences:',
+    '{"icon":"<one emoji>","title":"<short believable activity>","loc":"<place>","time":"<day + time matching the real plan>","weather":"<short, e.g. Cold & windy>","packing":"<short, e.g. Warm coats>"}',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  let res
+  try {
+    res = await fetch(anthropicMessagesUrl(env), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: coverModel(env),
+        max_tokens: 512,
+        system: COVER_SYSTEM,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+  } catch (e) {
+    return json({ error: `anthropic fetch failed: ${e?.message || String(e)}` }, 502, cors)
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return json({ error: `anthropic ${res.status}: ${text.slice(0, 300)}` }, 502, cors)
+  }
+  const payload = await res.json().catch(() => ({}))
+  const rawText =
+    (Array.isArray(payload?.content) &&
+      payload.content.map((c) => (c?.type === 'text' ? c.text : '')).join('')) ||
+    ''
+  const cover = parseCoverJson(rawText)
+  if (!cover) return json({ error: 'no cover produced' }, 502, cors)
+  return json(cover, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+// Parse + clamp the cover JSON the model returns to the 6 known fields. Requires
+// at least a title (the one field the cover can't do without). Exported for tests.
+export function parseCoverJson(text) {
+  if (typeof text !== 'string') return null
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  let raw
+  try {
+    raw = JSON.parse(cleaned.slice(start, end + 1))
+  } catch {
+    return null
+  }
+  const s = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
+  const title = s(raw?.title, 120)
+  if (!title) return null
+  return {
+    icon: s(raw?.icon, 8) || '📍',
+    title,
+    loc: s(raw?.loc, 120),
+    time: s(raw?.time, 80),
+    weather: s(raw?.weather, 80),
+    packing: s(raw?.packing, 120),
+  }
 }
 
 // POST /transcribe (auth-gated) — Rafa's recorded voice → text via Cloudflare
