@@ -90,10 +90,13 @@ export async function workerFetch(path, opts = {}) {
 // Mint a public link for one memory → { token, url }. The worker refuses a
 // hidden surprise (409) or a memory the caller can't see (403/404) — those
 // surface as a thrown error carrying `.status` so the sheet can explain.
-export async function shareMemory(memoryId) {
+export async function shareMemory(memoryId, layout) {
   const r = await workerFetch('/share', {
     method: 'POST',
-    body: JSON.stringify({ memoryId }),
+    // layout (Phase 2/E2): an author-chosen collage layout for a composed share;
+    // omit for a plain single-memory share (the worker defaults to the wall and
+    // validates the value, so anything unexpected is harmless).
+    body: JSON.stringify(layout ? { memoryId, layout } : { memoryId }),
   })
   return r.json()
 }

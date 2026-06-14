@@ -48,6 +48,54 @@ function tripPhotoPieces(tripId, traveler) {
   return out
 }
 
+// A compact live preview of the selected pieces in the chosen layout — mirrors
+// the worker's collage render (sharePage.js) so what you arrange is what the
+// recipient gets. Pieces = [{ id, url, isVideo }]. Light "house" look.
+const PREV_H = [70, 56, 84, 62, 76, 58]
+function VideoDot() {
+  return <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>▶</span>
+}
+function PrevMat({ p, h, border = true, rot = 0 }) {
+  return (
+    <div style={{ transform: rot ? `rotate(${rot}deg)` : 'none', background: border ? '#FCFAF4' : 'transparent', padding: border ? 3 : 0, borderRadius: 2, boxShadow: border ? '0 1px 2px rgba(70,52,30,0.18)' : 'none', position: 'relative' }}>
+      <div style={{ position: 'relative', height: h, borderRadius: 1, overflow: 'hidden' }}>
+        <img src={p.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {p.isVideo && <VideoDot />}
+      </div>
+    </div>
+  )
+}
+function ComposerPreview({ items, layout }) {
+  if (!items.length) return null
+  if (layout === 'mosaic') {
+    const cols = items.length > 10 ? 3 : 2
+    return <div style={{ columnCount: cols, columnGap: 6 }}>{items.map((p, i) => <div key={p.id} style={{ breakInside: 'avoid', marginBottom: 6 }}><PrevMat p={p} h={PREV_H[i % PREV_H.length]} /></div>)}</div>
+  }
+  if (layout === 'stack') {
+    const photos = items.slice(0, 5)
+    return (
+      <div style={{ position: 'relative', height: 150 }}>
+        {photos.map((p, i) => (
+          <div key={p.id} style={{ position: 'absolute', top: 6 + i * 5, left: '50%', width: 120, marginLeft: -60, zIndex: i, transform: `rotate(${(i - 2) * 4}deg)` }}><PrevMat p={p} h={92} /></div>
+        ))}
+      </div>
+    )
+  }
+  if (layout === 'filmstrip') {
+    const holes = Array.from({ length: 10 }, (_, i) => <span key={i} style={{ width: 5, height: 7, borderRadius: 1.5, background: '#2A2521' }} />)
+    return (
+      <div style={{ background: '#0C0A09', borderRadius: 4, padding: '5px 4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 6px 4px' }}>{holes}</div>
+        <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>{items.map((p) => <div key={p.id} style={{ flex: '0 0 80px' }}><PrevMat p={p} h={92} border={false} /></div>)}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px 2px' }}>{holes}</div>
+      </div>
+    )
+  }
+  // wall (default) — masonry with slight rotations
+  const cols = items.length > 16 ? 3 : 2
+  return <div style={{ columnCount: cols, columnGap: 6 }}>{items.map((p, i) => <div key={p.id} style={{ breakInside: 'avoid', marginBottom: 6, transform: (i % 3 - 1) ? `rotate(${(i % 3 - 1) * 1.1}deg)` : 'none' }}><PrevMat p={p} h={PREV_H[i % PREV_H.length]} /></div>)}</div>
+}
+
 export function ShareComposer({ trip, traveler, onClose }) {
   const tripId = trip?.id
   const serif = 'var(--font-display, var(--font-body, system-ui))'
@@ -55,7 +103,8 @@ export function ShareComposer({ trip, traveler, onClose }) {
 
   const [selIds, setSelIds] = useState([]) // ordered selection
   const [caption, setCaption] = useState('')
-  const [step, setStep] = useState('select') // select | working | shared | error
+  const [layout, setLayout] = useState('wall') // wall | mosaic | stack | filmstrip
+  const [step, setStep] = useState('select') // select | arrange | working | shared | error
   const [url, setUrl] = useState('')
   const [copied, setCopied] = useState(false)
   const [errMsg, setErrMsg] = useState('')
@@ -88,7 +137,7 @@ export function ShareComposer({ trip, traveler, onClose }) {
       })
       const id = saved?.id
       if (!id) throw new Error('save failed')
-      const res = await shareMemory(id)
+      const res = await shareMemory(id, layout)
       setUrl(res?.url || '')
       setStep('shared')
     } catch (e) {
@@ -132,16 +181,16 @@ export function ShareComposer({ trip, traveler, onClose }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
             <div>
               <div style={{ fontFamily: serif, fontSize: 23, fontWeight: 600 }}>
-                {step === 'shared' ? 'Shared' : 'Compose a moment'}
+                {step === 'shared' ? 'Shared' : step === 'arrange' || step === 'working' || step === 'error' ? 'Arrange' : 'Compose a moment'}
               </div>
               <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', marginTop: 3 }}>
-                {step === 'shared' ? 'A link to share — nothing hidden goes out.' : 'Pick the photos to share as one keepsake.'}
+                {step === 'shared' ? 'A link to share — nothing hidden goes out.' : step === 'arrange' || step === 'working' || step === 'error' ? 'Choose a layout — this is what they’ll see.' : 'Pick the photos to share as one keepsake.'}
               </div>
             </div>
             <button onClick={onClose} aria-label="Close" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted)', display: 'flex' }}><X size={20} /></button>
           </div>
 
-          {(step === 'select' || step === 'working' || step === 'error') && (
+          {step === 'select' && (
             <>
               {pieces.length === 0 ? (
                 <div style={{ border: '1px dashed var(--line-bold)', borderRadius: Math.min(r, 16), padding: '26px 16px', textAlign: 'center', fontFamily: serif, fontStyle: traveler === 'rafa' ? 'normal' : 'italic', color: 'var(--muted)', fontSize: 14 }}>
@@ -171,17 +220,41 @@ export function ShareComposer({ trip, traveler, onClose }) {
                       )
                     })}
                   </div>
-                  <input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Say something (optional)" aria-label="Caption"
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '11px 13px', borderRadius: Math.min(r, 12), border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)', fontFamily: 'var(--font-body)', fontSize: 14, outline: 'none', marginBottom: 12, colorScheme: traveler === 'helen' ? 'light' : 'dark' }} />
-                  {errMsg && <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: 'italic', color: 'var(--muted)', marginBottom: 10, lineHeight: 1.4 }}>{errMsg}</div>}
-                  <button disabled={!sel.length || step === 'working'} onClick={share} style={primaryBtn(!!sel.length && step !== 'working')}>
-                    <Share2 size={15} /> {step === 'working' ? 'Making the link…' : 'Share this moment'}
+                  <button disabled={!sel.length} onClick={() => setStep('arrange')} style={primaryBtn(!!sel.length)}>
+                    Next · Arrange →
                   </button>
                   <div style={{ fontFamily: serif, fontSize: 12, fontStyle: 'italic', color: 'var(--muted)', textAlign: 'center', marginTop: 10, lineHeight: 1.4 }}>
                     Saved to the trip. Nothing else goes out unless you send the link.
                   </div>
                 </>
               )}
+            </>
+          )}
+
+          {(step === 'arrange' || step === 'working' || step === 'error') && (
+            <>
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 600, marginBottom: 8 }}>Layout</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                {[['wall', 'Wall'], ['mosaic', 'Mosaic'], ['stack', 'Stack'], ['filmstrip', 'Filmstrip']].map(([k, lbl]) => {
+                  const on = layout === k
+                  return (
+                    <button key={k} type="button" onClick={() => setLayout(k)} aria-pressed={on}
+                      style={{ padding: '8px 14px', borderRadius: 999, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--line-bold)'}`, background: on ? 'var(--accent)' : 'transparent', color: on ? 'var(--accent-ink, #fff)' : 'var(--text)', fontFamily: 'var(--font-body)', fontSize: 12.5, fontWeight: on ? 700 : 500 }}>{lbl}</button>
+                  )
+                })}
+              </div>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: Math.min(r, 14), padding: 12, marginBottom: 14, maxHeight: 280, overflow: 'auto' }}>
+                <ComposerPreview items={sel} layout={layout} />
+              </div>
+              <input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Say something (optional)" aria-label="Caption"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '11px 13px', borderRadius: Math.min(r, 12), border: '1px solid var(--line-bold)', background: 'var(--card)', color: 'var(--text)', fontFamily: 'var(--font-body)', fontSize: 14, outline: 'none', marginBottom: 12, colorScheme: traveler === 'helen' ? 'light' : 'dark' }} />
+              {errMsg && <div style={{ fontFamily: serif, fontSize: 12.5, fontStyle: 'italic', color: 'var(--muted)', marginBottom: 10, lineHeight: 1.4 }}>{errMsg}</div>}
+              <div style={{ display: 'flex', gap: 9 }}>
+                <button onClick={() => setStep('select')} disabled={step === 'working'} style={{ flex: '0 0 auto', padding: '15px 18px', borderRadius: 999, border: '1px solid var(--line-bold)', background: 'transparent', color: 'var(--muted)', cursor: step === 'working' ? 'default' : 'pointer', fontFamily: 'var(--font-body)', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>‹ Back</button>
+                <button disabled={step === 'working'} onClick={share} style={{ ...primaryBtn(step !== 'working'), flex: 1 }}>
+                  <Share2 size={15} /> {step === 'working' ? 'Making the link…' : 'Share this moment'}
+                </button>
+              </div>
             </>
           )}
 

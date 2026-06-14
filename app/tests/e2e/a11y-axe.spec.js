@@ -315,12 +315,15 @@ test.describe('a11y (axe, serious+critical) — Share Composer ×4 personas', ()
       }])
       await page.goto(`/?person=${p}&trip=volleyball-2026&compose=1&nosw=1`)
       await expect(page.getByTestId('share-composer')).toBeVisible()
-      // Select the photo so the "selected" badge + active Share button also render.
+      // Walk into the Arrange step (the densest surface: layout chips + preview +
+      // caption + Share) so the gate covers the new E2 controls too.
       await page.getByRole('button', { name: 'Select photo' }).first().click()
+      await page.getByRole('button', { name: /Next . Arrange/i }).click()
+      await expect(page.getByRole('button', { name: 'Mosaic' })).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: '[data-testid="share-composer"]',
         only: ['color-contrast'],
-        label: `share composer (${p})`,
+        label: `share composer arrange (${p})`,
       })
     })
   }

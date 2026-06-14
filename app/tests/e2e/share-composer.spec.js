@@ -18,26 +18,33 @@ const sharedPhoto = (id, caption) => ({
 const sharedMemories = (page) =>
   page.evaluate(() => JSON.parse(localStorage.getItem('rt_memories_shared_v1') || '[]'))
 
-async function seedAndOpen(page, mems) {
+async function seedAndOpen(page, mems, shareBodies) {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await seedMemoriesIntoCache(page, mems)
   // Mock the worker /share mint (registered after the seed catch-all → wins).
+  // Capture the request bodies so we can assert the chosen layout was sent.
   await page.route(/workers\.dev\/share\b/, async (route) => {
+    if (shareBodies) { try { shareBodies.push(route.request().postDataJSON()) } catch { shareBodies.push(null) } }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'abc-mystic', url: 'https://share.test/m/abc-mystic' }) })
   })
   await page.goto('/?person=helen&trip=volleyball-2026&compose=1&nosw=1')
   await expect(page.getByTestId('share-composer')).toBeVisible()
 }
 
-test('compose two photos → Share → a link, and a composed album memory is created', async ({ page }) => {
+test('compose two photos → arrange → Share → a link + the chosen layout is sent, and a composed album memory is created', async ({ page }) => {
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
-  await seedAndOpen(page, [sharedPhoto('p1', 'sandcastle'), sharedPhoto('p2', 'sunset'), sharedPhoto('p3', 'the pier')])
+  const shareBodies = []
+  await seedAndOpen(page, [sharedPhoto('p1', 'sandcastle'), sharedPhoto('p2', 'sunset'), sharedPhoto('p3', 'the pier')], shareBodies)
 
-  // Pick two photos (tiles are buttons labelled "Select photo").
+  // SELECT: pick two photos (tiles are buttons labelled "Select photo").
   await page.getByRole('button', { name: 'Select photo' }).nth(0).click()
   await page.getByRole('button', { name: 'Select photo' }).nth(0).click() // the next still-unselected one
   await expect(page.getByText(/2 selected/i)).toBeVisible()
+  await page.getByRole('button', { name: /Next . Arrange/i }).click()
+
+  // ARRANGE: pick a non-default layout + caption, then Share.
+  await page.getByRole('button', { name: 'Mosaic' }).click()
   await page.getByLabel('Caption').fill('Our beach day')
   await page.getByRole('button', { name: /Share this moment/i }).click()
 
@@ -54,6 +61,8 @@ test('compose two photos → Share → a link, and a composed album memory is cr
   expect(composed.visibility).toBe('shared')
   // Reuses the existing r2 refs (no re-upload) → keys preserved → survives sync.
   expect(composed.photoRefs.every((r) => r.storage === 'r2' && r.key)).toBe(true)
+  // The chosen layout was sent to /share (E2).
+  expect(shareBodies.some((b) => b?.layout === 'mosaic')).toBe(true)
 
   expect(errors, errors.join(' | ')).toHaveLength(0)
 })
