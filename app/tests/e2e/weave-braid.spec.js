@@ -3,7 +3,8 @@
 // Proves the end-to-end slice-1 path:
 //   1. Seeds a day's memories (text + voice + photo) onto a past stop.
 //   2. Mocks POST /weave → returns {title, opening, closing}.
-//   3. Opens the Weave overlay via the TEMP top-bar button.
+//   3. Opens the Weave overlay via the home-band Weave entry (the temp top-bar
+//      braid button retired — .first() now resolves to the band's register).
 //   4. Asserts the braid renders each beat kind + the Claude narrative.
 //   5. Asserts the "Keep this page" button is functional.
 //
@@ -290,7 +291,7 @@ test.describe('TheWeave — pre-made nightly weave (slice 3)', () => {
     await expect(page.getByTestId('weave-title')).toHaveText(MOCK_NARRATIVE.title)
   })
 
-  test('shows the ✦ ready cue for a fresh weave and clears it after opening', async ({ page }) => {
+  test('shows the ready cue for a fresh weave and clears it after opening', async ({ page }) => {
     await setup(page)
     await mockStoredWeave(page, STORED_WEAVE)
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
@@ -310,7 +311,7 @@ test.describe('TheWeave — pre-made nightly weave (slice 3)', () => {
   test('no ready cue when nothing is pre-made', async ({ page }) => {
     await setup(page) // /weave/latest → 204
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-    // The ✦ entry is present, but with no stored weave the cue dot never shows.
+    // The Weave entry is present, but with no stored weave the cue never shows.
     await expect(page.getByRole('button', { name: /Weave/i }).first()).toBeVisible()
     await expect(page.getByTestId('weave-ready-dot')).toHaveCount(0)
   })

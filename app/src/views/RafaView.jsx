@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Mic } from 'lucide-react'
 import { effectiveStatus } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
+import { WeaveReady } from '../components/EntryCues'
 
 // Rafa — "Mission." Redesign increment 4 (2026-06-05): big, bright,
 // rounded mission deck for a 4-year-old. Was oxblood + Fraunces; now warm
@@ -22,7 +23,7 @@ const ST = ['#FFB12E', '#3DA5E0', '#4CC36E', '#FF6B4D', '#C77DFF']
 // --accent-ink — the C1/Stage-2 fill-ink rule applied to the stickers.
 const CANDY_INK = '#1B1108'
 
-export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos }) {
+export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onOpenWeave, weaveReady }) {
   // Which day's mission is on screen. Default to today-if-in-trip,
   // else day 1. Lets a 3-day weekend show three different missions
   // instead of one summary card that doesn't change.
@@ -469,6 +470,45 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
               {getActivitiesForTrip(trip.id, trip).length} STUFF TO DO
             </span>
             <span style={{ fontSize: 22 }}>→</span>
+          </button>
+        </div>
+      )}
+
+      {/* TONIGHT'S STORY — the Weave, in kid words. His ONLY Weave entry on a
+          phone (the temp top-bar braid retired with the home-bands redesign);
+          RafaPad has the matching "Tonight's story" tile. Purple sticker =
+          the one unused candy color; the ⭐NEW! cue shows a fresh page. */}
+      {onOpenWeave && (
+        <div style={{ padding: '16px 14px 0' }}>
+          <button
+            type="button"
+            data-testid="rafa-weave-entry"
+            onClick={onOpenWeave}
+            aria-label="Tonight's story — read the Weave"
+            style={{
+              width: '100%',
+              padding: '18px 20px',
+              borderRadius: 26,
+              border: 0,
+              background: ST[4],
+              color: CANDY_INK,
+              cursor: 'pointer',
+              textAlign: 'left',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              boxShadow: `0 8px 0 ${shade(ST[4], -45)}`,
+              fontFamily: FREDOKA,
+              fontSize: 24,
+              fontWeight: 700,
+            }}
+          >
+            <span>🌙 TONIGHT'S STORY</span>
+            {weaveReady ? (
+              <WeaveReady traveler="rafa" />
+            ) : (
+              <span style={{ fontSize: 26, fontWeight: 700 }}>→</span>
+            )}
           </button>
         </div>
       )}

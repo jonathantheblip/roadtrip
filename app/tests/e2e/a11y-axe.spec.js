@@ -167,9 +167,9 @@ test.describe('a11y (axe, serious+critical) — TheWeave ×4 personas', () => {
         },
       ])
       await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      // Either Weave entry opens TheWeave — the temp top-bar glyph or the new
-      // per-person home register (entry-points redesign adds the latter). .first()
-      // is the top-bar one today and the band's register after the glyph retires.
+      // The Weave opens from each persona's home-band entry (the temp top-bar
+      // glyph has retired). For Rafa on a phone that's his "Tonight's story"
+      // tile, whose aria-label carries "Weave" so this one locator finds all 4.
       await page.getByRole('button', { name: /Weave/i }).first().click()
       await expect(page.getByTestId('the-weave')).toBeVisible()
       await expectNoSeriousA11y(page, {

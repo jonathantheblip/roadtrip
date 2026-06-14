@@ -29,7 +29,6 @@ import { ShareComposer } from './components/ShareComposer'
 // model + index code stays out of the main bundle until it's opened.
 const PersonView = lazy(() => import('./views/PersonView').then((m) => ({ default: m.PersonView })))
 import { ClaudeChatPanel, ClaudeEntryButton } from './components/ClaudeChat'
-import { WeaveMark } from './components/Glyphs'
 import { applyCardToTrip } from './lib/claudeCardApply'
 import { cardToTrip } from './lib/createTripCard'
 import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from './lib/weave'
@@ -910,50 +909,10 @@ export default function App() {
           {trip && (
             <ClaudeEntryButton onClick={openClaude} label="Modify this trip with Claude" />
           )}
-          {/* TEMP entry point for THE WEAVE. Replace with the designed
-              affordance in the redesign. */}
-          {trip && (
-            <button
-              type="button"
-              onClick={openWeave}
-              aria-label={weaveReady ? "The Weave — last night's page is ready" : "The Weave — today's woven page"}
-              style={{
-                background: 'transparent',
-                border: 0,
-                padding: '0 4px',
-                cursor: 'pointer',
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                opacity: topBar.opacity,
-                color: topBar.text,
-                // inline-flex + nowrap so the braid sits beside the label on one
-                // line — the wider braid (vs the old narrow ✦) would otherwise
-                // wrap the label under it in this narrow flex item.
-                display: 'inline-flex',
-                alignItems: 'center',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <WeaveMark size={15} style={{ marginRight: 5 }} /> Weave
-              {weaveReady && (
-                <span
-                  data-testid="weave-ready-dot"
-                  aria-hidden="true"
-                  style={{
-                    display: 'inline-block',
-                    width: 5,
-                    height: 5,
-                    borderRadius: '50%',
-                    background: 'var(--accent)',
-                    marginLeft: 5,
-                    verticalAlign: 'middle',
-                  }}
-                />
-              )}
-            </button>
-          )}
+          {/* The Weave's top-bar entry has retired: every persona now reaches
+              it from their designed home band (and Rafa's phone from his
+              "Tonight's story" tile), so the temp braid button is gone. The
+              weave-ready cue lives on the band's WeaveReady now. */}
           {/* Overflow menu — the secondary entries collapse here so the bar
               stays uncrowded + pressable on a phone. */}
           <div style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
