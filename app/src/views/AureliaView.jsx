@@ -25,7 +25,7 @@ import { tripPhase } from '../lib/tripPhase'
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, weaveReady, bookHasPages, surpriseRevealCue }) {
+export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -131,6 +131,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOp
         onOpenWeave={onOpenWeave}
         onOpenReplay={onOpenReplay}
         onOpenBook={onOpenBook}
+        onCompose={onCompose}
       />
 
       {/* Photos entry — the foregrounded verb. Styled as a grained film

@@ -120,3 +120,16 @@ test('no shared photos → an honest empty state, no crash', async ({ page }) =>
   await expect(page.getByText(/No shared photos on this trip yet/i)).toBeVisible()
   expect(errors, errors.join(' | ')).toHaveLength(0)
 })
+
+// The designed entry: each adult persona's home band has a "Share a moment"
+// register that opens the composer (was ⋯-only; the ⋯ fallback still exists but
+// is closed here, so the role=button match is the band entry, not the menuitem).
+test('the home-band "Share a moment" entry opens the composer (jonathan/helen/aurelia)', async ({ page }) => {
+  await seedTripIntoCache(page, FIXTURE_TRIP)
+  for (const who of ['jonathan', 'helen', 'aurelia']) {
+    await page.goto(`/?person=${who}&trip=volleyball-2026&nosw=1`)
+    await expect(page.getByTestId(`${who}-entries`)).toBeVisible()
+    await page.getByRole('button', { name: 'Share a moment' }).click()
+    await expect(page.getByTestId('share-composer')).toBeVisible()
+  }
+})

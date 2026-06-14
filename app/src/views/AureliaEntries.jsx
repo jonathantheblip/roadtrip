@@ -26,7 +26,7 @@ function Sprockets({ pos }) {
 
 export function AureliaEntries({
   trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages,
-  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook,
+  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
   useEffect(() => {
@@ -79,6 +79,19 @@ export function AureliaEntries({
           <div style={{ marginTop: 'auto', paddingTop: 9, ...LABEL, color: 'var(--muted)' }}>read the page →</div>
         </div>
       </button>
+
+      {/* SHARE A MOMENT — send one from the roll (during the trip; the ⋯ menu
+          still covers it after). The designed home for the former ⋯-only entry. */}
+      {!after && onCompose && (
+        <button
+          type="button" onClick={onCompose} aria-label="Share a moment"
+          style={{ display: 'block', width: '100%', textAlign: 'left', background: 'var(--card)', borderRadius: 4, border: '1px solid var(--border)', padding: 12, marginTop: 12, cursor: 'pointer', color: 'var(--text)' }}
+        >
+          <div style={{ ...LABEL, color: 'var(--accent-text)' }}>Share a moment</div>
+          <div style={{ ...ITAL, fontSize: 18, marginTop: 3 }}>send one from the roll</div>
+          <div style={{ marginTop: 7, ...LABEL, color: 'var(--muted)' }}>compose ›</div>
+        </button>
+      )}
 
       {/* THE BOOK — her roll, kept (only once pages exist) */}
       {bookHasPages && (

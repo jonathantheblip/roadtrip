@@ -10,7 +10,7 @@
 // doesn't yet surface (en-route ETA, armed-surprise counts, frame counts) are
 // NOT faked — the registers carry their real label and open the real feature.
 import { useEffect, useState } from 'react'
-import { ChevronRight, Play, BookOpen, Map as MapIcon, Lock, Sparkles } from 'lucide-react'
+import { ChevronRight, Play, BookOpen, Map as MapIcon, Lock, Sparkles, Plus } from 'lucide-react'
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady, SurpriseReveal } from '../components/EntryCues'
 
@@ -72,7 +72,7 @@ function ArchiveLine({ onClick, kicker, title, cta, icon }) {
 
 export function JonathanEntries({
   trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages,
-  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises,
+  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
   useEffect(() => {
@@ -170,6 +170,24 @@ export function JonathanEntries({
                 <ChevronRight size={16} style={{ color: 'var(--muted)' }} />
               </div>
             </Register>
+
+            {/* Share a moment — compose one and send it outward (the designed
+                home for what used to live only in the ⋯ menu). */}
+            {onCompose && (
+              <Register onClick={onCompose} label="Share a moment">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <Plus size={13} style={{ color: 'var(--accent-text)' }} />
+                    <Mono c="var(--accent-text)" weight={700}>Share a moment</Mono>
+                  </span>
+                  <Mono c="var(--muted)">Compose</Mono>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ ...SERIF, fontSize: 17 }}>Make one to send out</div>
+                  <ChevronRight size={16} style={{ color: 'var(--muted)' }} />
+                </div>
+              </Register>
+            )}
           </div>
 
           <SectionLabel right="The archive">Looking back</SectionLabel>

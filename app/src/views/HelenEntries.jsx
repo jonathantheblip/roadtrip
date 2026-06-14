@@ -53,7 +53,7 @@ function Card({ onClick, label, children, style, 'data-testid': testId }) {
 
 export function HelenEntries({
   trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages,
-  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises,
+  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
   useEffect(() => {
@@ -172,6 +172,20 @@ export function HelenEntries({
                 <Plus size={15} /> Wrap something
               </div>
             </Card>
+
+            {/* Share a moment — compose one and send it to the family (the
+                designed home for what used to live only in the ⋯ menu). */}
+            {onCompose && (
+              <Card onClick={onCompose} label="Share a moment">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <Eyebrow c="var(--muted)">Send one out</Eyebrow>
+                    <div style={{ ...SERIF, fontSize: 16, marginTop: 5 }}>Share a moment</div>
+                  </div>
+                  <ReadCta>Compose</ReadCta>
+                </div>
+              </Card>
+            )}
           </div>
 
           <Divider right="Looking back">Keepsake</Divider>

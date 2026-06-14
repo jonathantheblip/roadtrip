@@ -174,6 +174,7 @@ export function JonathanView({
   onOpenReplay,
   onOpenBook,
   onOpenSurprises,
+  onCompose,
   weaveReady,
   bookHasPages,
   surpriseRevealCue,
@@ -220,6 +221,7 @@ export function JonathanView({
           onOpenReplay={onOpenReplay}
           onOpenBook={onOpenBook}
           onOpenSurprises={onOpenSurprises}
+          onCompose={onCompose}
         />
         <JOps
           trip={trip}

@@ -752,6 +752,7 @@ export default function App() {
       onOpenReplay: () => openReplay(),
       onOpenBook: openBook,
       onOpenSurprises: openSurprises,
+      onCompose: openCompose, // "Share a moment" — designed home-band entry (was ⋯-only)
       weaveReady,
       bookHasPages,
       surpriseRevealCue,

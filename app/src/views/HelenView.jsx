@@ -39,6 +39,7 @@ export function HelenView({
   onOpenReplay,
   onOpenBook,
   onOpenSurprises,
+  onCompose,
   weaveReady,
   bookHasPages,
   surpriseRevealCue,
@@ -135,6 +136,7 @@ export function HelenView({
         onOpenReplay={onOpenReplay}
         onOpenBook={onOpenBook}
         onOpenSurprises={onOpenSurprises}
+        onCompose={onCompose}
       />
 
       {/* CO-PLANNER — Helen plans too now. Opens the Claude planning chat
