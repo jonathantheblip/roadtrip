@@ -156,6 +156,21 @@ export function useTrips() {
     if (!isWorkerConfigured()) {
       return { ok: true, synced: false, reason: 'unconfigured' }
     }
+    // DRAFT GATE: a manual-add draft is the author's private work-in-progress —
+    // it must NOT reach the shared worker (and the rest of the family) until it
+    // is published. It lives in the local cache (written above) so the author
+    // still has it; publishing flips draft:false and re-saves through this same
+    // path, which then pushes. Also clear any stale unsynced flag so a trip that
+    // was un-published back to draft stops being retried by the resync loop.
+    if (trip.draft) {
+      markSynced(trip.id)
+      // A trip flipped back to draft (un-published) must be PULLED BACK from the
+      // worker, or the family keeps seeing the stale published copy. Best-effort,
+      // worker-only (the local cache above keeps the draft); idempotent for a
+      // never-published draft (the row simply isn't there to delete).
+      deleteTrip(trip.id).catch(() => {})
+      return { ok: true, synced: false, reason: 'draft' }
+    }
     try {
       await pushTrip(trip)
       markSynced(trip.id) // reached the family — clear any prior unsynced flag
@@ -183,9 +198,11 @@ export function useTrips() {
     let resynced = 0
     for (const id of ids) {
       const t = cache.find((x) => x.id === id)
-      if (!t || t.masked) {
-        // Trip gone locally, or a masked projection that must never be pushed —
-        // either way it's not ours to sync. Drop it from the queue.
+      if (!t || t.masked || t.draft) {
+        // Trip gone locally, a masked projection that must never be pushed, or
+        // a draft that's the author's private work-in-progress (don't leak it to
+        // the family until it's published) — either way it's not ours to sync.
+        // Drop it from the queue.
         markSynced(id)
         continue
       }

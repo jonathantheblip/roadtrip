@@ -11,6 +11,7 @@ import { allStops } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { AureliaEntries } from './AureliaEntries'
 import { tripPhase } from '../lib/tripPhase'
+import { todayLocalIso } from '../lib/localDate'
 
 // Aurelia — "Her roll." Redesign increment 3 (2026-06-05): the big
 // LIGHT→DARK inversion. Was a rose-paper scrapbook; now a near-black
@@ -33,7 +34,9 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOp
   // Falls back to day 1 for planning + completed trips. Matches
   // JonathanView + HelenView. See KNOWN_BUGS_HELEN_SURFACE.md P2.4.
   const [activeDay, setActiveDay] = useState(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    // Local calendar date (lib/localDate) so "today" matches the trip's
+    // YYYY-MM-DD day labels and the live dock near midnight — not the UTC date.
+    const today = todayLocalIso()
     const onToday = trip.days.find((d) => d.isoDate === today)
     return onToday?.n || trip.days[0]?.n
   })

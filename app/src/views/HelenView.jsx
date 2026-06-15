@@ -9,6 +9,7 @@ import { findArrivalStop, FlightStatus } from './FlightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { HelenEntries } from './HelenEntries'
 import { tripPhase } from '../lib/tripPhase'
+import { todayLocalIso } from '../lib/localDate'
 
 // Helen — Keeper + Planner. Warm editorial (redesign increment 2, design
 // handoff helen.jsx). Sage on warm paper, soft 18px corners. Light only —
@@ -47,7 +48,9 @@ export function HelenView({
   // Default the active day to today if today is inside the trip — mid-trip
   // openers expect the current day, and the "+" FAB walks to day.stops[0].
   const [activeDay, setActiveDay] = useState(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    // Local calendar date (lib/localDate) so "today" matches the trip's
+    // YYYY-MM-DD day labels and the live dock near midnight — not the UTC date.
+    const today = todayLocalIso()
     const onToday = trip.days.find((d) => d.isoDate === today)
     return onToday?.n || trip.days[0]?.n
   })

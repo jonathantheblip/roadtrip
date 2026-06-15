@@ -3,9 +3,10 @@ import { ChevronLeft, Heart, Check, Share } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import { TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip } from '../lib/memoryStore'
+import { loadAsset } from '../lib/memAssets'
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { thumbUrl } from '../lib/thumbUrl'
-import { selectWeaveDay, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen, keepWeave } from '../lib/weave'
+import { selectWeaveDay, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen, keepWeave, isKeepableNarrative } from '../lib/weave'
 import { encodeWeavePage, shareWeave, isVideoEncodeSupported } from '../lib/weaveEncode'
 
 // Inject keyframes once for the reveal animation.
@@ -67,6 +68,11 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
   const [stat, setStat] = useState(null)             // "Day N · X mi · Y stops" | null
   const [kept, setKept] = useState(initialKept)
   const [saveState, setSaveState] = useState('idle') // idle | encoding | sharing | shared
+  // What shareWeave actually did: 'shared' (native share sheet — user chooses
+  // Save to Photos / Messages / etc.) vs 'downloaded' (plain file download, NOT
+  // a Photos save). Drives an HONEST confirmation instead of always claiming
+  // "Saved to Photos".
+  const [saveOutcome, setSaveOutcome] = useState(null)
   const scrollRef = useRef(null)
   const encodeAbortRef = useRef(null)
 
@@ -90,7 +96,8 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
         signal: encodeAbortRef.current.signal,
       })
       setSaveState('sharing')
-      await shareWeave(blob, narrative)
+      const outcome = await shareWeave(blob, narrative)
+      setSaveOutcome(outcome) // 'shared' | 'downloaded'
       setSaveState('shared')
     } catch (err) {
       // AbortError = user dismissed share sheet or component unmounted — silent.
@@ -100,11 +107,22 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
     }
   }
 
+  // A page can only join the shared book when its narrative is COMPLETE (the
+  // worker's POST /weave/keep needs title + opening + closing). A page rendered
+  // with only fallback framing (narrative === null) has NOTHING the book can
+  // persist. Gate the Keep button on this: previously it flipped to "In the
+  // book" while keepWeave silently wrote nothing, leaving the shared book empty
+  // — a confirmation that lied. (Audit ROOT-5.) Shared predicate with keepWeave
+  // so the UI gate and the write guard can never disagree.
+  const keepable = isKeepableNarrative(narrative)
+
   // Keep this page → the trip's shared book. Optimistic: the button flips to
   // "In the book" immediately; persistence is fire-and-forget (keepWeave
   // swallows failures so an offline keep still reads as kept on this device).
+  // The keepable gate above guarantees there's a real narrative to persist
+  // before this can run, so the optimistic flip no longer over-promises.
   function keep() {
-    if (kept) return
+    if (kept || !keepable) return
     setKept(true)
     keepWeave({
       tripId: weavedDay?.trip?.id,
@@ -372,26 +390,32 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button
-                data-testid="weave-keep"
-                onClick={keep}
-                disabled={kept}
-                style={{
-                  padding: '13px 22px',
-                  borderRadius: 999,
-                  border: `1px solid ${kept ? 'var(--border)' : 'var(--line-bold)'}`,
-                  cursor: kept ? 'default' : 'pointer',
-                  background: 'transparent',
-                  color: kept ? 'var(--good)' : 'var(--text)',
-                  fontFamily: 'var(--font-body)',
-                  fontWeight: 600, fontSize: 14,
-                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                }}
-              >
-                {kept
-                  ? <><Check size={15} /> In the book</>
-                  : <><Heart size={15} /> Keep this page</>}
-              </button>
+              {/* Only offer "Keep this page" when there's a complete narrative
+                  to actually persist — see `keepable` above. Without it the keep
+                  would no-op on the worker, so we hide the button rather than
+                  show a control that lies about saving. */}
+              {(keepable || kept) && (
+                <button
+                  data-testid="weave-keep"
+                  onClick={keep}
+                  disabled={kept}
+                  style={{
+                    padding: '13px 22px',
+                    borderRadius: 999,
+                    border: `1px solid ${kept ? 'var(--border)' : 'var(--line-bold)'}`,
+                    cursor: kept ? 'default' : 'pointer',
+                    background: 'transparent',
+                    color: kept ? 'var(--good)' : 'var(--text)',
+                    fontFamily: 'var(--font-body)',
+                    fontWeight: 600, fontSize: 14,
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                  }}
+                >
+                  {kept
+                    ? <><Check size={15} /> In the book</>
+                    : <><Heart size={15} /> Keep this page</>}
+                </button>
+              )}
               {videoSupported && (
                 <button
                   data-testid="weave-save"
@@ -503,10 +527,13 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
                   <Check size={22} color="#fff" />
                 </div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 19, fontWeight: 600, marginTop: 12, color: 'var(--text)' }}>
-                  Saved to Photos
+                  {/* Honest copy: the native share sheet path genuinely offers
+                      "Save to Photos"; the fallback path ONLY downloads the file
+                      to the device — claiming a Photos save there is a lie. */}
+                  {saveOutcome === 'downloaded' ? 'Saved to your device' : 'Saved to Photos'}
                 </div>
                 <button
-                  onClick={() => setSaveState('idle')}
+                  onClick={() => { setSaveState('idle'); setSaveOutcome(null) }}
                   style={{
                     marginTop: 16, padding: '11px 24px',
                     borderRadius: 999, border: 'none',
@@ -719,6 +746,44 @@ function PhotoBeat({ memory, snippet, dot, traveler }) {
 
 function VoiceBeat({ memory, snippet, dot, traveler }) {
   const dur = memory?.durationSeconds
+  // Resolve a playable audio URL for the clip, mirroring ThreadedMemories'
+  // VoiceBubble: prefer the synced R2 url so non-author devices can play, fall
+  // back to the author's local IDB blob. Null when there's nothing to play (an
+  // older voice beat with no audioRef) → the button stays inert + dimmed
+  // instead of being a dead control.
+  const [audioUrl, setAudioUrl] = useState(null)
+  const audioElRef = useRef(null)
+  useEffect(() => {
+    let active = true
+    let createdObjectUrl = null
+    const ref = memory?.audioRef
+    if (ref?.url) {
+      setAudioUrl(ref.url)
+    } else if (ref?.key) {
+      loadAsset('audio', ref.key).then((blob) => {
+        if (!active || !blob) return
+        createdObjectUrl = URL.createObjectURL(blob)
+        setAudioUrl(createdObjectUrl)
+      }).catch(() => {})
+    }
+    return () => {
+      active = false
+      // Stop any in-flight playback when the beat unmounts.
+      audioElRef.current?.pause()
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memory?.audioRef?.key, memory?.audioRef?.url])
+
+  function play() {
+    if (!audioUrl) return
+    // Reuse one element so repeated taps restart cleanly.
+    if (!audioElRef.current) audioElRef.current = new Audio(audioUrl)
+    audioElRef.current.currentTime = 0
+    audioElRef.current.play().catch(() => {})
+  }
+
+  const playable = !!audioUrl
   return (
     <div data-testid="beat-voice">
       <div
@@ -729,20 +794,27 @@ function VoiceBeat({ memory, snippet, dot, traveler }) {
           borderRadius: 999, maxWidth: 260,
         }}
       >
-        {/* play button */}
-        <div
+        {/* play button — actually plays the voice clip */}
+        <button
+          type="button"
+          onClick={play}
+          disabled={!playable}
+          aria-label={playable ? 'Play voice clip' : 'Voice clip unavailable'}
           style={{
             width: 32, height: 32, borderRadius: '50%',
             background: dot,
+            border: 'none', padding: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
+            cursor: playable ? 'pointer' : 'default',
+            opacity: playable ? 1 : 0.45,
           }}
         >
           {/* play triangle */}
           <svg width="11" height="13" viewBox="0 0 11 13" fill="none" aria-hidden="true">
             <path d="M0.5 0.5L10.5 6.5L0.5 12.5V0.5Z" fill="white" />
           </svg>
-        </div>
+        </button>
         {/* waveform bars */}
         <div style={{ display: 'flex', gap: 2.5, alignItems: 'center', flex: 1, height: 22 }}>
           {WAVE_HEIGHTS.map((h, j) => (

@@ -126,7 +126,7 @@ async function loadEmbedder() {
 // similarity transform (rotation + uniform scale + translation) that
 // maps the detected eyes onto the ArcFace template positions. Falls
 // back to a centered square box-crop when eyes are unavailable.
-function alignFaceTo112(source, srcW, srcH, detection) {
+export function alignFaceTo112(source, srcW, srcH, detection) {
   const size = cfg().embedSize
   const canvas =
     typeof OffscreenCanvas !== 'undefined'
@@ -153,8 +153,13 @@ function alignFaceTo112(source, srcW, srcH, detection) {
     ctx.drawImage(source, 0, 0)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
   } else {
-    // box-crop fallback: square the bounding box with margin
-    const b = detection.boundingBox
+    // box-crop fallback: square the bounding box with margin.
+    // The detection's box field is `.box` (shape {originX,originY,width,
+    // height} — see scrfd.js detectFacesScrfd); an earlier `.boundingBox`
+    // reference was always undefined and threw here whenever a face had no
+    // eye keypoints. This path is the no-keypoints fallback only — the
+    // normal aligned path above is unchanged, so matching math is untouched.
+    const b = detection.box
     const cx = b.originX + b.width / 2
     const cy = b.originY + b.height / 2
     const half = Math.max(b.width, b.height) * 0.7

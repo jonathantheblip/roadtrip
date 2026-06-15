@@ -9,6 +9,7 @@ const {
   travelerNameToId,
   travelerIdsFrom,
   tripIdFromTitle,
+  uniqueTripId,
   categoryToKind,
   humanDayLabel,
   humanDateRange,
@@ -67,6 +68,40 @@ test('tripIdFromTitle is deterministic for same title + month (idempotent re-sav
 
 test('tripIdFromTitle handles empty title', () => {
   assert.equal(tripIdFromTitle('', '2026-10-09'), 'untitled-trip-2026-10')
+})
+
+// ─── uniqueTripId (slug-collision guard) ────────────────────────────
+
+test('uniqueTripId returns the base id when nothing collides', () => {
+  assert.equal(uniqueTripId('asheville-2026-10', []), 'asheville-2026-10')
+  assert.equal(uniqueTripId('asheville-2026-10', ['other-2026-10']), 'asheville-2026-10')
+})
+
+test('uniqueTripId suffixes when the base id is already taken', () => {
+  assert.equal(
+    uniqueTripId('asheville-2026-10', ['asheville-2026-10']),
+    'asheville-2026-10-2'
+  )
+})
+
+test('uniqueTripId walks the suffix until it finds a free id', () => {
+  assert.equal(
+    uniqueTripId('asheville-2026-10', ['asheville-2026-10', 'asheville-2026-10-2']),
+    'asheville-2026-10-3'
+  )
+})
+
+test('uniqueTripId accepts a Set as well as an array', () => {
+  const taken = new Set(['asheville-2026-10'])
+  assert.equal(uniqueTripId('asheville-2026-10', taken), 'asheville-2026-10-2')
+})
+
+test('uniqueTripId treats a re-save of the same trip as NOT a collision', () => {
+  // selfId === baseId: refining the same trip keeps its id (idempotent re-save).
+  assert.equal(
+    uniqueTripId('asheville-2026-10', ['asheville-2026-10'], { selfId: 'asheville-2026-10' }),
+    'asheville-2026-10'
+  )
 })
 
 // ─── categoryToKind ─────────────────────────────────────────────────
@@ -217,5 +252,30 @@ test('cardToTrip tolerates an empty / missing trip block', () => {
   assert.equal(trip.title, 'Untitled trip')
   assert.deepEqual(trip.travelers, ['jonathan', 'helen', 'aurelia', 'rafa'])
   assert.equal(trip.days.length, 0)
+})
+
+// ─── cardToTrip slug-collision (existingIds) ────────────────────────
+
+test('cardToTrip keeps the derived id when it does not collide', () => {
+  const trip = cardToTrip(SAMPLE_CARD, { existingIds: ['some-other-trip-2026-01'] })
+  assert.equal(trip.id, 'asheville-long-weekend-2026-10')
+})
+
+test('cardToTrip uniquifies a NEW trip whose id collides with a different trip', () => {
+  // A second trip with the same title in the same month would otherwise reuse
+  // 'asheville-long-weekend-2026-10' and silently overwrite the first. With the
+  // existing id passed in, the new trip gets a unique suffix instead.
+  const trip = cardToTrip(SAMPLE_CARD, { existingIds: ['asheville-long-weekend-2026-10'] })
+  assert.equal(trip.id, 'asheville-long-weekend-2026-10-2')
+})
+
+test('cardToTrip refinement (existingId) is NOT uniquified even if the id is "taken"', () => {
+  // A refine re-save passes existingId; it must keep its own id so it re-saves
+  // the same row rather than forking a -2 duplicate.
+  const trip = cardToTrip(SAMPLE_CARD, {
+    existingId: 'asheville-long-weekend-2026-10',
+    existingIds: ['asheville-long-weekend-2026-10'],
+  })
+  assert.equal(trip.id, 'asheville-long-weekend-2026-10')
 })
 

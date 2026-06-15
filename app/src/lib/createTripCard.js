@@ -52,6 +52,27 @@ export function tripIdFromTitle(title, dateRangeStart) {
   return [base || 'untitled-trip', ym].filter(Boolean).join('-')
 }
 
+// Make `baseId` unique against a set of ids already in use. The id from
+// tripIdFromTitle is a deterministic slug+YYYY-MM, so two different trips with
+// the same title in the same month collide — and an unchecked create would
+// overwrite the first one. When the base is free (or it's the same trip being
+// re-saved, see `selfId`), return it unchanged so refinement stays idempotent;
+// otherwise append a short numeric suffix ("-2", "-3", …) until it's free.
+// `existingIds` accepts an array or a Set.
+export function uniqueTripId(baseId, existingIds, { selfId = null } = {}) {
+  const taken =
+    existingIds instanceof Set ? existingIds : new Set(existingIds || [])
+  // A re-save of the same trip is not a collision with itself.
+  if (selfId && baseId === selfId) return baseId
+  if (!taken.has(baseId)) return baseId
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${baseId}-${i}`
+    if (!taken.has(candidate)) return candidate
+  }
+  // Pathological fallback (1000 same-title-same-month trips) — keep it unique.
+  return `${baseId}-${Date.now()}`
+}
+
 // LODGING/ACTIVITY/FOOD/LOGISTICS/TRANSIT → lowercase kind the themed
 // views render. Unknown categories pass through lowercased.
 export function categoryToKind(category) {
@@ -89,11 +110,20 @@ export function humanDateRange(start, end) {
 
 // Map a create_trip card to the canonical trip record. `existingId`
 // reuses a prior id (refinement re-save); otherwise the id is derived
-// from title + date. Skipped stops are excluded; days that end up
+// from title + date. `existingIds` (the ids already in the store) lets a
+// brand-new create avoid colliding with — and silently overwriting — a
+// different same-title-same-month trip: the derived id is uniquified
+// against it. A refinement (`existingId` set) is exempt so re-saving the
+// same trip stays idempotent. Skipped stops are excluded; days that end up
 // empty are dropped so the saved trip has no blank days.
-export function cardToTrip(card, { existingId = null } = {}) {
+export function cardToTrip(card, { existingId = null, existingIds = null } = {}) {
   const t = (card && card.trip) || {}
-  const id = existingId || tripIdFromTitle(t.title, t.dateRangeStart)
+  const baseId = existingId || tripIdFromTitle(t.title, t.dateRangeStart)
+  // Only a fresh create (no existingId) is uniquified; a refinement keeps its id.
+  const id =
+    existingId || !existingIds
+      ? baseId
+      : uniqueTripId(baseId, existingIds)
   const travelers = travelerIdsFrom(t.travelers)
 
   const days = (Array.isArray(t.days) ? t.days : [])

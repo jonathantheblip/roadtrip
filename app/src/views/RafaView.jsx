@@ -3,6 +3,7 @@ import { Mic } from 'lucide-react'
 import { effectiveStatus } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { WeaveReady } from '../components/EntryCues'
+import { todayLocalIso } from '../lib/localDate'
 
 // Rafa — "Mission." Redesign increment 4 (2026-06-05): big, bright,
 // rounded mission deck for a 4-year-old. Was oxblood + Fraunces; now warm
@@ -28,7 +29,9 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
   // else day 1. Lets a 3-day weekend show three different missions
   // instead of one summary card that doesn't change.
   const [activeDayN, setActiveDayN] = useState(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    // Local calendar date (lib/localDate) so "today" matches the trip's
+    // YYYY-MM-DD day labels and the live dock near midnight — not the UTC date.
+    const today = todayLocalIso()
     const onToday = trip.days.find((d) => d.isoDate === today)
     return onToday?.n || trip.days[0]?.n || 1
   })

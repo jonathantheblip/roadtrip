@@ -77,7 +77,10 @@ export function NearbyResultsModal({
       })
       .catch((e) => {
         if (!cancelled) {
-          setError(e?.message || 'Search failed.')
+          // Keep the raw worker error ("worker 500: …", JSON bodies) in the
+          // console; show the family plain, reassuring copy instead.
+          console.error('[NearbySearch] search failed', e)
+          setError(friendlyNearbyError(e))
           setData(null)
         }
       })
@@ -456,6 +459,18 @@ function Empty({ text }) {
       {text}
     </div>
   )
+}
+
+// Map a thrown error (from searchNearby → workerFetch) to friendly copy. The
+// raw message ("worker 500: …", JSON bodies, stacks) must never reach the
+// family — it's logged to the console instead.
+export function friendlyNearbyError(e) {
+  const status = e?.status
+  if (status === 401 || status === 403) return "We couldn't reach the nearby-places service. Try again in a moment."
+  if (status === 429) return 'Searching a lot right now — give it a few seconds and try again.'
+  if (typeof status === 'number' && status >= 500) return 'The nearby-places service is having a moment. Try again shortly.'
+  if (e?.message === 'worker not configured') return "Nearby search isn't available right now."
+  return "We couldn't search nearby. Check your connection and try again."
 }
 
 function mapsLinkFor(result, traveler) {

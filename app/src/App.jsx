@@ -225,6 +225,16 @@ export default function App() {
   // active-trip pick / themed views. Author + non-targeted + revealed see the
   // real trip. The worker enforces the same on the sync read (the boundary).
   const visibleTrips = maskTripsForViewer(allTrips.filter((t) => !t.draft), traveler)
+  // The author's own unpublished drafts. Drafts are local-only (never synced —
+  // see the draft gate in useTrips), so every draft on this device belongs to
+  // the person at the keyboard; there is nothing to mask. We surface these on
+  // the index (in a clearly-labelled "Drafts" section) so a freshly-created
+  // draft doesn't vanish with no way back — the author can reopen, finish, or
+  // delete it without first reaching Settings (which the cold-start index made
+  // unreachable). This is deliberately NOT folded into visibleTrips: drafts stay
+  // out of the trip switcher, the cold-start active-trip pick, and the themed
+  // views, exactly as before.
+  const ownDrafts = allTrips.filter((t) => t.draft)
   const topBar = topBarTokens(traveler)
   // Jonathan + Rafa + Aurelia are dark; Helen light (the per-person
   // dark-mode toggle was dropped 2026-06-05; Aurelia inverted to dark in
@@ -632,7 +642,12 @@ export default function App() {
   // state. The trip id is a deterministic slug, so a refine-then-save
   // re-uses the same row rather than forking a duplicate.
   async function handleClaudeCreateTrip(card) {
-    const newTrip = cardToTrip(card)
+    // Pass the ids already in the store so a brand-new trip whose deterministic
+    // slug+month collides with a DIFFERENT existing trip gets a unique suffix
+    // instead of silently overwriting it. (A Claude "refine" re-save keeps its
+    // own id via the worker's create→edit routing, so this only uniquifies a
+    // genuinely new trip.)
+    const newTrip = cardToTrip(card, { existingIds: allTrips.map((t) => t.id) })
     // upsertTrip writes the local cache synchronously, then best-effort
     // mirrors to the Worker. A failed Worker push returns { ok: false }
     // but the trip is already in local state — same non-escalation
@@ -711,17 +726,30 @@ export default function App() {
   function openCompose() {
     setComposeOpen(true)
   }
-  // Returns the upsert result so NewTrip can show an inline error and
-  // stay put on failure (no navigation), per change order §3.4. On
-  // success we go straight into the editor — Helen continues adding
-  // detail without leaving the flow and never re-enters the trip.
+  // Navigate on LOCAL-WRITE success, not on sync success. upsertTrip writes
+  // the local cache synchronously (the trip is saved on this device the moment
+  // it returns) and only then best-effort mirrors to the worker; a failed
+  // mirror is queued and auto-retried (lib/tripSyncQueue). A new trip is always
+  // a draft (NewTrip sets draft:true), so it never even attempts the worker
+  // push — but even for a non-draft, a sync blip must NOT strand the author on
+  // the form: the trip is saved locally, so we go straight into the editor and
+  // let the sync queue catch up. We only stay put (returning a non-ok result so
+  // NewTrip shows its inline error) if upsertTrip itself rejected — i.e. the
+  // LOCAL write failed, which is the one case where there's nothing to open.
   async function handleCreateTrip(newTrip) {
-    const res = await tripsApi.upsertTrip(newTrip)
-    if (res?.ok) {
-      setTripId(newTrip.id)
-      setView({ name: 'edit' })
-      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    let res
+    try {
+      res = await tripsApi.upsertTrip(newTrip)
+    } catch (err) {
+      // upsertTrip swallows worker-push failures (returns ok:false), so a throw
+      // here means the local write itself failed — nothing was saved. Surface it.
+      return { ok: false, error: err?.message || String(err) }
     }
+    // The local write succeeded (cache was written before the push was even
+    // attempted), so open the editor regardless of sync state.
+    setTripId(newTrip.id)
+    setView({ name: 'edit' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
     return res
   }
   function handleTravelerSwitch(id) {
@@ -987,6 +1015,12 @@ export default function App() {
                         ]
                       : []),
                     ...(trip && bookHasPages ? [{ label: 'The book', glyph: '❏', onClick: openBook }] : []),
+                    // "Show me, me" — the on-device face recognizer. Aurelia +
+                    // Rafa reach it from their designed home tiles; this overflow
+                    // entry is how Jonathan, Helen, and phone-Rafa reach the
+                    // shipped feature (it gathers photos across all trips, so it
+                    // doesn't require an active trip).
+                    { label: 'Show me, me', glyph: '◎', onClick: () => openShowMe() },
                     { label: 'Settings', glyph: '⚙', onClick: openSettings },
                   ].map((it) => (
                     <button
@@ -1032,9 +1066,13 @@ export default function App() {
           <TripIndex
             traveler={traveler}
             trips={visibleTrips}
+            drafts={ownDrafts}
             onOpenTrip={openTrip}
             onNewTrip={openNewTrip}
+            onEditDraft={openEditor}
+            onDeleteDraft={(id) => tripsApi.removeTrip(id)}
             onResurfaceReplay={(tripId, dayN) => openReplay({ tripId, dayN })}
+            onOpenSettings={openSettings}
           />
         )}
         {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} dark={darkSurface} />}
@@ -1144,13 +1182,18 @@ export default function App() {
             />
           </Suspense>
         )}
-        {view.name === 'settings' && trip && (
+        {/* Settings is reachable from the cold-start index (a member between
+            trips needs to change traveler / pull / seed). When no trip is
+            active today, fall back to any visible trip so the "Trip Settings"
+            panel still renders — and send its back link to the index rather
+            than a trip view that isn't there. */}
+        {view.name === 'settings' && (trip || visibleTrips.find((t) => !t.masked) || visibleTrips[0]) && (
           <Settings
-            trip={trip}
+            trip={trip || visibleTrips.find((t) => !t.masked) || visibleTrips[0]}
             traveler={traveler}
             dark={darkSurface}
             tripsApi={tripsApi}
-            onBack={() => setView({ name: 'trip' })}
+            onBack={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
             onChangeTraveler={handleTravelerSwitch}
             onOpenEditor={openEditor}
             onOpenIdentity={() => setView({ name: 'identity' })}
@@ -1164,16 +1207,24 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom switcher visible everywhere except the index (and replay,
-          which is immersive and owns its own bottom transport bar). */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && (
+      {/* Bottom switcher visible everywhere except a few full-bleed surfaces.
+          It now ALSO shows on the index: a member who lands here between trips
+          (default persona, nothing active today) was otherwise stuck with no
+          way to switch person — the persona pills are the unstick. On the index
+          there's no active trip, so the dock is just the plain pills (ledge
+          'none'), never the live ledge. Still hidden on new/edit (the author is
+          mid-create) and the immersive replay/map/identity surfaces. */}
+      {view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && (
         <Switcher
           active={traveler}
           onSwitch={handleTravelerSwitch}
-          ledge={dockLedge.mode}
+          // The index is a between-trips surface — show only the persona pills,
+          // never the live ledge (which belongs to an open trip). Everywhere
+          // else the system-driven ledge model decides.
+          ledge={view.name === 'index' ? 'none' : dockLedge.mode}
           now={liveEta?.now ?? dockLedge.now}
           next={liveEta?.next ?? dockLedge.next}
-          cueKind={dockLedge.cueKind}
+          cueKind={view.name === 'index' ? null : dockLedge.cueKind}
           onLedge={openMap}
           onCue={() =>
             dockLedge.cueKind === 'surprise-revealed' ? openSurprises() : openWeave()
@@ -1182,14 +1233,16 @@ export default function App() {
       )}
 
       {/* Claude-in-App M1 — floating entry on the trips index.
-          Bottom-right, lifted above any future bottom chrome. The
-          in-trip entry lives in the fixed top bar above. */}
+          Bottom-right, lifted ABOVE the persona dock now that the dock also
+          shows on the index (≈64px tall + safe area), so the FAB clears the
+          pills instead of overlapping them. The in-trip entry lives in the
+          fixed top bar above. */}
       {view.name === 'index' && (
         <div
           style={{
             position: 'fixed',
             right: 'max(18px, env(safe-area-inset-right))',
-            bottom: 'max(24px, env(safe-area-inset-bottom))',
+            bottom: 'calc(max(24px, env(safe-area-inset-bottom)) + 72px)',
             zIndex: 50,
           }}
         >

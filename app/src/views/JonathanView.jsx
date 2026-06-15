@@ -4,12 +4,14 @@ import { tripHomeBase } from '../data/trips'
 import { AvatarStack } from '../components/Avatar'
 import { NearbyResultsModal } from '../components/NearbyResultsModal'
 import { findArrivalStop } from './FlightStatus'
+import { flightAwareUrl } from '../lib/flightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { TRAVELER_DOT } from '../data/travelers'
 import { JonathanEntries } from './JonathanEntries'
 import { tripPhase } from '../lib/tripPhase'
+import { todayLocalIso } from '../lib/localDate'
 
 // Jonathan — Ops. Broadsheet mission-control (redesign increment 1,
 // design handoff jonathan.jsx). Two modes off one masthead toggle:
@@ -183,7 +185,9 @@ export function JonathanView({
   // Default to today if it falls within the trip — Jonathan opens the
   // app mid-trip and expects the current day. Otherwise day 1.
   const [activeDayN, setActiveDayN] = useState(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    // Local calendar date (lib/localDate) so "today" matches the trip's
+    // YYYY-MM-DD day labels and the live dock near midnight — not the UTC date.
+    const today = todayLocalIso()
     const onToday = trip.days.find((d) => d.isoDate === today)
     return onToday?.n || trip.days[0]?.n || 1
   })
@@ -439,7 +443,20 @@ function JOps({
             <div style={{ position: 'relative', height: 1.5, background: 'var(--border)', margin: '10px 0' }}>
               <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%', background: 'var(--accent)' }} />
             </div>
-            <JLabel color="var(--muted)">EN ROUTE — LIVE STATUS IN THE TRIP VIEW</JLabel>
+            {/* Honest affordance: there is no real-time flight feed wired in
+                production (flightStatus.getFlightStatus returns null without
+                VITE_FLIGHT_API), so we do NOT claim a live "EN ROUTE" status.
+                We show the planned schedule above and link out to FlightAware's
+                public live page — the same fallback FlightStatus.jsx uses. */}
+            <a
+              href={flightAwareUrl(arrival.stop.flightNumber)}
+              target="_blank"
+              rel="noreferrer"
+              className="link-quiet"
+              style={{ color: 'inherit' }}
+            >
+              <JLabel color="var(--muted)">SCHEDULED · LIVE TRACKING ON FLIGHTAWARE ↗</JLabel>
+            </a>
           </div>
         </>
       )}
@@ -721,7 +738,9 @@ function flightHeadline(arrival) {
 function isLiveStop(stop, day) {
   if (!stop?.time || !day?.isoDate) return false
   const now = new Date()
-  const today = now.toISOString().slice(0, 10)
+  // Local calendar date from `now` (not the UTC ISO date): the stop's clock
+  // time is parsed in local time below, so the day-match must be local too.
+  const today = todayLocalIso()
   if (today !== day.isoDate) return false
   const m = stop.time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i)
   if (!m) return false

@@ -196,8 +196,19 @@ export function markWeaveSeen(tripId, generatedAt) {
 // false on any failure (offline / worker down / pre-migration) so the button
 // can stay optimistic without throwing. Sends the narrative + the beat
 // summaries so an ON-DEMAND weave (no nightly row) is persisted too.
+// A weave can only join the shared book when its narrative is COMPLETE — the
+// worker's POST /weave/keep requires title + opening + closing (it 400s
+// otherwise). This is the single source of truth for "is there something to
+// keep": keepWeave guards on it (so an incomplete narrative no-ops instead of
+// firing a doomed request) and TheWeave gates the Keep button on it (so the
+// optimistic "In the book" is never shown for a write that can't land — the
+// audit ROOT-5 bug where the button claimed saved but the book stayed empty).
+export function isKeepableNarrative(narrative) {
+  return !!(narrative?.title && narrative?.opening && narrative?.closing)
+}
+
 export async function keepWeave({ tripId, dayIso, narrative, stat, beats }) {
-  if (!isWorkerConfigured() || !tripId || !dayIso || !narrative?.title) return false
+  if (!isWorkerConfigured() || !tripId || !dayIso || !isKeepableNarrative(narrative)) return false
   try {
     const r = await workerFetch('/weave/keep', {
       method: 'POST',

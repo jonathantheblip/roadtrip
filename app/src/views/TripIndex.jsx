@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, Clock } from 'lucide-react'
+import { Plus, Clock, Settings as SettingsIcon, Pencil, Trash2, FileText } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { effectiveStatus } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
@@ -22,7 +22,9 @@ import { AvatarStack } from '../components/Avatar'
 //   • AvatarStack of travelers + "<start> → <end>" route
 //   • live memory count read from listMemoriesForTrip
 
-export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTrip, onResurfaceReplay }) {
+export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenTrip, onNewTrip, onEditDraft, onDeleteDraft, onResurfaceReplay, onOpenSettings }) {
+  // Which draft is mid-delete (two-tap confirm, mirrors Settings → Drafts).
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   // "Looking back": one resurfaced past moment (a completed-trip day with
   // photos), rotating daily. Null when there's nothing to look back on.
   const resurface = useMemo(() => pickResurface(trips, traveler), [trips, traveler])
@@ -93,31 +95,57 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
         }}
       >
         <Eyebrow color="var(--muted)">THE JACKSON FAMILY</Eyebrow>
-        <button
-          type="button"
-          onClick={onNewTrip}
-          style={{
-            // 44px min-height matches Apple HIG touch target; was 32px
-            // (6+12+12+text) which lands just under the threshold and
-            // makes mistypes easy next to the "⋯" overflow. See
-            // KNOWN_BUGS_HELEN_SURFACE.md P3.2.
-            minHeight: 44,
-            padding: '6px 14px',
-            borderRadius: 22,
-            border: '1px solid var(--text)',
-            background: 'transparent',
-            color: 'var(--text)',
-            fontSize: 12,
-            fontFamily: 'Inter Tight, system-ui, sans-serif',
-            fontWeight: 600,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-          }}
-        >
-          <Plus size={12} /> New trip
-        </button>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            onClick={onNewTrip}
+            style={{
+              // 44px min-height matches Apple HIG touch target; was 32px
+              // (6+12+12+text) which lands just under the threshold and
+              // makes mistypes easy next to the "⋯" overflow. See
+              // KNOWN_BUGS_HELEN_SURFACE.md P3.2.
+              minHeight: 44,
+              padding: '6px 14px',
+              borderRadius: 22,
+              border: '1px solid var(--text)',
+              background: 'transparent',
+              color: 'var(--text)',
+              fontSize: 12,
+              fontFamily: 'Inter Tight, system-ui, sans-serif',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={12} /> New trip
+          </button>
+          {/* Settings reachable from the index — a member who lands here between
+              trips (default persona, nothing active today) otherwise had no way
+              to reach Settings to change person / pull / seed. */}
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              aria-label="Settings"
+              style={{
+                minHeight: 44,
+                minWidth: 44,
+                borderRadius: 22,
+                border: '1px solid var(--text)',
+                background: 'transparent',
+                color: 'var(--text)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <SettingsIcon size={15} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ padding: '8px 18px 12px' }}>
@@ -145,6 +173,155 @@ export function TripIndex({ traveler = 'helen', trips = [], onOpenTrip, onNewTri
           An archive, and a planning surface for what comes next.
         </div>
       </div>
+
+      {/* DRAFTS — the author's own unpublished trips. Surfaced here (not just
+          buried in Settings) so a freshly-created draft never vanishes with no
+          way back: the author can reopen, finish, or delete it right from the
+          index. These are local-only and never synced, so they're inherently
+          the current device's own — not a masking concern. Clearly labelled so
+          they read as work-in-progress, separate from the published list. */}
+      {drafts.length > 0 && (
+        <div style={{ padding: '4px 18px 8px' }} data-testid="index-drafts">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 0 8px',
+            }}
+          >
+            <FileText size={12} style={{ color: 'var(--muted)' }} aria-hidden="true" />
+            <Eyebrow color="var(--muted)" weight={700}>
+              DRAFTS · {drafts.length}
+            </Eyebrow>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {drafts.map((d) => (
+              <div
+                key={d.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '10px 12px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12,
+                  background: 'var(--card, var(--bg2))',
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontFamily: 'Fraunces, Georgia, serif',
+                      fontSize: 16,
+                      color: 'var(--text)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {d.title || 'Untitled trip'}
+                  </div>
+                  <Eyebrow color="var(--muted)" style={{ display: 'block', marginTop: 3 }}>
+                    {(d.dateRange || 'DATES TBD').toUpperCase()} · DRAFT
+                  </Eyebrow>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => onEditDraft?.(d.id)}
+                    aria-label={`Edit draft ${d.title || d.id}`}
+                    style={{
+                      minHeight: 36,
+                      padding: '4px 12px',
+                      borderRadius: 18,
+                      border: '1px solid var(--text)',
+                      background: 'transparent',
+                      color: 'var(--text)',
+                      fontSize: 12,
+                      fontFamily: 'Inter Tight, system-ui, sans-serif',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
+                  {confirmDeleteId === d.id ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDeleteId(null)
+                          onDeleteDraft?.(d.id)
+                        }}
+                        style={{
+                          minHeight: 36,
+                          padding: '4px 12px',
+                          borderRadius: 18,
+                          border: '1px solid #8B2B1F',
+                          background: '#8B2B1F',
+                          color: '#fff',
+                          fontSize: 12,
+                          fontFamily: 'Inter Tight, system-ui, sans-serif',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Trash2 size={12} /> Confirm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(null)}
+                        style={{
+                          minHeight: 36,
+                          padding: '4px 12px',
+                          borderRadius: 18,
+                          border: '1px solid var(--border)',
+                          background: 'transparent',
+                          color: 'var(--muted)',
+                          fontSize: 12,
+                          fontFamily: 'Inter Tight, system-ui, sans-serif',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(d.id)}
+                      aria-label={`Delete draft ${d.title || d.id}`}
+                      style={{
+                        minHeight: 36,
+                        minWidth: 36,
+                        borderRadius: 18,
+                        border: '1px solid var(--border)',
+                        background: 'transparent',
+                        color: '#8B2B1F',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {resurface && (
         <button
@@ -510,6 +687,15 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
     ? pickRotatingHero([baseHeroUrl, ...rotationExtras], heroSeed)
     : null
 
+  // Never-blank floor, part 2: a hero URL can resolve to a stale/404/blocked
+  // image at request time (a deleted memory, an expired Places photo, an
+  // offline R2). The §4 floor only catches the "no URL at all" case; without
+  // this, a broken URL renders the browser's broken-image glyph and bypasses
+  // the floor. onError flips this flag → we fall through to <TripCardFloor>, so
+  // a card is genuinely never broken. Keyed off the resolved URL so a later
+  // good URL (e.g. rotation re-roll) clears the error.
+  const [heroErrored, setHeroErrored] = useState(false)
+
   return (
     <button
       type="button"
@@ -581,15 +767,19 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
           3. heroResolved.url    — the worker-resolved Places destination hero
           4. <TripCardFloor>     — the themed floor (replaces the old `: null`;
                                     can never 404, so a card is never blank).
-          The placeholder is gone: there is no branch that renders nothing. */}
-      {rotatedHero ? (
-        <img src={rotatedHero} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+          A broken URL (onError) falls through to the floor too, never the
+          browser's broken-image glyph. The placeholder is gone: there is no
+          branch that renders nothing. */}
+      {heroErrored ? (
+        <TripCardFloor trip={trip} />
+      ) : rotatedHero ? (
+        <img src={rotatedHero} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : hasExplicitHero(trip) ? (
-        <img src={trip.heroImage} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+        <img src={trip.heroImage} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : heroPhotoUrl ? (
-        <img src={heroPhotoUrl} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+        <img src={heroPhotoUrl} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : trip.heroResolved?.url ? (
-        <img src={trip.heroResolved.url} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} />
+        <img src={trip.heroResolved.url} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : (
         <TripCardFloor trip={trip} />
       )}

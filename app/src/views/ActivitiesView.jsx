@@ -121,7 +121,7 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
         >
           {activities.length === 0
             ? 'No activities seeded for this trip yet.'
-            : 'Around the tournament — filter by who needs what.'}
+            : activitiesSubtitle(trip)}
         </div>
       </header>
 
@@ -791,6 +791,33 @@ function structuralFallback(activity) {
   if (m != null) parts.push(`${m} min drive`)
   parts.push(CATEGORY_LABEL[activity.category] || activity.category)
   return parts.join(' · ')
+}
+
+// Subtitle under "Things to do". This app is for ALL family trips (city,
+// beach, flights, museums) — not just the volleyball weekend — so the line
+// can't hardcode "Around the tournament". Anchor it on the trip's own
+// destination/title when we have one ("Around New York"), and fall back to
+// generic copy that fits any trip otherwise.
+export function activitiesSubtitle(trip) {
+  const place = tripPlaceLabel(trip)
+  return place
+    ? `Around ${place} — filter by who needs what.`
+    : 'Things nearby — filter by who needs what.'
+}
+
+// Best-effort short place name for the trip. Prefers an explicit
+// `destination`, then a home-base label, then a city-ish first word of the
+// subtitle. Returns '' when nothing reliable is available.
+function tripPlaceLabel(trip) {
+  const dest = typeof trip?.destination === 'string' ? trip.destination.trim() : ''
+  if (dest) return dest
+  const hbLabel = typeof trip?.homeBase?.label === 'string' ? trip.homeBase.label.trim() : ''
+  // A home-base label is usually a full address; only use a clean, short
+  // single token (e.g. a city name) — never a street address.
+  if (hbLabel && !/\d/.test(hbLabel) && !hbLabel.includes(',') && hbLabel.length <= 24) {
+    return hbLabel
+  }
+  return ''
 }
 
 function mapsLinkForActivity(activity, travelerId) {

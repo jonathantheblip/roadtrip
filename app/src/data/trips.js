@@ -8,6 +8,8 @@
 //
 // The NYC trip is the empty-scaffold form for a planning trip.
 
+import { localDateIso } from '../lib/localDate.js'
+
 export const JACKSON_TRIP = {
   id: 'jackson-2026',
   status: 'archived',
@@ -1149,8 +1151,12 @@ export function effectiveStatus(trip, today = todayIso()) {
   return 'live'
 }
 
+// "Today" from the LOCAL calendar (lib/localDate.js), not the UTC ISO date.
+// effectiveStatus compares against YYYY-MM-DD trip dates, which are local
+// calendar dates — using the UTC date flipped the live/archived boundary a
+// few hours early for Americas users and disagreed with the live dock.
 function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+  return localDateIso()
 }
 
 // Flatten with day metadata. Used by views that don't think in days.

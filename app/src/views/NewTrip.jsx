@@ -224,8 +224,8 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
 
         <div className="flex items-center justify-between" style={{ marginTop: 24 }}>
           <p className="f-dm text-[11px] opacity-50 italic max-w-sm">
-            Saved as a draft and synced to the family. You finish it in the
-            editor — it won't show in the trip list until you publish.
+            Saved as a draft on this device — just yours for now. You finish it
+            in the editor; the family sees it only when you publish.
           </p>
           <div className="flex items-center" style={{ gap: 10, flexShrink: 0 }}>
             <button

@@ -44,6 +44,19 @@ function fromInputValue(s) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+// Map a thrown error (from computeLeaveWhen → workerFetch) to friendly,
+// trip-appropriate copy. The raw message ("worker 500: …", a JSON body, or a
+// stack) must never reach the family — that's logged to the console instead.
+export function friendlyLeaveWhenError(e) {
+  const status = e?.status
+  if (status === 401 || status === 403) return "We couldn't reach the travel-time service. Try again in a moment."
+  if (status === 429) return 'Checking a lot right now — give it a few seconds and try again.'
+  if (typeof status === 'number' && status >= 500) return "The travel-time service is having a moment. Tap re-check to try again."
+  // No status → almost always offline / network blip in the field.
+  if (e?.message === 'worker not configured') return "Travel times aren't available right now."
+  return "We couldn't work out a leave-by time. Check your connection and tap re-check."
+}
+
 function mapsLinkFor(destination, traveler, name) {
   if (TRAVELERS[traveler]?.maps === 'waze') {
     return `https://waze.com/ul?ll=${destination.lat},${destination.lng}&navigate=yes`
@@ -132,7 +145,10 @@ export function LeaveWhenModal({
       })
       .catch((e) => {
         if (!cancelled) {
-          setError(e?.message || 'Could not compute leave-when.')
+          // Never surface the raw worker error ("worker 500: …", JSON bodies)
+          // to the family — keep it in the console for us, show plain copy.
+          console.error('[LeaveWhen] compute failed', e)
+          setError(friendlyLeaveWhenError(e))
           setResult(null)
         }
       })

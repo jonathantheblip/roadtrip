@@ -4,7 +4,15 @@
 //   2. what are the "now / next" stops from the itinerary SCHEDULE?
 // Schedule-derived, so it's true for everyone regardless of location — the
 // live-GPS ETA upgrade (Step B) rides on top of this, it doesn't replace it.
-// Pure module (no DOM, no React, no imports) → unit-tests under `node --test`.
+// Pure module (no DOM, no React) → unit-tests under `node --test`.
+
+// "Today" comes from the ONE local-calendar helper (lib/localDate.js); this
+// module used to define it inline, but trips.js + the per-view default-day
+// pickers derived "today" from the UTC ISO date and drifted near midnight,
+// so the helper was centralized. Re-exported here so existing importers of
+// `localDateIso` from liveDock keep working.
+import { localDateIso } from './localDate.js'
+export { localDateIso }
 
 // Parse a stop's free-text clock label ("3:45 PM", "9:00 AM") into a local
 // Date on `isoDate`. Returns null for vague labels ("Evening", "Sundown") —
@@ -24,15 +32,6 @@ function parseClockTime(timeStr, isoDate) {
   if (Number.isNaN(d.getTime())) return null
   d.setHours(h, mins, 0, 0)
   return d
-}
-
-// Local YYYY-MM-DD for a Date — mirrors App.todayIso() (local, tz-stable
-// against the YYYY-MM-DD trip dates), so the e2e clock stub controls it too.
-export function localDateIso(d) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }
 
 // A trip is "live" when today falls inside [dateRangeStart, dateRangeEnd]

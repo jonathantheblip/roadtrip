@@ -226,8 +226,17 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
     async (entry) => {
       setBusy('Finding faces…')
       setError('')
+      // Load the recognizer first, in its OWN try, so a model-LOAD failure
+      // (no network / model fetch failed) reports an honest "couldn't load
+      // the recognizer" instead of being mislabeled as a bad photo below.
       try {
         await ensureEngine()
+      } catch (e) {
+        setError(`Couldn't load the recognizer: ${e.message}`)
+        setBusy('')
+        return
+      }
+      try {
         const bmp = await loadImageBitmap(entry.url)
         const dets = await detectFaces(bmp)
         setEnrollFaces({ faces: dets.map((d) => ({ detection: d, thumb: faceThumb(bmp, d.box) })), bitmap: bmp })
@@ -280,7 +289,10 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
 
   const photoHits = useMemo(() => hits.filter((h) => !h.entry.isVideo), [hits])
   const videoHits = useMemo(() => hits.filter((h) => h.entry.isVideo), [hits])
-  const bestLight = useMemo(
+  // Ordered by face AREA (biggest face first) — i.e. the closest/clearest
+  // shots of this person. This is a "closest shot" heuristic, NOT an
+  // aesthetic "flattering" judgement; the UI label matches what it measures.
+  const closestShots = useMemo(
     () => [...photoHits].sort((a, b) => area(b.box) - area(a.box)).slice(0, 8),
     [photoHits],
   )
@@ -499,15 +511,18 @@ export function PersonView({ trip, trips, traveler, initialWho, onClose }) {
           </div>
         )}
 
-        {/* Aurelia/Helen → best light */}
-        {isBest && bestLight.length > 0 && (
+        {/* Aurelia/Helen → closest shots (biggest detected face) */}
+        {isBest && closestShots.length > 0 && (
           <div style={{ marginTop: 22 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
-              <div style={{ ...S.h, marginBottom: 0 }}>★ {isMe ? 'Your' : heroName + '’s'} best light</div>
-              <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5 }}>auto-picked · most flattering</span>
+              {/* closestShots is sorted by FACE AREA (biggest face first) —
+                  the closest/clearest shots of this person, NOT an aesthetic
+                  judgement. Label it honestly for what the code measures. */}
+              <div style={{ ...S.h, marginBottom: 0 }}>★ {isMe ? 'You' : heroName}, up close</div>
+              <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 0.5 }}>auto-picked · clearest, closest shots</span>
             </div>
             <Reel>
-              {bestLight.map((h) => (
+              {closestShots.map((h) => (
                 <Tile key={h.entry.key} hit={h} onOpen={() => setLightbox(h.entry)} onSend={() => sharePhoto(h.entry)} onReject={() => rejectFromPerson(h.entry)} w={150} />
               ))}
             </Reel>
