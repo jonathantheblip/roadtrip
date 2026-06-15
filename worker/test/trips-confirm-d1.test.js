@@ -94,7 +94,12 @@ describe('Unit 6 — confirm → /trips write → real-D1 round-trip', () => {
     // 1. Prior state — the trip already lives in D1 (Helen's trip before the edit).
     const seedRes = await pushTrip(baseTrip())
     expect(seedRes.status).toBe(200)
-    expect(await seedRes.json()).toEqual({ ok: true, id: 'u6-volleyball' })
+    // postTrip now also returns the server-stamped updatedAt (additive — a
+    // concurrency-aware client carries it as the base for its next save). Assert
+    // the stable fields plus that updatedAt is a real timestamp.
+    const seedBody = await seedRes.json()
+    expect(seedBody).toMatchObject({ ok: true, id: 'u6-volleyball' })
+    expect(seedBody.updatedAt).toBeGreaterThan(0)
 
     const before = await readTripRow('u6-volleyball')
     expect(before).not.toBeNull()

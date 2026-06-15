@@ -3,25 +3,50 @@
 // Mirrors the posture of surprises.js: the testable rules live here; index.js
 // does the DB plumbing and HTTP. The two load-bearing rules:
 //
-//   isShareable(memory)  — the security gate, applied at BOTH mint and resolve.
-//     A memory is shareable only if it is not deleted AND not a surprise that's
-//     hidden from someone (a revealed surprise is fine — it's no longer secret).
-//     Re-deriving this from the LIVE row at resolve time is what stops a moment
-//     that BECAME a secret after a link was made from leaking publicly.
+//   isShareable(memory, trip)  — the security gate, applied at BOTH mint and
+//     resolve. A memory is shareable only if it is not deleted, not a surprise
+//     that's hidden from someone, AND its parent trip/stop is not an unrevealed
+//     surprise (a revealed surprise is fine — it's no longer secret). Re-deriving
+//     this from the LIVE row + trip at resolve time is what stops a moment that
+//     BECAME a secret after a link was made from leaking publicly.
 //
 //   shareViewFromMemory(memory, trip) — the allowlist. Builds the ONLY fields
 //     the public page ever sees (photos, caption/note, place, date, author name,
 //     trip name). Reactions, hideFrom/cover, other memories, and every internal
 //     field are simply never read here.
 
-import { isSurprise } from './surprises.js'
+import { isSurprise, isTripSurprise, isStopSurprise } from './surprises.js'
 
 // The gate. memory is the rowToMemory shape (so `revealed` / `deletedAt` /
 // `hideFrom` are already surfaced). Conservative on purpose: an UNREVEALED
 // surprise is never shareable, full stop.
-export function isShareable(memory) {
+//
+// PUBLIC-VIEWER EXTENSION (audit): a public share link has NO identity — the
+// viewer is effectively "everyone". So it must also refuse when the parent TRIP
+// or the specific STOP this memory belongs to is itself an unrevealed surprise:
+// otherwise the page (and the link-card) would leak the secret trip's real
+// title/dates or the secret stop's name — the very things whole-trip / per-stop
+// masking hide from family members in-app. We pass the loaded `trip` so the gate
+// can see both layers; absent a trip we fall back to the memory-only check (every
+// existing single-memory share is unaffected). A REVEALED trip/stop surprise is
+// fine (no longer secret), mirroring the per-memory rule.
+export function isShareable(memory, trip) {
   if (!memory || memory.deletedAt) return false
   if (isSurprise(memory) && !memory.revealed) return false
+  if (trip) {
+    // Parent trip is a still-hidden surprise → never shareable publicly.
+    if (isTripSurprise(trip) && !trip.surprise?.revealed) return false
+    // The memory's own stop is a still-hidden surprise → never shareable.
+    if (memory.stopId && Array.isArray(trip.days)) {
+      for (const d of trip.days) {
+        for (const s of d?.stops || []) {
+          if (s && s.id === memory.stopId && isStopSurprise(s) && !s.surprise?.revealed) {
+            return false
+          }
+        }
+      }
+    }
+  }
   return true
 }
 
