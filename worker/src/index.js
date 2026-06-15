@@ -26,6 +26,7 @@ import {
 import { runNightlyWeave, beatSignature } from './weaveGen.js'
 import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
+import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, isTraveler, isAdult } from './auth.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -101,13 +102,30 @@ export default {
       }
     }
 
-    // Auth: every route below requires a valid family bearer token.
-    const traveler = authenticate(request, env)
-    if (!traveler) {
-      return json({ error: 'unauthorized' }, 401, cors)
+    // Magic-link redemption (013) — PUBLIC, like /assets and /m/:token. A device
+    // being enrolled has NO token yet; it POSTs its one-time link token and gets
+    // a per-device session back. Above the gate by necessity. The link token is
+    // 256-bit unguessable + one-time + 24h, so it is its own access control.
+    if (path === '/auth/redeem' && request.method === 'POST') {
+      try {
+        return await postAuthRedeem(env, request, cors)
+      } catch (err) {
+        console.error('auth redeem error', err?.stack || err)
+        return json({ error: 'redeem failed' }, 500, cors)
+      }
     }
 
     try {
+      // Auth: every route below requires a valid bearer token — a per-device
+      // session (013) OR, during the staged cutover, a bundled family token.
+      // INSIDE the try: 013 made authenticate() async, and its session lookup
+      // can rethrow a real (non-"no such table") D1 error. Keeping the call here
+      // means such an error returns a shaped, CORS-bearing 500 (fail-closed)
+      // instead of escaping fetch() as a bare, header-less 500.
+      const traveler = await authenticate(request, env)
+      if (!traveler) {
+        return json({ error: 'unauthorized' }, 401, cors)
+      }
 
       if (path === '/memories' && request.method === 'GET') {
         return await getMemories(env, traveler, url, cors)
@@ -134,6 +152,16 @@ export default {
       const tripMatch = path.match(/^\/trips\/([^/]+)$/)
       if (tripMatch && request.method === 'DELETE') {
         return await deleteTrip(env, traveler, tripMatch[1], cors)
+      }
+
+      // Magic-link auth (013): mint enrollment links + revoke sessions. Both
+      // are below the gate — the caller is an already-enrolled (or, during
+      // cutover, bundled-token) traveler. /auth/redeem is the only PUBLIC one.
+      if (path === '/auth/link' && request.method === 'POST') {
+        return await postAuthLink(env, traveler, request, cors)
+      }
+      if (path === '/auth/revoke' && request.method === 'POST') {
+        return await postAuthRevoke(env, traveler, request, cors)
       }
 
       // video uploads (importer + dispatch POST /assets/video/:id) join
@@ -337,7 +365,15 @@ export async function runScheduledStopReveals(env, todayIso) {
 
 // ─── Auth ─────────────────────────────────────────────────────────────
 
-function authenticate(request, env) {
+// Dual-auth during the staged cutover (013). Order is deliberate:
+//   1) Bundled family token — cheap, synchronous, NO DB. Keeps the legacy path
+//      byte-identical and free for old clients still sending FAMILY_TOKEN_*.
+//   2) Per-device session token — a D1 lookup. Only reached when the token is
+//      NOT a family token, so session devices pay one read and legacy devices
+//      pay none. A missing auth_sessions table (pre-migration) resolves to null
+//      (lookupSession swallows "no such table") → unauthorized, never a 500.
+// The "close the door" push later drops step 1 (and the bundled secrets).
+async function authenticate(request, env) {
   const auth = request.headers.get('Authorization') || ''
   const m = auth.match(/^Bearer\s+(.+)$/)
   if (!m) return null
@@ -346,7 +382,7 @@ function authenticate(request, env) {
     const expected = env[`FAMILY_TOKEN_${t.toUpperCase()}`]
     if (expected && timingSafeEqual(token, expected)) return t
   }
-  return null
+  return await lookupSession(env.DB, token)
 }
 
 function timingSafeEqual(a, b) {
@@ -357,15 +393,119 @@ function timingSafeEqual(a, b) {
   return diff === 0
 }
 
+// ─── Magic-link auth routes (013) ─────────────────────────────────────
+// Mint links (adults), redeem them (public, new device), revoke sessions.
+
+// Where the enrollment link points. Prefer an explicit configured base; else
+// the app's own Origin (an adult is minting from inside the app). Never trust a
+// request BODY for the host — that would let a caller forge a link to a lookalike
+// site. Returns '' if neither is known (the route then returns the bare token).
+function enrollBaseUrl(request, env) {
+  const configured = (env.APP_BASE_URL || '').replace(/\/+$/, '')
+  if (configured) return configured
+  // Fall back to the request Origin ONLY if it is an explicitly ALLOWED origin —
+  // never trust an arbitrary caller-supplied host to build an enrollment link
+  // (a forged Origin would otherwise yield a link pointing at a lookalike site).
+  const origin = (request.headers.get('Origin') || '').replace(/\/+$/, '')
+  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
+  if (origin && allowed.includes(origin)) return origin
+  return '' // unknown → return the bare token; the client builds the URL itself
+}
+
+// POST /auth/link (gated, adults only) — mint a one-time enrollment link for a
+// device. Body: { traveler, deviceLabel? }. Returns { url?, token, traveler, expiresAt }.
+async function postAuthLink(env, traveler, request, cors) {
+  if (!isAdult(traveler)) return json({ error: 'only an adult can create links' }, 403, cors)
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const target = typeof body?.traveler === 'string' ? body.traveler.toLowerCase() : ''
+  if (!isTraveler(target)) return json({ error: 'unknown traveler' }, 400, cors)
+  const deviceLabel = typeof body?.deviceLabel === 'string' ? body.deviceLabel.slice(0, 80) : null
+  try {
+    const { token, expiresAt } = await createAuthLink(env.DB, { traveler: target, deviceLabel, now: Date.now() })
+    const base = enrollBaseUrl(request, env)
+    return json(
+      { url: base ? `${base}/?enroll=${token}` : undefined, token, traveler: target, expiresAt },
+      200,
+      cors
+    )
+  } catch (err) {
+    // Pre-migration (auth_links absent) → honest 503, not a 500 stack.
+    if (/no such table/i.test(String(err?.message || err))) {
+      return json({ error: 'auth not yet enabled' }, 503, cors)
+    }
+    throw err
+  }
+}
+
+// POST /auth/redeem (PUBLIC) — a new device exchanges its one-time link token
+// for a per-device session. Body: { linkToken, deviceLabel? }.
+async function postAuthRedeem(env, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const linkToken = typeof body?.linkToken === 'string' ? body.linkToken : ''
+  if (!linkToken) return json({ error: 'linkToken required' }, 400, cors)
+  const deviceLabel = typeof body?.deviceLabel === 'string' ? body.deviceLabel.slice(0, 80) : null
+  let res
+  try {
+    res = await redeemAuthLink(env.DB, { linkToken, deviceLabel, now: Date.now() })
+  } catch (err) {
+    if (/no such table/i.test(String(err?.message || err))) {
+      return json({ error: 'auth not yet enabled' }, 503, cors)
+    }
+    throw err
+  }
+  // One opaque error for not-found / used / expired — never reveal which, so the
+  // public route can't be used to probe which link tokens exist.
+  if (res.error) return json({ error: 'invalid or expired link' }, 400, cors)
+  return json({ sessionToken: res.sessionToken, traveler: res.traveler }, 200, cors)
+}
+
+// POST /auth/revoke (gated) — kill a session (lost device) or all of YOUR
+// sessions. Body: { sessionToken } | { all:true, except? }. A caller can only
+// revoke sessions belonging to their own traveler.
+async function postAuthRevoke(env, traveler, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  const now = Date.now()
+  if (body?.all === true) {
+    const except = typeof body?.except === 'string' ? body.except : null
+    const r = await revokeSession(env.DB, { all: true, traveler, except, now })
+    return json({ ok: true, revoked: r.revoked }, 200, cors)
+  }
+  const sessionToken = typeof body?.sessionToken === 'string' ? body.sessionToken : ''
+  if (!sessionToken) return json({ error: 'sessionToken or all required' }, 400, cors)
+  const r = await revokeSession(env.DB, { sessionToken, traveler, now })
+  if (r.error === 'forbidden') return json({ error: 'not your session' }, 403, cors)
+  return json({ ok: true, revoked: r.revoked }, 200, cors)
+}
+
 // ─── CORS ─────────────────────────────────────────────────────────────
 
 function corsHeaders(origin, env) {
   const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
   // Localhost (any port) is trusted in dev. Avoids the recurring
   // chore of enumerating every Vite port the team might bind to
-  // (5173, 5174, … 5180, 4173). github.io covers prod.
+  // (5173, 5174, … 5180, 4173).
   const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin)
-  const isAllowed = allowed.includes(origin) || origin.endsWith('.github.io') || isLocalhost
+  // EXACT allowlist only — the prod app origin (jonathantheblip.github.io) is in
+  // ALLOWED_ORIGINS. We deliberately do NOT reflect every *.github.io: with the
+  // 013 magic-link routes, /auth/redeem returns a session token in its body, and
+  // a wildcard would let any GitHub Pages site read that response cross-origin.
+  // (Audit item "CORS *.github.io tighten", closed with the auth work.)
+  const isAllowed = allowed.includes(origin) || isLocalhost
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : (allowed[0] || '*'),
     'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
