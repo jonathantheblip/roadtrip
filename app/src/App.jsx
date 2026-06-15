@@ -24,6 +24,7 @@ import { InstallIdentity } from './views/InstallIdentity'
 import { TheWeave } from './views/TheWeave'
 import { WeaveBook } from './views/WeaveBook'
 import { SurprisesView } from './views/SurprisesView'
+import { Enroll } from './views/Enroll'
 import { ShareComposer } from './components/ShareComposer'
 // "Show me, me" (the on-device face recognizer) is lazy-loaded so its
 // model + index code stays out of the main bundle until it's opened.
@@ -53,6 +54,11 @@ function initialViewFromUrl() {
     const params = new URLSearchParams(window.location.search)
     const action = params.get('action') || ''
     const url = params.get('url') || params.get('text') || ''
+    // ?enroll=<linkToken> — a personal magic-link to set up THIS device (013).
+    // Highest precedence: it's an explicit setup action. The Enroll screen
+    // detects standalone vs browser and handles the iOS hand-off.
+    const enroll = params.get('enroll') || ''
+    if (enroll) return { name: 'enroll', enrollToken: enroll }
     // ?personview=1 opens "Show me, me" directly (also on Rafa's tile +
     // Aurelia's lens).
     if (params.get('personview') === '1') return { name: 'showme', who: null }
@@ -429,6 +435,9 @@ export default function App() {
     // "Show me, me" gathers photos across all trips, so it must not be
     // bounced to the index when no trip happens to be active today.
     if (view.name === 'showme') return
+    // Magic-link setup (013) is a boot-routed, trip-independent action — the
+    // active-trip cold-load must not yank it to the trip list.
+    if (view.name === 'enroll') return
 
     const today = todayIso()
     const active = pickActiveTrip(visibleTrips, today)
@@ -757,6 +766,37 @@ export default function App() {
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
   }
 
+  // Magic-link enrollment finished (013): the session is stored; adopt the
+  // redeemed identity, strip ?enroll so a reload doesn't re-fire, and land
+  // in-app. `who` is the traveler the link enrolled.
+  function stripEnrollFromUrl() {
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('enroll')
+      window.history.replaceState(null, '', url.toString())
+    } catch {
+      /* ignore */
+    }
+  }
+  function handleEnrollDone(who, mode) {
+    // Adopt the redeemed identity only when YOU opened your OWN link ('link').
+    // For 'add' (provisioning another person from Settings, e.g. the shared
+    // iPad) stay as the current traveler — don't yank the device to the new one.
+    if (who && mode !== 'add') setTraveler(who)
+    stripEnrollFromUrl()
+    // The enroll boot consumed the one-shot cold-load guard before doing the
+    // active-trip pick; re-arm it so the post-enroll index resolves normally.
+    coldLoadHandledRef.current = false
+    setView({ name: 'index' })
+  }
+  function handleEnrollCancel() {
+    stripEnrollFromUrl() // a cancelled setup must not leave the one-time token in the URL
+    setView({ name: 'index' })
+  }
+  function openEnrollAdd() {
+    setView({ name: 'enroll', enrollToken: null })
+  }
+
   // Render the per-traveler themed surface for the active trip
   function renderTripView() {
     if (!trip) return null
@@ -798,6 +838,22 @@ export default function App() {
       default:
         return <JonathanView {...props} />
     }
+  }
+
+  // Magic-link setup (013) takes the whole screen — it's a fresh-device action,
+  // reached by opening a personal link (?enroll) or via Settings → "set up this
+  // device". (The post-cutover "you're not set up here" auto-wall is deferred to
+  // the close-the-door stage, where it's exercisable + device-tested.)
+  if (view.name === 'enroll') {
+    return (
+      <Enroll
+        token={view.enrollToken}
+        mode={view.enrollToken ? 'link' : 'add'}
+        traveler={traveler}
+        onDone={handleEnrollDone}
+        onCancel={handleEnrollCancel}
+      />
+    )
   }
 
   return (
@@ -1197,6 +1253,7 @@ export default function App() {
             onChangeTraveler={handleTravelerSwitch}
             onOpenEditor={openEditor}
             onOpenIdentity={() => setView({ name: 'identity' })}
+            onOpenEnroll={openEnrollAdd}
           />
         )}
         {view.name === 'identity' && (

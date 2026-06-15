@@ -11,6 +11,7 @@ import {
   isWorkerConfigured,
   WORKER_META,
 } from '../lib/workerSync'
+import { enrolledTravelers } from '../lib/auth'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 import {
   clearUploadLog,
@@ -26,7 +27,8 @@ import {
 // offline + Pull / Push / Seed actions. (Helen's dark-mode toggle was
 // removed 2026-06-05 — dark mode dropped as a per-person axis.)
 
-export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor, onOpenIdentity }) {
+export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor, onOpenIdentity, onOpenEnroll }) {
+  const enrolledHere = enrolledTravelers()
   const [workerStatus, setWorkerStatus] = useState({
     status: isWorkerConfigured() ? 'syncing' : 'unconfigured',
     traveler: null,
@@ -361,6 +363,25 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
               {TRAVELERS[id].name}
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="px-6 py-8 border-b surface-rule" data-testid="settings-device">
+        <div className="flex items-center gap-2 mb-3">
+          <Smartphone size={14} />
+          <p className="smallcaps f-dm text-[11px] opacity-70">This device</p>
+        </div>
+        <p className="f-news text-base leading-relaxed opacity-80 mb-4 max-w-prose">
+          {enrolledHere.length
+            ? `Signed in on this device: ${enrolledHere.map((t) => TRAVELERS[t]?.name || t).join(', ')}. Add another family member to share this device (like the iPad), or sign out devices you've lost.`
+            : 'Set this device up with a personal link so it remembers who you are — no shared password. Ask Jonathan for your link, open it, and follow the steps.'}
+        </p>
+        <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {onOpenEnroll && (
+            <button type="button" className="btn-pill" onClick={onOpenEnroll} data-testid="settings-enroll" style={{ minHeight: 44 }}>
+              {enrolledHere.length ? 'Add a family member' : 'Set up this device'}
+            </button>
+          )}
         </div>
       </section>
 

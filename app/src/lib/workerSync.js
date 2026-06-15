@@ -16,6 +16,7 @@
 //     (URL → cookie → localStorage → 'jonathan').
 
 import { loadAsset } from './memAssets'
+import { getSession } from './auth'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) || {}
 const WORKER_URL = (env.VITE_WORKER_URL || '').replace(/\/+$/, '')
@@ -29,7 +30,10 @@ const TRAVELER_ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
 
 export function isWorkerConfigured() {
   if (!WORKER_URL) return false
-  return TRAVELER_ORDER.some((t) => !!TOKENS[t])
+  // Configured if ANY traveler has a credential — a per-device session (013) OR,
+  // during the cutover, a bundled token. Session-aware so the app stays
+  // configured after the "close the door" step removes the bundled tokens.
+  return TRAVELER_ORDER.some((t) => !!TOKENS[t] || !!getSession(t))
 }
 
 // Read the active traveler the same way App.jsx does. Re-implemented
@@ -57,16 +61,20 @@ function getActiveTraveler() {
 
 function authHeader() {
   const traveler = getActiveTraveler()
+  // Per-device session (013) wins — this is the post-cutover credential, and
+  // when present it's the identity the user actually enrolled as on this device.
+  const session = getSession(traveler)
+  if (session) return `Bearer ${session}`
+  // Transition fallback: this traveler's bundled family token.
   const token = TOKENS[traveler]
-  if (!token) {
-    // Fall back to any populated token so dev environments missing one
-    // family member's token still work for the others.
-    for (const t of TRAVELER_ORDER) {
-      if (TOKENS[t]) return `Bearer ${TOKENS[t]}`
-    }
-    return ''
+  if (token) return `Bearer ${token}`
+  // Dev convenience (pre-cutover only): any populated BUNDLED token, so a dev env
+  // missing one member's token still works for the others. Deliberately never
+  // falls back to another traveler's SESSION — that would act as the wrong person.
+  for (const t of TRAVELER_ORDER) {
+    if (TOKENS[t]) return `Bearer ${TOKENS[t]}`
   }
-  return `Bearer ${token}`
+  return ''
 }
 
 export async function workerFetch(path, opts = {}) {
