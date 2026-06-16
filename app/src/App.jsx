@@ -37,7 +37,8 @@ import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
-import { pullAll, isWorkerConfigured, workerFetch, uploadPoster } from './lib/workerSync'
+import { pullAll, isWorkerConfigured, workerFetch, uploadPoster, hasCredential } from './lib/workerSync'
+import { switcherList } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import { applyInstallIdentity } from './lib/appInstall'
@@ -572,6 +573,17 @@ export default function App() {
   // ledge's now/next become "{heading-to} · ETA {time}" (real traffic-aware
   // drive time). Off-route / no GPS → null → the honest schedule readout stays.
   const liveEta = useLiveEta(tripForView, dockLedge.mode === 'live')
+
+  // Enrolled-only persona switcher (close-the-door): offer only personas this
+  // device holds a credential for (session OR — pre-cutover — bundled token).
+  // Pre-cutover all four have a bundled token, so the dock is UNCHANGED; once the
+  // bundled tokens are removed at the cutover this auto-narrows to the sessions
+  // enrolled here (closing the surprise-leak: you can no longer switch into a
+  // persona you can't authenticate as). The pure logic (fallback-to-all when none
+  // credentialed; add-pill only when genuinely narrowed) lives in lib/auth so it's
+  // unit-testable without the bundled tokens that the e2e/dev build always carries.
+  const { ids: switcherIds, canAdd: canAddMember } = switcherList(TRAVELER_ORDER, hasCredential)
+
   useEffect(() => {
     setWeaveReady(false)
     setBookHasPages(false)
@@ -1335,6 +1347,8 @@ export default function App() {
         <Switcher
           active={traveler}
           onSwitch={handleTravelerSwitch}
+          ids={switcherIds}
+          onAdd={canAddMember ? openEnrollAdd : undefined}
           // The index is a between-trips surface — show only the persona pills,
           // never the live ledge (which belongs to an open trip). Everywhere
           // else the system-driven ledge model decides.

@@ -17,8 +17,35 @@ function setNavigator(nav) {
 }
 setNavigator({ userAgent: 'node-test' })
 
-const { tokenFromInput, getSession, setSession, clearSession, enrolledTravelers, hasSession, isStandalone, defaultDeviceLabel } =
+const { tokenFromInput, getSession, setSession, clearSession, enrolledTravelers, hasSession, isStandalone, defaultDeviceLabel, switcherList } =
   await import('../../src/lib/auth.js')
+
+const ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
+
+test('switcherList: ALL credentialed (pre-cutover + the e2e/axe matrix) → all pills, no add (unchanged dock)', () => {
+  const { ids, canAdd } = switcherList(ORDER, () => true)
+  assert.deepEqual(ids, ORDER)
+  assert.equal(canAdd, false)
+})
+
+test('switcherList: NONE credentialed (a truly fresh device — no tokens, no sessions) → all pills, no add (never empty)', () => {
+  const { ids, canAdd } = switcherList(ORDER, () => false)
+  assert.deepEqual(ids, ORDER)
+  assert.equal(canAdd, false)
+})
+
+test('switcherList: SOME credentialed (post-cutover) → narrows to enrolled + offers add', () => {
+  const enrolled = new Set(['jonathan', 'helen'])
+  const { ids, canAdd } = switcherList(ORDER, (t) => enrolled.has(t))
+  assert.deepEqual(ids, ['jonathan', 'helen']) // aurelia + rafa hidden — the leak fix
+  assert.equal(canAdd, true)
+})
+
+test('switcherList: a single enrolled persona → just them + add (shared-device first enroll)', () => {
+  const { ids, canAdd } = switcherList(ORDER, (t) => t === 'rafa')
+  assert.deepEqual(ids, ['rafa'])
+  assert.equal(canAdd, true)
+})
 
 test('tokenFromInput accepts a bare opaque token', () => {
   const t = 'abcDEF123_-ghiJKL456mnoPQR789'

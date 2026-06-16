@@ -99,6 +99,9 @@ const MONO = 'JetBrains Mono, monospace'
 export function Switcher({
   active,
   onSwitch,
+  ids = TRAVELER_ORDER, // which personas are offered (enrolled-only at cutover);
+  // defaults to all four so tests / pre-cutover are untouched.
+  onAdd, // when set, an "add a family member" pill opens the enroll flow.
   ledge = 'none',
   now = '',
   next = '',
@@ -125,7 +128,7 @@ export function Switcher({
           </>
         )}
         <div className="switcher-pills">
-          {TRAVELER_ORDER.map((id) => {
+          {ids.map((id) => {
             const t = TRAVELERS[id]
             const isActive = active === id
             return (
@@ -156,6 +159,19 @@ export function Switcher({
               </button>
             )
           })}
+          {onAdd && (
+            <button
+              type="button"
+              className="inactive"
+              onClick={onAdd}
+              data-testid="switcher-add"
+              aria-label="Add a family member to this device"
+              style={{ color: 'rgba(255,255,255,0.78)' }}
+            >
+              <div className="label">＋ Add</div>
+              <div className="sub">family member</div>
+            </button>
+          )}
         </div>
       </div>
     </div>

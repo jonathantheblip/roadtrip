@@ -61,6 +61,24 @@ export function hasSession(traveler) {
   return !!getSession(traveler)
 }
 
+// The enrolled-only persona switcher list (close-the-door). Given the canonical
+// traveler `order` and a `hasCred(traveler)` predicate (has a session OR — pre-
+// cutover — a bundled token), return:
+//   ids   — the personas to offer: the credentialed ones, or ALL when none are
+//           credentialed (a fresh device / the e2e+axe matrix → never an empty
+//           dock). Pre-cutover every traveler has a bundled token → unchanged.
+//   canAdd — whether to show "add a family member": only when the dock is
+//           genuinely narrowed (some credentialed, some not), so there's someone
+//           left to enroll. Pre-cutover (all credentialed) → false → no new pill.
+// Pure (predicate injected) so it's unit-testable without the bundled tokens the
+// dev/e2e build always carries.
+export function switcherList(order, hasCred) {
+  const credentialed = (order || []).filter((t) => hasCred(t))
+  const ids = credentialed.length ? credentialed : order || []
+  const canAdd = credentialed.length > 0 && credentialed.length < (order || []).length
+  return { ids, canAdd }
+}
+
 // ─── Install context (the iOS hand-off pivot) ─────────────────────────────
 // True when running as an INSTALLED home-screen app (standalone), false in a
 // normal browser tab. On iOS the two have SEPARATE storage, so the enroll screen

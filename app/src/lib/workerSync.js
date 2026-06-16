@@ -36,6 +36,16 @@ export function isWorkerConfigured() {
   return TRAVELER_ORDER.some((t) => !!TOKENS[t] || !!getSession(t))
 }
 
+// Does THIS device hold a credential to act AS `traveler` — a per-device session
+// (013) OR, during the cutover, that traveler's bundled token? Drives the
+// enrolled-only switcher: it shows a persona only when the device can actually BE
+// them. Pre-cutover every traveler has a bundled token (no narrowing); once the
+// bundled tokens are removed at "close the door" this auto-tightens to the
+// sessions actually enrolled on the device — the surprise-leak fix, no code change.
+export function hasCredential(traveler) {
+  return !!getSession(traveler) || !!TOKENS[traveler]
+}
+
 // Can this person do a one-tap SELF-enroll on this device? Only when the device
 // already holds THEIR OWN credential to authenticate AS them — their own bundled
 // token, and no session yet. Critically NOT true merely because SOME OTHER bundled
