@@ -190,7 +190,10 @@ export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
   function jumpToTrip(tripId) {
     setActiveTripId(tripId)
     const el = sectionRefs.current[tripId]
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // Instant (not smooth): a deliberate "jump back" lands at once, and the
+    // synchronous scroll lets the scroll-spy settle on the target immediately
+    // instead of briefly flickering the "Earliest trip" state mid-animation.
+    if (el) el.scrollIntoView({ block: 'start' })
   }
 
   const openList = lightbox ? tripEntries[lightbox.tripId] || [] : []
