@@ -16,7 +16,7 @@
 //     (URL → cookie → localStorage → 'jonathan').
 
 import { loadAsset } from './memAssets'
-import { getSession } from './auth'
+import { getSession, clearSession, redeemLink } from './auth'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) || {}
 const WORKER_URL = (env.VITE_WORKER_URL || '').replace(/\/+$/, '')
@@ -34,6 +34,17 @@ export function isWorkerConfigured() {
   // during the cutover, a bundled token. Session-aware so the app stays
   // configured after the "close the door" step removes the bundled tokens.
   return TRAVELER_ORDER.some((t) => !!TOKENS[t] || !!getSession(t))
+}
+
+// Can this person do a one-tap SELF-enroll on this device? Only when the device
+// already holds THEIR OWN credential to authenticate AS them — their own bundled
+// token, and no session yet. Critically NOT true merely because SOME OTHER bundled
+// token exists: otherwise authHeader's any-bundled-token fallback would mint a
+// session for this traveler using a DIFFERENT person's credential (the session
+// would diverge from who actually authenticated). Goes false post-cutover (no
+// bundled token) — a fresh device then enrolls via a link instead.
+export function canSelfEnroll(traveler) {
+  return !getSession(traveler) && !!TOKENS[traveler]
 }
 
 // Read the active traveler the same way App.jsx does. Re-implemented
@@ -79,12 +90,30 @@ function authHeader() {
 
 export async function workerFetch(path, opts = {}) {
   if (!isWorkerConfigured()) throw new Error('worker not configured')
-  const headers = new Headers(opts.headers || {})
-  headers.set('Authorization', authHeader())
-  if (opts.body && !headers.has('Content-Type') && typeof opts.body === 'string') {
-    headers.set('Content-Type', 'application/json')
+  const traveler = getActiveTraveler()
+  const usedSession = !!getSession(traveler)
+
+  const doFetch = () => {
+    const headers = new Headers(opts.headers || {})
+    headers.set('Authorization', authHeader())
+    if (opts.body && !headers.has('Content-Type') && typeof opts.body === 'string') {
+      headers.set('Content-Type', 'application/json')
+    }
+    return fetch(`${WORKER_URL}${path}`, { ...opts, headers })
   }
-  const r = await fetch(`${WORKER_URL}${path}`, { ...opts, headers })
+
+  let r = await doFetch()
+  // Self-heal a DEAD session: a session-authed request that comes back 401 means
+  // the session was revoked/invalid. Drop it so authHeader falls back to the
+  // bundled token (still shipping during the cutover) and retry ONCE — otherwise
+  // a single bad session in localStorage would shadow a working credential and
+  // brick ALL sync with no recovery. (Bodies used here are strings/Blobs, both
+  // re-readable. Post-cutover with no bundled token this just 401s again, which
+  // the "not set up" surface will handle.)
+  if (r.status === 401 && usedSession) {
+    clearSession(traveler)
+    r = await doFetch()
+  }
   if (!r.ok) {
     const text = await r.text().catch(() => '')
     const err = new Error(`worker ${r.status}: ${text || r.statusText}`)
@@ -92,6 +121,34 @@ export async function workerFetch(path, opts = {}) {
     throw err
   }
   return r
+}
+
+// ─── Enrollment: minting links (the "create" side of magic-link, 013) ───────
+// authHeader carries THIS device's current credential (an adult's session or, for
+// now, the bundled token). The worker enforces adult-only minting + a real target,
+// so no raw token is ever handled by a human — the app asks the server on the
+// adult's behalf.
+
+// Mint a one-time enrollment link for `traveler` to use on another device.
+// Returns { url, token, traveler, expiresAt }; throws (err.status set) on failure
+// (403 if the caller isn't an adult, 503 if migration 013 isn't applied yet).
+export async function mintEnrollLink(traveler, deviceLabel) {
+  const r = await workerFetch('/auth/link', {
+    method: 'POST',
+    body: JSON.stringify(deviceLabel ? { traveler, deviceLabel } : { traveler }),
+  })
+  return r.json()
+}
+
+// One-tap self-enroll on an already-authed device: mint a link for `traveler`
+// (authed AS them) and redeem it locally → a per-device session. Afterwards this
+// device uses the session, not the bundled token, for that person. Returns
+// { traveler }; throws on failure. The mint is the adult-gated step — only an
+// adult's own device can self-enroll this way.
+export async function setUpThisDevice(traveler, deviceLabel) {
+  const minted = await mintEnrollLink(traveler, deviceLabel)
+  if (!minted?.token) throw new Error('Could not create a setup link.')
+  return redeemLink(minted.token, deviceLabel) // stores the session (lib/auth)
 }
 
 // ─── Share-out ────────────────────────────────────────────────────────────

@@ -84,7 +84,11 @@ export default defineConfig({
     // origin only because the route regexes match on that host.
     env: {
       VITE_WORKER_URL: 'https://roadtrip-sync.jonathan-d-jackson.workers.dev',
-      VITE_FAMILY_TOKEN_HELEN: 'fake-e2e-token-routes-are-mocked-not-a-credential',
+      VITE_FAMILY_TOKEN_HELEN: 'fake-e2e-token-helen-routes-are-mocked-not-a-credential',
+      // Aurelia (a non-adult) has her OWN bundled token so the self-enroll spec can
+      // verify she self-mints with HER credential, not a cross-traveler fallback.
+      // Transparently fake — every network flow is page.route-mocked.
+      VITE_FAMILY_TOKEN_AURELIA: 'fake-e2e-token-aurelia-routes-are-mocked-not-a-credential',
     },
   },
 })

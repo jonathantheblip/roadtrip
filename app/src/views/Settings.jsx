@@ -10,8 +10,11 @@ import {
   pingWorker,
   isWorkerConfigured,
   WORKER_META,
+  mintEnrollLink,
+  setUpThisDevice,
+  canSelfEnroll,
 } from '../lib/workerSync'
-import { enrolledTravelers } from '../lib/auth'
+import { enrolledTravelers, isAdult, defaultDeviceLabel } from '../lib/auth'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 import {
   clearUploadLog,
@@ -29,6 +32,65 @@ import {
 
 export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor, onOpenIdentity, onOpenEnroll }) {
   const enrolledHere = enrolledTravelers()
+  // "This device" — enrollment (013): one-tap self-enroll for an adult + minting
+  // setup links for the rest of the family. No raw token is ever handled by hand;
+  // the app asks the worker on the adult's behalf (worker enforces adult-only).
+  const travelerName = TRAVELERS[traveler]?.name || traveler
+  const [deviceBusy, setDeviceBusy] = useState(false)
+  const [deviceMsg, setDeviceMsg] = useState(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [createdLink, setCreatedLink] = useState(null) // { traveler, url, token }
+  const [linkCopied, setLinkCopied] = useState(false)
+  async function runSelfEnroll() {
+    setDeviceBusy(true)
+    setDeviceMsg(null)
+    setCreatedLink(null) // don't leave a link minted for someone ELSE on screen
+    setShowCreate(false)
+    try {
+      await setUpThisDevice(traveler, defaultDeviceLabel())
+      // setDeviceMsg re-renders → enrolledHere/hasSession recompute from storage.
+      setDeviceMsg(`Done — this device is now signed in as ${travelerName}, and no longer needs the shared password.`)
+    } catch {
+      // Self-enroll is a self-mint, which the worker allows for anyone, so a 403
+      // shouldn't occur in practice — a generic, retry-friendly message covers
+      // the real cases (offline / transient).
+      setDeviceMsg("Setup didn't finish — check your connection and tap to try again.")
+    } finally {
+      setDeviceBusy(false)
+    }
+  }
+  // Reset the device-section UI when the active person changes (shared iPad): a
+  // link minted for one person must not linger under another's identity.
+  useEffect(() => {
+    setShowCreate(false)
+    setCreatedLink(null)
+    setDeviceMsg(null)
+    setLinkCopied(false)
+  }, [traveler])
+  async function runCreateLink(target) {
+    setDeviceBusy(true)
+    setDeviceMsg(null)
+    setCreatedLink(null)
+    setLinkCopied(false)
+    try {
+      const data = await mintEnrollLink(target, null)
+      setCreatedLink({ traveler: target, url: data?.url || '', token: data?.token || '' })
+      setShowCreate(false)
+    } catch (e) {
+      setDeviceMsg(e?.status === 403 ? 'Only an adult can create setup links.' : e?.message || 'Could not create a link.')
+    } finally {
+      setDeviceBusy(false)
+    }
+  }
+  async function copyCreatedLink() {
+    const text = createdLink?.url || createdLink?.token || ''
+    try {
+      await navigator.clipboard.writeText(text)
+      setLinkCopied(true)
+    } catch {
+      /* clipboard blocked — the visible link below is the manual fallback */
+    }
+  }
   const [workerStatus, setWorkerStatus] = useState({
     status: isWorkerConfigured() ? 'syncing' : 'unconfigured',
     traveler: null,
@@ -373,16 +435,98 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
         </div>
         <p className="f-news text-base leading-relaxed opacity-80 mb-4 max-w-prose">
           {enrolledHere.length
-            ? `Signed in on this device: ${enrolledHere.map((t) => TRAVELERS[t]?.name || t).join(', ')}. Add another family member to share this device (like the iPad), or sign out devices you've lost.`
-            : 'Set this device up with a personal link so it remembers who you are — no shared password. Ask Jonathan for your link, open it, and follow the steps.'}
+            ? `Signed in on this device: ${enrolledHere.map((t) => TRAVELERS[t]?.name || t).join(', ')}.`
+            : 'Give this device its own login instead of the shared password — set it up, or hand it a personal link.'}
         </p>
         <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {/* One-tap self-enroll: ANYONE whose OWN credential is on this device
+              gets a per-device login with no link to text or paste. Gated on
+              canSelfEnroll (this person's own token, no session yet) — never the
+              cross-traveler fallback — so the minted session matches who actually
+              authenticated. The worker allows a self-mint for anyone; minting for
+              OTHERS stays adult-only (the create-link button below). */}
+          {canSelfEnroll(traveler) && (
+            <button
+              type="button"
+              className="btn-pill"
+              onClick={runSelfEnroll}
+              disabled={deviceBusy}
+              data-testid="settings-selfenroll"
+              style={{ minHeight: 44 }}
+            >
+              {deviceBusy ? 'Setting up…' : `Set up this device as ${travelerName}`}
+            </button>
+          )}
+          {/* Adults can mint a link for anyone else, to text them. */}
+          {isAdult(traveler) && (
+            <button
+              type="button"
+              className="btn-pill"
+              onClick={() => { setShowCreate((s) => !s); setCreatedLink(null) }}
+              disabled={deviceBusy}
+              data-testid="settings-createlink"
+              style={{ minHeight: 44 }}
+            >
+              Create a setup link for someone…
+            </button>
+          )}
+          {/* Receive side (anyone): paste a link/code an adult sent you. */}
           {onOpenEnroll && (
             <button type="button" className="btn-pill" onClick={onOpenEnroll} data-testid="settings-enroll" style={{ minHeight: 44 }}>
-              {enrolledHere.length ? 'Add a family member' : 'Set up this device'}
+              Have a setup link? Set up with a code
             </button>
           )}
         </div>
+
+        {/* Who's the link for? */}
+        {showCreate && (
+          <div className="mt-4" data-testid="settings-create-picker">
+            <p className="f-dm text-sm opacity-70 mb-2">Who is this setup link for?</p>
+            <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {TRAVELER_ORDER.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="btn-pill"
+                  onClick={() => runCreateLink(id)}
+                  disabled={deviceBusy}
+                  style={{ minHeight: 44 }}
+                >
+                  {TRAVELERS[id].name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* The minted link, ready to text. */}
+        {createdLink && (
+          <div className="mt-4" data-testid="settings-createdlink">
+            <p className="f-news text-base leading-relaxed opacity-80 mb-2 max-w-prose">
+              <b>{TRAVELERS[createdLink.traveler]?.name || createdLink.traveler}</b>'s setup link — text it to
+              them privately. It works once, and expires in 24 hours.
+            </p>
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px dashed var(--border)',
+                background: 'var(--bg2)',
+                fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                fontSize: 12,
+                wordBreak: 'break-all',
+                userSelect: 'all',
+              }}
+            >
+              {createdLink.url || createdLink.token}
+            </div>
+            <button type="button" className="btn-pill mt-2" onClick={copyCreatedLink} style={{ minHeight: 44 }}>
+              {linkCopied ? 'Copied ✓' : 'Copy link'}
+            </button>
+          </div>
+        )}
+
+        {deviceMsg && <p className="f-mono text-[10px] opacity-60 mt-3" data-testid="settings-device-msg">{deviceMsg}</p>}
       </section>
 
       {onOpenIdentity && (

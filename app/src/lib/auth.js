@@ -17,6 +17,13 @@ const WORKER_URL = (env.VITE_WORKER_URL || '').replace(/\/+$/, '')
 
 const SESSION_PREFIX = 'rt_session_'
 const TRAVELER_ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
+const ADULTS = ['jonathan', 'helen']
+
+// Only adults can mint setup links / self-enroll (the worker enforces this too;
+// this gates the UI). A teen/child receives a link an adult made for them.
+export function isAdult(traveler) {
+  return ADULTS.includes(traveler)
+}
 
 // ─── Session store (per traveler, per device) ─────────────────────────────
 
