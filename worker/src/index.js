@@ -415,7 +415,6 @@ function enrollBaseUrl(request, env) {
 // POST /auth/link (gated, adults only) — mint a one-time enrollment link for a
 // device. Body: { traveler, deviceLabel? }. Returns { url?, token, traveler, expiresAt }.
 async function postAuthLink(env, traveler, request, cors) {
-  if (!isAdult(traveler)) return json({ error: 'only an adult can create links' }, 403, cors)
   let body
   try {
     body = await request.json()
@@ -424,6 +423,14 @@ async function postAuthLink(env, traveler, request, cors) {
   }
   const target = typeof body?.traveler === 'string' ? body.traveler.toLowerCase() : ''
   if (!isTraveler(target)) return json({ error: 'unknown traveler' }, 400, cors)
+  // SELF-MINT (target === caller) is allowed for ANYONE: the caller already
+  // authenticated AS `traveler`, so minting a link for themselves grants no
+  // identity they don't already hold — it's the most attack-resistant enrollment
+  // (no link travels anywhere, no impersonation possible). Minting a link for
+  // SOMEONE ELSE (provisioning another person's device) stays ADULT-only.
+  if (target !== traveler && !isAdult(traveler)) {
+    return json({ error: 'only an adult can create a link for someone else' }, 403, cors)
+  }
   const deviceLabel = typeof body?.deviceLabel === 'string' ? body.deviceLabel.slice(0, 80) : null
   try {
     const { token, expiresAt } = await createAuthLink(env.DB, { traveler: target, deviceLabel, now: Date.now() })

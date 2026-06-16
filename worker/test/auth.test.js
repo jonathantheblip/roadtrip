@@ -186,13 +186,21 @@ describe('route authorization', () => {
     expect(revokeNoTok.status).toBe(401)
   })
 
-  it('only an ADULT can mint links — a child caller is forbidden (403)', async () => {
-    const asRafa = await call('/auth/link', { method: 'POST', token: TOK.rafa, body: { traveler: 'rafa' } })
-    expect(asRafa.status).toBe(403)
-    const asAurelia = await call('/auth/link', { method: 'POST', token: TOK.aurelia, body: { traveler: 'aurelia' } })
-    expect(asAurelia.status).toBe(403)
-    const asHelen = await call('/auth/link', { method: 'POST', token: TOK.helen, body: { traveler: 'rafa' } })
-    expect(asHelen.status).toBe(200) // adult OK
+  it('minting rules: ANYONE may self-mint; only adults may mint for someone ELSE', async () => {
+    // Self-mint (target === caller) is allowed for a teen/child — they already
+    // authenticated as themselves, so it grants no new identity.
+    const rafaSelf = await call('/auth/link', { method: 'POST', token: TOK.rafa, body: { traveler: 'rafa' } })
+    expect(rafaSelf.status).toBe(200)
+    const aureliaSelf = await call('/auth/link', { method: 'POST', token: TOK.aurelia, body: { traveler: 'aurelia' } })
+    expect(aureliaSelf.status).toBe(200)
+    // A non-adult minting for SOMEONE ELSE is forbidden (no provisioning others).
+    const rafaForOther = await call('/auth/link', { method: 'POST', token: TOK.rafa, body: { traveler: 'jonathan' } })
+    expect(rafaForOther.status).toBe(403)
+    // An adult may mint for anyone (self or others).
+    const helenForRafa = await call('/auth/link', { method: 'POST', token: TOK.helen, body: { traveler: 'rafa' } })
+    expect(helenForRafa.status).toBe(200)
+    const helenSelf = await call('/auth/link', { method: 'POST', token: TOK.helen, body: { traveler: 'helen' } })
+    expect(helenSelf.status).toBe(200)
   })
 
   it('minting for an unknown traveler is rejected (400)', async () => {
