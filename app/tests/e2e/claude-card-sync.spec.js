@@ -64,10 +64,13 @@ test('a failed family push is honest, then self-heals on the next opportunity', 
   await expect(dialog.getByTestId('confirm-card-saved')).toHaveCount(0)
   await expect(dialog.getByText(/Syncing to the family/i)).toBeVisible()
 
-  // Recorded as unsynced for retry, and the push really did fail.
+  // Recorded as unsynced for retry, and the push really did fail. The queue stores
+  // { id, author } so the resync can re-push under the real editor (here, Helen).
   expect(posts.attempts).toBeGreaterThan(0)
   const unsynced = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '[]'), UNSYNCED_KEY)
-  expect(unsynced).toContain('volleyball-2026')
+  const entry = unsynced.find((e) => (typeof e === 'string' ? e : e.id) === 'volleyball-2026')
+  expect(entry).toBeTruthy()
+  expect(entry.author).toBe('helen') // the editor was captured at mark time
 
   // SELF-HEALING: let the push succeed, fire the `online` trigger; resync
   // re-pushes the stranded edit and clears the flag.

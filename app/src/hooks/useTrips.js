@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { TRIPS as SEED_TRIPS } from '../data/trips'
-import { pullTrips, pushTrip, deleteTrip, isWorkerConfigured } from '../lib/workerSync'
+import { pullTrips, pushTrip, deleteTrip, isWorkerConfigured, getActiveTraveler } from '../lib/workerSync'
 import {
   markUnsynced,
   markSynced,
   pendingIds,
+  pendingEntries,
   count as unsyncedCountNow,
   subscribe as subscribeUnsynced,
 } from '../lib/tripSyncQueue'
@@ -180,7 +181,7 @@ export function useTrips() {
       // on the next opportunity (reopen / network back / interval), instead of
       // stranding the edit on this device forever. The caller still gets a
       // synced:false result so its UI can be honest about it.
-      markUnsynced(trip.id)
+      markUnsynced(trip.id, getActiveTraveler()) // capture the editor for an honest resync
       console.warn('useTrips upsertTrip: Worker push failed; kept locally', err)
       return { ok: false, synced: false, error: err?.message || String(err) }
     }
@@ -192,11 +193,11 @@ export function useTrips() {
   // `trips` closure) so it always pushes the latest persisted state.
   const resyncPending = useCallback(async () => {
     if (!isWorkerConfigured()) return { resynced: 0, remaining: pendingIds().length }
-    const ids = pendingIds()
-    if (!ids.length) return { resynced: 0, remaining: 0 }
+    const entries = pendingEntries()
+    if (!entries.length) return { resynced: 0, remaining: 0 }
     const cache = readCache() || []
     let resynced = 0
-    for (const id of ids) {
+    for (const { id, author } of entries) {
       const t = cache.find((x) => x.id === id)
       if (!t || t.masked || t.draft) {
         // Trip gone locally, a masked projection that must never be pushed, or
@@ -207,7 +208,10 @@ export function useTrips() {
         continue
       }
       try {
-        await pushTrip(t)
+        // Push AS the editor who made the change (captured at mark time), not
+        // whoever is active now — so the worker's per-writer masking/clobber
+        // guards apply to the real author. Null author → active traveler (old rows).
+        await pushTrip(t, { asTraveler: author || undefined })
         markSynced(id)
         resynced += 1
       } catch {

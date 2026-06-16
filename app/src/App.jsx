@@ -158,6 +158,11 @@ function todayIso() {
 async function uploadQueueRunner(item) {
   if (!isWorkerConfigured()) throw new Error('worker not configured')
   const endpoint = item.kind === 'video' ? 'video' : 'photo'
+  // Drain AS the item's author (captured at enqueue), not whoever is active now —
+  // otherwise a photo Aurelia queued on the shared iPad uploads as the active
+  // persona. The worker stamps author/namespace from the token, so this is what
+  // makes the credit correct.
+  const asAuthor = { asTraveler: item.authorTraveler }
   const r = await workerFetch(
     `/assets/${endpoint}/${encodeURIComponent(item.id)}`,
     {
@@ -167,7 +172,8 @@ async function uploadQueueRunner(item) {
           item.blob?.type || (item.kind === 'video' ? 'video/mp4' : 'application/octet-stream'),
       },
       body: item.blob,
-    }
+    },
+    asAuthor
   )
   const remote = await r.json()
   const photoRef = { ...item.ref, storage: 'r2', key: remote.key, url: remote.url }
@@ -175,7 +181,7 @@ async function uploadQueueRunner(item) {
   // tile renders a still, not a fallback icon (best-effort; mirrors
   // uploadOrQueueVideo + PhotosView.triggerDrain so the three can't drift).
   if (item.kind === 'video' && item.posterBlob) {
-    const poster = await uploadPoster(item.id, item.posterBlob)
+    const poster = await uploadPoster(item.id, item.posterBlob, asAuthor)
     if (poster) Object.assign(photoRef, poster)
   }
   saveMemory({

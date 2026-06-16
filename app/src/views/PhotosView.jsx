@@ -135,20 +135,25 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
     try {
       await drainQueue(async (item) => {
         if (!isWorkerConfigured()) throw new Error('worker not configured')
+        // Drain AS the item's author (captured at enqueue), not whoever is active
+        // now — mirrors App.jsx uploadQueueRunner so the credit is correct on the
+        // shared iPad regardless of which surface drained the queue.
+        const asAuthor = { asTraveler: item.authorTraveler }
         const r = await workerFetch(
           `/assets/${item.kind === 'video' ? 'video' : 'photo'}/${encodeURIComponent(item.id)}`,
           {
             method: 'POST',
             headers: { 'Content-Type': item.blob?.type || 'application/octet-stream' },
             body: item.blob,
-          }
+          },
+          asAuthor
         )
         const remote = await r.json()
         const photoRef = { ...item.ref, storage: 'r2', key: remote.key, url: remote.url }
         // Re-upload a queued video's poster so the synced tile renders a still
         // (best-effort; mirrors uploadOrQueueVideo + App.jsx uploadQueueRunner).
         if (item.kind === 'video' && item.posterBlob) {
-          const poster = await uploadPoster(item.id, item.posterBlob)
+          const poster = await uploadPoster(item.id, item.posterBlob, asAuthor)
           if (poster) Object.assign(photoRef, poster)
         }
         saveMemory({

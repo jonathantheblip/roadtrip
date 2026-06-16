@@ -50,7 +50,8 @@ export function canSelfEnroll(traveler) {
 // Read the active traveler the same way App.jsx does. Re-implemented
 // here (instead of importing from App.jsx) because this module is
 // imported lazily from memoryStore.js and we want zero React deps.
-function getActiveTraveler() {
+// Exported so the trip resync can capture WHO made an edit at mark time.
+export function getActiveTraveler() {
   if (typeof window === 'undefined') return 'jonathan'
   try {
     const q = new URLSearchParams(window.location.search).get('person')
@@ -70,32 +71,46 @@ function getActiveTraveler() {
   return 'jonathan'
 }
 
-function authHeader() {
-  const traveler = getActiveTraveler()
+// Build the Authorization header. No arg → the ACTIVE traveler (reads = your own
+// view). Pass `asTraveler` to authenticate AS a specific person — used when
+// DRAINING an offline write so the upload is attributed to its real AUTHOR, not
+// whoever is active at drain time (the shared-iPad credit bug). The explicit form
+// is STRICT: session(author) → author's own bundled token → '' — it deliberately
+// never falls back to ANOTHER person's bundled token (that would upload as the
+// wrong person, the bug this exists to prevent). The any-bundled dev fallback is
+// kept ONLY for the active-traveler default path.
+function authHeader(asTraveler) {
+  const explicit = !!asTraveler
+  const traveler = asTraveler || getActiveTraveler()
   // Per-device session (013) wins — this is the post-cutover credential, and
   // when present it's the identity the user actually enrolled as on this device.
   const session = getSession(traveler)
   if (session) return `Bearer ${session}`
-  // Transition fallback: this traveler's bundled family token.
+  // Transition fallback: this traveler's OWN bundled family token.
   const token = TOKENS[traveler]
   if (token) return `Bearer ${token}`
-  // Dev convenience (pre-cutover only): any populated BUNDLED token, so a dev env
-  // missing one member's token still works for the others. Deliberately never
-  // falls back to another traveler's SESSION — that would act as the wrong person.
-  for (const t of TRAVELER_ORDER) {
-    if (TOKENS[t]) return `Bearer ${TOKENS[t]}`
+  // Dev convenience (active-traveler path only, pre-cutover): any populated
+  // BUNDLED token, so a dev env missing one member's token still works for the
+  // others. NEVER for an explicit author (it would act as the wrong person), and
+  // never another traveler's SESSION.
+  if (!explicit) {
+    for (const t of TRAVELER_ORDER) {
+      if (TOKENS[t]) return `Bearer ${TOKENS[t]}`
+    }
   }
   return ''
 }
 
-export async function workerFetch(path, opts = {}) {
+export async function workerFetch(path, opts = {}, { asTraveler } = {}) {
   if (!isWorkerConfigured()) throw new Error('worker not configured')
-  const traveler = getActiveTraveler()
+  // The identity this request acts as: an explicit author (offline-write drain)
+  // or, by default, the active traveler.
+  const traveler = asTraveler || getActiveTraveler()
   const usedSession = !!getSession(traveler)
 
   const doFetch = () => {
     const headers = new Headers(opts.headers || {})
-    headers.set('Authorization', authHeader())
+    headers.set('Authorization', authHeader(asTraveler))
     if (opts.body && !headers.has('Content-Type') && typeof opts.body === 'string') {
       headers.set('Content-Type', 'application/json')
     }
@@ -104,12 +119,12 @@ export async function workerFetch(path, opts = {}) {
 
   let r = await doFetch()
   // Self-heal a DEAD session: a session-authed request that comes back 401 means
-  // the session was revoked/invalid. Drop it so authHeader falls back to the
-  // bundled token (still shipping during the cutover) and retry ONCE — otherwise
-  // a single bad session in localStorage would shadow a working credential and
-  // brick ALL sync with no recovery. (Bodies used here are strings/Blobs, both
-  // re-readable. Post-cutover with no bundled token this just 401s again, which
-  // the "not set up" surface will handle.)
+  // the session was revoked/invalid. Drop it (for THIS request's traveler — the
+  // author when overridden) so authHeader falls back to that SAME traveler's
+  // bundled token (still shipping during the cutover) and retry ONCE — never to
+  // the active traveler's credential, which would mis-attribute the write.
+  // Post-cutover with no bundled token this just 401s again (the caller keeps the
+  // item queued / the "not set up" surface handles it).
   if (r.status === 401 && usedSession) {
     clearSession(traveler)
     r = await doFetch()
@@ -221,11 +236,16 @@ export async function pushMemory(memory) {
   if (memory?.masked) return null
   // Upload any IDB-resident blobs first; rewrite the refs to point at R2.
   const updated = { ...memory }
+  // Authenticate every upload + the row POST AS the memory's author, so a memory
+  // drained while a DIFFERENT persona is active still lands under its real author
+  // (the worker stamps author from the token, never the body). Undefined for an
+  // author-less record → defaults to the active traveler (unchanged behavior).
+  const asAuthor = memory.authorTraveler || undefined
 
   if (memory.audioRef?.key && memory.audioRef.storage !== 'r2') {
     const blob = await loadAsset('audio', memory.audioRef.key)
     if (blob) {
-      const remote = await uploadBlob('audio', memory.id, blob)
+      const remote = await uploadBlob('audio', memory.id, blob, { asTraveler: asAuthor })
       updated.audioRef = { ...memory.audioRef, ...remote, storage: 'r2' }
     } else {
       // IDB blob is gone — keep the record local-canonical, refuse to
@@ -242,7 +262,7 @@ export async function pushMemory(memory) {
   if (memory.photoRef?.key && memory.photoRef.storage !== 'r2') {
     const blob = await loadAsset('photo', memory.photoRef.key)
     if (blob) {
-      const remote = await uploadBlob('photo', memory.id, blob)
+      const remote = await uploadBlob('photo', memory.id, blob, { asTraveler: asAuthor })
       updated.photoRef = { ...memory.photoRef, ...remote, storage: 'r2' }
     } else {
       throw new Error(
@@ -263,7 +283,7 @@ export async function pushMemory(memory) {
           `pushMemory ${memory.id}: photoRefs blob missing (idb key ${ref?.key || '<none>'})`
         )
       }
-      const remote = await uploadBlob('photo', memory.id, blob)
+      const remote = await uploadBlob('photo', memory.id, blob, { asTraveler: asAuthor })
       newRefs.push({ ...ref, ...remote, storage: 'r2' })
     }
     updated.photoRefs = newRefs
@@ -273,7 +293,7 @@ export async function pushMemory(memory) {
   await workerFetch('/memories', {
     method: 'POST',
     body: JSON.stringify(updated),
-  })
+  }, { asTraveler: asAuthor })
   return true
 }
 
@@ -291,14 +311,18 @@ export async function deleteRemote(memory) {
   }
 }
 
-export async function uploadBlob(kind, memoryId, blob) {
+// `asTraveler` (optional) authenticates the upload AS the asset's author so the
+// R2 key namespace (worker stamps it from the token) matches the real author when
+// draining an offline write, not whoever is active at drain.
+export async function uploadBlob(kind, memoryId, blob, { asTraveler } = {}) {
   const r = await workerFetch(
     `/assets/${kind}/${encodeURIComponent(memoryId)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': blob.type || 'application/octet-stream' },
       body: blob,
-    }
+    },
+    { asTraveler }
   )
   return r.json() // { key, url, mime }
 }
@@ -322,10 +346,10 @@ export async function uploadTripCover(tripId, blob) {
 // returns { posterKey, posterUrl } or null on ANY failure (no worker, offline,
 // poster encode missing) — a missing poster must NOT fail the video upload; the
 // album tile just falls back to its icon, exactly as before this feature.
-export async function uploadPoster(memoryId, posterBlob) {
+export async function uploadPoster(memoryId, posterBlob, { asTraveler } = {}) {
   if (!posterBlob) return null
   try {
-    const remote = await uploadBlob('photo', memoryId, posterBlob)
+    const remote = await uploadBlob('photo', memoryId, posterBlob, { asTraveler })
     if (!remote?.key) return null
     return { posterKey: remote.key, posterUrl: remote.url }
   } catch {
@@ -349,7 +373,11 @@ export async function pullTrips() {
   }
 }
 
-export async function pushTrip(trip) {
+// `asTraveler` (optional) authenticates the push AS the editor who made the queued
+// change — set by the trip resync from the author captured at mark time, so an
+// offline edit re-syncs under its real author (matters for the worker's per-writer
+// masking/clobber guards), not whoever is active at resync. Defaults to active.
+export async function pushTrip(trip, { asTraveler } = {}) {
   if (!isWorkerConfigured()) return false
   // A masked trip stand-in (3b) is a per-recipient projection — never push it
   // back (it would clobber the author's real trip). The worker also refuses it.
@@ -358,7 +386,7 @@ export async function pushTrip(trip) {
     await workerFetch('/trips', {
       method: 'POST',
       body: JSON.stringify(trip),
-    })
+    }, { asTraveler })
     return true
   } catch (err) {
     console.warn('workerSync pushTrip failed', err)

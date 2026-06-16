@@ -12,10 +12,38 @@ globalThis.localStorage = {
   removeItem: (k) => store.delete(k),
 }
 
-const { markUnsynced, markSynced, pendingIds, count, isUnsynced, subscribe, _resetForTest } =
+const { markUnsynced, markSynced, pendingIds, pendingEntries, count, isUnsynced, subscribe, _resetForTest } =
   await import('../../src/lib/tripSyncQueue.js')
 
 beforeEach(() => _resetForTest())
+
+test('captures the editor (author) and exposes it via pendingEntries', () => {
+  markUnsynced('vermont-2026', 'aurelia')
+  assert.deepEqual(pendingEntries(), [{ id: 'vermont-2026', author: 'aurelia' }])
+  // pendingIds() stays id-only for the count/flag callers.
+  assert.deepEqual(pendingIds(), ['vermont-2026'])
+})
+
+test('re-marking updates the author to the latest editor', () => {
+  markUnsynced('t', 'aurelia')
+  markUnsynced('t', 'jonathan') // a later edit by someone else
+  assert.deepEqual(pendingEntries(), [{ id: 't', author: 'jonathan' }])
+  assert.equal(count(), 1)
+})
+
+test('a missing author defaults to null (resync then falls back to active)', () => {
+  markUnsynced('t')
+  assert.deepEqual(pendingEntries(), [{ id: 't', author: null }])
+})
+
+test('back-compat: a pre-author bare-string row reads as { author: null }', async () => {
+  // Seat the OLD on-disk shape (array of id strings) directly.
+  store.set('rt_trips_unsynced_v1', JSON.stringify(['legacy-trip']))
+  const fresh = await import('../../src/lib/tripSyncQueue.js?reload=back')
+  assert.deepEqual(fresh.pendingEntries(), [{ id: 'legacy-trip', author: null }])
+  assert.deepEqual(fresh.pendingIds(), ['legacy-trip'])
+  assert.equal(fresh.isUnsynced('legacy-trip'), true)
+})
 
 test('markUnsynced records an id; markSynced clears it', () => {
   assert.equal(count(), 0)
