@@ -8,6 +8,7 @@ import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { HelenEntries } from './HelenEntries'
+import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
 
@@ -29,6 +30,8 @@ function greeting() {
 export function HelenView({
   trip,
   traveler,
+  pastTrips,
+  onPlayPastTrip,
   onOpenStop,
   onOpenSettings,
   onOpenActivities,
@@ -141,6 +144,7 @@ export function HelenView({
         onOpenSurprises={onOpenSurprises}
         onCompose={onCompose}
       />
+      <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
 
       {/* CO-PLANNER — Helen plans too now. Opens the Claude planning chat
           she already has access to (the locked "Helen = full co-planner"

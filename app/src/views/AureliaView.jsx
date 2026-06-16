@@ -10,6 +10,7 @@ import { PostcardComposer } from '../components/PostcardComposer'
 import { allStops } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { AureliaEntries } from './AureliaEntries'
+import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
 
@@ -26,7 +27,7 @@ import { todayLocalIso } from '../lib/localDate'
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue }) {
+export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -136,6 +137,7 @@ export function AureliaView({ trip, traveler, onOpenStop, onOpenActivities, onOp
         onOpenBook={onOpenBook}
         onCompose={onCompose}
       />
+      <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
 
       {/* Photos entry — the foregrounded verb. Styled as a grained film
           frame ("her best frame"), hot-pink CTA. Aurelia uses the album

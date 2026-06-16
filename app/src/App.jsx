@@ -190,21 +190,60 @@ async function uploadQueueRunner(item) {
   })
 }
 
-// Active-trip spec: pick the trip whose [startDate, endDate] window
-// contains today. If multiple match, the latest startDate wins. Return
-// null when nothing matches — the caller shows the trip picker rather
-// than falling back to any default. Replaces the older "latest
-// dateRangeStart wins regardless of dates" behavior, which made the
-// PWA open on a future trip the moment that trip was scheduled.
+// Shift a YYYY-MM-DD date by N days in LOCAL time (no UTC drift).
+function shiftIso(iso, days) {
+  const [y, m, d] = String(iso).split('-').map(Number)
+  if (!y || !m || !d) return iso
+  const dt = new Date(y, m - 1, d)
+  dt.setDate(dt.getDate() + days)
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${dt.getFullYear()}-${mm}-${dd}`
+}
+
+// How many days BEFORE a trip starts / AFTER it ends the app still opens straight
+// into it (Jonathan's ask: launch into an imminent or just-finished trip). The
+// older spec required today to fall STRICTLY inside [start, end] — which never
+// opened into a trip leaving in 3 days. This widens that landing window by ±4
+// days. It does NOT change "is this trip live RIGHT NOW" — that's the separate
+// strict check in liveDock (tripIsLive), so a not-yet-started trip opens but is
+// shown as "before the trip", never live.
+const LAUNCH_GRACE_DAYS = 4
+
+// Is this trip "current" for the LAUNCH LANDING — not archived, real dates, and
+// today within ±LAUNCH_GRACE_DAYS of its window? (Equivalent to: the window
+// widened by the grace brackets today.)
+function isNearNow(trip, today = todayIso()) {
+  // Archived = "filed away" (matches effectiveStatus / the trip-list rule where
+  // archivedAt wins over date math). Never the launch trip, even if its dates
+  // still bracket today — otherwise a stale-dated archived trip hijacks launch.
+  if (!trip || trip.archivedAt) return false
+  const start = trip.dateRangeStart
+  const end = trip.dateRangeEnd
+  if (!start || !end) return false
+  return start <= shiftIso(today, LAUNCH_GRACE_DAYS) && shiftIso(today, -LAUNCH_GRACE_DAYS) <= end
+}
+
+// Is today STRICTLY inside this trip's window (the trip is live right now)?
+function tripWindowContains(trip, today) {
+  const s = trip?.dateRangeStart
+  const e = trip?.dateRangeEnd
+  return !!(s && e && s <= today && today <= e)
+}
+
+// Pick the trip to open on launch: the near-now trip (±grace, not archived).
+// A trip whose window actually CONTAINS today (live right now) ALWAYS beats a
+// grace-only match (an imminent or just-finished trip) — otherwise a trip
+// starting in a few days would hijack launch and hide the trip the family is
+// actually on. Within each tier the latest startDate wins. Null when none →
+// the caller shows the all-trips index rather than any default.
 function pickActiveTrip(trips, today = todayIso()) {
   if (!trips || trips.length === 0) return null
-  const matches = trips.filter((t) => {
-    const start = t.dateRangeStart
-    const end = t.dateRangeEnd
-    return start && end && start <= today && today <= end
-  })
+  const matches = trips.filter((t) => isNearNow(t, today))
   if (matches.length === 0) return null
-  return matches.reduce((best, t) =>
+  const live = matches.filter((t) => tripWindowContains(t, today))
+  const pool = live.length ? live : matches
+  return pool.reduce((best, t) =>
     (t.dateRangeStart || '') > (best.dateRangeStart || '') ? t : best
   )
 }
@@ -442,15 +481,11 @@ export default function App() {
     const today = todayIso()
     const active = pickActiveTrip(visibleTrips, today)
     const urlTrip = tripId ? visibleTrips.find((t) => t.id === tripId) : null
-    const urlTripIsActiveToday = !!(
-      urlTrip &&
-      urlTrip.dateRangeStart &&
-      urlTrip.dateRangeEnd &&
-      urlTrip.dateRangeStart <= today &&
-      today <= urlTrip.dateRangeEnd
-    )
+    // Keep a saved ?trip= ONLY if it's still a near-now, non-archived trip — same
+    // rule as the launch pick, so a stale/archived saved trip doesn't pin launch.
+    const urlTripIsCurrent = isNearNow(urlTrip, today)
 
-    if (urlTripIsActiveToday) return
+    if (urlTripIsCurrent) return
     if (active) {
       if (tripId !== active.id) setTripId(active.id)
       return
@@ -800,11 +835,29 @@ export default function App() {
   // Render the per-traveler themed surface for the active trip
   function renderTripView() {
     if (!trip) return null
+    // "Look back further" — completed trips (ended before today), newest first,
+    // excluding the open trip + drafts. Feeds the per-person home strip that
+    // jumps straight into an older trip's reel via openReplay({tripId}).
+    const today = todayIso()
+    const pastTrips = (visibleTrips || [])
+      .filter(
+        (t) =>
+          t &&
+          !t.draft &&
+          !t.masked && // never surface a hidden surprise trip in the strip
+          t.id !== trip.id &&
+          t.dateRangeEnd &&
+          t.dateRangeEnd < today
+      )
+      .slice()
+      .sort((a, b) => (b.dateRangeStart || '').localeCompare(a.dateRangeStart || ''))
     // Rafa's iPad command-center home renders only on iPad-sized screens;
     // phones (and CI's phone-width baselines) keep his RafaView.
     const props = {
       trip: tripForView, // cover stories merged in as stops for the recipient (3a)
       traveler,
+      pastTrips,
+      onPlayPastTrip: (tripId) => openReplay({ tripId }),
       onOpenStop: openStop,
       onOpenSettings: openSettings,
       onOpenActivities: openActivities,
@@ -1184,6 +1237,7 @@ export default function App() {
             trips={visibleTrips}
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
+            onPlayTrip={(tripId) => openReplay({ tripId })}
           />
         )}
         {view.name === 'replay' && (view.replayTarget || (trip && !trip.draft)) && (

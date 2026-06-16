@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, Image as ImageIcon } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronsLeft, Play, Image as ImageIcon } from 'lucide-react'
 import { listAllLocalMemories } from '../lib/memoryStore'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { groupAcrossTrips } from '../lib/photoEntries'
@@ -21,7 +21,59 @@ import { groupAcrossTrips } from '../lib/photoEntries'
 // Read-only — adding new photos still happens from a specific
 // trip's PhotosView where the stop context is known.
 
-export function AllPhotosView({ trips, traveler, onBack }) {
+// Sticky jump-back row styles (inline, matching this view's convention).
+const JUMPROW = {
+  position: 'sticky',
+  top: 'env(safe-area-inset-top)',
+  zIndex: 5,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  padding: '8px 16px',
+  background: 'var(--bg)',
+  borderBottom: '1px solid var(--border)',
+}
+const JUMPBACK = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  maxWidth: '68%',
+  padding: '7px 13px',
+  borderRadius: 999,
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  color: 'var(--text)',
+  cursor: 'pointer',
+  fontFamily: 'JetBrains Mono, monospace',
+  fontSize: 11,
+  letterSpacing: '0.04em',
+}
+const JUMPBACK_OFF = {
+  ...JUMPBACK,
+  cursor: 'default',
+  color: 'var(--muted)',
+  background: 'transparent',
+  // No opacity multiplier — --muted alone holds AA on --bg; the extra 0.7 had
+  // dropped "Earliest trip" below readable contrast (worst on Helen's paper bg).
+}
+const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+const PLAYPILL = {
+  flexShrink: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '7px 15px',
+  borderRadius: 999,
+  border: 0,
+  background: 'var(--accent)',
+  color: 'var(--accent-ink)',
+  cursor: 'pointer',
+  fontWeight: 700,
+  fontSize: 12,
+}
+
+export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
   const [memoryTick, setMemoryTick] = useState(0)
   const sections = useMemo(
     () => {
@@ -36,37 +88,50 @@ export function AllPhotosView({ trips, traveler, onBack }) {
     [trips, traveler, memoryTick]
   )
 
-  // Flatten every entry into a single chronological list so the
-  // lightbox's prev/next can cross memory → stop → trip boundaries
-  // in one swipe. The order matches what the user is scrolling: the
-  // sections array is already trip-then-stop-then-memory-then-date,
-  // so we just concat.
-  const allEntries = useMemo(() => {
-    const out = []
-    for (const tripSec of sections) {
-      for (const stopGroup of tripSec.stops) {
-        for (const entry of stopGroup.entries) out.push(entry)
-      }
+  // Per-trip entry lists, in display order. The lightbox navigates WITHIN one
+  // trip — a swipe never silently crosses a trip boundary. (Trips render
+  // newest-first, so an un-scoped swipe used to jump BACKWARD in time at every
+  // boundary — the bug Jonathan saw.) Crossing to an older trip is now the
+  // deliberate "jump back a trip" control; album & reel stay distinct, bridged
+  // only by the per-trip Play.
+  const tripEntries = useMemo(() => {
+    const map = {}
+    for (const sec of sections) {
+      const list = []
+      for (const sg of sec.stops) for (const e of sg.entries) list.push(e)
+      map[sec.tripId] = list
     }
-    return out
+    return map
   }, [sections])
 
-  const [lightbox, setLightbox] = useState(null) // { entry, index }
+  const totalPhotos = useMemo(
+    () => Object.values(tripEntries).reduce((n, l) => n + l.length, 0),
+    [tripEntries]
+  )
+  const tripsWithPhotos = sections.length
 
-  // Re-resolve the open entry by key after any external change (date
-  // override, drain). Same defensive pattern as PhotosView.
+  // ── Lightbox, scoped to a single trip: { tripId, index, key } ──────────
+  const [lightbox, setLightbox] = useState(null)
+
+  // Re-resolve the open entry by key (within its trip) after any external
+  // change (date override, drain). Same defensive pattern as PhotosView.
   useEffect(() => {
     setLightbox((lb) => {
       if (!lb) return lb
-      const idx = allEntries.findIndex((e) => e.key === lb.entry.key)
-      if (idx < 0) return lb
-      return { ...lb, index: idx, entry: allEntries[idx] }
+      const list = tripEntries[lb.tripId] || []
+      const idx = list.findIndex((e) => e.key === lb.key)
+      // The open photo vanished (drain/merge removed it, or a date edit moved it
+      // out of this trip) — close cleanly rather than letting the stale index
+      // resolve to a DIFFERENT photo or an undefined slot.
+      if (idx < 0) return null
+      return { ...lb, index: idx }
     })
-  }, [allEntries])
+  }, [tripEntries])
 
   function openLightbox(entry) {
-    const index = allEntries.findIndex((e) => e === entry)
-    setLightbox({ entry, index: index >= 0 ? index : 0 })
+    const list = tripEntries[entry.tripId] || []
+    const index = Math.max(0, list.findIndex((e) => e.key === entry.key))
+    setLightbox({ tripId: entry.tripId, index, key: entry.key })
   }
   function closeLightbox() {
     setLightbox(null)
@@ -74,14 +139,62 @@ export function AllPhotosView({ trips, traveler, onBack }) {
   function step(delta) {
     setLightbox((lb) => {
       if (!lb) return null
+      const list = tripEntries[lb.tripId] || []
       const next = lb.index + delta
-      if (next < 0 || next >= allEntries.length) return lb
-      return { ...lb, index: next, entry: allEntries[next] }
+      if (next < 0 || next >= list.length) return lb // clamped at the trip's edge
+      return { ...lb, index: next, key: list[next].key }
     })
   }
 
-  const totalPhotos = allEntries.length
-  const tripsWithPhotos = sections.length
+  // ── Scroll-spy: which trip is "in view" under the sticky jump-back row ──
+  const sectionRefs = useRef({})
+  const [activeTripId, setActiveTripId] = useState(null)
+  useEffect(() => {
+    if (sections.length) {
+      setActiveTripId((cur) =>
+        cur && sections.some((s) => s.tripId === cur) ? cur : sections[0].tripId
+      )
+    } else {
+      setActiveTripId(null)
+    }
+  }, [sections])
+  useEffect(() => {
+    if (sections.length <= 1) return undefined
+    const STICKY_OFFSET = 150 // header + sticky row; the section beneath it wins
+    let raf = 0
+    const recompute = () => {
+      raf = 0
+      let active = sections[0].tripId
+      for (const sec of sections) {
+        const el = sectionRefs.current[sec.tripId]
+        if (!el) continue
+        if (el.getBoundingClientRect().top - STICKY_OFFSET <= 0) active = sec.tripId
+      }
+      setActiveTripId(active)
+    }
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(recompute)
+    }
+    recompute()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [sections])
+
+  const activeIndex = sections.findIndex((s) => s.tripId === activeTripId)
+  const activeTrip = activeIndex >= 0 ? sections[activeIndex] : sections[0] || null
+  const olderTrip = activeIndex >= 0 ? sections[activeIndex + 1] || null : null
+
+  function jumpToTrip(tripId) {
+    setActiveTripId(tripId)
+    const el = sectionRefs.current[tripId]
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const openList = lightbox ? tripEntries[lightbox.tripId] || [] : []
+  const openEntry = lightbox ? openList[lightbox.index] || null : null
 
   return (
     <div
@@ -142,6 +255,42 @@ export function AllPhotosView({ trips, traveler, onBack }) {
         </div>
       </header>
 
+      {sections.length > 0 && (
+        <div data-testid="all-photos-jumpback-row" style={JUMPROW}>
+          {sections.length > 1 ? (
+            olderTrip ? (
+              <button
+                type="button"
+                data-testid="all-photos-jumpback"
+                onClick={() => jumpToTrip(olderTrip.tripId)}
+                style={JUMPBACK}
+              >
+                <ChevronsLeft size={15} style={{ flexShrink: 0 }} />
+                <span style={ELLIPSIS}>Jump back · {olderTrip.tripTitle}</span>
+              </button>
+            ) : (
+              <span data-testid="all-photos-jumpback-disabled" style={JUMPBACK_OFF}>
+                <ChevronsLeft size={15} style={{ flexShrink: 0 }} />
+                <span style={ELLIPSIS}>Earliest trip</span>
+              </span>
+            )
+          ) : (
+            <span />
+          )}
+          {activeTrip && onPlayTrip && (
+            <button
+              type="button"
+              data-testid="all-photos-play"
+              onClick={() => onPlayTrip(activeTrip.tripId)}
+              aria-label={`Play ${activeTrip.tripTitle}`}
+              style={PLAYPILL}
+            >
+              <Play size={13} fill="currentColor" /> Play
+            </button>
+          )}
+        </div>
+      )}
+
       <GridPausedProvider paused={!!lightbox}>
         <div style={{ padding: '12px 14px 0' }}>
           {sections.length === 0 ? (
@@ -152,19 +301,20 @@ export function AllPhotosView({ trips, traveler, onBack }) {
                 key={tripSec.tripId}
                 tripSec={tripSec}
                 onOpen={openLightbox}
+                sectionRef={(el) => (sectionRefs.current[tripSec.tripId] = el)}
               />
             ))
           )}
         </div>
       </GridPausedProvider>
 
-      {lightbox && (
+      {openEntry && (
         <PhotoLightbox
-          entry={lightbox.entry}
+          entry={openEntry}
           index={lightbox.index}
-          total={allEntries.length}
+          total={openList.length}
           onPrev={lightbox.index > 0 ? () => step(-1) : null}
-          onNext={lightbox.index < allEntries.length - 1 ? () => step(1) : null}
+          onNext={lightbox.index < openList.length - 1 ? () => step(1) : null}
           onClose={closeLightbox}
           onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
           showTripName
@@ -203,12 +353,13 @@ function EmptyState() {
   )
 }
 
-function TripSection({ tripSec, onOpen }) {
+function TripSection({ tripSec, onOpen, sectionRef }) {
   return (
     <section
+      ref={sectionRef}
       data-testid="all-photos-trip"
       data-trip-id={tripSec.tripId}
-      style={{ marginTop: 28 }}
+      style={{ marginTop: 28, scrollMarginTop: 150 }}
     >
       <header
         style={{

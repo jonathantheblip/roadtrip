@@ -109,7 +109,9 @@ export function JonathanEntries({
             {bookHasPages && (
               <ArchiveLine onClick={onOpenBook} kicker="The Book · kept pages" title={`${trip.title}, bound`} cta="Open" icon={<BookOpen size={15} />} />
             )}
-            <ArchiveLine onClick={onOpenReplay} kicker="Replay · by day" title="Day by day" cta="Play" icon={<Play size={14} style={{ color: 'var(--accent-text)' }} />} />
+            {/* "Replay · by day" removed: it opened the SAME replay screen as the
+                hero above (onOpenReplay, no arg) — a duplicate. The hero is the
+                one replay entry. (A real "pick a day" belongs in the reel itself.) */}
           </div>
           <div style={{ marginTop: 16, padding: '12px 14px', border: '1px dashed var(--line-bold, var(--border))', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
             <MapIcon size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />

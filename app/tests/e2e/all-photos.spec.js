@@ -151,7 +151,11 @@ test.describe('AllPhotosView — cross-trip aggregation', () => {
     })
   })
 
-  test('lightbox carries trip name + swipe crosses trip boundaries', async ({ page }) => {
+  // The lightbox swipe is SCOPED to the trip you opened — it moves within that
+  // trip but NEVER silently crosses a trip boundary (which would jump BACKWARD
+  // in time, since trips render newest-first). Crossing trips is the deliberate
+  // jump-back control (next test).
+  test('lightbox swipe stays within the trip — no silent backward time-jump', async ({ page }) => {
     await page.addInitScript(({ trips, mems }) => {
       const KEYS = [
         'rt_trips_cache_v1', 'rt_memories_shared_v1',
@@ -166,34 +170,29 @@ test.describe('AllPhotosView — cross-trip aggregation', () => {
       trips: [FIXTURE_TRIP, SECOND_TRIP],
       mems: [
         {
-          id: 'mO',
-          tripId: 'older-weekend',
-          stopId: 'ow1-1',
-          authorTraveler: 'helen',
-          visibility: 'shared',
-          kind: 'photo',
-          caption: 'Older trip photo',
-          capturedAt: '2026-04-17T10:00:00.000Z',
+          id: 'mO', tripId: 'older-weekend', stopId: 'ow1-1',
+          authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+          caption: 'Older trip photo', capturedAt: '2026-04-17T10:00:00.000Z',
           photoRef: { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#O' },
-          photoExternalURLs: [],
-          reactions: [],
-          createdAt: '2026-04-17T10:00:00.000Z',
-          updatedAt: '2026-04-17T10:00:00.000Z',
+          photoExternalURLs: [], reactions: [],
+          createdAt: '2026-04-17T10:00:00.000Z', updatedAt: '2026-04-17T10:00:00.000Z',
+        },
+        // Two photos in the NEWER trip so the swipe has somewhere to go in-trip.
+        {
+          id: 'mN1', tripId: 'volleyball-2026', stopId: 'vb2-3',
+          authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+          caption: 'Newer photo A', capturedAt: '2026-05-23T19:50:00.000Z',
+          photoRef: { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#N1' },
+          photoExternalURLs: [], reactions: [],
+          createdAt: '2026-05-23T19:50:00.000Z', updatedAt: '2026-05-23T19:50:00.000Z',
         },
         {
-          id: 'mN',
-          tripId: 'volleyball-2026',
-          stopId: 'vb2-3',
-          authorTraveler: 'helen',
-          visibility: 'shared',
-          kind: 'photo',
-          caption: 'Newer trip photo',
-          capturedAt: '2026-05-23T19:50:00.000Z',
-          photoRef: { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#N' },
-          photoExternalURLs: [],
-          reactions: [],
-          createdAt: '2026-05-23T19:55:00.000Z',
-          updatedAt: '2026-05-23T19:55:00.000Z',
+          id: 'mN2', tripId: 'volleyball-2026', stopId: 'vb2-3',
+          authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+          caption: 'Newer photo B', capturedAt: '2026-05-23T20:10:00.000Z',
+          photoRef: { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#N2' },
+          photoExternalURLs: [], reactions: [],
+          createdAt: '2026-05-23T20:10:00.000Z', updatedAt: '2026-05-23T20:10:00.000Z',
         },
       ],
     })
@@ -202,34 +201,91 @@ test.describe('AllPhotosView — cross-trip aggregation', () => {
       (route) => {
         const url = new URL(route.request().url())
         if (url.pathname === '/memories' || url.pathname === '/trips') {
-          return route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify([]),
-          })
+          return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
         }
         return route.fulfill({ status: 404, body: '{}' })
       }
     )
     await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
     await page.getByTestId('helen-all-photos-entry').click()
-    // Tap the first tile (the newer-trip photo, since newest first).
+    // First tile = the newer trip's first photo (newest trip first).
     await page.getByTestId('photo-tile').first().click()
     const lightbox = page.getByTestId('photo-lightbox')
     await expect(lightbox).toBeVisible()
-    // Trip name is rendered as its own labelled element.
     const tripNode = page.getByTestId('lightbox-trip-name')
-    await expect(tripNode).toBeVisible()
     await expect(tripNode).toContainText('Fun @ the Sun')
-    await expect(lightbox).toContainText('Newer trip photo')
+    await expect(lightbox).toContainText('Newer photo A')
 
-    // Swipe right (Next) — crosses trip boundary into the older trip.
+    // Next → moves WITHIN the newer trip (A → B), trip unchanged.
     await page.keyboard.press('ArrowRight')
-    await expect(tripNode).toContainText('Earlier Weekend')
-    await expect(lightbox).toContainText('Older trip photo')
+    await expect(tripNode).toContainText('Fun @ the Sun')
+    await expect(lightbox).toContainText('Newer photo B')
 
-    // At the end of the list — next disappears.
+    // Next again → clamped at the trip's last photo; it does NOT cross into the
+    // older trip, and "Next photo" is gone.
+    await page.keyboard.press('ArrowRight')
+    await expect(tripNode).toContainText('Fun @ the Sun')
+    await expect(lightbox).toContainText('Newer photo B')
     await expect(page.getByRole('button', { name: 'Next photo' })).toHaveCount(0)
+  })
+
+  test('jump-back row steps deliberately to the older trip + Play opens its reel', async ({ page }) => {
+    await page.addInitScript(({ trips, mems }) => {
+      const KEYS = [
+        'rt_trips_cache_v1', 'rt_memories_shared_v1',
+        'rt_memories_private_jonathan_v1', 'rt_memories_private_helen_v1',
+        'rt_memories_private_aurelia_v1', 'rt_memories_private_rafa_v1',
+      ]
+      for (const k of KEYS) localStorage.removeItem(k)
+      localStorage.setItem('rt_trips_cache_v1', JSON.stringify(trips))
+      localStorage.setItem('rt_memories_shared_v1', JSON.stringify(mems))
+      localStorage.setItem('rt_person_v2', 'helen')
+    }, {
+      trips: [FIXTURE_TRIP, SECOND_TRIP],
+      mems: [
+        {
+          id: 'mO', tripId: 'older-weekend', stopId: 'ow1-1',
+          authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+          caption: 'Older trip photo', capturedAt: '2026-04-17T10:00:00.000Z',
+          photoRef: { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#O' },
+          photoExternalURLs: [], reactions: [],
+          createdAt: '2026-04-17T10:00:00.000Z', updatedAt: '2026-04-17T10:00:00.000Z',
+        },
+        {
+          id: 'mN', tripId: 'volleyball-2026', stopId: 'vb2-3',
+          authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+          caption: 'Newer trip photo', capturedAt: '2026-05-23T19:50:00.000Z',
+          photoRef: { storage: 'external', url: TINY_RED_PNG_DATA_URL + '#N' },
+          photoExternalURLs: [], reactions: [],
+          createdAt: '2026-05-23T19:55:00.000Z', updatedAt: '2026-05-23T19:55:00.000Z',
+        },
+      ],
+    })
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev/,
+      (route) => {
+        const url = new URL(route.request().url())
+        if (url.pathname === '/memories' || url.pathname === '/trips') {
+          return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+        }
+        return route.fulfill({ status: 404, body: '{}' })
+      }
+    )
+    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.getByTestId('helen-all-photos-entry').click()
+
+    // Newest trip is in view → jump-back targets the older trip; Play is present.
+    const jumpBack = page.getByTestId('all-photos-jumpback')
+    await expect(jumpBack).toContainText('Earlier Weekend')
+    await expect(page.getByTestId('all-photos-play')).toBeVisible()
+
+    // Jump back a trip → now at the oldest, jump-back disables.
+    await jumpBack.click()
+    await expect(page.getByTestId('all-photos-jumpback-disabled')).toContainText('Earliest trip')
+
+    // Play (scoped to the in-view trip) opens the reel.
+    await page.getByTestId('all-photos-play').click()
+    await expect(page.locator('.rpl-root')).toBeVisible()
   })
 
   test('empty state when no trip has any photos', async ({ page }) => {

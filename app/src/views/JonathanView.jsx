@@ -10,6 +10,7 @@ import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { TRAVELER_DOT } from '../data/travelers'
 import { JonathanEntries } from './JonathanEntries'
+import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
 
@@ -166,6 +167,8 @@ function JMasthead({ mode, setMode, onOpenSettings }) {
 export function JonathanView({
   trip,
   traveler,
+  pastTrips,
+  onPlayPastTrip,
   onOpenStop,
   onOpenSettings,
   onOpenActivities,
@@ -227,6 +230,7 @@ export function JonathanView({
           onOpenSurprises={onOpenSurprises}
           onCompose={onCompose}
         />
+        <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
         <JOps
           trip={trip}
           traveler={traveler}

@@ -1,45 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Play, Pause, Images, Calendar } from 'lucide-react'
-import { listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
-import { presenceOf, capturedBy } from '../lib/replayPresence'
+import { Play, Pause, X, ChevronDown } from 'lucide-react'
+import { listMemoriesForTrip } from '../lib/memoryStore'
+import { capturedBy } from '../lib/replayPresence'
 import { flattenPhotoEntries, formatFullDate } from '../lib/photoEntries'
-import { humanDateRange } from '../lib/createTripCard'
 import { thumbUrl } from '../lib/thumbUrl'
 import { fetchStoredWeave } from '../lib/weave'
-import { Avatar, AvatarStack } from '../components/Avatar'
+import { classifySwipe } from '../lib/swipeClassify'
+import { Avatar } from '../components/Avatar'
 import { WeaveMark } from '../components/Glyphs'
 import { TRAVELERS } from '../data/travelers'
 import './ReplayView.css'
 
-// ── REPLAY — one zoomable time spine ─────────────────────────────────────
+// ── REPLAY — THE REEL ────────────────────────────────────────────────────
 //
-// archive → trip → day → stop. ZOOM picks the scope; PLAY and SCRUB are the
-// same two gestures at every scope. Increments 1+2 built day (stops) and
-// stop (photos); increment 3 adds the two outer rungs — archive (trips) and
-// trip (days) — completing the ladder.
+// The look-back front door. ONE full-bleed surface that PLAYS the trip's
+// MEMORIES (photos + videos) in time order — not the old archive→trip→day→stop
+// timeline ladder (retired). Tap/swipe advances; press-and-hold pauses; a video
+// plays as a real <video> and suspends auto-advance until it ends. ONE Done(✕)
+// exits from anywhere in one tap.
 //
-// THE BET, CASHED: useReplayPlayer + TimeRail are reused UNCHANGED across
-// all four scopes. The transport is wired to the ACTIVE level's
-// (count, cursor, setCursor, beatFor); `level` selects which of four child
-// lists — trips / days / stops / photos — sits underneath. The core never
-// learns which scope it drives. Four child lists, one transport.
+// RECONCILED (do-not-lose, see CARRYOVER_LOOKBACK_DONOTLOSE.md):
+// - The cinematic photo engine (CineLayer + the 2-layer crossfade + the 4
+//   Ken-Burns variants + the decode-gated `.play` class + reduced-motion) is
+//   REUSED UNCHANGED for photos.
+// - The fixed-literal photo scrim (.rpl-photo-overlay) is reused as-is (its
+//   legibility over arbitrary photos must not depend on theme tokens).
+// - Per-person skin = `data-theme={person}` on the root; all color via tokens.
+// - The `initial` ({tripId, dayN}) resurface/deep-link contract is preserved:
+//   the reel opens scoped to that trip and starts at that day's first memory.
+// - The held video-label fix's INTENT survives: a video memory shows "VIDEO"
+//   (never "photo") via `entry.isVideo` — the SAME predicate the old
+//   memoryKindLabel used, now sourced from flattenPhotoEntries.
 
-const BEAT_RICH_MS = 2600 // a stop with memories lingers
-const BEAT_EMPTY_MS = 1100 // an itinerary-only stop passes at a quicker beat
-const BEAT_PHOTO_MS = 2800 // a photo dwells longer than an itinerary card
-const BEAT_TRIP_MS = 2200 // archive: each trip holds a beat
-const BEAT_DAY_MS = 1500 // trip: each day walks
-const PRELOAD_AHEAD = 2 // decode this many photos past the cursor
+const BEAT_PHOTO_MS = 2800 // a photo dwells before auto-advancing
 const STAGE_MAX_EDGE = 1600 // bounded full-bleed variant (iOS decode budget)
+const PRELOAD_AHEAD = 2 // decode this many photos past the cursor
+const SEGMENT_MAX = 40 // ≤ this many memories → segmented story rail, else a bar
+const HOLD_MS = 240 // press-and-hold beyond this pauses playback
+const CINE_VARIANTS = ['a', 'b', 'c', 'd']
 
-// PLAY: auto-advance the cursor through `count` children, pausing `beatFor`
-// ms on each. Stops at the last child; pressing play again from the end
-// restarts at 0. Scope-agnostic — knows nothing about stops or days.
-function useReplayPlayer({ count, cursor, setCursor, beatFor }) {
+// PLAY: auto-advance the cursor through `count` children, pausing `beatFor` ms
+// on each. `hold` suspends the timer (a video owns its own timing — it advances
+// on its `ended` event, not on the clock). Stops at the last child; pressing
+// play again from the end restarts at 0. Scope-agnostic.
+function useReplayPlayer({ count, cursor, setCursor, beatFor, hold }) {
   const [playing, setPlaying] = useState(false)
 
   useEffect(() => {
-    if (!playing) return undefined
+    if (!playing || hold) return undefined
     if (cursor >= count - 1) {
       setPlaying(false) // reached the end
       return undefined
@@ -48,7 +56,7 @@ function useReplayPlayer({ count, cursor, setCursor, beatFor }) {
       setCursor((c) => Math.min(c + 1, count - 1))
     }, beatFor(cursor))
     return () => clearTimeout(id)
-  }, [playing, cursor, count, beatFor, setCursor])
+  }, [playing, cursor, count, beatFor, setCursor, hold])
 
   const toggle = useCallback(() => {
     setPlaying((p) => {
@@ -60,104 +68,13 @@ function useReplayPlayer({ count, cursor, setCursor, beatFor }) {
   return { playing, setPlaying, toggle }
 }
 
-// SCRUB: a horizontal rail with one tick per sibling and a thumb at the
-// cursor. Drag the thumb or tap a tick to move between siblings. Pointer
-// math maps x → nearest child index. Scope-agnostic.
-function TimeRail({ count, cursor, onScrub, onGrab }) {
-  const trackRef = useRef(null)
-  const draggingRef = useRef(false)
+// Ken Burns pan/zoom directions — cycled per photo so consecutive frames drift
+// differently (never the same move twice in a row).
 
-  const indexFromClientX = useCallback(
-    (clientX) => {
-      const el = trackRef.current
-      if (!el || count <= 1) return 0
-      const r = el.getBoundingClientRect()
-      const frac = (clientX - r.left) / r.width
-      return Math.max(0, Math.min(count - 1, Math.round(frac * (count - 1))))
-    },
-    [count]
-  )
-
-  const handleDown = (e) => {
-    draggingRef.current = true
-    onGrab?.() // grabbing the rail pauses PLAY — scrub is manual
-    onScrub(indexFromClientX(e.clientX)) // do the scrub before capture, so a
-    // capture failure (e.g. an already-released pointer id) never blocks it
-    try {
-      e.currentTarget.setPointerCapture?.(e.pointerId)
-    } catch {
-      /* InvalidPointerId — keep tracking via the move handler regardless */
-    }
-  }
-  const handleMove = (e) => {
-    if (!draggingRef.current) return
-    onScrub(indexFromClientX(e.clientX))
-  }
-  const handleUp = (e) => {
-    draggingRef.current = false
-    try {
-      e.currentTarget.releasePointerCapture?.(e.pointerId)
-    } catch {
-      /* no-op */
-    }
-  }
-
-  const pct = count <= 1 ? 0 : (cursor / (count - 1)) * 100
-
-  return (
-    <div
-      ref={trackRef}
-      className="rpl-rail"
-      role="slider"
-      aria-label="Scrub"
-      aria-valuemin={1}
-      aria-valuemax={count}
-      aria-valuenow={cursor + 1}
-      onPointerDown={handleDown}
-      onPointerMove={handleMove}
-      onPointerUp={handleUp}
-      onPointerCancel={handleUp}
-    >
-      <div className="rpl-rail-line" />
-      <div className="rpl-rail-fill" style={{ width: `${pct}%` }} />
-      {Array.from({ length: count }).map((_, i) => (
-        <span
-          key={i}
-          className={`rpl-rail-tick ${i === cursor ? 'on' : ''}`}
-          style={{ left: count <= 1 ? '0%' : `${(i / (count - 1)) * 100}%` }}
-        />
-      ))}
-      <span className="rpl-rail-thumb" style={{ left: `${pct}%` }} />
-    </div>
-  )
-}
-
-// Flatten a stop's memories into an ordered photo list — the STOP level's
-// children. Reuses the production album flattener (lib/photoEntries) so we
-// inherit its dedup (ignores the back-compat photoRef mirror when
-// photoRefs[] is present) and its caption/index labelling. Memories are
-// ordered by effective capture date — capturedAt primary, createdAt
-// (upload time) fallback, the existing C0 precedence — and within an album
-// the cover (photoRefs[0]) leads, then its items.
-function stopPhotoSequence(stop, traveler) {
-  if (!stop) return []
-  const mems = listMemoriesForStop(stop.id, traveler)
-  const ordered = [...mems].sort((a, b) => {
-    const ad = a.capturedAt || a.createdAt || ''
-    const bd = b.capturedAt || b.createdAt || ''
-    return ad < bd ? -1 : ad > bd ? 1 : 0
-  })
-  return flattenPhotoEntries(ordered)
-}
-
-// Ken Burns pan/zoom directions — cycled per photo so consecutive frames
-// drift differently (never the same move twice in a row).
-const CINE_VARIANTS = ['a', 'b', 'c', 'd']
-
-// One cinematic photo layer: it starts hidden and only begins its animation
-// once the image has DECODED (onLoad), so a not-yet-cached frame never
-// flashes raw — preserving PhotoStage's original guarantee. The animation
-// both fades the layer in (the crossfade) and slowly drifts it (Ken Burns).
+// One cinematic photo layer: starts hidden, begins its animation only once the
+// image has DECODED (onLoad), so a not-yet-cached frame never flashes raw. The
+// animation both fades the layer in (the crossfade) and slowly drifts it (Ken
+// Burns). UNCHANGED from the shipped engine.
 function CineLayer({ url, variant, alt }) {
   const [ready, setReady] = useState(false)
   return (
@@ -171,11 +88,10 @@ function CineLayer({ url, variant, alt }) {
   )
 }
 
-// STOP level stage — a full-bleed photo with caption + author + date overlaid.
-// Cinematic: each photo slowly drifts (Ken Burns) and the next CROSSFADES in
-// over the previous (two layers kept) instead of hard-cutting. The cursor,
-// player, scrub and preload all live in the parent and are untouched.
-function PhotoStage({ photo }) {
+// The photo stage: a full-bleed photo that drifts (Ken Burns) and crossfades to
+// the next (two layers kept). The cine engine, unchanged — only the caption
+// overlay moved out to the reel level so a video can share the same scrim.
+function CineStage({ photo }) {
   const [layers, setLayers] = useState([])
   const seqRef = useRef(0)
   useEffect(() => {
@@ -194,8 +110,6 @@ function PhotoStage({ photo }) {
   }, [photo?.url])
 
   if (!photo) return null
-  const author = capturedBy({ authorTraveler: photo.author })
-  const dateLabel = formatFullDate(photo.capturedAt)
   return (
     <figure className="rpl-photo">
       <div className="rpl-cine-stack">
@@ -203,87 +117,54 @@ function PhotoStage({ photo }) {
           <CineLayer key={l.key} url={l.url} variant={l.variant} alt={photo.caption} />
         ))}
       </div>
-      <figcaption className="rpl-photo-overlay">
-        {photo.photoCountInMemory > 1 && (
-          <span className="rpl-photo-idx">
-            {photo.photoIndexInMemory + 1} of {photo.photoCountInMemory}
-          </span>
-        )}
-        {photo.caption && photo.photoIndexInMemory === 0 && (
-          <p className="rpl-photo-caption">{photo.caption}</p>
-        )}
-        <div className="rpl-photo-meta">
-          {author && <Avatar id={author} size={26} />}
-          <div className="rpl-photo-metatext">
-            {author && <span className="rpl-photo-author">{TRAVELERS[author]?.name}</span>}
-            {dateLabel && <span className="rpl-photo-date">{dateLabel}</span>}
-          </div>
-        </div>
-      </figcaption>
     </figure>
   )
 }
 
-// DAY level inline content for the selected stop — photos→replay cue,
-// text-only memories→inline list, empty→itinerary state.
-function StopStage({ stop, traveler, onReplay }) {
-  const memories = useMemo(
-    () => listMemoriesForStop(stop.id, traveler),
-    [stop.id, traveler]
-  )
-  const photos = useMemo(() => flattenPhotoEntries(memories), [memories])
-  const who = presenceOf(stop)
-
+// A video memory plays as a real <video> — mirrors PhotoAlbum's lightbox
+// (controls / playsInline / preload=metadata / object-fit:contain). Letterboxed
+// over the same fixed #0c0b0a stage. The parent suspends auto-advance while a
+// video is current and resumes when `onEnded` fires.
+//
+// AUTOPLAY: muted-autoplay is the only path that reliably starts inline video on
+// every browser (iOS Safari blocks UNMUTED inline autoplay outright) — the same
+// default Instagram/Stories use. Audio is one tap away (unmute via the controls).
+// React doesn't reliably reflect the `muted` PROPERTY from the attribute, so we
+// also set it on the element directly.
+function VideoStage({ entry, onEnded }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.muted = true
+    // Nudge playback in case the autoPlay attribute didn't take (some engines
+    // need an explicit play() once muted); ignore the rejection if blocked.
+    const p = el.play?.()
+    if (p && typeof p.catch === 'function') p.catch(() => {})
+  }, [entry?.url])
   return (
-    <div className="rpl-stage">
-      <div className="rpl-stage-head">
-        <span className="rpl-stage-time">{stop.time || '—'}</span>
-        {who.length > 0 ? (
-          <AvatarStack ids={who} size={22} />
-        ) : (
-          <span className="rpl-stage-noone" aria-label="presence unknown">
-            —
-          </span>
-        )}
-      </div>
-      <h2 className="rpl-stage-name">{stop.name || stop.title || 'Stop'}</h2>
-      {stop.kind && <div className="rpl-stage-kind">{stop.kind}</div>}
-      {stop.address && <div className="rpl-stage-addr">{stop.address}</div>}
-
-      {photos.length > 0 ? (
-        <button type="button" className="rpl-replay-cue" onClick={onReplay}>
-          <Images size={16} />
-          Replay {photos.length} photo{photos.length > 1 ? 's' : ''}
-          <span className="rpl-replay-arrow">→</span>
-        </button>
-      ) : memories.length > 0 ? (
-        <ul className="rpl-mems">
-          {memories.map((m) => {
-            const author = capturedBy(m)
-            return (
-              <li key={m.id} className="rpl-mem">
-                {author && <Avatar id={author} size={24} />}
-                <div className="rpl-mem-body">
-                  <span className="rpl-mem-kind">{m.kind || 'text'}</span>
-                  <span className="rpl-mem-text">{m.text || m.caption || ''}</span>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      ) : (
-        <div className="rpl-itin">
-          {stop.note && <p className="rpl-itin-note">{stop.note}</p>}
-          <div className="rpl-itin-tag">Itinerary · no memories yet</div>
-        </div>
-      )}
+    <div className="rpl-photo rpl-video-wrap">
+      <video
+        ref={ref}
+        className="rpl-video"
+        data-testid="rpl-reel-video"
+        src={entry.url}
+        poster={entry.posterUrl || undefined}
+        controls
+        playsInline
+        autoPlay
+        muted
+        preload="metadata"
+        onEnded={onEnded}
+        onError={onEnded} /* a broken/undecodable clip advances rather than freezing PLAY */
+      />
     </div>
   )
 }
 
-// Which day to open on. Reuse the trip's own nominated centerpiece
-// (heroStopId) so the entry point lands on a meaningful day; fall back to
-// the day containing today (live trips), then day 1.
+// Which day to open on. Reuse the trip's own nominated centerpiece (heroStopId)
+// so a no-target entry lands on a meaningful day; fall back to the day
+// containing today (live trips), then day 1.
 function defaultDayN(trip) {
   const heroId = trip?.heroStopId
   if (heroId) {
@@ -296,378 +177,414 @@ function defaultDayN(trip) {
   return trip?.days?.[0]?.n ?? 1
 }
 
-// Index (not day-number) of the hero day within a trip's days[].
-function heroDayIndex(trip) {
-  const n = defaultDayN(trip)
-  const idx = (trip?.days || []).findIndex((d) => d.n === n)
-  return idx >= 0 ? idx : 0
-}
-
-// Archive ordering — by each trip's OWN start date (dateRangeStart, ISO),
-// ascending so PLAY walks history forward. This deliberately ignores photo
-// capture/upload time: the photo clock is unreliable (EXIF stripped on the
-// real archive), but trip start dates are clean. Trips with no start date
-// sort to the end rather than punching to the front.
-function byStartDateAsc(a, b) {
-  const ad = a?.dateRangeStart || ''
-  const bd = b?.dateRangeStart || ''
-  if (ad === bd) return 0
-  if (!ad) return 1
-  if (!bd) return -1
-  return ad < bd ? -1 : 1
-}
-
-function tripDateLabel(t) {
-  return t?.dateRange || humanDateRange(t?.dateRangeStart, t?.dateRangeEnd) || ''
+// Instagram-story progress rail: ≤ SEGMENT_MAX memories → one tappable segment
+// each (past filled, current bright); more → one continuous accent bar (too many
+// to show as discrete ticks). Tapping a segment jumps the cursor.
+function StoryRail({ count, cursor, onJump }) {
+  if (count <= 1) return <div className="rpl-srail" aria-hidden="true" />
+  if (count <= SEGMENT_MAX) {
+    return (
+      <div className="rpl-srail" role="group" aria-label="Memories">
+        {Array.from({ length: count }).map((_, i) => (
+          <button
+            key={i}
+            type="button"
+            className={`rpl-srail-seg ${i < cursor ? 'past' : i === cursor ? 'on' : ''}`}
+            aria-label={`Memory ${i + 1} of ${count}`}
+            onClick={() => onJump(i)}
+          />
+        ))}
+      </div>
+    )
+  }
+  const pct = count <= 1 ? 0 : (cursor / (count - 1)) * 100
+  return (
+    <div className="rpl-srail rpl-srail-cont" role="group" aria-label="Memories">
+      <div className="rpl-srail-fill" style={{ width: `${pct}%` }} />
+    </div>
+  )
 }
 
 export function ReplayView({ trip, trips, traveler, onExit, initial }) {
-  // Archive spine source: the whole list, date-ordered. Falls back to just
-  // the entry trip if the list wasn't passed.
-  const orderedTrips = useMemo(() => {
-    const list = Array.isArray(trips) && trips.length ? trips : trip ? [trip] : []
-    return [...list].sort(byStartDateAsc)
-  }, [trips, trip])
-
-  // Cursors — one per scope. The entry point lands at the DAY level on the
-  // entry trip's hero day; archive/trip are reached by zooming OUT.
-  const [archiveCursor, setArchiveCursor] = useState(() => {
-    // Resurfacing opens AT a target trip; otherwise the entry trip.
-    const targetId = initial?.tripId || trip?.id
-    const idx = orderedTrips.findIndex((t) => t.id === targetId)
-    return idx >= 0 ? idx : 0
-  })
-  const [level, setLevel] = useState('day') // 'archive' | 'trip' | 'day' | 'stop'
-  const [tripCursor, setTripCursor] = useState(() => {
-    // Resurfacing opens AT a target day; otherwise the trip's hero day.
-    if (initial?.dayN != null) {
-      const t = orderedTrips.find((tt) => tt.id === (initial.tripId || trip?.id))
-      const di = (t?.days || []).findIndex((d) => d.n === initial.dayN)
-      if (di >= 0) return di
+  // Single-trip reel scope. A resurface/strip target (initial.tripId) may differ
+  // from the active trip; otherwise the entry trip.
+  const scopeTrip = useMemo(() => {
+    const id = initial?.tripId
+    if (id && Array.isArray(trips)) {
+      const t = trips.find((tt) => tt.id === id)
+      if (t) return t
     }
-    return heroDayIndex(trip)
-  }) // day index
-  const [dayCursor, setDayCursor] = useState(0) // stop index
-  const [photoCursor, setPhotoCursor] = useState(0) // photo index
-  const [dayWeave, setDayWeave] = useState(null) // the current day's woven narrative
+    return trip || null
+  }, [initial?.tripId, trips, trip])
 
-  const currentTrip = orderedTrips[archiveCursor] || null
-  const days = currentTrip?.days || []
-  const currentDay = days[tripCursor] || null
-  const stops = currentDay?.stops || []
-  const currentStop = stops[dayCursor] || null
-  const photos = useMemo(
-    () => stopPhotoSequence(currentStop, traveler),
-    [currentStop?.id, traveler]
-  )
-
-  // Per-stop counts for the current day (day beat + zoom-in gate + badges).
-  const stopData = useMemo(() => {
-    const map = {}
-    for (const s of stops) {
-      const mems = listMemoriesForStop(s.id, traveler)
-      map[s.id] = { memCount: mems.length, photoCount: flattenPhotoEntries(mems).length }
+  // The reel's children: every memory in the trip, chronological (capturedAt →
+  // createdAt asc), flattened to per-photo/video entries (cover leads an album).
+  // Deduped by stored-object key so a composed share-moment never doubles a
+  // photo (mirrors photoEntries.dedupeByPhoto — the earlier/original wins, which
+  // here is the first occurrence since we already sorted ascending).
+  const sequence = useMemo(() => {
+    if (!scopeTrip) return []
+    const mems = listMemoriesForTrip(scopeTrip.id, traveler)
+    const ordered = [...mems].sort((a, b) => {
+      const ad = a.capturedAt || a.createdAt || ''
+      const bd = b.capturedAt || b.createdAt || ''
+      return ad < bd ? -1 : ad > bd ? 1 : 0
+    })
+    const flat = flattenPhotoEntries(ordered)
+    const seen = new Set()
+    const out = []
+    for (const e of flat) {
+      if (e.refKey) {
+        if (seen.has(e.refKey)) continue
+        seen.add(e.refKey)
+      }
+      out.push(e)
     }
-    return map
-  }, [stops, traveler])
+    return out
+  }, [scopeTrip?.id, traveler]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Per-trip photo totals for the archive spine badges.
-  const archivePhotoCounts = useMemo(() => {
+  // stopId → day/stop context, for the live "Day N · Stop" chip.
+  const stopCtx = useMemo(() => {
     const map = {}
-    for (const t of orderedTrips) {
-      map[t.id] = flattenPhotoEntries(listMemoriesForTrip(t.id, traveler)).length
-    }
-    return map
-  }, [orderedTrips, traveler])
-
-  // Per-day photo totals for the trip spine badges.
-  const dayPhotoCounts = useMemo(() => {
-    const map = {}
-    for (const d of days) {
-      let n = 0
+    for (const d of scopeTrip?.days || []) {
       for (const s of d.stops || []) {
-        n += flattenPhotoEntries(listMemoriesForStop(s.id, traveler)).length
+        map[s.id] = {
+          dayN: d.n,
+          stopName: s.name || s.title || '',
+        }
       }
-      map[d.n] = n
     }
     return map
-  }, [days, traveler])
+  }, [scopeTrip])
 
-  // The scope swap: feed the UNCHANGED core the active level's children.
-  const active = useMemo(() => {
-    switch (level) {
-      case 'archive':
-        return { count: orderedTrips.length, cursor: archiveCursor, set: setArchiveCursor }
-      case 'trip':
-        return { count: days.length, cursor: tripCursor, set: setTripCursor }
-      case 'stop':
-        return { count: photos.length, cursor: photoCursor, set: setPhotoCursor }
-      default:
-        return { count: stops.length, cursor: dayCursor, set: setDayCursor }
-    }
-  }, [level, orderedTrips.length, archiveCursor, days.length, tripCursor, photos.length, photoCursor, stops.length, dayCursor])
-
-  const beatFor = useCallback(
-    (i) => {
-      if (level === 'stop') return BEAT_PHOTO_MS
-      if (level === 'archive') return BEAT_TRIP_MS
-      if (level === 'trip') return BEAT_DAY_MS
-      return stopData[stops[i]?.id]?.memCount > 0 ? BEAT_RICH_MS : BEAT_EMPTY_MS
-    },
-    [level, stops, stopData]
-  )
-
-  const { playing, setPlaying, toggle } = useReplayPlayer({
-    count: active.count,
-    cursor: active.cursor,
-    setCursor: active.set,
-    beatFor,
-  })
-
-  // Auto-scroll the active spine row into view as PLAY/SCRUB move the cursor
-  // (every level except the full-bleed photo stage).
-  const rowRefs = useRef({})
-  useEffect(() => {
-    if (level === 'stop') return
-    rowRefs.current[active.cursor]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [active.cursor, level])
-
-  // PRELOAD the next photos so PLAY never advances onto an undecoded frame.
-  // Lives OUTSIDE the player — why the timer stays a blind clock at every
-  // level and the core needed no readiness gate.
-  useEffect(() => {
-    if (level !== 'stop') return
-    for (let k = 1; k <= PRELOAD_AHEAD; k++) {
-      const p = photos[photoCursor + k]
-      if (p?.url) {
-        const img = new Image()
-        img.src = thumbUrl(p.url, STAGE_MAX_EDGE)
+  // The day-picker's jumpable days: only trip days that actually have a memory
+  // in the reel, each with the cursor index of its FIRST memory. A single such
+  // day → no picker (the chip is a plain label, not a button).
+  const dayList = useMemo(() => {
+    const out = []
+    for (const d of scopeTrip?.days || []) {
+      const stopIds = new Set((d.stops || []).map((s) => s.id))
+      const idx = sequence.findIndex((e) => e.stopId && stopIds.has(e.stopId))
+      if (idx >= 0) {
+        out.push({ n: d.n, isoDate: d.isoDate, title: d.title || d.date || '', cursorIndex: idx })
       }
     }
-  }, [level, photoCursor, photos])
+    return out
+  }, [scopeTrip, sequence])
 
-  // Fetch the current day's WOVEN narrative (the Weave's title + opening) so
-  // the day level reads as a story, not just a list of stops. Stored weaves
-  // only (nightly or kept) — a day without one simply shows no header. Reuses
-  // the existing GET /weave/latest; degrades to null on any failure.
+  // Starting cursor: a resurface target's day (initial.dayN) → that day's first
+  // memory; else the trip's hero day's first memory; else the top.
+  const initialCursor = useMemo(() => {
+    if (!sequence.length) return 0
+    const dayN = initial?.dayN != null ? initial.dayN : defaultDayN(scopeTrip)
+    if (dayN != null) {
+      const day = (scopeTrip?.days || []).find((d) => d.n === dayN)
+      const stopIds = new Set((day?.stops || []).map((s) => s.id))
+      const idx = sequence.findIndex((e) => e.stopId && stopIds.has(e.stopId))
+      if (idx >= 0) return idx
+    }
+    return 0
+  }, [sequence, scopeTrip, initial?.dayN])
+
+  const [cursor, setCursor] = useState(initialCursor)
+  // Re-seat the cursor if the scope/target changes after mount (e.g. a strip
+  // hands in a different trip while the reel is already open).
+  useEffect(() => {
+    setCursor(initialCursor)
+  }, [initialCursor])
+
+  const current = sequence[cursor] || null
+  const isVideo = !!current?.isVideo
+  const [sheetOpen, setSheetOpen] = useState(false)
+
+  // The current memory's day (for the chip label + which day's weave to fetch).
+  const currentDay = useMemo(() => {
+    if (!current?.stopId) return null
+    return (
+      (scopeTrip?.days || []).find((d) => (d.stops || []).some((s) => s.id === current.stopId)) || null
+    )
+  }, [current?.stopId, scopeTrip])
+
+  // The current day's stored woven narrative (nightly or kept) — RE-HOMED onto
+  // the day-picker sheet so a replayed day still reads as a story. Stored weaves
+  // only; degrades to null on any failure. Reuses GET /weave/latest.
+  const [dayWeave, setDayWeave] = useState(null)
   useEffect(() => {
     setDayWeave(null)
-    if (!currentTrip?.id || !currentDay?.isoDate) return
+    if (!scopeTrip?.id || !currentDay?.isoDate) return
     let cancelled = false
-    fetchStoredWeave(currentTrip.id, currentDay.isoDate).then((w) => {
+    fetchStoredWeave(scopeTrip.id, currentDay.isoDate).then((w) => {
       if (!cancelled) setDayWeave(w?.title ? w : null)
     })
     return () => {
       cancelled = true
     }
-  }, [currentTrip?.id, currentDay?.isoDate])
+  }, [scopeTrip?.id, currentDay?.isoDate])
 
-  // ── ZOOM ladder ───────────────────────────────────────────────────────
-  // Descending resets the CHILD cursor to the top; the parent cursor is left
-  // untouched so zoom-out restores it.
-  function enterTrip(i) {
+  const beatFor = useCallback(() => BEAT_PHOTO_MS, [])
+  const { playing, setPlaying, toggle } = useReplayPlayer({
+    count: sequence.length,
+    cursor,
+    setCursor,
+    beatFor,
+    hold: isVideo, // a video owns its own timing; resume on `ended`
+  })
+
+  const goNext = useCallback(() => {
     setPlaying(false)
-    setArchiveCursor(i)
-    setTripCursor(0)
-    setLevel('trip')
-  }
-  function enterDay(j) {
+    setCursor((c) => Math.min(c + 1, sequence.length - 1))
+  }, [sequence.length, setPlaying])
+  const goPrev = useCallback(() => {
     setPlaying(false)
-    setTripCursor(j)
-    setDayCursor(0)
-    setLevel('day')
-  }
-  function enterStop(k) {
-    setPlaying(false)
-    setDayCursor(k)
-    if (stopData[stops[k]?.id]?.photoCount > 0) {
-      setPhotoCursor(0)
-      setLevel('stop')
+    setCursor((c) => Math.max(c - 1, 0))
+  }, [setPlaying])
+
+  // A finished (or failed-to-load) video advances to the next memory, keeping
+  // PLAY rolling. If it's the LAST memory, end the reel cleanly instead of
+  // leaving the transport stuck showing Pause forever (the player's timer is
+  // held while a video is current, so nothing else would flip it off).
+  const handleVideoEnded = useCallback(() => {
+    if (cursor >= sequence.length - 1) {
+      setPlaying(false)
+    } else {
+      setCursor((c) => Math.min(c + 1, sequence.length - 1))
     }
-  }
-  // Zoom-out one rung; parent cursors were preserved. From the outermost
-  // (archive) rung, "back" leaves replay.
-  function ascend() {
-    setPlaying(false)
-    if (level === 'stop') setLevel('day')
-    else if (level === 'day') setLevel('trip')
-    else if (level === 'trip') setLevel('archive')
-    else onExit()
-  }
+  }, [cursor, sequence.length, setPlaying])
 
-  if (!currentTrip) return null
+  // PRELOAD the next photos so PLAY never advances onto an undecoded frame.
+  useEffect(() => {
+    for (let k = 1; k <= PRELOAD_AHEAD; k++) {
+      const e = sequence[cursor + k]
+      if (e && !e.isVideo && e.url) {
+        const img = new Image()
+        img.src = thumbUrl(e.url, STAGE_MAX_EDGE)
+      }
+    }
+  }, [cursor, sequence])
+
+  // ── Gestures (photo stage only — a video owns its own touches/controls) ──
+  // press-and-hold → pause while held; quick tap → advance (left third = back);
+  // horizontal swipe → prev/next; swipe-down → exit. Reuses the shared
+  // classifySwipe so the reel matches the rest of the app's gesture feel.
+  const gestureRef = useRef(null)
+  const onPointerDown = (e) => {
+    const g = { x: e.clientX, y: e.clientY, t: performance.now(), holding: false, wasPlaying: playing }
+    g.holdTimer = setTimeout(() => {
+      g.holding = true
+      setPlaying(false)
+    }, HOLD_MS)
+    gestureRef.current = g
+  }
+  const onPointerUp = (e) => {
+    const g = gestureRef.current
+    gestureRef.current = null
+    if (!g) return
+    clearTimeout(g.holdTimer)
+    if (g.holding) {
+      if (g.wasPlaying) setPlaying(true) // release of a hold → resume
+      return
+    }
+    const dx = e.clientX - g.x
+    const dy = e.clientY - g.y
+    const duration = performance.now() - g.t
+    const swipe = classifySwipe({ dx, dy, duration })
+    if (swipe === 'next') return goNext()
+    if (swipe === 'prev') return goPrev()
+    if (swipe === 'close') return onExit()
+    // A tap (no significant movement): left third → prev, else → next.
+    const rect = e.currentTarget.getBoundingClientRect()
+    const frac = (e.clientX - rect.left) / rect.width
+    if (frac < 0.3) goPrev()
+    else goNext()
+  }
+  const onPointerCancel = () => {
+    const g = gestureRef.current
+    gestureRef.current = null
+    if (g) clearTimeout(g.holdTimer)
+  }
+  // Clear a pending press-and-hold timer if the stage swaps photo↔video (the
+  // video stage carries no pointer handlers, so no up/cancel would arrive) or
+  // the reel unmounts — otherwise the timer could fire setPlaying after detach.
+  useEffect(() => {
+    return () => {
+      if (gestureRef.current?.holdTimer) {
+        clearTimeout(gestureRef.current.holdTimer)
+        gestureRef.current = null
+      }
+    }
+  }, [isVideo])
+
+  if (!scopeTrip) return null
 
   const themeName = traveler === 'helen' ? 'helen' : traveler
 
-  // Breadcrumb path + what the back arrow does at this rung.
-  const crumb = (() => {
-    if (level === 'archive') return { sup: 'The Archive', main: `${orderedTrips.length} trips`, back: 'Exit replay' }
-    if (level === 'trip') return { sup: 'The Archive', main: `${currentTrip.title} · ${tripDateLabel(currentTrip)}`, back: 'Back to archive' }
-    if (level === 'day') return { sup: currentTrip.title, main: `Day ${currentDay?.n}${currentDay?.title ? ` — ${currentDay.title}` : ''}`, back: 'Back to trip' }
-    return { sup: `Day ${currentDay?.n}`, main: currentStop?.name || currentStop?.title || 'Stop', back: 'Back to day' }
-  })()
-
-  return (
-    <div className="rpl-root" data-theme={themeName}>
-      <header className="rpl-bread">
-        <button type="button" className="rpl-back" onClick={ascend} aria-label={crumb.back}>
-          <ChevronLeft size={18} />
-        </button>
-        <div className="rpl-bread-txt">
-          <span className="rpl-bread-trip">{crumb.sup}</span>
-          <span className="rpl-bread-day">{crumb.main}</span>
-        </div>
-      </header>
-
-      {level === 'stop' ? (
-        <div className="rpl-stopwrap">
-          <PhotoStage photo={photos[photoCursor]} />
-        </div>
-      ) : level === 'archive' ? (
-        <div className="rpl-spine">
-          {orderedTrips.map((t, i) => {
-            const activeRow = i === archiveCursor
-            const pc = archivePhotoCounts[t.id] || 0
-            return (
-              <div
-                key={t.id}
-                ref={(el) => (rowRefs.current[i] = el)}
-                className={`rpl-row ${activeRow ? 'active' : ''}`}
-              >
-                <button type="button" className="rpl-row-head" onClick={() => enterTrip(i)}>
-                  <span className="rpl-row-name">{t.title || 'Untitled trip'}</span>
-                  <span className="rpl-row-sub">{tripDateLabel(t)}</span>
-                  <span className="rpl-row-meta">
-                    {(t.days?.length || 0)}d
-                    {pc > 0 && (
-                      <span className="rpl-row-badge">
-                        <Images size={13} />
-                        {pc}
-                      </span>
-                    )}
-                  </span>
-                </button>
-                {activeRow && (
-                  <div className="rpl-stage">
-                    {t.subtitle && <p className="rpl-itin-note">{t.subtitle}</p>}
-                    <button type="button" className="rpl-replay-cue" onClick={() => enterTrip(i)}>
-                      <Calendar size={16} />
-                      Open {t.days?.length || 0} day{(t.days?.length || 0) === 1 ? '' : 's'}
-                      <span className="rpl-replay-arrow">→</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      ) : level === 'trip' ? (
-        <div className="rpl-spine">
-          {days.map((d, j) => {
-            const activeRow = j === tripCursor
-            const pc = dayPhotoCounts[d.n] || 0
-            return (
-              <div
-                key={d.n}
-                ref={(el) => (rowRefs.current[j] = el)}
-                className={`rpl-row ${activeRow ? 'active' : ''}`}
-              >
-                <button type="button" className="rpl-row-head" onClick={() => enterDay(j)}>
-                  <span className="rpl-row-time">Day {d.n}</span>
-                  <span className="rpl-row-name">{d.title || d.date || `Day ${d.n}`}</span>
-                  <span className="rpl-row-meta">
-                    {(d.stops?.length || 0)} stop{(d.stops?.length || 0) === 1 ? '' : 's'}
-                    {pc > 0 && (
-                      <span className="rpl-row-badge">
-                        <Images size={13} />
-                        {pc}
-                      </span>
-                    )}
-                  </span>
-                </button>
-                {activeRow && (
-                  <div className="rpl-stage">
-                    {d.date && <div className="rpl-stage-addr">{d.date}</div>}
-                    <button type="button" className="rpl-replay-cue" onClick={() => enterDay(j)}>
-                      <Calendar size={16} />
-                      Open {d.stops?.length || 0} stop{(d.stops?.length || 0) === 1 ? '' : 's'}
-                      <span className="rpl-replay-arrow">→</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="rpl-spine">
-          {dayWeave && (
-            <div className="rpl-dayweave" data-testid="rpl-dayweave">
-              <span className="rpl-dayweave-eyebrow"><WeaveMark size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> The weave</span>
-              <h2 className="rpl-dayweave-title">{dayWeave.title}</h2>
-              {dayWeave.opening && <p className="rpl-dayweave-opening">{dayWeave.opening}</p>}
-            </div>
-          )}
-          {stops.map((s, i) => {
-            const activeRow = i === dayCursor
-            const who = presenceOf(s)
-            const hasPhotos = stopData[s.id]?.photoCount > 0
-            return (
-              <div
-                key={s.id}
-                ref={(el) => (rowRefs.current[i] = el)}
-                className={`rpl-row ${activeRow ? 'active' : ''}`}
-              >
-                <button
-                  type="button"
-                  className="rpl-row-head"
-                  onClick={() => enterStop(i)}
-                  aria-expanded={activeRow}
-                >
-                  <span className="rpl-row-time">{s.time || '—'}</span>
-                  <span className="rpl-row-name">{s.name || s.title || 'Stop'}</span>
-                  {hasPhotos && (
-                    <span className="rpl-row-badge" aria-label="has photos">
-                      <Images size={13} />
-                      {stopData[s.id].photoCount}
-                    </span>
-                  )}
-                  <span className="rpl-row-who">
-                    {who.length > 0 ? (
-                      <AvatarStack ids={who} size={18} />
-                    ) : (
-                      <span className="rpl-row-noone">—</span>
-                    )}
-                  </span>
-                </button>
-                {activeRow && (
-                  <StopStage stop={s} traveler={traveler} onReplay={() => enterStop(i)} />
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      <footer className="rpl-transport">
+  // Empty trip — nothing to replay yet. Keep a one-tap exit.
+  if (!sequence.length) {
+    return (
+      <div className="rpl-root rpl-reel-empty" data-theme={themeName}>
         <button
           type="button"
-          className="rpl-play"
-          onClick={toggle}
-          aria-label={playing ? 'Pause' : 'Play'}
+          className="rpl-reel-done"
+          data-testid="rpl-reel-done"
+          aria-label="Done"
+          onClick={onExit}
         >
-          {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+          <X size={18} />
         </button>
-        <TimeRail
-          count={active.count}
-          cursor={active.cursor}
-          onScrub={active.set}
-          onGrab={() => setPlaying(false)}
-        />
-        <span className="rpl-count">
-          {active.count ? active.cursor + 1 : 0} / {active.count}
+        <p className="rpl-reel-emptytext">No memories in this trip yet.</p>
+      </div>
+    )
+  }
+
+  const ctx = current?.stopId ? stopCtx[current.stopId] : null
+  const chipLabel = ctx
+    ? `Day ${ctx.dayN}${ctx.stopName ? ` · ${ctx.stopName}` : ''}`
+    : scopeTrip.title || ''
+  const multiDay = dayList.length > 1 // a single jumpable day → no picker
+  const currentDayN = ctx?.dayN ?? null
+  const author = capturedBy({ authorTraveler: current?.author })
+  const dateLabel = formatFullDate(current?.capturedAt)
+  const kind = isVideo ? 'VIDEO' : 'PHOTO'
+  const idxLabel =
+    current && current.photoCountInMemory > 1
+      ? `${kind} · ${current.photoIndexInMemory + 1} OF ${current.photoCountInMemory}`
+      : kind
+
+  return (
+    <div className="rpl-root rpl-reel-root" data-theme={themeName}>
+      <StoryRail
+        count={sequence.length}
+        cursor={cursor}
+        onJump={(i) => {
+          setPlaying(false)
+          setCursor(i)
+        }}
+      />
+
+      <div className="rpl-reel-topbar">
+        {multiDay ? (
+          <button
+            type="button"
+            className="rpl-reel-chip rpl-reel-chip-btn"
+            data-testid="rpl-reel-chip"
+            aria-haspopup="dialog"
+            aria-expanded={sheetOpen}
+            onClick={() => {
+              setPlaying(false)
+              setSheetOpen(true)
+            }}
+          >
+            <span className="rpl-reel-chip-txt">{chipLabel}</span>
+            <ChevronDown size={13} />
+          </button>
+        ) : (
+          <div className="rpl-reel-chip" data-testid="rpl-reel-chip">
+            {chipLabel}
+          </div>
+        )}
+        <button
+          type="button"
+          className="rpl-reel-done"
+          data-testid="rpl-reel-done"
+          aria-label="Done"
+          onClick={onExit}
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <div
+        className={`rpl-reel ${isVideo ? 'is-video' : ''}`}
+        data-testid="rpl-reel"
+        {...(!isVideo
+          ? { onPointerDown, onPointerUp, onPointerCancel }
+          : {})}
+      >
+        <div className="rpl-reel-stage">
+          {isVideo ? (
+            <VideoStage entry={current} onEnded={handleVideoEnded} />
+          ) : (
+            <CineStage photo={current} />
+          )}
+          <figcaption className="rpl-photo-overlay rpl-reel-overlay">
+            <span className="rpl-photo-idx">{idxLabel}</span>
+            {current?.caption && current.photoIndexInMemory === 0 && (
+              <p className="rpl-photo-caption">{current.caption}</p>
+            )}
+            <div className="rpl-photo-meta">
+              {author && <Avatar id={author} size={26} />}
+              <div className="rpl-photo-metatext">
+                {author && <span className="rpl-photo-author">{TRAVELERS[author]?.name}</span>}
+                {dateLabel && <span className="rpl-photo-date">{dateLabel}</span>}
+              </div>
+            </div>
+          </figcaption>
+        </div>
+      </div>
+
+      <div className="rpl-reel-transport">
+        <span className="rpl-reel-count">
+          {sequence.length ? cursor + 1 : 0} / {sequence.length}
         </span>
-      </footer>
+        {/* The play/pause disc governs PHOTO auto-advance. A video owns its own
+            timing via its native controls, so the disc is hidden while a clip is
+            current (it would be a dead no-op otherwise). */}
+        {!isVideo && (
+          <button
+            type="button"
+            className="rpl-reel-play"
+            data-testid="rpl-reel-play"
+            onClick={toggle}
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}
+          </button>
+        )}
+        <span className="rpl-reel-scope">{scopeTrip.title || ''}</span>
+      </div>
+
+      {sheetOpen && (
+        <div
+          className="rpl-sheet-backdrop"
+          data-testid="rpl-daypicker"
+          onClick={() => setSheetOpen(false)}
+        >
+          <div
+            className="rpl-sheet"
+            role="dialog"
+            aria-label="Jump to a day"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {dayWeave && (
+              <div className="rpl-dayweave" data-testid="rpl-dayweave">
+                <span className="rpl-dayweave-eyebrow">
+                  <WeaveMark size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> The weave
+                </span>
+                <h2 className="rpl-dayweave-title">{dayWeave.title}</h2>
+                {dayWeave.opening && <p className="rpl-dayweave-opening">{dayWeave.opening}</p>}
+              </div>
+            )}
+            <div className="rpl-daystrip">
+              {dayList.map((d) => (
+                <button
+                  key={d.n}
+                  type="button"
+                  className={`rpl-daychip ${d.n === currentDayN ? 'on' : ''}`}
+                  aria-current={d.n === currentDayN ? 'true' : undefined}
+                  onClick={() => {
+                    setSheetOpen(false)
+                    setPlaying(false)
+                    setCursor(d.cursorIndex)
+                  }}
+                >
+                  <span className="rpl-daychip-n">Day {d.n}</span>
+                  {d.title && <span className="rpl-daychip-t">{d.title}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

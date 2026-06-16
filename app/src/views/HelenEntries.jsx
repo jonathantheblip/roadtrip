@@ -65,8 +65,10 @@ export function HelenEntries({
   const after = phase === 'after'
   const revealed = surpriseRevealCue > 0
 
-  // The keepsake shelf (Book + Replay side by side).
-  const shelf = (
+  // The keepsake shelf (Book + Replay side by side). `showReplay` is false when
+  // the shelf sits UNDER the after-trip Replay hero — otherwise the hero + this
+  // tile are two identical "Replay the trip" cards on one screen.
+  const buildShelf = (showReplay) => (
     <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
       {bookHasPages ? (
         <Card onClick={onOpenBook} label="Open the book" style={{ flex: 1, padding: 0, overflow: 'hidden', minHeight: 150 }}>
@@ -86,15 +88,17 @@ export function HelenEntries({
           <div style={{ fontFamily: 'var(--font-body)', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.45 }}>Keep a Weave page and it&rsquo;s bound here.</div>
         </div>
       )}
-      <Card onClick={onOpenReplay} label="Replay the trip" style={{ flex: 1, padding: 0, overflow: 'hidden', minHeight: 150 }}>
-        <div style={{ height: 96, background: 'linear-gradient(160deg, var(--bg2), var(--card))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--card)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' }}><Play size={17} style={{ color: 'var(--accent-text)', marginLeft: 2 }} /></span>
-        </div>
-        <div style={{ padding: '11px 13px' }}>
-          <Eyebrow c="var(--muted)">Looking back&hellip;</Eyebrow>
-          <div style={{ ...SERIF, fontSize: 15, marginTop: 4 }}>Replay the trip</div>
-        </div>
-      </Card>
+      {showReplay && (
+        <Card onClick={onOpenReplay} label="Replay the trip" style={{ flex: 1, padding: 0, overflow: 'hidden', minHeight: 150 }}>
+          <div style={{ height: 96, background: 'linear-gradient(160deg, var(--bg2), var(--card))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--card)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' }}><Play size={17} style={{ color: 'var(--accent-text)', marginLeft: 2 }} /></span>
+          </div>
+          <div style={{ padding: '11px 13px' }}>
+            <Eyebrow c="var(--muted)">Looking back&hellip;</Eyebrow>
+            <div style={{ ...SERIF, fontSize: 15, marginTop: 4 }}>Replay the trip</div>
+          </div>
+        </Card>
+      )}
     </div>
   )
 
@@ -114,7 +118,7 @@ export function HelenEntries({
                 </div>
               </div>
             </Card>
-            {shelf}
+            {buildShelf(false) /* hero above already IS the replay entry */}
           </div>
           <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontFamily: 'var(--font-body)', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.4 }}>The live map &amp; nightly Weave rest until your next trip.</span>
@@ -189,7 +193,7 @@ export function HelenEntries({
           </div>
 
           <Divider right="Looking back">Keepsake</Divider>
-          {shelf}
+          {buildShelf(true) /* during: no hero, so the shelf carries replay */}
         </>
       )}
     </div>

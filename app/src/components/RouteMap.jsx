@@ -86,9 +86,20 @@ const liveDotIcon = L.divIcon({
 
 function LiveDot({ position, onOffScreen }) {
   const map = useMap()
+  const centeredRef = useRef(false)
 
   useEffect(() => {
     if (!position) return
+    // First location fix: move the map to the user. FitBounds framed the ROUTE on
+    // mount, so without this the dot just appears off in the corner and the map
+    // never goes to it (Jonathan: "the dot shows up but the map doesn't move to
+    // where the dot is"). Pan once, gently, keeping a sensible zoom; the manual
+    // recenter button still re-snaps on demand. Runs once — FitBounds ignores the
+    // position, so there's no fight/loop.
+    if (!centeredRef.current) {
+      centeredRef.current = true
+      map.flyTo([position.lat, position.lng], Math.max(map.getZoom(), 11), { duration: 0.5 })
+    }
     const check = () => {
       const bounds = map.getBounds()
       const inside = bounds.contains([position.lat, position.lng])
