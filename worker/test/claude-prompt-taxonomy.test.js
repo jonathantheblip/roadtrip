@@ -49,4 +49,20 @@ describe('claude system prompt — trip-settings taxonomy', () => {
     // The `destination` alias the applier accepts is mentioned.
     expect(prompt).toContain('destination')
   })
+
+  // Regression guard for the "Helen's notes vanish on Save" bug: durable stop
+  // commentary must be a `note` FIELD (which the applier writes to stop.note and
+  // the detail view renders), distinct from the card-level `note`, which is a
+  // transient confirm-time heads-up the apply path deliberately discards. Before
+  // this, the model was only ever shown the card-level note and stranded
+  // commentary there, so it never reached the stop.
+  it('teaches the model that a durable stop note is a FIELD, distinct from the transient card-level note', async () => {
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
+    // A concrete `note` field template exists in the fields example.
+    expect(prompt).toContain('"name": "note"')
+    // The card-level note is explicitly flagged as transient / not saved.
+    expect(prompt).toMatch(/DISCARDED on Save/)
+    // The model is told an "add a note" request lands in the field, not the card note.
+    expect(prompt).toMatch(/note FIELD/)
+  })
 })
