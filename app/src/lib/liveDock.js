@@ -137,14 +137,19 @@ export function selectScheduleNowNext(trip, now = new Date()) {
   const nowMs = now.getTime()
   let nowStop = null
   let nextStop = null
+  let passedCount = 0
   for (const e of seq) {
-    if (e.ms <= nowMs) nowStop = e.stop
-    else {
+    if (e.ms <= nowMs) {
+      nowStop = e.stop
+      passedCount += 1
+    } else {
       nextStop = e.stop
       break
     }
   }
-  return { nowStop, nextStop }
+  // passedCount/totalCount let a surface show honest "X of N done" progress from
+  // the clock (the Live Map) instead of a manual checkbox nobody taps.
+  return { nowStop, nextStop, passedCount, totalCount: seq.length }
 }
 
 // The "now" line of the readout: the current stop if we have one, else the
@@ -195,11 +200,18 @@ export function buildLedgeModel({
 
   // jonathan, helen — persistent live ledge
   const { nowStop, nextStop } = selectScheduleNowNext(trip, now)
+  // A "now" stop from a PRIOR calendar day — last night's lodging, before
+  // today's first scheduled stop — reads as stuck ("now: Beach Bungalow" all
+  // morning). So only a stop that's actually TODAY counts as "now"; in the
+  // morning the ledge leads with today's next stop instead of pinning to last
+  // night.
+  const today = localDateIso(now)
+  const effectiveNow = nowStop && nowStop.isoDate === today ? nowStop : null
   const cueKind = revealed ? 'surprise-revealed' : weaveReady ? 'weave-ready' : null
   return {
     mode: 'live',
-    now: ledgeNow(nowStop, nextStop),
-    next: ledgeNext(nowStop, nextStop),
+    now: ledgeNow(effectiveNow, nextStop),
+    next: ledgeNext(effectiveNow, nextStop),
     cueKind,
   }
 }

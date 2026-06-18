@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { allStops } from '../data/trips'
 import { useGeolocation } from '../hooks/useGeolocation'
-import { useVisited } from '../hooks/useVisited'
+import { useNowTick } from '../hooks/useNowTick'
+import { selectScheduleNowNext } from '../lib/liveDock'
 import {
   buildRouteGeometry,
   projectOntoRoute,
@@ -52,9 +53,12 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
     [road, geometry]
   )
 
-  const { position, status } = useGeolocation()
-  const { visited, markVisited } = useVisited(trip?.id)
+  const { position, status, request: requestLocation } = useGeolocation()
   const [selectedStopId, setSelectedStopId] = useState(null)
+  // The wall clock, ticking — so "up next" / "done" advance through the day on
+  // their own instead of being frozen to a manual checkbox nobody taps.
+  const now = useNowTick()
+  const schedule = useMemo(() => selectScheduleNowNext(trip, now), [trip, now])
 
   const projection = useMemo(
     () => projectOntoRoute(position, geometry),
@@ -83,16 +87,27 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
     return traveledPolyline(geometry, projection)
   }, [road, geometry, projection])
 
-  // Where next: first unvisited stop in trip order.
-  const nextStop = useMemo(
-    () => stops.find((s) => !visited.includes(s.id)) || null,
-    [stops, visited]
-  )
-  // What we've done: count only ids that belong to THIS trip's stops.
-  const visitedCount = useMemo(
-    () => stops.filter((s) => visited.includes(s.id)).length,
-    [stops, visited]
-  )
+  // Where next — truthful precedence: where GPS says we're actually heading
+  // (on-route) → the schedule's next stop by the clock → and only as a last
+  // resort the trip's first stop. The old "first stop nobody tapped 'visited'
+  // on" pinned to day 1 for the whole trip.
+  const nextStop = useMemo(() => {
+    const onRouteHere =
+      !!projection &&
+      Number.isFinite(projection.offRouteMeters) &&
+      projection.offRouteMeters < OFF_ROUTE_LIMIT_M
+    if (onRouteHere && projection.toStop) return projection.toStop
+    if (schedule.nextStop) {
+      return stops.find((s) => s.id === schedule.nextStop.id) || schedule.nextStop
+    }
+    // Schedule exists but nothing's ahead → the trip is done (null). No schedule
+    // at all (a timeless trip, no GPS) → fall back to the first stop.
+    if (schedule.totalCount > 0) return null
+    return stops[0] || null
+  }, [projection, schedule, stops])
+  // What's done: stops whose scheduled time has already passed — clock-based and
+  // auto-advancing, not a manual tally.
+  const doneCount = schedule.passedCount
 
   const hasRoute = geometry.waypoints.length >= 2 && geometry.totalMeters > 0
   const live = status === 'granted' && !!position
@@ -155,24 +170,15 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
           <div className="mapview-cell">
             <span className="mapview-label">Up next</span>
             {nextStop ? (
-              <>
-                <strong className="mapview-next-name">{nextStop.name}</strong>
-                <button
-                  type="button"
-                  className="mapview-visit"
-                  onClick={() => markVisited(nextStop.id)}
-                >
-                  Mark visited →
-                </button>
-              </>
+              <strong className="mapview-next-name">{nextStop.name}</strong>
             ) : (
-              <strong className="mapview-next-name">All stops visited</strong>
+              <strong className="mapview-next-name">Trip complete</strong>
             )}
           </div>
           <div className="mapview-cell mapview-done">
             <span className="mapview-label">Done</span>
             <strong>
-              {visitedCount}<span className="mapview-muted">/{stops.length}</span>
+              {doneCount}<span className="mapview-muted">/{stops.length}</span>
             </strong>
           </div>
         </div>
@@ -201,11 +207,24 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
           </div>
         ) : (
           <div className="mapview-progress-muted">
-            {!hasRoute
-              ? 'No route to track yet'
-              : live
-                ? "You're not on the route right now"
-                : 'Live progress needs location'}
+            {!hasRoute ? (
+              'No route to track yet'
+            ) : live ? (
+              // Granted but off the route — a family member following from home,
+              // not a failure. Don't scold them about not being on the route.
+              'Following along from here'
+            ) : status === 'denied' ? (
+              'Location is off — turn it on in your settings to follow the drive live.'
+            ) : status === 'unavailable' ? (
+              'Live location isn’t available on this device.'
+            ) : (
+              <>
+                Turn on location to follow the drive live.{' '}
+                <button type="button" className="mapview-visit" onClick={requestLocation}>
+                  Turn on location
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

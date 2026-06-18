@@ -3,6 +3,7 @@ import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
 import { buildLedgeModel, itineraryNearToday } from './lib/liveDock'
+import { useNowTick } from './hooks/useNowTick'
 import { useLiveEta } from './hooks/useLiveEta'
 import { JonathanView } from './views/JonathanView'
 import { HelenView } from './views/HelenView'
@@ -569,10 +570,13 @@ export default function App() {
   // LiveDock ledge model (NowBar × FamilyDock reconciliation): system-driven
   // by the VIEWED trip + person, rendered above the switcher pills. Uses
   // tripForView so the schedule now/next matches the stops the themed view
-  // shows. Recomputed each render (reads the wall clock for now/next).
+  // shows. `now` ticks (useNowTick) so the readout advances through the day on
+  // its own instead of freezing at the last render.
+  const now = useNowTick()
   const dockLedge = buildLedgeModel({
     trip: tripForView,
     traveler,
+    now,
     weaveReady,
     surpriseRevealCue,
   })

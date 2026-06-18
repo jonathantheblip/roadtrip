@@ -136,6 +136,25 @@ test('buildLedgeModel: jonathan/helen get a persistent live readout', () => {
   }
 })
 
+test('buildLedgeModel: morning before today’s first stop leads with today, not last night', () => {
+  // 7 AM on day 2 — the most-recent past stop is last night's Beach Bungalow
+  // (day 1). The ledge must lead with today's first stop, not pin a stale "now"
+  // to last night's lodging all morning.
+  const early = new Date('2026-05-23T07:00:00')
+  const m = buildLedgeModel({ trip: TRIP, traveler: 'jonathan', now: early })
+  assert.equal(m.mode, 'live')
+  assert.equal(m.now, 'Morning swim') // today's first scheduled stop
+  assert.equal(m.next, '') // no stale across-the-night now→next pair
+})
+
+test('selectScheduleNowNext: reports passedCount + totalCount for honest progress', () => {
+  const r = selectScheduleNowNext(TRIP, NOON_D2)
+  // 4 timed stops total; at noon day 2, the bungalow (last night) and the 9 AM
+  // swim have passed → 2 done.
+  assert.equal(r.totalCount, 4)
+  assert.equal(r.passedCount, 2)
+})
+
 test('buildLedgeModel: aurelia is cue-only — none without a reveal, cue with one', () => {
   assert.equal(buildLedgeModel({ trip: TRIP, traveler: 'aurelia', now: NOON_D2 }).mode, 'none')
   const m = buildLedgeModel({ trip: TRIP, traveler: 'aurelia', now: NOON_D2, surpriseRevealCue: 1 })

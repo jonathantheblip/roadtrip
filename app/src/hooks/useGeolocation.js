@@ -72,6 +72,43 @@ function ensureWatch() {
   }
 }
 
+// Explicitly (re-)ask for location — what a "Turn on location" button calls when
+// the user dismissed or never saw the first prompt. getCurrentPosition re-shows
+// the browser prompt while permission is still 'prompt'; once 'denied' the OS
+// won't re-prompt, so the UI guides the user to settings instead.
+function requestLocation() {
+  if (!('geolocation' in navigator)) {
+    state = { ...state, status: 'unavailable' }
+    emit()
+    return
+  }
+  ensureWatch()
+  try {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const next = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+        }
+        state = { position: next, status: 'granted', lastKnown: next }
+        saveLast(next)
+        emit()
+      },
+      (err) => {
+        const nextStatus = err.code === 1 ? 'denied' : 'unavailable'
+        state = { ...state, status: nextStatus }
+        emit()
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+    )
+  } catch {
+    state = { ...state, status: 'unavailable' }
+    emit()
+  }
+}
+
 export function useGeolocation() {
   const [snapshot, setSnapshot] = useState(state)
 
@@ -84,7 +121,7 @@ export function useGeolocation() {
     }
   }, [])
 
-  return snapshot
+  return { ...snapshot, request: requestLocation }
 }
 
 // Passive variant: subscribe to the SHARED geolocation state WITHOUT starting
