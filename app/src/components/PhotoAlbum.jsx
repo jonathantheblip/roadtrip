@@ -302,6 +302,12 @@ export function PhotoLightbox({
   // Only the photo's AUTHOR can delete it (the worker enforces this too). A
   // local-only photo (no memoryId) has no stored record to remove from.
   const canDelete = !!entry?.memoryId && !!traveler && entry?.author === traveler
+  // The author can correct a photo's DATE — the album locks to when a photo was
+  // taken (EXIF / video container date), but an EXIF-less image (a scan, a
+  // screenshot, some HEIC edge) falls back to the upload time, labelled
+  // "· uploaded". Letting the author fix it keeps the timeline true. Dev mode
+  // keeps the affordance on any photo for diagnostics.
+  const canEditDate = devMode || canDelete
   function handleDelete() {
     const res = removePhotoFromMemory({
       memoryId: entry.memoryId,
@@ -608,7 +614,7 @@ export function PhotoLightbox({
               </span>
             </>
           )}
-          {devMode && !editingDate && (
+          {canEditDate && !editingDate && (
             <>
               <span aria-hidden="true">·</span>
               <button
@@ -636,7 +642,7 @@ export function PhotoLightbox({
             </>
           )}
         </div>
-        {devMode && editingDate && (
+        {canEditDate && editingDate && (
           <CapturedAtEditor
             entry={entry}
             onCancel={() => setEditingDate(false)}
