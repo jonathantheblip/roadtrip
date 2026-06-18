@@ -155,16 +155,38 @@ test.describe('PhotosView — capturedAt as source of truth (C0)', () => {
     expect(stored?.capturedAt).toMatch(/^1985-07-04T/)
   })
 
-  test('non-dev mode hides the date-edit affordance entirely', async ({ page }) => {
+  test('non-dev mode: the photo AUTHOR can fix its date', async ({ page }) => {
+    // The author can correct a wrong/missing capture date in the album (an
+    // EXIF-less scan, a screenshot) — no dev mode required.
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await seedMemoriesIntoCache(page, [
       memoryWith({
-        id: 'no-edit-shown',
+        id: 'own-photo',
+        authorTraveler: 'helen',
         capturedAt: '2026-05-23T07:00:00.000Z',
         createdAt: '2026-05-24T22:00:00.000Z',
       }),
     ])
-    // Do NOT flip rt_dev_mode — the affordance must not render.
+    // Do NOT flip rt_dev_mode — Helen viewing her OWN photo still gets it.
+    await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+    await page.getByTestId('helen-photos-entry').click()
+    await page.getByTestId('photo-tile').first().click()
+    await expect(page.getByTestId('lightbox-edit-date')).toBeVisible()
+  })
+
+  test('non-dev mode: a NON-author cannot edit someone else’s photo date', async ({ page }) => {
+    // A shared photo authored by Jonathan, viewed by Helen — she may browse and
+    // share it, but only its author may change its date (the worker enforces
+    // this on write too).
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await seedMemoriesIntoCache(page, [
+      memoryWith({
+        id: 'someone-elses',
+        authorTraveler: 'jonathan',
+        capturedAt: '2026-05-23T07:00:00.000Z',
+        createdAt: '2026-05-24T22:00:00.000Z',
+      }),
+    ])
     await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
     await page.getByTestId('helen-photos-entry').click()
     await page.getByTestId('photo-tile').first().click()
@@ -228,12 +250,12 @@ test.describe('PhotosView — capturedAt as source of truth (C0)', () => {
   })
 })
 
-function memoryWith({ id, capturedAt = null, createdAt, caption = id, photoRef }) {
+function memoryWith({ id, capturedAt = null, createdAt, caption = id, photoRef, authorTraveler = 'helen' }) {
   return {
     id,
     tripId: 'volleyball-2026',
     stopId: 'vb2-3',
-    authorTraveler: 'helen',
+    authorTraveler,
     visibility: 'shared',
     kind: 'photo',
     caption,
