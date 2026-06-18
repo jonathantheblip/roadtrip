@@ -337,7 +337,7 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
             )}
             {!narrative?.opening && (
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontStyle: 'italic', color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
-                Four people. One day. The app stitched what each of you noticed into a single page.
+                One day, woven from what each of you noticed.
               </div>
             )}
           </div>
@@ -591,7 +591,7 @@ function TopBar({ onBack, label, rightSlot }) {
 // ── BeatBlock ────────────────────────────────────────────────────────
 // One person's contribution in the braid.
 function BeatBlock({ beat, traveler, isLast }) {
-  const { who, kind, snippet, memory } = beat
+  const { who, kind, snippet, hasWords, memory } = beat
   const dot = TRAVELER_DOT[who] || '#777'
   const verb = verbFor(who, kind)
   const isSelf = who === traveler
@@ -648,20 +648,20 @@ function BeatBlock({ beat, traveler, isLast }) {
 
       {/* content by kind */}
       {(kind === 'text' || kind === 'log') && (
-        <TextBeat snippet={snippet} traveler={traveler} />
+        <TextBeat snippet={snippet} hasWords={hasWords} traveler={traveler} />
       )}
       {kind === 'photo' && (
-        <PhotoBeat memory={memory} snippet={snippet} dot={dot} traveler={traveler} />
+        <PhotoBeat memory={memory} snippet={snippet} hasWords={hasWords} dot={dot} traveler={traveler} />
       )}
       {kind === 'voice' && (
-        <VoiceBeat memory={memory} snippet={snippet} dot={dot} traveler={traveler} />
+        <VoiceBeat memory={memory} snippet={snippet} hasWords={hasWords} dot={dot} traveler={traveler} />
       )}
     </div>
   )
 }
 
 // ── Beat renderers ───────────────────────────────────────────────────
-function TextBeat({ snippet, traveler }) {
+function TextBeat({ snippet, hasWords = true, traveler }) {
   return (
     <div
       data-testid="beat-text"
@@ -669,16 +669,16 @@ function TextBeat({ snippet, traveler }) {
         fontFamily: 'var(--font-display)',
         fontSize: 17,
         fontStyle: traveler === 'aurelia' ? 'italic' : 'italic',
-        lineHeight: 1.55, color: 'var(--text)',
+        lineHeight: 1.55, color: hasWords ? 'var(--text)' : 'var(--muted)',
         textWrap: 'pretty',
       }}
     >
-      "{snippet}"
+      {hasWords ? `"${snippet}"` : snippet}
     </div>
   )
 }
 
-function PhotoBeat({ memory, snippet, dot, traveler }) {
+function PhotoBeat({ memory, snippet, hasWords = true, dot, traveler }) {
   const photoRef = memory?.photoRefs?.[0] || memory?.photoRef
   const src = photoRef ? thumbUrl(photoRef?.url, 320) : null
 
@@ -698,7 +698,7 @@ function PhotoBeat({ memory, snippet, dot, traveler }) {
             style={{ width: '100%', display: 'block', aspectRatio: '4/5', objectFit: 'cover' }}
             loading="lazy"
           />
-          {snippet && (
+          {hasWords && snippet && (
             <div
               style={{
                 position: 'absolute', left: 0, right: 0, bottom: 0,
@@ -728,7 +728,7 @@ function PhotoBeat({ memory, snippet, dot, traveler }) {
             display: 'flex', alignItems: 'flex-end', padding: '16px 14px',
           }}
         >
-          {snippet && (
+          {hasWords && snippet && (
             <div
               style={{
                 fontFamily: 'var(--font-display)',
@@ -744,7 +744,7 @@ function PhotoBeat({ memory, snippet, dot, traveler }) {
   )
 }
 
-function VoiceBeat({ memory, snippet, dot, traveler }) {
+function VoiceBeat({ memory, snippet, hasWords = true, dot, traveler }) {
   const dur = memory?.durationSeconds
   // Resolve a playable audio URL for the clip, mirroring ThreadedMemories'
   // VoiceBubble: prefer the synced R2 url so non-author devices can play, fall

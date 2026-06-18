@@ -92,16 +92,24 @@ export function buildBeats(trip, day, memories) {
     const best = mems[0]
     if (!best) continue
 
+    // hasWords distinguishes a real caption/transcript/note from the
+    // placeholder we fall back to for a wordless contribution. The renderer
+    // quotes only real words — a placeholder ("took a photo") is shown as an
+    // ACTION, never in quotation marks as if the person said it.
     let snippet = ''
+    let hasWords = false
     if (best.kind === 'voice') {
-      snippet = best.transcript ? best.transcript.slice(0, 120) : 'recorded a voice clip'
+      hasWords = !!best.transcript
+      snippet = hasWords ? best.transcript.slice(0, 120) : 'recorded a voice clip'
     } else if (best.kind === 'photo') {
-      snippet = best.caption ? best.caption.slice(0, 120) : 'took a photo'
+      hasWords = !!best.caption
+      snippet = hasWords ? best.caption.slice(0, 120) : 'took a photo'
     } else {
-      snippet = best.text ? best.text.slice(0, 120) : 'left a note'
+      hasWords = !!best.text
+      snippet = hasWords ? best.text.slice(0, 120) : 'left a note'
     }
 
-    beats.push({ who, kind: best.kind || 'text', snippet, memory: best })
+    beats.push({ who, kind: best.kind || 'text', snippet, hasWords, memory: best })
   }
 
   return beats
