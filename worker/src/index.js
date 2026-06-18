@@ -2447,10 +2447,10 @@ async function generateWeaveNarrative(env, beatLines, stat) {
     `The family contributed these moments today:\n${beatLines}\n` +
     (stat ? `\nTravel: ${stat}\n` : '') +
     `\nWrite a short narrative frame — three things only:\n` +
-    `- title: a vivid, specific day title (4–7 words, no quotes, no punctuation at end)\n` +
+    `- title: a short, evocative day title (4–7 words). A comma, colon, or em-dash is welcome inside it where it reads naturally — just no surrounding quotes and no trailing period. Prefer one clear image over a comma-less pile of nouns.\n` +
     `- opening: 1–2 sentences that capture the shape of the day as a shared family story. Ground every claim in the beats above — do not invent details.\n` +
-    `- closing: one short line that closes the page (e.g. "That was Tuesday." or a quiet reflection).\n\n` +
-    `Rules: never rewrite or paraphrase the family's actual words — only frame around them. No markdown. ` +
+    `- closing: one short line that closes the page — a quiet reflection grounded in the day. Don't name a weekday or a date unless it actually appears in the beats.\n\n` +
+    `Rules: never rewrite or paraphrase the family's actual words — only frame around them. Some beats are bare descriptions of a WORDLESS contribution — exactly "took a photo", "left a note", or "recorded a voice clip": treat those as things a person DID, never as words they said. Never wrap them in quotation marks and never invent a quote from them. No markdown. ` +
     `Reply with exactly: {"title":"...","opening":"...","closing":"..."}`
 
   let res
