@@ -41,6 +41,27 @@ test('lexical compare is a real date compare across month / year boundaries', ()
   assert.equal(tripPhase({ dateRangeEnd: '2026-02-01' }, at('2026-01-31')), 'during')
 })
 
+test('after: a stale-dated trip (window says during, itinerary is weeks past) reads after', () => {
+  // The real failure: the volleyball trip stored 2025-01-01 → 2027-12-31 while
+  // its stops are all May 2026. The huge window says "during" forever; the
+  // itinerary cross-check classes it as over.
+  const stale = {
+    dateRangeStart: '2025-01-01',
+    dateRangeEnd: '2027-12-31',
+    days: [{ isoDate: '2026-05-22' }, { isoDate: '2026-05-24' }],
+  }
+  assert.equal(tripPhase(stale, at('2026-06-18')), 'after')
+})
+
+test('during: an in-window trip whose itinerary matches today stays during', () => {
+  const live = {
+    dateRangeStart: '2026-05-22',
+    dateRangeEnd: '2026-05-24',
+    days: [{ isoDate: '2026-05-22' }, { isoDate: '2026-05-24' }],
+  }
+  assert.equal(tripPhase(live, at('2026-05-23')), 'during')
+})
+
 test('during by default when there is no usable end date (never strand a trip in keepsake mode)', () => {
   assert.equal(tripPhase({}, at('2026-06-13')), 'during')
   assert.equal(tripPhase({ dateRangeEnd: null }, at('2026-06-13')), 'during')

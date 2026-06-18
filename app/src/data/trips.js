@@ -9,6 +9,7 @@
 // The NYC trip is the empty-scaffold form for a planning trip.
 
 import { localDateIso } from '../lib/localDate.js'
+import { itineraryNearToday, itinerarySpan } from '../lib/liveDock.js'
 
 export const JACKSON_TRIP = {
   id: 'jackson-2026',
@@ -1147,7 +1148,14 @@ export function effectiveStatus(trip, today = todayIso()) {
   if (!start && !end) return trip?.status || 'planning'
   if (end && end < today) return 'archived'
   if (start && start > today) return 'planning'
-  // Today falls inside (or touches) the trip window.
+  // Today falls inside (or touches) the stored window — but only call it 'live'
+  // if the trip's REAL itinerary sits near today. A stale/wrong stored window
+  // (e.g. a past trip whose dates got pushed forward to 2027) would otherwise
+  // read 'live' forever; classify it by where its stops actually are instead.
+  if (!itineraryNearToday(trip, today)) {
+    const span = itinerarySpan(trip) // non-null here (a null span keeps itineraryNearToday true)
+    return span && span.min > today ? 'planning' : 'archived'
+  }
   return 'live'
 }
 
