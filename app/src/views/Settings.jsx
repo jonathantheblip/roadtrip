@@ -13,6 +13,7 @@ import {
   mintEnrollLink,
   setUpThisDevice,
   canSelfEnroll,
+  workerFetch,
 } from '../lib/workerSync'
 import { enrolledTravelers, isAdult, defaultDeviceLabel } from '../lib/auth'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
@@ -99,6 +100,7 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
   const [syncMsg, setSyncMsg] = useState(null)
   const [syncing, setSyncing] = useState(false)
   const [seedMsg, setSeedMsg] = useState(null)
+  const [weaveRegen, setWeaveRegen] = useState({ status: 'idle', message: null })
   const [forcePushing, setForcePushing] = useState(false)
   const [forcePushMsg, setForcePushMsg] = useState(null)
   const [seeding, setSeeding] = useState(false)
@@ -218,6 +220,25 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })
+    }
+  }
+
+  // Rewrite every stored Weave page's narrative with the current prompt — for
+  // when a prompt fix has shipped but the saved pages still read the old way
+  // (the nightly cron only touches the active trip's freshest day). The app
+  // calls the worker through its own auth; the worker enforces adults-only.
+  async function runRegenerateWeaves() {
+    setWeaveRegen({ status: 'running', message: null })
+    try {
+      const r = await workerFetch('/weave/regenerate', { method: 'POST' })
+      const data = await r.json().catch(() => ({}))
+      const total = data.total ?? 0
+      setWeaveRegen({
+        status: 'done',
+        message: `Rewrote ${data.updated ?? 0} of ${total} saved page${total === 1 ? '' : 's'}${data.failed ? ` · ${data.failed} failed` : ''}.`,
+      })
+    } catch (err) {
+      setWeaveRegen({ status: 'error', message: err?.message || String(err) })
     }
   }
 
@@ -624,12 +645,26 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
               >
                 <Upload size={12} /> {forcePushing ? 'Pushing…' : 'Push seed updates'}
               </button>
+              {isAdult(traveler) && (
+                <button
+                  type="button"
+                  className="btn-pill"
+                  onClick={runRegenerateWeaves}
+                  disabled={weaveRegen.status === 'running'}
+                  title="Rewrite every saved Weave page's title + text with the current writing. Use after a prompt fix; the nightly auto-weave only touches today's page."
+                >
+                  <RefreshCw size={12} /> {weaveRegen.status === 'running' ? 'Rewriting…' : 'Rewrite saved Weave pages'}
+                </button>
+              )}
             </div>
             {syncMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{syncMsg}</p>
             )}
             {seedMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{seedMsg}</p>
+            )}
+            {weaveRegen.message && (
+              <p className="f-dm text-[12px] opacity-70 mt-3 italic">{weaveRegen.message}</p>
             )}
             {forcePushMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{forcePushMsg}</p>
