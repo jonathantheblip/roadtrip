@@ -282,7 +282,10 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
       <div style={{ padding: '14px 18px 0', display: 'flex', gap: 6 }}>
         {trip.days.map((d) => {
           const isActive = d.n === activeDay
-          const dow = (d.date || '').split(' ')[0]
+          // Weekday + day-of-month ("Fri 19") so the chip carries a real date,
+          // consistent with the other personas; weekday-only if malformed.
+          const dParts = (d.date || '').split(' ')
+          const dow = dParts.length >= 3 ? `${dParts[0]} ${dParts[2]}` : dParts[0] || ''
           return (
             <button
               key={d.n}
