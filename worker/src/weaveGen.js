@@ -236,3 +236,53 @@ export async function runNightlyWeave(env, { nowMs, generateNarrative, todayIso 
 
   return { woven: true, tripId: trip.id, dayIso: day.isoDate, beats: beats.length }
 }
+
+// ── Maintenance: rewrite stored weave NARRATIVES in place ─────────────────────
+// When the narrative PROMPT changes (the title / closing / no-quoted-placeholder
+// fixes), every stored page keeps its OLD wording — the nightly cron only touches
+// the active trip's freshest day and skips unchanged beats, so a family member
+// opening a past page still sees the old garbled title. This re-runs the
+// narrative on each stored weave's OWN beats (beats_json) so the saved pages read
+// right too. Beats are unchanged → beat_signature is left intact; only
+// title/opening/closing + updated_at move. generateNarrative is injected
+// (index.js owns the Anthropic config); tests pass a fake.
+export async function regenerateStoredWeaves(env, { generateNarrative, nowMs } = {}) {
+  const now = typeof nowMs === 'number' ? nowMs : Date.now()
+  const rows = await env.DB.prepare(`SELECT id, beats_json, stat FROM weaves`).all()
+  const all = rows.results || []
+  let updated = 0
+  let failed = 0
+  let skipped = 0
+  for (const r of all) {
+    let beats
+    try {
+      beats = JSON.parse(r.beats_json)
+    } catch {
+      skipped += 1
+      continue
+    }
+    if (!Array.isArray(beats) || !beats.length) {
+      skipped += 1
+      continue
+    }
+    const beatLines = beats
+      .map((b) => `- ${b.who} (${b.kind}): ${String(b.snippet).slice(0, 200)}`)
+      .join('\n')
+    let narrative
+    try {
+      narrative = await generateNarrative({ beatLines, stat: r.stat })
+    } catch {
+      failed += 1
+      continue
+    }
+    if (!narrative?.title || !narrative?.opening || !narrative?.closing) {
+      failed += 1
+      continue
+    }
+    await env.DB.prepare(
+      `UPDATE weaves SET title = ?, opening = ?, closing = ?, updated_at = ? WHERE id = ?`
+    ).bind(narrative.title, narrative.opening, narrative.closing, now, r.id).run()
+    updated += 1
+  }
+  return { total: all.length, updated, failed, skipped }
+}

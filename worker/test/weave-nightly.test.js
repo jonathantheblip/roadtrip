@@ -20,6 +20,7 @@ import {
   weaveStatLine,
   beatSignature,
   runNightlyWeave,
+  regenerateStoredWeaves,
 } from '../src/weaveGen.js'
 import { applySchema } from './helpers/schema.js'
 
@@ -228,6 +229,65 @@ describe('runNightlyWeave', () => {
     // weave. With it, there's nothing weavable.
     const r = await runNightlyWeave(env, { nowMs: 1000, todayIso: '2026-05-22', generateNarrative: fakeNarrator })
     expect(r.woven).not.toBe(true)
+  })
+})
+
+// ── regenerateStoredWeaves: rewrite saved pages after a prompt fix ─────────
+describe('regenerateStoredWeaves', () => {
+  it('rewrites a stored narrative in place from its own beats, leaving beats + signature intact', async () => {
+    await runNightlyWeave(env, { nowMs: 1000, todayIso: '2026-05-22', generateNarrative: fakeNarrator })
+    const before = await env.DB.prepare(
+      'SELECT title, beats_json, beat_signature FROM weaves WHERE id = ?'
+    ).bind('wv-trip::2026-05-21').all()
+    expect(before.results[0].title).toBe('Woven Test Day')
+
+    // A "fixed prompt" narrator returns different wording for the same beats.
+    const fixed = async ({ beatLines }) => ({
+      title: 'A Bridge, A Drive, A Wish',
+      opening: `Reframed from ${beatLines.split('\n').filter(Boolean).length} voices.`,
+      closing: 'Quietly closed.',
+    })
+    const r = await regenerateStoredWeaves(env, { nowMs: 7777, generateNarrative: fixed })
+    expect(r).toMatchObject({ total: 1, updated: 1, failed: 0 })
+
+    const after = await env.DB.prepare(
+      'SELECT title, beats_json, beat_signature, updated_at FROM weaves WHERE id = ?'
+    ).bind('wv-trip::2026-05-21').all()
+    expect(after.results[0].title).toBe('A Bridge, A Drive, A Wish') // narrative rewritten
+    expect(after.results[0].beats_json).toBe(before.results[0].beats_json) // beats untouched
+    expect(after.results[0].beat_signature).toBe(before.results[0].beat_signature) // signature intact
+    expect(after.results[0].updated_at).toBe(7777)
+  })
+
+  it('regenerates EVERY stored page, not just an active trip\'s freshest day', async () => {
+    await runNightlyWeave(env, { nowMs: 1000, todayIso: '2026-05-22', generateNarrative: fakeNarrator })
+    // A second stored page on day 1 (a past/inactive day the nightly cron skips).
+    await env.DB.prepare(
+      `INSERT INTO memories (id, trip_id, stop_id, author_traveler, visibility, kind, text, created_at, updated_at, deleted_at)
+       VALUES ('d1m', 'wv-trip', 's1a', 'jonathan', 'shared', 'text', 'day one note', 1, 1, NULL)`
+    ).run()
+    await runNightlyWeave(env, { nowMs: 1000, todayIso: '2026-05-20', generateNarrative: fakeNarrator })
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM weaves').all()
+    expect(count.results[0].n).toBe(2)
+
+    const r = await regenerateStoredWeaves(env, {
+      nowMs: 8888,
+      generateNarrative: async () => ({ title: 'REGEN', opening: 'o', closing: 'c' }),
+    })
+    expect(r).toMatchObject({ total: 2, updated: 2 })
+    const titles = await env.DB.prepare('SELECT title FROM weaves').all()
+    expect(titles.results.every((x) => x.title === 'REGEN')).toBe(true)
+  })
+
+  it('POST /weave/regenerate is adults-only (403 for a child token)', async () => {
+    const childReq = new Request('https://worker.test/weave/regenerate', {
+      method: 'POST',
+      headers: { Origin: 'http://localhost:5173', Authorization: 'Bearer tok-rafa' },
+    })
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(childReq, { ...authEnv(), FAMILY_TOKEN_RAFA: 'tok-rafa' }, ctx)
+    await waitOnExecutionContext(ctx)
+    expect(res.status).toBe(403)
   })
 })
 

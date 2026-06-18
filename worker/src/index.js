@@ -23,7 +23,7 @@ import {
   callRoutesDistance,
   straightLineMinutes,
 } from './leaveWhen.js'
-import { runNightlyWeave, beatSignature } from './weaveGen.js'
+import { runNightlyWeave, beatSignature, regenerateStoredWeaves } from './weaveGen.js'
 import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, isTraveler, isAdult } from './auth.js'
@@ -203,6 +203,12 @@ export default {
       }
       if (path === '/weave/book' && request.method === 'GET') {
         return await getWeaveBook(env, url, cors)
+      }
+      // Maintenance (adults only): rewrite every stored weave's narrative with
+      // the current prompt, so saved pages read right after a prompt fix — not
+      // just newly-woven ones.
+      if (path === '/weave/regenerate' && request.method === 'POST') {
+        return await postWeaveRegenerate(env, traveler, cors)
       }
 
       // Rafa's game-maker: Claude writes a self-contained HTML game; Whisper
@@ -2425,6 +2431,27 @@ async function postWeave(env, request, cors) {
       e?.status || 502,
       cors
     )
+  }
+}
+
+// POST /weave/regenerate  (auth-gated, ADULTS only)
+//
+// Rewrites the narrative of EVERY stored weave with the current prompt, re-using
+// each page's own stored beats. Used once after a prompt fix so the family's
+// already-saved pages (and kept book pages) stop showing the old wording — the
+// nightly cron alone never reaches past/inactive pages. Re-bills Anthropic per
+// stored page, so it's an explicit adult-triggered action, not automatic.
+async function postWeaveRegenerate(env, traveler, cors) {
+  if (!isAdult(traveler)) {
+    return json({ error: 'only an adult can regenerate the weaves' }, 403, cors)
+  }
+  try {
+    const result = await regenerateStoredWeaves(env, {
+      generateNarrative: ({ beatLines, stat }) => generateWeaveNarrative(env, beatLines, stat),
+    })
+    return json(result, 200, { ...cors, 'Cache-Control': 'no-store' })
+  } catch (e) {
+    return json({ error: e?.message || 'regenerate failed' }, e?.status || 502, cors)
   }
 }
 
