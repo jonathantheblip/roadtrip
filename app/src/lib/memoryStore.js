@@ -341,6 +341,109 @@ export function deleteMemory(record) {
   scheduleMirror({ type: 'delete', record })
 }
 
+// URL of a photo ref (mirrors flattenPhotoEntries.refUrl). Local so memoryStore
+// stays importable by the Node unit tests without pulling in photoEntries.
+function refUrlOf(ref) {
+  if (!ref) return null
+  if (typeof ref.url === 'string' && ref.url) return ref.url
+  if (typeof ref === 'string') return ref
+  return null
+}
+
+// PURE: remove ONE photo (identified by its rendered url and/or R2 key) from a
+// memory record's photo containers, returning { record, removed }. Handles all
+// three forms — the canonical photoRefs[] (bulk-import albums), the legacy
+// single photoRef, and photoExternalURLs[] — and an E4 heterogeneous `pieces`
+// moment (edits the matching photo piece so the worker, which serializes from
+// `pieces` first, replaces it rather than preserving the stored set). When the
+// removed photo was the memory's LAST piece of content, returns record:null so
+// the caller deletes the whole memory. No I/O — unit-tested directly.
+export function removePhotoFromRecord(record, { photoUrl, refKey } = {}) {
+  if (!record || typeof record !== 'object') return { record, removed: false }
+  const matches = (x) => {
+    if (!x) return false
+    const u = refUrlOf(x)
+    if (photoUrl && u && u === photoUrl) return true
+    if (refKey && typeof x.key === 'string' && x.key === refKey) return true
+    return false
+  }
+  let removed = false
+  const filterOut = (arr) =>
+    (arr || []).filter((x) => {
+      const m = matches(x)
+      if (m) removed = true
+      return !m
+    })
+
+  const hadPieces = Array.isArray(record.pieces) && record.pieces.length > 0
+  const pieces = hadPieces ? filterOut(record.pieces) : record.pieces
+  const photoRefs = filterOut(record.photoRefs)
+  const external = (record.photoExternalURLs || []).filter((u) => {
+    const m = photoUrl && u === photoUrl
+    if (m) removed = true
+    return !m
+  })
+  let photoRef = record.photoRef
+  if (!record.photoRefs?.length && matches(record.photoRef)) {
+    photoRef = null
+    removed = true
+  }
+  if (!removed) return { record, removed: false }
+
+  const remaining =
+    (hadPieces
+      ? pieces.length
+      : record.photoRefs?.length
+        ? photoRefs.length
+        : photoRef
+          ? 1
+          : 0) + external.length
+  if (remaining <= 0) return { record: null, removed: true }
+
+  const next = { ...record, photoExternalURLs: external }
+  if (hadPieces) next.pieces = pieces
+  if (record.photoRefs?.length) {
+    next.photoRefs = photoRefs.length ? photoRefs : undefined
+    next.photoRef = photoRefs[0] || null
+  } else {
+    next.photoRef = photoRef
+  }
+  return { record: next, removed: true }
+}
+
+// Remove ONE photo from a stored memory (author-scoped at the call site + the
+// worker). Finds the record in the shared zone, else the author's private zone,
+// applies removePhotoFromRecord, and either re-saves the slimmed memory or — if
+// that was its last photo — deletes the whole memory. Both paths mirror to the
+// Worker (the worker REPLACES photo_r2_keys_json from the body, so the removal
+// is durable cross-device). Returns a status string.
+export function removePhotoFromMemory({ memoryId, author, photoUrl, refKey } = {}) {
+  if (!memoryId) return { status: 'not-found' }
+  const keys = [SHARED_KEY, author ? PRIVATE_KEY(author) : null].filter(Boolean)
+  for (const key of keys) {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) continue
+    const record = list[idx]
+    const { record: next, removed } = removePhotoFromRecord(record, { photoUrl, refKey })
+    if (!removed) return { status: 'photo-not-found' }
+    if (next === null) {
+      writeJson(key, list.filter((m) => m.id !== memoryId))
+      scheduleMirror({ type: 'delete', record })
+      return { status: 'deleted-memory' }
+    }
+    next.updatedAt = new Date().toISOString()
+    list[idx] = next
+    writeJson(key, list)
+    scheduleMirror({ type: 'save', record: next })
+    const remaining =
+      (next.photoRefs?.length || (next.photoRef ? 1 : 0)) +
+      (next.photoExternalURLs?.length || 0)
+    return { status: 'removed-photo', remaining }
+  }
+  return { status: 'not-found' }
+}
+
 // Tiny serial queue so a fast burst of saves doesn't fan out to N
 // parallel Worker calls. We don't await — UI stays instant.
 let mirrorChain = Promise.resolve()

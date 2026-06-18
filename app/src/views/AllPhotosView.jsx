@@ -119,12 +119,15 @@ export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
     setLightbox((lb) => {
       if (!lb) return lb
       const list = tripEntries[lb.tripId] || []
+      if (list.length === 0) return null
       const idx = list.findIndex((e) => e.key === lb.key)
-      // The open photo vanished (drain/merge removed it, or a date edit moved it
-      // out of this trip) — close cleanly rather than letting the stale index
-      // resolve to a DIFFERENT photo or an undefined slot.
-      if (idx < 0) return null
-      return { ...lb, index: idx }
+      if (idx >= 0) return { ...lb, index: idx }
+      // The open photo vanished (the viewer deleted it, or a drain/date-edit
+      // moved it). Stay open on the photo now at our slot — clamped — so pruning
+      // a run of photos doesn't close the viewer each time; close only when this
+      // trip has no photos left.
+      const at = Math.min(lb.index, list.length - 1)
+      return { ...lb, index: at, key: list[at].key }
     })
   }, [tripEntries])
 
@@ -335,6 +338,8 @@ export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
           onNext={lightbox.index < openList.length - 1 ? () => step(1) : null}
           onClose={closeLightbox}
           onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
+          onDelete={() => setMemoryTick((t) => t + 1)}
+          traveler={traveler}
           showTripName
         />
       )}

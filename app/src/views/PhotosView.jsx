@@ -66,10 +66,19 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
       const sameGroup = groups.find((g) =>
         g.entries.some((e) => e.key === lb.entry.key)
       )
-      if (!sameGroup) return lb
-      const idx = sameGroup.entries.findIndex((e) => e.key === lb.entry.key)
-      if (idx < 0) return lb
-      return { ...lb, list: sameGroup.entries, index: idx, entry: sameGroup.entries[idx] }
+      if (sameGroup) {
+        const idx = sameGroup.entries.findIndex((e) => e.key === lb.entry.key)
+        return { ...lb, list: sameGroup.entries, index: idx, entry: sameGroup.entries[idx] }
+      }
+      // The open photo vanished (the viewer deleted it). Stay open on the photo
+      // now at our slot so pruning several in a row doesn't kick us out: keep
+      // only the still-living entries from the list we were viewing, clamp the
+      // index, and close only when nothing's left.
+      const liveKeys = new Set(groups.flatMap((g) => g.entries.map((e) => e.key)))
+      const survivors = lb.list.filter((e) => liveKeys.has(e.key))
+      if (survivors.length === 0) return null
+      const at = Math.min(lb.index, survivors.length - 1)
+      return { ...lb, list: survivors, index: at, entry: survivors[at] }
     })
   }, [groups])
 
@@ -312,6 +321,8 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
           onNext={lightbox.index < lightbox.list.length - 1 ? () => step(1) : null}
           onClose={closeLightbox}
           onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
+          onDelete={() => setMemoryTick((t) => t + 1)}
+          traveler={traveler}
         />
       )}
 

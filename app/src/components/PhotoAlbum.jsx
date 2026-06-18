@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2 } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
-import { updateMemoryCapturedAt } from '../lib/memoryStore'
+import { updateMemoryCapturedAt, removePhotoFromMemory } from '../lib/memoryStore'
 import { isWorkerConfigured } from '../lib/workerSync'
 import { ShareMomentSheet } from './ShareMomentSheet'
 import { classifySwipe } from '../lib/swipeClassify'
@@ -288,19 +288,36 @@ export function PhotoLightbox({
   onNext,
   onClose,
   onCapturedAtChanged,
+  onDelete,
+  traveler,
   showTripName = false,
 }) {
   const devMode = isDevModeEnabled()
   const [editingDate, setEditingDate] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   // A real, synced memory can be shared out; a local-only photo (no memoryId)
   // or an unconfigured worker can't.
   const canShare = !!entry?.memoryId && isWorkerConfigured()
-  // Reset the editor + close the share sheet whenever we navigate to a
+  // Only the photo's AUTHOR can delete it (the worker enforces this too). A
+  // local-only photo (no memoryId) has no stored record to remove from.
+  const canDelete = !!entry?.memoryId && !!traveler && entry?.author === traveler
+  function handleDelete() {
+    const res = removePhotoFromMemory({
+      memoryId: entry.memoryId,
+      author: entry.author,
+      photoUrl: entry.url,
+      refKey: entry.refKey,
+    })
+    setConfirmDelete(false)
+    onDelete?.(res, entry)
+  }
+  // Reset the editor / delete-confirm / share sheet whenever we navigate to a
   // different entry — otherwise prev/next would carry stale state forward.
   useEffect(() => {
     setEditingDate(false)
     setShareOpen(false)
+    setConfirmDelete(false)
   }, [entry?.memoryId, entry?.key])
   // Keyboard for desktop; touch swipe for phone. Both call into the
   // same nav callbacks the arrow buttons use, so behavior stays
@@ -375,6 +392,59 @@ export function PhotoLightbox({
           {index + 1} / {total}
         </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {canDelete &&
+            (confirmDelete ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  aria-label="Confirm delete photo"
+                  data-testid="lightbox-delete-confirm"
+                  style={{
+                    background: 'transparent',
+                    border: 0,
+                    color: '#ff8a73',
+                    cursor: 'pointer',
+                    padding: 4,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontFamily: 'inherit',
+                    fontSize: 'inherit',
+                    letterSpacing: 'inherit',
+                    textTransform: 'inherit',
+                  }}
+                >
+                  <Trash2 size={16} /> Delete?
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  aria-label="Cancel delete"
+                  style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 4, opacity: 0.7 }}
+                >
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                aria-label="Delete photo"
+                data-testid="lightbox-delete"
+                style={{
+                  background: 'transparent',
+                  border: 0,
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                }}
+              >
+                <Trash2 size={16} />
+              </button>
+            ))}
           {canShare && (
             <button
               type="button"
