@@ -89,7 +89,11 @@ export function HelenView({
       <div style={{ padding: '12px 20px 4px', display: 'flex', gap: 8 }}>
         {trip.days.map((d) => {
           const isActive = d.n === activeDay
-          const dow = (d.date || '').split(' ')[0]
+          // Weekday + day-of-month (e.g. "Fri 1"), so the chip carries a real
+          // date — not a bare weekday that two same-named days can't be told
+          // apart by. Falls back to just the weekday if the date is malformed.
+          const dParts = (d.date || '').split(' ')
+          const dow = dParts.length >= 3 ? `${dParts[0]} ${dParts[2]}` : dParts[0] || ''
           return (
             <button
               key={d.n}

@@ -314,7 +314,7 @@ function JOps({
                   DAY {d.n}
                 </div>
                 <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 13, fontStyle: 'italic', marginTop: 2, fontWeight: on ? 600 : 400 }}>
-                  {(d.date || '').split(' ').slice(0, 2).join(' ').toLowerCase()}
+                  {(d.date || '').split(' ').slice(0, 3).join(' ').toLowerCase()}
                 </div>
               </button>
             )
