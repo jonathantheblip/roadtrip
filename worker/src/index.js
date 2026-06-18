@@ -2442,6 +2442,14 @@ async function generateWeaveNarrative(env, beatLines, stat) {
     throw e
   }
 
+  // Load-bearing prompt rules — do NOT "simplify" these away:
+  //  • title guidance ALLOWS a comma / colon / em-dash. An earlier "no
+  //    punctuation at end" made the model drop ALL punctuation → a comma-less
+  //    noun pile-up ("Day Three One Stop Two Cameras Rolling").
+  //  • the closing must not name a weekday/date — the beats carry none, so any
+  //    weekday it picks ("That was Tuesday.") is a guess that reads wrong.
+  //  • a wordless contribution arrives as the LITERAL "took a photo" / "left a
+  //    note" / "recorded a voice clip" — those are actions, never quote them.
   const userPrompt =
     `You are assembling the connective tissue for a family travel memory page.\n\n` +
     `The family contributed these moments today:\n${beatLines}\n` +
