@@ -492,12 +492,31 @@ const inputStyle = {
   fontSize: 14,
 }
 
+// Vague itinerary time words → an approximate local hour, so a "Dinner" or
+// "Evening" stop still gets a sensible arrival default instead of falling all
+// the way back to "now + 1 hour" (which had nothing to do with the booking).
+const VAGUE_ARRIVAL_HOURS = {
+  morning: 8, breakfast: 8, brunch: 11, noon: 12, midday: 12, lunch: 12,
+  afternoon: 14, dinner: 19, evening: 19, sundown: 19, sunset: 19, night: 20,
+}
+function vagueStopArrival(timeStr, isoDate) {
+  const key = String(timeStr || '').trim().toLowerCase()
+  const hour = VAGUE_ARRIVAL_HOURS[key]
+  if (!Number.isFinite(hour) || typeof isoDate !== 'string') return null
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return null
+  d.setHours(hour, 0, 0, 0)
+  return d
+}
+
 // Convenience: derive a sensible default target arrival from a Stop.
-// stop.time (free-text like "3:45PM"), day.isoDate ("2026-05-22"), and
-// kind-driven buffer combine into target = startTime − buffer.
+// stop.time (free-text like "3:45PM" OR a vague word like "Dinner"),
+// day.isoDate ("2026-05-22"), and kind-driven buffer combine into
+// target = startTime − buffer. Only a stop with genuinely no time at all
+// returns null (the modal then falls back to now + 1h).
 export function leaveWhenDefaultForStop(stop, day) {
   if (!stop || !day) return null
-  const start = parseStopTime(stop.time, day.isoDate)
+  const start = parseStopTime(stop.time, day.isoDate) || vagueStopArrival(stop.time, day.isoDate)
   if (!start) return null
   const buffer = stop.arrivalBuffer ?? defaultBufferMinutes(stop.kind)
   return new Date(start.getTime() - buffer * 60 * 1000)
