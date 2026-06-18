@@ -161,9 +161,24 @@ export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
   useEffect(() => {
     if (sections.length <= 1) return undefined
     const STICKY_OFFSET = 150 // header + sticky row; the section beneath it wins
+    const BOTTOM_EPS = 2 // px slack for fractional mobile scroll metrics
     let raf = 0
     const recompute = () => {
       raf = 0
+      // At the bottom of the page, the last (oldest) section IS what you're
+      // looking at — even though its top never crosses the sticky line above
+      // (a short final section can't scroll that high). Without this anchor, a
+      // jump-back to the earliest trip near the page bottom is reverted to the
+      // newest by the top-crossing test below — the "Earliest trip" state never
+      // latches (worse on webkit-mobile, where the geometry lands short). Gate
+      // on a genuinely scrollable page so it never fires while everything fits
+      // on one screen — there you're at the top, viewing the newest.
+      const maxScroll =
+        document.documentElement.scrollHeight - window.innerHeight
+      if (maxScroll > BOTTOM_EPS && window.scrollY >= maxScroll - BOTTOM_EPS) {
+        setActiveTripId(sections[sections.length - 1].tripId)
+        return
+      }
       let active = sections[0].tripId
       for (const sec of sections) {
         const el = sectionRefs.current[sec.tripId]
