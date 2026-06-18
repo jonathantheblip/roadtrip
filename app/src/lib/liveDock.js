@@ -34,15 +34,65 @@ function parseClockTime(timeStr, isoDate) {
   return d
 }
 
+// Days of slack around the itinerary span. A full week — comfortably beyond the
+// launch's ±4-day grace and beyond any legit just-ended / about-to-start trip
+// (whose stops may cluster away from the window edges, or whose last day has no
+// stops) — so those never wrongly read as "not live," while a weeks-stale
+// itinerary (the failure this cross-check exists to catch) still does.
+const ITIN_GRACE_DAYS = 7
+
+// Shift a 'YYYY-MM-DD' string by n local days. Self-contained (no localDate
+// dep) so this module stays a node-testable leaf.
+function addDaysIso(iso, n) {
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  d.setDate(d.getDate() + n)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// The trip's ACTUAL itinerary span from its day rows: { min, max } ISO dates,
+// or null when no day carries a usable isoDate (a dateless/skeleton trip).
+export function itinerarySpan(trip) {
+  const days = Array.isArray(trip?.days) ? trip.days : []
+  let min = null
+  let max = null
+  for (const d of days) {
+    const iso = d?.isoDate
+    if (typeof iso !== 'string' || !iso) continue
+    if (min === null || iso < min) min = iso
+    if (max === null || iso > max) max = iso
+  }
+  return min && max ? { min, max } : null
+}
+
+// Does the trip's real itinerary sit near `today` (± a few days of grace)?
+// This is the guard that stops a trip whose stored dateRange is wrong/stale from
+// faking "live now": its stops all sit weeks in the past, so the span excludes
+// today and it can never light the live rail or hijack the launch landing.
+// A trip with no itinerary dates returns true — we can't disprove it, so we
+// defer to the stored date window rather than wrongly killing a skeleton trip.
+export function itineraryNearToday(trip, todayIso, grace = ITIN_GRACE_DAYS) {
+  const span = itinerarySpan(trip)
+  if (!span) return true
+  return addDaysIso(span.min, -grace) <= todayIso && todayIso <= addDaysIso(span.max, grace)
+}
+
 // A trip is "live" when today falls inside [dateRangeStart, dateRangeEnd]
-// inclusive. Distinct from tripPhase('during'), which also covers an upcoming
-// trip — the ledge only shows while the trip is actually underway.
+// inclusive AND its real itinerary actually sits near today (so a stale/wrong
+// stored window can't fake it), and it isn't archived. Distinct from
+// tripPhase('during'), which also covers an upcoming trip — the ledge only
+// shows while the trip is actually underway.
 export function isTripLive(trip, now = new Date()) {
-  const start = trip?.dateRangeStart
-  const end = trip?.dateRangeEnd
+  if (!trip || trip.archivedAt) return false
+  const start = trip.dateRangeStart
+  const end = trip.dateRangeEnd
   if (typeof start !== 'string' || typeof end !== 'string') return false
   const today = localDateIso(now)
-  return start <= today && today <= end
+  if (!(start <= today && today <= end)) return false
+  return itineraryNearToday(trip, today)
 }
 
 // Vague itinerary time words → an approximate hour, used ONLY to order stops

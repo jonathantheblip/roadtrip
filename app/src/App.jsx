@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo, lazy, Suspense } from 'react'
 import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
-import { buildLedgeModel } from './lib/liveDock'
+import { buildLedgeModel, itineraryNearToday } from './lib/liveDock'
 import { useLiveEta } from './hooks/useLiveEta'
 import { JonathanView } from './views/JonathanView'
 import { HelenView } from './views/HelenView'
@@ -228,7 +228,15 @@ function isNearNow(trip, today = todayIso()) {
   const start = trip.dateRangeStart
   const end = trip.dateRangeEnd
   if (!start || !end) return false
-  return start <= shiftIso(today, LAUNCH_GRACE_DAYS) && shiftIso(today, -LAUNCH_GRACE_DAYS) <= end
+  const windowNear =
+    start <= shiftIso(today, LAUNCH_GRACE_DAYS) && shiftIso(today, -LAUNCH_GRACE_DAYS) <= end
+  if (!windowNear) return false
+  // …and the trip's ACTUAL itinerary must sit near today too. A trip whose
+  // stored dates are stale/wrong (e.g. a past trip whose dateRangeEnd got
+  // pushed forward) — its stops all weeks back — can no longer hijack the
+  // launch landing or be kept as a pinned ?trip=. Matches isTripLive so the
+  // launch pick and the live rail agree on what "current" means.
+  return itineraryNearToday(trip, today)
 }
 
 // Is today STRICTLY inside this trip's window (the trip is live right now)?

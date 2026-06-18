@@ -46,6 +46,46 @@ test('isTripLive: false before, after, and with missing dates', () => {
   assert.equal(isTripLive(null, NOON_D2), false)
 })
 
+// A trip whose STORED window was pushed to bracket "now" but whose real
+// itinerary (the actual stops) all sit weeks in the past — the stale-trip-
+// faking-live failure mode that opened the app on the wrong trip and flashed a
+// "NOW · Match 1" rail for an event weeks gone. isTripLive must stand it down.
+const STALE_DATED = {
+  id: 'stale',
+  dateRangeStart: '2026-05-22',
+  dateRangeEnd: '2026-06-30', // pushed forward so the window brackets June 18
+  days: [
+    { isoDate: '2026-05-22', stops: [{ id: 'a', name: 'Match 1', time: '4:00 PM' }] },
+    { isoDate: '2026-05-25', stops: [{ id: 'b', name: 'Match 2', time: '10:00 AM' }] },
+  ],
+}
+const JUNE18 = new Date('2026-06-18T22:00:00')
+
+test('isTripLive: a stale-dated trip (window brackets today, itinerary is weeks past) is NOT live', () => {
+  assert.equal(isTripLive(STALE_DATED, JUNE18), false)
+})
+
+test('isTripLive: an archived trip is never live, even when dates + itinerary bracket today', () => {
+  assert.equal(isTripLive({ ...TRIP, archivedAt: '2026-05-23T00:00:00Z' }, NOON_D2), false)
+})
+
+test('isTripLive: a trailing gap-day stays live (itinerary grace)', () => {
+  // Window runs to May 26, last stop is May 24; on May 26 (2 days past the last
+  // stop, well inside the itinerary grace) the trip is still live — a real gap
+  // day must not read as ended.
+  assert.equal(isTripLive({ ...TRIP, dateRangeEnd: '2026-05-26' }, new Date('2026-05-26T12:00:00')), true)
+})
+
+test('isTripLive: a dateless skeleton trip falls back to the stored window', () => {
+  // No isoDate on any day → can't disprove staleness → defer to the window.
+  const t = { dateRangeStart: '2026-05-22', dateRangeEnd: '2026-05-24', days: [{ stops: [] }] }
+  assert.equal(isTripLive(t, NOON_D2), true)
+})
+
+test('buildLedgeModel: a stale-dated trip stands the live rail down', () => {
+  assert.equal(buildLedgeModel({ trip: STALE_DATED, traveler: 'jonathan', now: JUNE18 }).mode, 'none')
+})
+
 test('selectScheduleNowNext: now = most-recent passed stop, next = first upcoming (spans days)', () => {
   const { nowStop, nextStop } = selectScheduleNowNext(TRIP, NOON_D2)
   assert.equal(nowStop.name, 'Morning swim') // 9 AM today, passed
