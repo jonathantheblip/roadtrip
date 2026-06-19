@@ -447,6 +447,17 @@ function ThreadEntry({ mem, traveler, onDelete, onOpenLightbox, onShare }) {
   )
 }
 
+// A ref is a video when it carries a poster, a video mime, or kind 'video'
+// (mirrors flattenPhotoEntries' detection; kept local so the thread-video fix
+// stays independent of the photoEntries module).
+function isVideoRef(r) {
+  return (
+    (typeof r?.posterUrl === 'string' && !!r.posterUrl) ||
+    (typeof r?.mime === 'string' && r.mime.startsWith('video/')) ||
+    r?.kind === 'video'
+  )
+}
+
 function PhotoBubble({ mem, onOpenLightbox }) {
   // The schema supports a single photoRef (Aurelia's PostcardComposer)
   // and a photoRefs[] album (Helen's thread composer). Prefer
@@ -526,6 +537,24 @@ function PhotoBubble({ mem, onOpenLightbox }) {
   // outrun the available space.
   const tile = 56
 
+  // Resolve a ref to what the tile SHOWS (a still) and what the lightbox
+  // PLAYS. For a video, urls[r.key] is the poster blob when idb-backed
+  // (refIdbAssetKey returns the posterKey) but the .mp4 itself when synced
+  // (r2) — so a synced video takes its still from the durable posterUrl, never
+  // urls[r.key] (which would paint the unrenderable .mp4 → the blank box bug).
+  function mediaFor(r) {
+    const resolved = (r?.key && urls[r.key]) || null
+    if (!isVideoRef(r)) {
+      return { isVideo: false, posterSrc: resolved, playUrl: resolved || r?.url || null }
+    }
+    const idb = !!refIdbAssetKey(r)
+    const posterSrc = idb ? resolved : typeof r?.posterUrl === 'string' ? r.posterUrl : null
+    // The playable .mp4: synced → the durable url; idb (offline, pre-upload) →
+    // the session blob url if it's still alive.
+    const playUrl = idb ? r?.url || null : resolved || r?.url || null
+    return { isVideo: true, posterSrc, playUrl }
+  }
+
   // Build the lightbox entries array for this memory. Each entry
   // carries the bare URL (no ?w=) so the lightbox shows full-res.
   // Only refs with a resolved URL participate (matches what the user
@@ -538,12 +567,15 @@ function PhotoBubble({ mem, onOpenLightbox }) {
     const memoryAt =
       typeof mem.capturedAt === 'string' && mem.capturedAt ? mem.capturedAt : null
     refs.forEach((r, i) => {
-      const url = urls[r.key] || r.url
-      if (!url) return
+      const m = mediaFor(r)
+      // For a video this is the .mp4 (so PhotoLightbox plays it); for a photo
+      // it's the image. A ref with neither a still nor a playable url is skipped.
+      const url = m.playUrl
+      if (!url && !m.posterSrc) return
       const exifAt = r?.capturedAt || null
       const realDate = memoryAt || exifAt
       const entry = {
-        key: `${mem.id}::${r.key || url}`,
+        key: `${mem.id}::${r.key || url || i}`,
         memoryId: mem.id,
         author: mem.authorTraveler,
         caption: caption || '',
@@ -556,6 +588,8 @@ function PhotoBubble({ mem, onOpenLightbox }) {
         memoryCreatedAt: mem.createdAt || null,
         memoryCapturedAt: memoryAt,
         url,
+        isVideo: m.isVideo,
+        posterUrl: m.posterSrc || null,
         locationLabel:
           typeof r?.locationLabel === 'string' ? r.locationLabel : null,
         exifLat: Number.isFinite(r?.lat) ? r.lat : null,
@@ -566,6 +600,76 @@ function PhotoBubble({ mem, onOpenLightbox }) {
     })
     if (list.length === 0) return
     onOpenLightbox({ list, index: openIndex >= 0 ? openIndex : 0 })
+  }
+
+  // One tile (album thumbnail or the single large tile). A video shows its
+  // poster (or a Play glyph when no still exists) with a play badge, matching
+  // the album grid — no more painting the .mp4 url as a blank background.
+  const renderTile = (r, i, big) => {
+    const m = mediaFor(r)
+    const tappable = !!(m.posterSrc || m.playUrl)
+    return (
+      <button
+        type="button"
+        key={r.key || i}
+        onClick={() => openLightboxAt(i)}
+        aria-label={
+          big
+            ? m.isVideo
+              ? 'Open video'
+              : 'Open photo'
+            : `Open ${m.isVideo ? 'video' : 'photo'} ${i + 1} of ${refs.length}`
+        }
+        disabled={!tappable}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: big ? 168 : tile,
+          height: big ? undefined : tile,
+          aspectRatio: big ? '4 / 3' : undefined,
+          borderRadius: big ? 8 : 6,
+          padding: 0,
+          border: 0,
+          overflow: 'hidden',
+          background: m.posterSrc
+            ? `url(${m.posterSrc}) center/cover no-repeat`
+            : 'var(--bg2)',
+          flexShrink: 0,
+          cursor: tappable ? 'pointer' : 'default',
+          marginBottom: big && caption ? 8 : 0,
+          color: 'var(--muted)',
+        }}
+      >
+        {/* poster-less video → a Play glyph stands in for the missing still */}
+        {m.isVideo && !m.posterSrc && (
+          <Play data-testid="thread-video-fallback" size={big ? 26 : 18} strokeWidth={1.5} />
+        )}
+        {/* video WITH a still → a small play badge over the poster */}
+        {m.isVideo && m.posterSrc && (
+          <span
+            data-testid="thread-video-badge"
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: big ? 8 : 3,
+              bottom: big ? 8 : 3,
+              width: big ? 22 : 15,
+              height: big ? 22 : 15,
+              borderRadius: '50%',
+              background: 'rgba(0, 0, 0, 0.55)',
+              color: '#fff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Play size={big ? 12 : 9} fill="currentColor" />
+          </span>
+        )}
+      </button>
+    )
   }
 
   return (
@@ -579,27 +683,7 @@ function PhotoBubble({ mem, onOpenLightbox }) {
             marginBottom: caption ? 8 : 0,
           }}
         >
-          {refs.map((r, i) => (
-            <button
-              type="button"
-              key={r.key || i}
-              onClick={() => openLightboxAt(i)}
-              aria-label={`Open photo ${i + 1} of ${refs.length}`}
-              disabled={!urls[r.key] && !r.url}
-              style={{
-                width: tile,
-                height: tile,
-                borderRadius: 6,
-                padding: 0,
-                border: 0,
-                background: urls[r.key]
-                  ? `url(${urls[r.key]}) center/cover no-repeat`
-                  : 'var(--bg2)',
-                flexShrink: 0,
-                cursor: urls[r.key] || r.url ? 'pointer' : 'default',
-              }}
-            />
-          ))}
+          {refs.map((r, i) => renderTile(r, i, false))}
         </div>
       ) : isPhotoMissing ? (
         <div
@@ -619,26 +703,7 @@ function PhotoBubble({ mem, onOpenLightbox }) {
           <ImageOff size={22} strokeWidth={1.5} />
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={() => openLightboxAt(0)}
-          aria-label="Open photo"
-          disabled={!urls[refs[0]?.key] && !refs[0]?.url}
-          style={{
-            display: 'block',
-            width: 168,
-            aspectRatio: '4 / 3',
-            borderRadius: 8,
-            padding: 0,
-            border: 0,
-            background: urls[refs[0]?.key]
-              ? `url(${urls[refs[0].key]}) center/cover no-repeat`
-              : 'var(--bg2)',
-            marginBottom: caption ? 8 : 0,
-            cursor:
-              urls[refs[0]?.key] || refs[0]?.url ? 'pointer' : 'default',
-          }}
-        />
+        renderTile(refs[0], 0, true)
       )}
       {caption && (
         <div
