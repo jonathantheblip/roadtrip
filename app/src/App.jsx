@@ -1072,45 +1072,53 @@ export default function App() {
               </button>
             )
           })()}
-          {/* Trip switcher only on the trip home — on stop/settings the
-              back button already carries the trip title, and rendering
-              the title twice in a fixed-width bar overflows on phones. */}
+          {/* Trip home: the persona masthead BELOW already names the trip, so
+              the bar must NOT repeat the title — showing it in both bands was
+              the "doubled header". The trip switcher stays (trip-hopping without
+              going through the index) but as a compact "Trips ▾" control, not a
+              second title band. On deep views the back link carries the title. */}
           {view.name === 'trip' && (
-            // Wrapper clips the native <select> — iOS selects don't reliably
-            // flex-shrink or ellipsize their own text, so an overflow-hidden
-            // flex parent is what actually keeps a long title from spilling
-            // over the back arrow / actions.
-            <div style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', display: 'flex' }}>
-              <select
-                value={trip?.id || ''}
-                onChange={(e) => openTrip(e.target.value)}
-                aria-label="Switch trip"
-                style={{
-                  background: 'transparent',
-                  border: 0,
-                  fontFamily: 'JetBrains Mono, monospace',
-                  fontSize: 10,
-                  letterSpacing: '0.18em',
-                  textTransform: 'uppercase',
-                  opacity: topBar.opacity,
-                  color: topBar.text,
-                  width: '100%',
-                  maxWidth: '100%',
-                  minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  textAlign: 'left',
-                  appearance: 'none',
-                  WebkitAppearance: 'none',
-                }}
-              >
-                {visibleTrips.map((t) => (
-                  <option key={t.id} value={t.id} style={{ color: '#1A1614' }}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
+            <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex' }}>
+              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                <span
+                  aria-hidden="true"
+                  className="f-mono"
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    opacity: topBar.opacity,
+                    color: topBar.text,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Trips ▾
+                </span>
+                {/* The real <select> sits transparent over the label so iOS
+                    native trip-switching still works; aria-label is its name. */}
+                <select
+                  value={trip?.id || ''}
+                  onChange={(e) => openTrip(e.target.value)}
+                  aria-label="Switch trip"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    opacity: 0,
+                    cursor: 'pointer',
+                    border: 0,
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                  }}
+                >
+                  {visibleTrips.map((t) => (
+                    <option key={t.id} value={t.id} style={{ color: '#1A1614' }}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
           {/* Modify-with-Claude stays visible — it's the primary trip action.
