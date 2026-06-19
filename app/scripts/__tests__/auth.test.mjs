@@ -17,10 +17,35 @@ function setNavigator(nav) {
 }
 setNavigator({ userAgent: 'node-test' })
 
-const { tokenFromInput, getSession, setSession, clearSession, enrolledTravelers, hasSession, isStandalone, defaultDeviceLabel, switcherList } =
+const { tokenFromInput, getSession, setSession, clearSession, enrolledTravelers, hasSession, isStandalone, defaultDeviceLabel, switcherList, subscribeAuth } =
   await import('../../src/lib/auth.js')
 
 const ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
+
+test('subscribeAuth fires on setSession and clearSession, and unsubscribe stops it', () => {
+  let fires = 0
+  const unsub = subscribeAuth(() => { fires += 1 })
+  setSession('rafa', 'sess-1')
+  assert.equal(fires, 1, 'setSession notifies (live-refresh the switcher)')
+  clearSession('rafa')
+  assert.equal(fires, 2, 'clearSession notifies')
+  unsub()
+  setSession('rafa', 'sess-2')
+  assert.equal(fires, 2, 'no notification after unsubscribe')
+  clearSession('rafa')
+})
+
+test('subscribeAuth: a throwing listener does not break the auth write or other listeners', () => {
+  let good = 0
+  const unsubBad = subscribeAuth(() => { throw new Error('listener bug') })
+  const unsubGood = subscribeAuth(() => { good += 1 })
+  setSession('helen', 'sess-h') // must not throw despite the bad listener
+  assert.equal(getSession('helen'), 'sess-h', 'the session was still written')
+  assert.equal(good, 1, 'the well-behaved listener still fired')
+  unsubBad()
+  unsubGood()
+  clearSession('helen')
+})
 
 test('switcherList: ALL credentialed (pre-cutover + the e2e/axe matrix) → all pills, no add (unchanged dock)', () => {
   const { ids, canAdd } = switcherList(ORDER, () => true)

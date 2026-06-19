@@ -122,6 +122,36 @@ test('self-enroll: an adult sets up their own device in one tap (mint + redeem)'
   expect(stored).toBe('sess-e2e-xyz')
 })
 
+test('sign out my other devices: an enrolled device revokes the rest, keeps itself (close-the-door item 4)', async ({ page }) => {
+  await seedTripIntoCache(page, FIXTURE_TRIP)
+  // This device already holds helen's per-device session → the button shows.
+  await page.addInitScript(() => localStorage.setItem('rt_session_helen', 'sess-helen-here'))
+  let revokeBody = null
+  await page.route('**/auth/revoke', async (route) => {
+    revokeBody = route.request().postDataJSON?.() || {}
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, revoked: 2 }) })
+  })
+  await page.goto('/?person=helen&nosw=1')
+  await page.getByText('Fun @ the Sun').first().click()
+  await openTopMenuItem(page, /Settings/i)
+
+  const btn = page.getByTestId('settings-signout-others')
+  await expect(btn).toBeVisible()
+  await btn.click()
+  await expect(page.getByTestId('settings-device-msg')).toContainText(/Signed out 2 other devices/i)
+  // It revoked all OTHER sessions but kept THIS device's (except = our session).
+  expect(revokeBody).toEqual({ all: true, except: 'sess-helen-here' })
+})
+
+test('sign out is hidden when this device has no session for the active person (bundled-token only)', async ({ page }) => {
+  await seedTripIntoCache(page, FIXTURE_TRIP)
+  await page.goto('/?person=jonathan&nosw=1') // jonathan via the bundled token, no per-device session
+  await page.getByText('Fun @ the Sun').first().click()
+  await openTopMenuItem(page, /Settings/i)
+  await expect(page.getByTestId('settings-selfenroll')).toBeVisible() // device section rendered
+  await expect(page.getByTestId('settings-signout-others')).toHaveCount(0) // no session → nothing to sign out
+})
+
 test('self-enroll is for everyone: a non-adult self-mints with HER OWN credential, and cannot mint for others', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   // Capture the credential the mint call actually sends.

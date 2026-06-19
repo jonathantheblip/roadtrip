@@ -176,6 +176,26 @@ export async function setUpThisDevice(traveler, deviceLabel) {
   return redeemLink(minted.token, deviceLabel) // stores the session (lib/auth)
 }
 
+// "Sign out my other devices" — revoke every session for `traveler` EXCEPT this
+// device's own (so the person stays signed in here). Authenticates AS the
+// traveler with their own session; the worker route is self-scoped (a caller can
+// only revoke their OWN traveler's sessions). Returns the count revoked; throws
+// on failure. Pre-cutover this is cosmetic (a revoked device falls back to the
+// bundled token); post-cutover it genuinely signs a lost/stale device out.
+export async function signOutOtherDevices(traveler) {
+  const except = getSession(traveler) // keep THIS device's session alive
+  const r = await workerFetch(
+    '/auth/revoke',
+    {
+      method: 'POST',
+      body: JSON.stringify({ all: true, ...(except ? { except } : {}) }),
+    },
+    { asTraveler: traveler }
+  )
+  const data = await r.json().catch(() => ({}))
+  return data?.revoked ?? 0
+}
+
 // ─── Share-out ────────────────────────────────────────────────────────────
 // Mint a public link for one memory → { token, url }. The worker refuses a
 // hidden surprise (409) or a memory the caller can't see (403/404) — those

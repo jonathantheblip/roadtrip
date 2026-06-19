@@ -39,7 +39,7 @@ import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster, hasCredential } from './lib/workerSync'
-import { switcherList } from './lib/auth'
+import { switcherList, subscribeAuth } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import { removeAsset } from './lib/memAssets'
@@ -600,6 +600,11 @@ export default function App() {
   // persona you can't authenticate as). The pure logic (fallback-to-all when none
   // credentialed; add-pill only when genuinely narrowed) lives in lib/auth so it's
   // unit-testable without the bundled tokens that the e2e/dev build always carries.
+  // Re-render when a device is enrolled or signed out anywhere in the app, so
+  // the credential-aware switcher below refreshes immediately (session state
+  // lives in localStorage, which doesn't notify React on its own).
+  const [, setAuthTick] = useState(0)
+  useEffect(() => subscribeAuth(() => setAuthTick((n) => n + 1)), [])
   const { ids: switcherIds, canAdd: canAddMember } = switcherList(TRAVELER_ORDER, hasCredential)
 
   useEffect(() => {

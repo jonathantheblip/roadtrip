@@ -13,9 +13,10 @@ import {
   mintEnrollLink,
   setUpThisDevice,
   canSelfEnroll,
+  signOutOtherDevices,
   workerFetch,
 } from '../lib/workerSync'
-import { enrolledTravelers, isAdult, defaultDeviceLabel } from '../lib/auth'
+import { enrolledTravelers, isAdult, defaultDeviceLabel, hasSession } from '../lib/auth'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 import {
   clearUploadLog,
@@ -42,6 +43,27 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
   const [showCreate, setShowCreate] = useState(false)
   const [createdLink, setCreatedLink] = useState(null) // { traveler, url, token }
   const [linkCopied, setLinkCopied] = useState(false)
+  const [signOutBusy, setSignOutBusy] = useState(false)
+  // "Sign out my other devices" — revoke every session for the active traveler
+  // except this device's. Only offered when this device holds the traveler's own
+  // session (enrolled here); pre-cutover it self-heals to the bundled token, so
+  // it's cosmetic until the cutover but the real mechanism after.
+  async function runSignOutOthers() {
+    setSignOutBusy(true)
+    setDeviceMsg(null)
+    try {
+      const n = await signOutOtherDevices(traveler)
+      setDeviceMsg(
+        n > 0
+          ? `Signed out ${n} other ${n === 1 ? 'device' : 'devices'}. This device stays signed in.`
+          : 'No other devices were signed in.'
+      )
+    } catch {
+      setDeviceMsg("Couldn't sign out the other devices — check your connection and try again.")
+    } finally {
+      setSignOutBusy(false)
+    }
+  }
   async function runSelfEnroll() {
     setDeviceBusy(true)
     setDeviceMsg(null)
@@ -450,6 +472,21 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
               style={{ minHeight: 44 }}
             >
               {deviceBusy ? 'Setting up…' : `Set up this device as ${travelerName}`}
+            </button>
+          )}
+          {/* Sign out a lost / wrongly-set-up device. Shown only when THIS device
+              holds the traveler's own session (enrolled here) — a bundled-token-
+              only persona has no session to keep, so the button stays hidden. */}
+          {hasSession(traveler) && (
+            <button
+              type="button"
+              className="btn-pill"
+              onClick={runSignOutOthers}
+              disabled={signOutBusy}
+              data-testid="settings-signout-others"
+              style={{ minHeight: 44 }}
+            >
+              {signOutBusy ? 'Signing out…' : 'Sign out my other devices'}
             </button>
           )}
           {/* Adults can mint a link for anyone else, to text them. */}

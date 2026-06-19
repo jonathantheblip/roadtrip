@@ -42,6 +42,7 @@ export function setSession(traveler, token) {
   } catch {
     /* ignore — private mode / storage full */
   }
+  notifyAuthChange()
 }
 
 export function clearSession(traveler) {
@@ -50,6 +51,28 @@ export function clearSession(traveler) {
   } catch {
     /* ignore */
   }
+  notifyAuthChange()
+}
+
+// ─── Auth-change subscription (live-refresh) ───────────────────────────────
+// Enrolling or signing out a device mutates localStorage, which doesn't re-
+// render React on its own. Components that derive from session state (the
+// persona switcher's credential-aware list, the Settings device section)
+// subscribe here so they refresh the instant a session is added or removed —
+// no manual reload. notifyAuthChange fires on every setSession/clearSession.
+const authListeners = new Set()
+function notifyAuthChange() {
+  for (const fn of authListeners) {
+    try {
+      fn()
+    } catch {
+      /* a listener bug must not break auth writes */
+    }
+  }
+}
+export function subscribeAuth(fn) {
+  authListeners.add(fn)
+  return () => authListeners.delete(fn)
 }
 
 // Which travelers have a session ON THIS DEVICE (drives "who's set up here").
