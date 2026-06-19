@@ -132,7 +132,14 @@ export function PhotoTile({ entry, onOpen }) {
               display: 'block',
             }}
           />
-        ) : imgFailed ? (
+        ) : imgFailed || (entry.isVideo && !displayUrl && inView && !gridPaused) ? (
+          // A poster-less video (its poster never uploaded) has no displayUrl, so
+          // it used to fall through to `null` and render as a blank skeleton —
+          // effectively invisible in the album grid (e.g. on All-Photos), even
+          // though it's a real memory. Show the icon fallback (the play badge
+          // below still marks it as a video) so it's findable, same as a broken
+          // photo. (A poster-less video also reaches here from imgFailed never
+          // firing — there's no <img> to error.)
           <div
             data-testid="tile-image-fallback"
             style={{
