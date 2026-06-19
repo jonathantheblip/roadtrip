@@ -102,6 +102,26 @@ export function switcherList(order, hasCred) {
   return { ids, canAdd }
 }
 
+// The active-persona guard + "not set up here" wall (close-the-door). Resolves
+// what App should render for the active `traveler` given a credential predicate
+// (`hasCred` = has a session OR — pre-cutover — that traveler's bundled token).
+// PURE so it's unit-testable WITHOUT the bundled tokens the dev/e2e build always
+// carries (which keep this dormant — every traveler is credentialed there):
+//   { action: 'app' }         → render normally (credentialed, or worker unconfigured)
+//   { action: 'switch', to }   → active persona can't authenticate, but another
+//                                here can → land on `to` (a set-up persona)
+//   { action: 'wall' }         → nobody is set up on this device → show the
+//                                "set up this device" wall
+// Pre-cutover every traveler has a bundled token → hasCred true → always 'app'.
+// Only once the bundled tokens are removed at cutover can 'switch'/'wall' fire.
+export function resolveActivePersona(traveler, order, hasCred, workerConfigured) {
+  if (!workerConfigured) return { action: 'app' } // local-only / dev without env
+  if (hasCred(traveler)) return { action: 'app' }
+  const credentialed = (order || []).filter((t) => hasCred(t))
+  if (credentialed.length === 0) return { action: 'wall' }
+  return { action: 'switch', to: credentialed[0] }
+}
+
 // ─── Install context (the iOS hand-off pivot) ─────────────────────────────
 // True when running as an INSTALLED home-screen app (standalone), false in a
 // normal browser tab. On iOS the two have SEPARATE storage, so the enroll screen

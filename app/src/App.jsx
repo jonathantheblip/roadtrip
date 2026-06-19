@@ -39,7 +39,7 @@ import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, uploadPoster, hasCredential } from './lib/workerSync'
-import { switcherList, subscribeAuth } from './lib/auth'
+import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import { removeAsset } from './lib/memAssets'
@@ -603,9 +603,22 @@ export default function App() {
   // Re-render when a device is enrolled or signed out anywhere in the app, so
   // the credential-aware switcher below refreshes immediately (session state
   // lives in localStorage, which doesn't notify React on its own).
-  const [, setAuthTick] = useState(0)
+  const [authTick, setAuthTick] = useState(0)
   useEffect(() => subscribeAuth(() => setAuthTick((n) => n + 1)), [])
   const { ids: switcherIds, canAdd: canAddMember } = switcherList(TRAVELER_ORDER, hasCredential)
+
+  // Active-persona guard + "not set up here" wall (close-the-door, item 5). Post-
+  // cutover the active persona (from ?person= / cookie / localStorage) may be one
+  // this device can't authenticate as. resolveActivePersona (pure, unit-tested)
+  // decides: render normally / silently switch to a set-up persona / show the
+  // wall when NOBODY is set up here. Dormant pre-cutover + in the token-bundled
+  // e2e (every traveler is credentialed → always 'app'). authTick re-evaluates it
+  // after an enroll/sign-out.
+  const persona = resolveActivePersona(traveler, TRAVELER_ORDER, hasCredential, isWorkerConfigured())
+  useEffect(() => {
+    if (persona.action === 'switch') setTraveler(persona.to)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persona.action, persona.to, authTick])
 
   useEffect(() => {
     setWeaveReady(false)
@@ -936,8 +949,7 @@ export default function App() {
 
   // Magic-link setup (013) takes the whole screen — it's a fresh-device action,
   // reached by opening a personal link (?enroll) or via Settings → "set up this
-  // device". (The post-cutover "you're not set up here" auto-wall is deferred to
-  // the close-the-door stage, where it's exercisable + device-tested.)
+  // device".
   if (view.name === 'enroll') {
     return (
       <Enroll
@@ -948,6 +960,25 @@ export default function App() {
         onCancel={handleEnrollCancel}
       />
     )
+  }
+
+  // Post-cutover "you're not set up here" wall (close-the-door, item 5). Fires
+  // only when NOBODY on this device is set up — the guard effect above already
+  // switched us to a set-up persona when one exists, and 'switch' holds this one
+  // frame so an un-authenticatable identity never paints. Dormant until the
+  // bundled tokens are removed (pre-cutover hasCredential is always true → 'app').
+  if (persona.action === 'wall') {
+    return (
+      <Enroll
+        mode="blocked"
+        traveler={traveler}
+        onDone={handleEnrollDone}
+        onCancel={handleEnrollCancel}
+      />
+    )
+  }
+  if (persona.action === 'switch') {
+    return null // the guard effect is switching to a set-up persona this frame
   }
 
   return (

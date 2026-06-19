@@ -274,7 +274,11 @@ export function Enroll({ token = null, mode, traveler, onDone, onCancel }) {
           </div>
         )}
 
-        {onCancel && phase !== 'working' && (
+        {/* 'blocked' is the post-cutover wall: nobody is set up on this device, so
+            there's nothing to fall back to — dismissing would just re-assert the
+            wall. Offer "Not now" only in the dismissible modes (link / add, opened
+            from inside the app by someone who already has access). */}
+        {onCancel && phase !== 'working' && effMode !== 'blocked' && (
           <button type="button" onClick={onCancel} style={linkBtn()} data-testid="enroll-cancel">
             Not now
           </button>

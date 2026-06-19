@@ -17,10 +17,35 @@ function setNavigator(nav) {
 }
 setNavigator({ userAgent: 'node-test' })
 
-const { tokenFromInput, getSession, setSession, clearSession, enrolledTravelers, hasSession, isStandalone, defaultDeviceLabel, switcherList, subscribeAuth } =
+const { tokenFromInput, getSession, setSession, clearSession, enrolledTravelers, hasSession, isStandalone, defaultDeviceLabel, switcherList, subscribeAuth, resolveActivePersona } =
   await import('../../src/lib/auth.js')
 
 const ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
+
+// Active-persona guard + wall (close-the-door item 5). Pure decision, so the
+// e2e's bundled tokens (which keep it dormant) don't hide the cutover behavior.
+const cred = (...set) => (t) => set.includes(t)
+
+test('resolveActivePersona: worker UNCONFIGURED → always render the app (local-only / dev)', () => {
+  assert.deepEqual(resolveActivePersona('aurelia', ORDER, () => false, false), { action: 'app' })
+})
+
+test('resolveActivePersona: PRE-CUTOVER (everyone credentialed via bundled token) → always app', () => {
+  for (const t of ORDER) assert.deepEqual(resolveActivePersona(t, ORDER, () => true, true), { action: 'app' })
+})
+
+test('resolveActivePersona: active persona is set up here → app', () => {
+  assert.deepEqual(resolveActivePersona('helen', ORDER, cred('helen', 'rafa'), true), { action: 'app' })
+})
+
+test('resolveActivePersona: active NOT set up but OTHERS are → switch to a set-up persona (order-first)', () => {
+  // iPad set up for helen + rafa, opened as aurelia → land on helen (first in ORDER).
+  assert.deepEqual(resolveActivePersona('aurelia', ORDER, cred('helen', 'rafa'), true), { action: 'switch', to: 'helen' })
+})
+
+test('resolveActivePersona: NOBODY set up here → the "set up this device" wall', () => {
+  assert.deepEqual(resolveActivePersona('jonathan', ORDER, () => false, true), { action: 'wall' })
+})
 
 test('subscribeAuth fires on setSession and clearSession, and unsubscribe stops it', () => {
   let fires = 0
