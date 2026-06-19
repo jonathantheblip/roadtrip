@@ -101,8 +101,6 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
   const [syncing, setSyncing] = useState(false)
   const [seedMsg, setSeedMsg] = useState(null)
   const [weaveRegen, setWeaveRegen] = useState({ status: 'idle', message: null })
-  const [forcePushing, setForcePushing] = useState(false)
-  const [forcePushMsg, setForcePushMsg] = useState(null)
   const [seeding, setSeeding] = useState(false)
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
@@ -159,38 +157,14 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
       if (result.reason === 'unconfigured') {
         setSeedMsg('Worker not configured — nothing to seed.')
       } else if (result.pushed === 0) {
-        setSeedMsg('Worker already has every seed trip — nothing to do.')
+        setSeedMsg('The family already has every bundled trip — nothing to add. Existing trips were left untouched.')
       } else {
-        setSeedMsg(`Pushed ${result.pushed} trip${result.pushed === 1 ? '' : 's'} to the Worker.`)
+        setSeedMsg(`Added ${result.pushed} missing trip${result.pushed === 1 ? '' : 's'} for the family. Existing trips were left untouched.`)
       }
     } catch (err) {
       setSeedMsg(`Seed failed: ${err?.message || String(err)}`)
     } finally {
       setSeeding(false)
-    }
-  }
-
-  async function runForcePushSeed() {
-    if (!tripsApi?.forcePushSeed) return
-    const confirmed = window.confirm(
-      'This overwrites every trip on the Worker with the bundled seed. Use when the seed file picked up an update (a keypad code, a corrected stop time) and you want it on everyone\'s phones. Any in-app edits to those trips are lost. Continue?'
-    )
-    if (!confirmed) return
-    setForcePushing(true)
-    setForcePushMsg(null)
-    try {
-      const result = await tripsApi.forcePushSeed()
-      if (result.reason === 'unconfigured') {
-        setForcePushMsg('Worker not configured — nothing pushed.')
-      } else if (result.errors?.length) {
-        setForcePushMsg(`Pushed ${result.pushed}, but had errors: ${result.errors.join(' · ')}`)
-      } else {
-        setForcePushMsg(`Overwrote ${result.pushed} trip${result.pushed === 1 ? '' : 's'} on the Worker with the bundled seed.`)
-      }
-    } catch (err) {
-      setForcePushMsg(`Push failed: ${err?.message || String(err)}`)
-    } finally {
-      setForcePushing(false)
     }
   }
 
@@ -631,19 +605,9 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
                 className="btn-pill"
                 onClick={runSeed}
                 disabled={seeding}
-                title="Push the bundled Jackson + NYC trips to the Worker. Idempotent."
+                title="Add any bundled trips the family doesn't have yet. Never overwrites or reverts a trip that already exists — to fix an existing trip, edit it in the app and it syncs to everyone."
               >
                 <Upload size={12} /> {seeding ? 'Seeding…' : 'Seed trips'}
-              </button>
-              <button
-                type="button"
-                className="btn-pill"
-                onClick={runForcePushSeed}
-                disabled={forcePushing}
-                title="Overwrite every trip on the Worker with the bundled seed. Use after the seed picks up an update (keypad code, schedule change). Confirms first."
-                style={{ borderColor: 'var(--accent)', color: 'var(--accent-text)' }}
-              >
-                <Upload size={12} /> {forcePushing ? 'Pushing…' : 'Push seed updates'}
               </button>
               {isAdult(traveler) && (
                 <button
@@ -665,9 +629,6 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
             )}
             {weaveRegen.message && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{weaveRegen.message}</p>
-            )}
-            {forcePushMsg && (
-              <p className="f-dm text-[12px] opacity-70 mt-3 italic">{forcePushMsg}</p>
             )}
             {pushAllState.message && (
               <p

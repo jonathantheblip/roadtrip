@@ -266,45 +266,32 @@ export function useTrips() {
     }
   }, [])
 
-  // One-shot seeder for the Settings button. Pushes any SEED_TRIPS the
-  // remote doesn't already have. Idempotent — re-running is safe.
+  // The one seed action (Settings "Seed trips"). ADDITIVE-ONLY by design: it
+  // pushes any bundled SEED_TRIP the family is MISSING and never touches a trip
+  // that already exists on the Worker. That makes it safe to run anytime — it
+  // cannot revert an in-app edit or clobber a surprise someone planned, because
+  // it never overwrites a live trip. To change a trip that already exists, edit
+  // it in the app: that edit syncs to the whole family on its own, and the
+  // worker's per-writer guards protect any stops hidden from the editor. Reports
+  // how many trips it added vs. left untouched so the Settings note stays honest.
+  //
+  // (This replaces the old destructive force-push, which overwrote every bundled
+  // trip with the file's copy — wiping in-app edits and any surprise hidden from
+  // whoever pushed. That footgun is intentionally gone.)
   const seed = useCallback(async () => {
-    if (!isWorkerConfigured()) return { pushed: 0, reason: 'unconfigured' }
+    if (!isWorkerConfigured()) return { pushed: 0, skipped: 0, reason: 'unconfigured' }
     const remote = await pullTrips()
     const existing = new Set(remote.map((t) => t.id))
     let pushed = 0
+    let skipped = 0
     for (const t of SEED_TRIPS) {
-      if (existing.has(t.id)) continue
+      if (existing.has(t.id)) { skipped += 1; continue } // already live → never overwrite
       const ok = await pushTrip(t)
       if (ok) pushed += 1
     }
     await refresh()
-    return { pushed }
+    return { pushed, skipped }
   }, [refresh])
 
-  // Force-push every SEED_TRIP to the Worker, overwriting whatever is
-  // already in D1. Used when the seed file picks up an update (a new
-  // keypad code, a corrected stop time) and the family needs the
-  // change pushed to their phones without waiting for one-by-one edits
-  // through the TripEditor. WARNING: this stomps in-app edits to any
-  // trip whose id is present in SEED_TRIPS — only use when you know the
-  // seed is canonical (the usual case: Claude updated trips.js and just
-  // shipped a new build, no one has edited that trip in the app).
-  const forcePushSeed = useCallback(async () => {
-    if (!isWorkerConfigured()) return { pushed: 0, reason: 'unconfigured' }
-    let pushed = 0
-    const errors = []
-    for (const t of SEED_TRIPS) {
-      try {
-        await pushTrip(t)
-        pushed += 1
-      } catch (err) {
-        errors.push(`${t.id}: ${err?.message || String(err)}`)
-      }
-    }
-    await refresh()
-    return { pushed, errors }
-  }, [refresh])
-
-  return { trips, source, loading, error, refresh, upsertTrip, addTrip, saveTrip, removeTrip, seed, forcePushSeed, resyncPending, unsyncedCount }
+  return { trips, source, loading, error, refresh, upsertTrip, addTrip, saveTrip, removeTrip, seed, resyncPending, unsyncedCount }
 }
