@@ -29,8 +29,9 @@ import { PhotoBackfillTriage } from './PhotoBackfillTriage'
 // Anything with a between-stops shot, a new-stop cluster, a duplicate, or a
 // large count shows the confirm summary so the family sees it before it lands.
 //
-// Stage 2 builds the PHOTO path; video (partitioned here, encoded + filed by
-// time) folds into PREPARE in the next increment.
+// PREPARE reads each photo's EXIF and encodes each picked video (WebCodecs, one
+// at a time) with its container creation date; videos file by TIME (no
+// extractable GPS yet), and a clip that won't encode is skipped, not fatal.
 
 const PHASE = {
   PREPARING: 'preparing',
@@ -66,9 +67,8 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
       try {
         setPhase(PHASE.PREPARING)
 
-        // PREPARE — photos read EXIF (honoring the headless test seam). Video
-        // encode folds in here in the next increment; for now any picked
-        // videos are surfaced in the summary count but not yet processed.
+        // PREPARE — read each photo's EXIF (honoring the headless test seam).
+        // Picked videos are encoded just below, in the ENCODING phase.
         const photoItems = []
         for (let i = 0; i < photoFiles.length; i++) {
           if (cancelled) return
