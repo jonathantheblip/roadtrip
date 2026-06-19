@@ -124,35 +124,55 @@ async function update(id, patch) {
 // error exposes `.code`. The drain caller (PhotosView triggerDrain,
 // SW sync handler) classifies generic errors before re-throwing so the
 // code lands here without us re-importing the classifier.
+//
+// SINGLE-FLIGHT across ALL callers. There are several drain entry points —
+// App.jsx's background drain (online / visibilitychange / interval / SW
+// message) and PhotosView's sync-pill tap — each with its own UI guard. Those
+// guards don't see each other, so a pill tap coinciding with a background drain
+// could run two passes that BOTH pick up the same queued item: each POSTs the
+// blob (the Worker mints a fresh R2 key per upload), so the photo lands in R2
+// twice and the slower save loses, orphaning an object. This module-level guard
+// serializes every drain through one owner — the check + claim are synchronous
+// (set before the first await), so a concurrent caller deterministically no-ops
+// and lets the in-flight pass drain the whole queue.
+let draining = false
 export async function drain(runner) {
   if (typeof runner !== 'function') {
     throw new Error('drain: runner function required')
   }
-  const items = await list()
-  // FIFO so the photo Helen took first goes up first.
-  items.sort((a, b) => (a.queuedAt || 0) - (b.queuedAt || 0))
-  let drained = 0
-  const failures = []
-  for (const item of items) {
-    try {
-      await runner(item)
-      await remove(item.id)
-      drained += 1
-    } catch (err) {
-      await update(item.id, {
-        attempts: (item.attempts || 0) + 1,
-        lastError: err?.message || String(err),
-        lastErrorCode: err?.code || item.lastErrorCode || null,
-      })
-      failures.push({
-        id: item.id,
-        error: err?.message || String(err),
-        code: err?.code || null,
-      })
-    }
+  if (draining) {
+    return { drained: 0, remaining: await count(), failures: [], skipped: true }
   }
-  const remaining = await count()
-  return { drained, remaining, failures }
+  draining = true
+  try {
+    const items = await list()
+    // FIFO so the photo Helen took first goes up first.
+    items.sort((a, b) => (a.queuedAt || 0) - (b.queuedAt || 0))
+    let drained = 0
+    const failures = []
+    for (const item of items) {
+      try {
+        await runner(item)
+        await remove(item.id)
+        drained += 1
+      } catch (err) {
+        await update(item.id, {
+          attempts: (item.attempts || 0) + 1,
+          lastError: err?.message || String(err),
+          lastErrorCode: err?.code || item.lastErrorCode || null,
+        })
+        failures.push({
+          id: item.id,
+          error: err?.message || String(err),
+          code: err?.code || null,
+        })
+      }
+    }
+    const remaining = await count()
+    return { drained, remaining, failures }
+  } finally {
+    draining = false
+  }
 }
 
 // Try to register a Background Sync so the SW drains us when network

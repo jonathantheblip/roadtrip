@@ -151,4 +151,63 @@ test.describe('Photos upload — offline auto-drain (importer)', () => {
     await expect(page.getByTestId('sync-pill')).toHaveCount(0, { timeout: 8000 })
     expect(assetCalls).toBeGreaterThan(callsBeforeDrain)
   })
+
+  test('two drain triggers at once upload a queued photo only ONCE (single-flight guard)', async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName === 'webkit', WEBKIT_IDB_BLOB_REASON)
+    // Two drain entry points with SEPARATE guards — the sync-pill tap
+    // (PhotosView.triggerDrain) and the SW drain message (App.runDrain) — can
+    // fire at once. Without uploadQueue.drain's single-flight guard each pass
+    // picks up the same not-yet-removed queued item and POSTs it, so the photo
+    // lands in R2 twice (the Worker mints a fresh key per upload) and one copy is
+    // orphaned. The guard must let exactly ONE pass upload it.
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    let assetCalls = 0
+    let respondWith = 503
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/assets\/(photo|video)/,
+      async (route) => {
+        assetCalls += 1
+        if (respondWith >= 500) {
+          await route.fulfill({ status: respondWith, body: '{}' })
+          return
+        }
+        // Slow success so the first pass is still in-flight (item not yet
+        // removed) when the second trigger fires — the exact race window.
+        await new Promise((r) => setTimeout(r, 500))
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ key: `helen/test/once-${assetCalls}`, url: `https://example.test/once-${assetCalls}`, mime: 'image/jpeg' }),
+        })
+      }
+    )
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/(memories|trips)/,
+      (route) => route.fulfill({ status: 200, body: '{}' })
+    )
+    await page.addInitScript((map) => { window.__RT_BACKFILL_EXIF = map }, CLEAN_EXIF)
+
+    await page.goto(`/?person=${PERSONA}&trip=volleyball-2026`)
+    await page.getByTestId(`${PERSONA}-photos-entry`).click()
+    await page.getByTestId('import-file-input').setInputFiles([redPhotoFile('outage.png')])
+    await expect(page.getByTestId('sync-pill')).toBeVisible()
+    await expect(page.getByTestId('sync-pill')).toContainText(/1 syncing/i)
+    const callsBeforeDrain = assetCalls
+
+    // Reconnect, then fire BOTH drain entry points back-to-back.
+    respondWith = 200
+    await page.getByTestId('sync-pill').click()
+    await page.evaluate(() => {
+      navigator.serviceWorker.dispatchEvent(
+        new MessageEvent('message', { data: { type: 'drain-upload-queue', tag: 'rt-upload-queue' } })
+      )
+    })
+
+    // Queue drains to empty, and EXACTLY one upload happened despite two triggers.
+    await expect(page.getByTestId('sync-pill')).toHaveCount(0, { timeout: 10000 })
+    expect(assetCalls - callsBeforeDrain).toBe(1)
+  })
 })
