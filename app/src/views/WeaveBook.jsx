@@ -37,6 +37,10 @@ export function WeaveBook({ trip, trips, traveler, onBack }) {
   const [pages, setPages] = useState([])
   const [selectedDayIso, setSelectedDayIso] = useState(null)
   const [saveState, setSaveState] = useState('idle') // idle | encoding | sharing | shared
+  // How the save actually landed: 'shared' (native sheet succeeded → Photos/
+  // Messages/etc.) vs 'downloaded' (plain file fallback, NOT in Photos). Drives
+  // the confirmation copy so it can't claim "Saved to Photos" on a download.
+  const [savedVia, setSavedVia] = useState('shared')
   const encodeAbortRef = useRef(null)
 
   const videoSupported = isVideoEncodeSupported()
@@ -69,7 +73,10 @@ export function WeaveBook({ trip, trips, traveler, onBack }) {
         signal: encodeAbortRef.current.signal,
       })
       setSaveState('sharing')
-      await shareWeave(blob, { title: `${trip?.title || 'Our trip'} — the book` })
+      // shareWeave → 'shared' (native sheet) or 'downloaded' (plain file). Carry
+      // it so the confirmation is honest instead of always saying "Saved to Photos".
+      const outcome = await shareWeave(blob, { title: `${trip?.title || 'Our trip'} — the book` })
+      setSavedVia(outcome === 'downloaded' ? 'downloaded' : 'shared')
       setSaveState('shared')
     } catch (err) {
       const isAbort = err?.name === 'AbortError' || err?.message === 'aborted'
@@ -295,7 +302,7 @@ export function WeaveBook({ trip, trips, traveler, onBack }) {
               >
                 <Check size={24} />
               </div>
-              <div style={{ fontFamily: 'var(--font-body)', fontSize: 16, color: 'var(--text)' }}>Saved to Photos</div>
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 16, color: 'var(--text)' }}>{savedVia === 'downloaded' ? 'Saved to your device' : 'Saved to Photos'}</div>
               <button
                 type="button"
                 onClick={() => setSaveState('idle')}

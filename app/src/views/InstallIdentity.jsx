@@ -28,6 +28,15 @@ export function InstallIdentity({ traveler, onClose }) {
   const [added, setAdded] = useState(false)
   const others = TRAVELER_ORDER.filter((id) => id !== traveler)
 
+  // The "finish in your Share menu → Add to Home Screen" step only exists on a
+  // touch browser that isn't already installed (iOS Safari / Android Chrome). On
+  // desktop, or when the app is already running installed (standalone), that
+  // instruction leads nowhere — so guard it and just confirm the icon is set.
+  const canAddToHomeScreen =
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(pointer: coarse)').matches &&
+    !(window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true)
+
   function pick(s) {
     setStickerState(s)
     setSticker(traveler, s)
@@ -173,7 +182,7 @@ export function InstallIdentity({ traveler, onClose }) {
               <Check size={15} color="#fff" />
             </div>
             <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontStyle: isRafa ? 'normal' : 'italic', color: 'var(--text)', lineHeight: 1.4 }}>
-              Your {sticker} is set. Finish in your browser's Share menu → <b>Add to Home Screen</b>.
+              Your {sticker} is set.{canAddToHomeScreen ? <> Finish in your browser's Share menu → <b>Add to Home Screen</b>.</> : ''}
             </span>
           </div>
         )}
