@@ -8,6 +8,7 @@ import {
 } from '../lib/memoryStore'
 import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
+import { refIdbAssetKey } from '../lib/photoEntries'
 import { Avatar, AvatarStack } from './Avatar'
 import { VoiceRecorder } from './VoiceRecorder'
 import { PhotoLightbox } from './PhotoAlbum'
@@ -465,17 +466,21 @@ function PhotoBubble({ mem, onOpenLightbox }) {
     const created = []
     Promise.all(
       refs.map((r) => {
-        // Remote-hosted (R2 / legacy CloudKit) — render the URL directly,
-        // no IDB load required. Lets non-author devices see the photo.
-        if (r?.url) return Promise.resolve([r.key || r.url, r.url])
-        if (r?.key && r.storage === 'idb') {
-          return loadAsset('photo', r.key).then((blob) => {
+        // An idb/pending-backed ref (a re-attach, or an offline-imported photo
+        // awaiting upload) loads from the idb asset store — checked FIRST,
+        // because such a ref's own `url` is a session blob: that dies on reload.
+        // refIdbAssetKey returns null for r2/external refs, which render their
+        // durable url directly (lets non-author devices see the photo).
+        const idbKey = refIdbAssetKey(r)
+        if (idbKey) {
+          return loadAsset('photo', idbKey).then((blob) => {
             if (!blob) return null
             const u = URL.createObjectURL(blob)
             created.push(u)
-            return [r.key, u]
+            return [r.key || idbKey, u]
           })
         }
+        if (r?.url) return Promise.resolve([r.key || r.url, r.url])
         return Promise.resolve(null)
       })
     ).then((pairs) => {

@@ -4,8 +4,10 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
+import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
 import { isWorkerConfigured, workerFetch, uploadPoster } from '../lib/workerSync'
+import { removeAsset } from '../lib/memAssets'
 import { saveMemory } from '../lib/memoryStore'
 import { isVideoEncodeSupported } from '../lib/videoPipeline'
 
@@ -43,7 +45,11 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip.id, traveler, memoryTick]
   )
-  const photoEntries = useMemo(() => flattenPhotoEntries(memories), [memories])
+  // Hydrate offline `pending` refs from idb so a photo imported offline shows
+  // its real picture after an offline relaunch (the session object URL on the
+  // ref dies on reload). No-op for already-synced (r2) photos.
+  const hydratedMemories = useHydratedMemories(memories)
+  const photoEntries = useMemo(() => flattenPhotoEntries(hydratedMemories), [hydratedMemories])
   const groups = useMemo(
     () => groupByStop(photoEntries, trip),
     [photoEntries, trip]
@@ -175,6 +181,11 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
           caption: item.caption,
           photoRef,
         })
+        // The ref is now r2-backed, so the idb copy saved at enqueue time (for
+        // offline-relaunch render) is an orphan — drop it. Best-effort; mirrors
+        // App.jsx uploadQueueRunner so the two can't drift.
+        if (item.idbKey) await removeAsset('photo', item.idbKey)
+        if (item.posterIdbKey) await removeAsset('photo', item.posterIdbKey)
       })
     } finally {
       setDraining(false)

@@ -5,7 +5,40 @@ const {
   flattenPhotoEntries,
   groupByStop,
   groupAcrossTrips,
+  refIdbAssetKey,
 } = await import('../../src/lib/photoEntries.js')
+
+// refIdbAssetKey — the single source of truth for "which idb blob renders this
+// ref" (offline-imported photos/videos). Used by the hydration hook AND the
+// thread/postcard loaders, so its cases must be exact.
+test('refIdbAssetKey: pending photo → its key', () => {
+  assert.equal(refIdbAssetKey({ storage: 'pending', key: 'photo_abc' }), 'photo_abc')
+})
+test('refIdbAssetKey: idb (re-attach) photo → its key', () => {
+  assert.equal(refIdbAssetKey({ storage: 'idb', key: 'photo_xyz' }), 'photo_xyz')
+})
+test('refIdbAssetKey: pending video → its posterKey (the renderable still)', () => {
+  assert.equal(
+    refIdbAssetKey({ storage: 'pending', kind: 'video', posterKey: 'photo_poster', key: 'ignored' }),
+    'photo_poster'
+  )
+})
+test('refIdbAssetKey: r2 ref → null (renders from its durable url)', () => {
+  assert.equal(refIdbAssetKey({ storage: 'r2', key: 'helen/x', url: 'https://r2/x' }), null)
+})
+test('refIdbAssetKey: external/legacy ref with a url but no storage → null', () => {
+  assert.equal(refIdbAssetKey({ url: 'https://cdn/x.jpg' }), null)
+})
+test('refIdbAssetKey: pending photo missing a key → null (nothing to load)', () => {
+  assert.equal(refIdbAssetKey({ storage: 'pending', url: 'blob:dead' }), null)
+})
+test('refIdbAssetKey: pending video missing a posterKey → null', () => {
+  assert.equal(refIdbAssetKey({ storage: 'pending', kind: 'video', url: 'blob:dead' }), null)
+})
+test('refIdbAssetKey: null / non-object → null', () => {
+  assert.equal(refIdbAssetKey(null), null)
+  assert.equal(refIdbAssetKey('blob:dead'), null)
+})
 
 // Synthesize a minimal photo memory shape — only the fields the
 // helpers actually read. tripId is required for groupAcrossTrips's

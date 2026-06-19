@@ -196,15 +196,30 @@ async function uploadOrQueueNewPhoto({
     const remote = await r.json() // { key, url, mime }
     return { ...baseRef, storage: 'r2', key: remote.key, url: remote.url }
   } catch (err) {
-    // Offline / Worker error → park the blob for the sync pill to retry.
-    // The local ref stays 'pending' with an object URL so the album tile
-    // renders until the drain swaps in the R2 URL. The pending ref carries
-    // NO `key`, so the memoryStore mirror (pushMemory) skips it — the queue
-    // owns this upload, so there's no double-push.
+    // Offline / Worker error → park the blob for the sync pill to retry AND
+    // copy it into the idb asset store so the album tile can read the real
+    // picture back after an OFFLINE relaunch (the session object URL below dies
+    // on reload). The ref stays storage:'pending' so two invariants hold:
+    //   (a) ShareComposer still refuses an un-uploaded photo (pending gate), and
+    //   (b) pushMemory leaves this upload to the queue (it skips 'pending' refs
+    //       → no double-push), even though the ref now carries an idb `key`.
+    // The drain rewrites the ref to r2 and removes this orphan (item.idbKey).
+    // raw:true — the blob is already downscaled (preparePhotoForUpload ran);
+    // don't make saveAsset downscale a second time. idb failure (private mode)
+    // degrades to session-url-only, no worse than before this fix.
+    let idbKey = null
+    try {
+      const k = makeAssetKey('photo')
+      await saveAsset('photo', k, blob, mime, { raw: true })
+      idbKey = k
+    } catch {
+      /* idb unavailable — keep the session url only */
+    }
     await enqueue({
       id: memoryId,
       kind: 'photo',
       blob,
+      ...(idbKey ? { idbKey } : {}),
       tripId: trip.id,
       stopId,
       authorTraveler: traveler,
@@ -214,7 +229,12 @@ async function uploadOrQueueNewPhoto({
     })
     await registerBackgroundSync().catch(() => {})
     results.queued += 1
-    return { ...baseRef, storage: 'pending', url: URL.createObjectURL(blob) }
+    return {
+      ...baseRef,
+      storage: 'pending',
+      ...(idbKey ? { key: idbKey } : {}),
+      url: URL.createObjectURL(blob),
+    }
   }
 }
 
@@ -237,11 +257,40 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     durationMs: enc.durationMs,
     capturedAt,
   }
-  const pendingRef = () => ({ ...baseRef, storage: 'pending', url: URL.createObjectURL(posterBlob || blob) })
+  // Build the offline/render-only pending ref. The video TILE renders the
+  // poster still (posterUrl), so we also copy the poster jpeg into the idb
+  // asset store (the `photo` store — a poster is an image; no new store / no DB
+  // bump needed) under `posterKey`, letting the tile read the still back after
+  // an OFFLINE relaunch. The video itself is NOT persisted offline (poster only,
+  // by design) — playback needs a reconnect; `url` stays a session object URL.
+  // Returns { ref, posterIdbKey } so the catch can hand the key to the drain
+  // for orphan cleanup. Best-effort idb: failure → session url only.
+  async function buildPendingRef() {
+    let posterIdbKey = null
+    if (posterBlob) {
+      try {
+        const k = makeAssetKey('photo')
+        await saveAsset('photo', k, posterBlob, posterBlob.type || 'image/jpeg', { raw: true })
+        posterIdbKey = k
+      } catch {
+        /* idb unavailable — session poster url only */
+      }
+    }
+    const src = posterBlob || blob
+    const ref = {
+      ...baseRef,
+      storage: 'pending',
+      ...(posterIdbKey ? { posterKey: posterIdbKey } : {}),
+      ...(posterBlob ? { posterUrl: URL.createObjectURL(posterBlob) } : {}),
+      ...(src ? { url: URL.createObjectURL(src) } : {}),
+    }
+    return { ref, posterIdbKey }
+  }
 
   // Nothing to upload (encode produced no blob) → render-only pending ref.
   if (!blob) {
-    return pendingRef()
+    const { ref } = await buildPendingRef()
+    return ref
   }
   // Otherwise try the push; the catch enqueues on ANY failure (offline OR no
   // Worker configured — workerFetch throws when unconfigured), matching the
@@ -260,11 +309,13 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     if (poster) Object.assign(ref, poster)
     return ref
   } catch (err) {
+    const { ref, posterIdbKey } = await buildPendingRef()
     await enqueue({
       id: memoryId,
       kind: 'video',
       blob,
       posterBlob,
+      ...(posterIdbKey ? { posterIdbKey } : {}),
       tripId: trip.id,
       stopId,
       authorTraveler: traveler,
@@ -274,7 +325,7 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     })
     await registerBackgroundSync().catch(() => {})
     results.queued += 1
-    return pendingRef()
+    return ref
   }
 }
 

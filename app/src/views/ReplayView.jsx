@@ -3,6 +3,7 @@ import { Play, Pause, X, ChevronDown } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { capturedBy } from '../lib/replayPresence'
 import { flattenPhotoEntries, formatFullDate } from '../lib/photoEntries'
+import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { thumbUrl } from '../lib/thumbUrl'
 import { fetchStoredWeave } from '../lib/weave'
 import { classifySwipe } from '../lib/swipeClassify'
@@ -222,10 +223,15 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
   // Deduped by stored-object key so a composed share-moment never doubles a
   // photo (mirrors photoEntries.dedupeByPhoto — the earlier/original wins, which
   // here is the first occurrence since we already sorted ascending).
+  const scopeMems = useMemo(
+    () => (scopeTrip ? listMemoriesForTrip(scopeTrip.id, traveler) : []),
+    [scopeTrip?.id, traveler] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  // Hydrate offline `pending` refs from idb (offline-relaunch render in replay).
+  const hydratedMems = useHydratedMemories(scopeMems)
   const sequence = useMemo(() => {
     if (!scopeTrip) return []
-    const mems = listMemoriesForTrip(scopeTrip.id, traveler)
-    const ordered = [...mems].sort((a, b) => {
+    const ordered = [...hydratedMems].sort((a, b) => {
       const ad = a.capturedAt || a.createdAt || ''
       const bd = b.capturedAt || b.createdAt || ''
       return ad < bd ? -1 : ad > bd ? 1 : 0
@@ -241,7 +247,7 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
       out.push(e)
     }
     return out
-  }, [scopeTrip?.id, traveler]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scopeTrip?.id, hydratedMems]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // stopId → day/stop context, for the live "Day N · Stop" chip.
   const stopCtx = useMemo(() => {

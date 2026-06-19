@@ -4,6 +4,7 @@ import { Avatar } from '../components/Avatar'
 import { TRAVELER_DOT } from '../data/travelers'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
+import { refIdbAssetKey } from '../lib/photoEntries'
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { thumbUrl } from '../lib/thumbUrl'
 import { selectWeaveDay, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen, keepWeave, isKeepableNarrative } from '../lib/weave'
@@ -51,6 +52,36 @@ const VERB = {
 
 function verbFor(who, kind) {
   return (VERB[who] || {})[kind] || 'contributed'
+}
+
+// Hydrate offline pending/idb photo refs from the idb asset store so an
+// offline-imported photo shows its REAL picture in the woven page (and in the
+// "Save to Photos" video keepsake) after an offline relaunch — both read
+// ref.url, which is a dead session blob: post-reload. Mirrors the album
+// hydration but runs once here over the day's memories before buildBeats, so
+// every downstream consumer (PhotoBeat on screen + weaveRenderer in the encode)
+// receives a live url. A video ref's renderable still is its poster (loaded via
+// refIdbAssetKey), painted as the beat image. r2/external refs are untouched.
+async function hydrateWeaveMemories(memories) {
+  return Promise.all(
+    (memories || []).map(async (m) => {
+      let next = m
+      const patch = async (ref) => {
+        const key = refIdbAssetKey(ref)
+        if (!key) return ref
+        const blob = await loadAsset('photo', key).catch(() => null)
+        if (!blob) return ref
+        return { ...ref, url: URL.createObjectURL(blob) }
+      }
+      if (m?.photoRef && refIdbAssetKey(m.photoRef)) {
+        next = { ...next, photoRef: await patch(m.photoRef) }
+      }
+      if (Array.isArray(m?.photoRefs) && m.photoRefs.some((r) => refIdbAssetKey(r))) {
+        next = { ...next, photoRefs: await Promise.all(m.photoRefs.map((r) => (r ? patch(r) : r))) }
+      }
+      return next
+    })
+  )
 }
 
 // ─── TheWeave ────────────────────────────────────────────────────────
@@ -152,8 +183,13 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
         return
       }
 
-      // 2. Load memories for that day.
-      const mems = listMemoriesForTrip(picked.trip.id, traveler)
+      // 2. Load memories for that day, hydrating any offline pending/idb photo
+      //    so the woven page (and its video keepsake) paint the real picture
+      //    after an offline relaunch instead of a dead session blob: url.
+      const mems = await hydrateWeaveMemories(
+        listMemoriesForTrip(picked.trip.id, traveler)
+      )
+      if (cancelled) return
       const dayBeats = buildBeats(picked.trip, picked.day, mems)
       if (!dayBeats.length) {
         if (!cancelled) setState('empty')

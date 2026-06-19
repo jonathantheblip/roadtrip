@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronsLeft, Play, Image as ImageIcon } from 'lucide-reac
 import { listAllLocalMemories } from '../lib/memoryStore'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { groupAcrossTrips } from '../lib/photoEntries'
+import { useHydratedMemories } from '../lib/usePhotoHydration'
 
 // AllPhotosView — Punchlist 4. A single cross-trip album that reads
 // every memory the active traveler has access to and groups it by
@@ -75,17 +76,23 @@ const PLAYPILL = {
 
 export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
   const [memoryTick, setMemoryTick] = useState(0)
+  const allMemories = useMemo(
+    () => listAllLocalMemories(traveler),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [traveler, memoryTick]
+  )
+  // Hydrate offline `pending` refs from idb so a photo imported offline still
+  // renders here after an offline relaunch (the cross-trip album).
+  const hydratedAll = useHydratedMemories(allMemories)
   const sections = useMemo(
     () => {
-      const all = listAllLocalMemories(traveler)
       const perTrip = (trips || []).map((trip) => ({
         trip,
-        memories: all.filter((m) => m.tripId === trip.id),
+        memories: hydratedAll.filter((m) => m.tripId === trip.id),
       }))
       return groupAcrossTrips(perTrip)
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [trips, traveler, memoryTick]
+    [trips, hydratedAll]
   )
 
   // Per-trip entry lists, in display order. The lightbox navigates WITHIN one

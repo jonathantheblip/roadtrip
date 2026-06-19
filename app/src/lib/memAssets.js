@@ -130,3 +130,28 @@ export async function loadAsset(kind, key) {
     req.onerror = () => resolve(null)
   })
 }
+
+// Delete one asset blob from its store. Used to clean up the local copy of an
+// offline-queued photo (or video poster) AFTER the upload queue drains it to
+// R2: the ref is rewritten to storage:'r2', so the idb blob saved at enqueue
+// time is now an orphan. Best-effort — a missing key, unknown kind, or idb
+// failure is a silent no-op (cleanup must never throw and fail a drain).
+export async function removeAsset(kind, key) {
+  if (!STORES[kind] || !key) return
+  let db
+  try {
+    db = await openDb()
+  } catch {
+    return
+  }
+  await new Promise((resolve) => {
+    try {
+      const t = db.transaction(STORES[kind], 'readwrite')
+      t.objectStore(STORES[kind]).delete(key)
+      t.oncomplete = () => resolve()
+      t.onerror = () => resolve()
+    } catch {
+      resolve()
+    }
+  })
+}

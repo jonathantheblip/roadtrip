@@ -129,6 +129,22 @@ function refUrl(ref) {
   return null
 }
 
+// The idb asset-store key whose blob renders this ref, or null when the ref
+// renders from a durable url (r2 / external / legacy) instead. An idb- or
+// pending-backed ref's own `url` is a SESSION object URL that dies on reload —
+// so for those refs idb is the source of truth, not the persisted url. For a
+// video the renderable still is its poster (no offline video store, by design),
+// so we read `posterKey`. Pure (no idb call) — used by both the async hydration
+// hook (useHydratedMemories) and the per-surface thread/postcard loaders so the
+// "prefer idb for pending" rule lives in exactly one place.
+export function refIdbAssetKey(ref) {
+  if (!ref || typeof ref !== 'object') return null
+  if (ref.storage !== 'pending' && ref.storage !== 'idb') return null
+  return ref.kind === 'video'
+    ? (typeof ref.posterKey === 'string' && ref.posterKey ? ref.posterKey : null)
+    : (typeof ref.key === 'string' && ref.key ? ref.key : null)
+}
+
 // Keep one tile per STORED-OBJECT key. The only thing that legitimately shares
 // an R2 key across memories is a composed share-moment re-using the exact
 // photos it was built from — so this collapses that duplicate and nothing else.

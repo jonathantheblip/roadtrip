@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ImageOff } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
+import { refIdbAssetKey } from '../lib/photoEntries'
 import { thumbUrl } from '../lib/thumbUrl'
 import { useInView } from '../lib/useInView'
 import { TRAVELERS } from '../data/travelers'
@@ -685,23 +686,26 @@ function Postcard({ tilt, tint, mem, stop, onClick }) {
     if (!inView) return
     let active = true
     let created = null
-    if (mem.photoRef?.url) {
-      // R2 / legacy remote — request a thumbnail variant. thumbUrl
-      // passes blob: / data: / third-party URLs through untouched.
-      setPhotoUrl(thumbUrl(mem.photoRef.url, 600))
-    } else if (mem.photoRef?.key) {
-      loadAsset('photo', mem.photoRef.key).then((blob) => {
+    // An idb/pending ref (offline import or re-attach) loads from idb FIRST —
+    // its own `url` is a session blob: that dies on reload. r2/legacy remote
+    // refs (refIdbAssetKey → null) render their durable url via thumbUrl
+    // (which passes blob:/data:/third-party URLs through untouched).
+    const idbKey = refIdbAssetKey(mem.photoRef)
+    if (idbKey) {
+      loadAsset('photo', idbKey).then((blob) => {
         if (!active || !blob) return
         created = URL.createObjectURL(blob)
         setPhotoUrl(created)
       })
+    } else if (mem.photoRef?.url) {
+      setPhotoUrl(thumbUrl(mem.photoRef.url, 600))
     }
     return () => {
       active = false
       if (created) URL.revokeObjectURL(created)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inView, mem.photoRef?.key, mem.photoRef?.url])
+  }, [inView, mem.photoRef?.key, mem.photoRef?.url, mem.photoRef?.storage])
 
   return (
     <button

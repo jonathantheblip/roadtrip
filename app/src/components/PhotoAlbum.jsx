@@ -62,6 +62,15 @@ export function PhotoTile({ entry, onOpen }) {
   // badge. A poster-less video falls through to the icon fallback, same as a
   // broken photo — the badge below still marks it as a video.
   const displayUrl = entry.isVideo ? entry.posterUrl : entry.url
+  // Retry when the source changes. Offline idb hydration swaps a pending tile's
+  // dead session blob: for a live one; for a VIDEO that lands on posterUrl while
+  // entry.key (which tracks entry.url, the .mp4) stays put — so the tile is NOT
+  // remounted and a sticky imgFailed from the first failed paint would keep the
+  // poster on the broken-image icon forever. Clearing it on displayUrl change
+  // lets the live poster (and any re-pointed photo) actually repaint.
+  useEffect(() => {
+    setImgFailed(false)
+  }, [displayUrl])
   // IntersectionObserver-gated: the <img> isn't rendered until the
   // tile is within ~300px of the viewport. With 55 photos on a
   // typical album this caps concurrent in-flight fetches to ~10–15

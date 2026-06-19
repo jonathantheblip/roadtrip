@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Mic, Sparkles, Image as ImageIcon, ImageOff } from 'lucide-react'
 import { listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
 import { loadAsset } from '../lib/memAssets'
+import { refIdbAssetKey } from '../lib/photoEntries'
 import { thumbUrl } from '../lib/thumbUrl'
 import { useInView } from '../lib/useInView'
 import { Avatar, AvatarStack } from '../components/Avatar'
@@ -381,20 +382,24 @@ function ThreadPreviewTile({ mem }) {
     let cancelled = false
     let created = null
     const first = photoRefs[0]
-    if (kind === 'photo' && first?.url) {
-      setPhotoUrl(thumbUrl(first.url, 600))
-    } else if (kind === 'photo' && first?.key && first.storage === 'idb') {
-      loadAsset('photo', first.key).then((blob) => {
+    // An idb/pending ref (offline import or re-attach) loads from idb FIRST —
+    // its own `url` is a session blob: that dies on reload. r2/external refs
+    // (refIdbAssetKey → null) render their durable url directly.
+    const idbKey = kind === 'photo' ? refIdbAssetKey(first) : null
+    if (idbKey) {
+      loadAsset('photo', idbKey).then((blob) => {
         if (cancelled || !blob) return
         created = URL.createObjectURL(blob)
         setPhotoUrl(created)
       })
+    } else if (kind === 'photo' && first?.url) {
+      setPhotoUrl(thumbUrl(first.url, 600))
     }
     return () => {
       cancelled = true
       if (created) URL.revokeObjectURL(created)
     }
-  }, [inView, kind, photoRefs[0]?.key, photoRefs[0]?.url])
+  }, [inView, kind, photoRefs[0]?.key, photoRefs[0]?.url, photoRefs[0]?.storage])
   return (
     <div ref={tileRef} style={{ flex: 1, position: 'relative' }}>
       {kind === 'photo' && !isPhotoMissing && (

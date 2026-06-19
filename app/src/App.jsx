@@ -42,6 +42,7 @@ import { pullAll, isWorkerConfigured, workerFetch, uploadPoster, hasCredential }
 import { switcherList } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
+import { removeAsset } from './lib/memAssets'
 import { applyInstallIdentity } from './lib/appInstall'
 import './styles/platform.css'
 
@@ -196,6 +197,11 @@ async function uploadQueueRunner(item) {
     caption: item.caption,
     photoRef,
   })
+  // The ref is now r2-backed; the idb copy parked at enqueue time (so the album
+  // could render the picture offline-after-relaunch) is an orphan — drop it.
+  // Best-effort; mirrors PhotosView.triggerDrain so the two can't drift.
+  if (item.idbKey) await removeAsset('photo', item.idbKey)
+  if (item.posterIdbKey) await removeAsset('photo', item.posterIdbKey)
 }
 
 // Shift a YYYY-MM-DD date by N days in LOCAL time (no UTC drift).

@@ -245,6 +245,14 @@ export async function pushMemory(memory) {
   // it, but skip the round-trip.)
   if (memory?.masked) return null
   // Upload any IDB-resident blobs first; rewrite the refs to point at R2.
+  // EXCEPT refs flagged storage:'pending' — those are owned by the offline
+  // upload queue (lib/uploadQueue), which holds the blob and drains it on
+  // reconnect. The pending ref now also carries an idb `key` (so the album can
+  // render the picture back after an offline relaunch), but that key must NOT
+  // tempt this mirror into a SECOND upload that races the queue's drain — the
+  // queue is the single owner of a pending upload. 'idb' (re-attach) still
+  // uploads here as before; only 'pending' is skipped.
+  const queueOwned = (ref) => ref?.storage === 'pending'
   const updated = { ...memory }
   // Authenticate every upload + the row POST AS the memory's author, so a memory
   // drained while a DIFFERENT persona is active still lands under its real author
@@ -269,7 +277,7 @@ export async function pushMemory(memory) {
       )
     }
   }
-  if (memory.photoRef?.key && memory.photoRef.storage !== 'r2') {
+  if (memory.photoRef?.key && memory.photoRef.storage !== 'r2' && !queueOwned(memory.photoRef)) {
     const blob = await loadAsset('photo', memory.photoRef.key)
     if (blob) {
       const remote = await uploadBlob('photo', memory.id, blob, { asTraveler: asAuthor })
@@ -283,7 +291,9 @@ export async function pushMemory(memory) {
   if (memory.photoRefs?.length) {
     const newRefs = []
     for (const ref of memory.photoRefs) {
-      if (ref?.storage === 'r2') {
+      if (ref?.storage === 'r2' || queueOwned(ref)) {
+        // r2 → already uploaded; pending → the upload queue owns it (skip, don't
+        // double-push). Either way carry the ref through unchanged.
         newRefs.push(ref)
         continue
       }

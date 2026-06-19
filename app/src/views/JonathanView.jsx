@@ -7,6 +7,7 @@ import { findArrivalStop } from './FlightStatus'
 import { flightAwareUrl } from '../lib/flightStatus'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
+import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { TRAVELER_DOT } from '../data/travelers'
 import { JonathanEntries } from './JonathanEntries'
@@ -589,12 +590,17 @@ function JRiskWatch({ loops, onOpenStop }) {
 // doesn't exist yet).
 function JRecord({ trip, traveler, onOpenPhotos }) {
   const [memoryTick, setMemoryTick] = useState(0)
-  const entries = useMemo(() => {
-    const mems = listMemoriesForTrip(trip.id, traveler)
-    const flat = flattenPhotoEntries(mems)
-    return groupByStop(flat, trip).flatMap((g) => g.entries)
+  const mems = useMemo(
+    () => listMemoriesForTrip(trip.id, traveler),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trip, traveler, memoryTick])
+    [trip, traveler, memoryTick]
+  )
+  // Hydrate offline `pending` refs from idb (offline-relaunch render).
+  const hydratedMems = useHydratedMemories(mems)
+  const entries = useMemo(() => {
+    const flat = flattenPhotoEntries(hydratedMems)
+    return groupByStop(flat, trip).flatMap((g) => g.entries)
+  }, [hydratedMems, trip])
 
   const [lightbox, setLightbox] = useState(null) // { entry, index }
   // Re-resolve the open entry by key after a capture-date edit, same
