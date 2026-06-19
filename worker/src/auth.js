@@ -147,3 +147,43 @@ export async function revokeSession(db, { sessionToken, all, traveler, except, n
   }
   return { revoked: 0, error: 'nothing-to-revoke' }
 }
+
+// ADMIN sweep — revoke every session created before a cutoff, across ALL
+// travelers (or one named traveler). This is the cutover-hygiene tool: before
+// the bundled tokens are removed, an adult wipes any sessions that shouldn't
+// exist (a device set up by mistake, a stale enrollment) so only the intended
+// devices survive the door closing. It deliberately crosses traveler scope —
+// unlike revokeSession's self-only rule — so the ROUTE that calls it MUST gate
+// on isAdult. `beforeDate` is REQUIRED (no default) so a sweep can never
+// accidentally revoke everything. Returns { revoked } (count) or { error }.
+export async function adminSweepSessions(db, { beforeDate, traveler, now }) {
+  if (typeof beforeDate !== 'number' || !Number.isFinite(beforeDate)) {
+    return { revoked: 0, error: 'beforeDate required' }
+  }
+  const scoped = isTraveler(traveler)
+  const sql = scoped
+    ? `UPDATE auth_sessions SET revoked_at = ? WHERE created_at < ? AND traveler = ? AND revoked_at IS NULL`
+    : `UPDATE auth_sessions SET revoked_at = ? WHERE created_at < ? AND revoked_at IS NULL`
+  const stmt = scoped
+    ? db.prepare(sql).bind(now, beforeDate, traveler)
+    : db.prepare(sql).bind(now, beforeDate)
+  const r = await stmt.run()
+  return { revoked: r?.meta?.changes ?? 0 }
+}
+
+// Cron hygiene — delete one-time links that are spent (used) or past their 24h
+// expiry. Sessions are NOT touched (revoked_at is their audit trail); only the
+// short-lived auth_links table is pruned so it can't grow without bound. A
+// missing table (pre-migration) is a no-op, never a 500. Returns { pruned }.
+export async function pruneExpiredLinks(db, now) {
+  try {
+    const r = await db
+      .prepare(`DELETE FROM auth_links WHERE used_at IS NOT NULL OR expires_at < ?`)
+      .bind(now)
+      .run()
+    return { pruned: r?.meta?.changes ?? 0 }
+  } catch (e) {
+    if (/no such table/i.test(String(e?.message || e))) return { pruned: 0 }
+    throw e
+  }
+}

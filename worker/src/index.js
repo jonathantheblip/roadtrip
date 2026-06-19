@@ -26,7 +26,7 @@ import {
 import { runNightlyWeave, beatSignature, regenerateStoredWeaves } from './weaveGen.js'
 import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
-import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, isTraveler, isAdult } from './auth.js'
+import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -282,6 +282,14 @@ export default {
         (e) => console.error('[trip-surprise-reveals] failed', e?.stack || e)
       )
     )
+    // Auth hygiene — prune spent/expired one-time enrollment links so the
+    // auth_links table can't grow without bound. Sessions are untouched.
+    ctx.waitUntil(
+      pruneExpiredLinks(env.DB, Date.now()).then(
+        (r) => console.log('[auth-link-prune]', JSON.stringify(r)),
+        (e) => console.error('[auth-link-prune] failed', e?.stack || e)
+      )
+    )
     ctx.waitUntil(
       runScheduledStopReveals(env, todayIsoUTC(Date.now())).then(
         (r) => console.log('[stop-surprise-reveals]', JSON.stringify(r)),
@@ -493,6 +501,38 @@ async function postAuthRevoke(env, traveler, request, cors) {
     return json({ error: 'invalid JSON body' }, 400, cors)
   }
   const now = Date.now()
+  // ADMIN sweep — revoke every session created before a cutoff, across all
+  // travelers (or one named one). Adult-only: this crosses traveler scope (the
+  // cutover-hygiene tool), unlike the self-only revokes below. `beforeDate` is
+  // required so it can never wipe everything by omission.
+  if (body?.sweep === true) {
+    if (!isAdult(traveler)) {
+      return json({ error: 'only an adult can sweep sessions' }, 403, cors)
+    }
+    const beforeDate = typeof body?.beforeDate === 'number' ? body.beforeDate : null
+    if (beforeDate == null) {
+      return json({ error: 'beforeDate required for sweep' }, 400, cors)
+    }
+    // A FUTURE cutoff would catch sessions enrolled after the admin's intended
+    // moment — including devices just set up — defeating the "can't wipe what I
+    // just enrolled" intent. A sweep may only target sessions that already
+    // existed when the call was made.
+    if (beforeDate > now) {
+      return json({ error: 'beforeDate must not be in the future' }, 400, cors)
+    }
+    // A present-but-unknown scope must fail LOUDLY, never silently widen to an
+    // all-travelers sweep. An ABSENT scope is the intentional all-travelers form.
+    let scope = null
+    if (body?.traveler != null) {
+      scope = typeof body.traveler === 'string' ? body.traveler.toLowerCase() : ''
+      if (!isTraveler(scope)) {
+        return json({ error: 'unknown traveler' }, 400, cors)
+      }
+    }
+    const r = await adminSweepSessions(env.DB, { beforeDate, traveler: scope, now })
+    if (r.error) return json({ error: r.error }, 400, cors)
+    return json({ ok: true, revoked: r.revoked }, 200, cors)
+  }
   if (body?.all === true) {
     const except = typeof body?.except === 'string' ? body.except : null
     const r = await revokeSession(env.DB, { all: true, traveler, except, now })

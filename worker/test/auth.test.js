@@ -23,7 +23,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
-import { lookupSession, linkRejectionReason, newToken, LINK_TTL_MS } from '../src/auth.js'
+import { lookupSession, linkRejectionReason, newToken, LINK_TTL_MS, adminSweepSessions, pruneExpiredLinks } from '../src/auth.js'
 
 // FAMILY_TOKEN_* are wrangler secrets (absent in the test runtime by default).
 // Inject all four so authenticate() can map a bundled token to its traveler —
@@ -241,6 +241,87 @@ describe('revocation', () => {
     expect(res.status).toBe(200)
     expect((await call('/', { token: a })).status).toBe(401) // a killed
     expect((await call('/', { token: b })).status).toBe(200) // b preserved
+  })
+})
+
+// ─── Admin session sweep + cron link prune (close-the-door step 3) ──────────
+async function seedSession({ token, traveler, createdAt, revokedAt = null }) {
+  await env.DB.prepare(
+    `INSERT OR REPLACE INTO auth_sessions (token, traveler, device_label, created_at, last_seen_at, revoked_at)
+     VALUES (?, ?, NULL, ?, ?, ?)`
+  ).bind(token, traveler, createdAt, createdAt, revokedAt).run()
+}
+
+describe('admin session sweep (cutover hygiene)', () => {
+  it('an adult sweeps every session created before a cutoff, across ALL travelers', async () => {
+    await seedSession({ token: 's-old-rafa', traveler: 'rafa', createdAt: 1000 })
+    await seedSession({ token: 's-old-aur', traveler: 'aurelia', createdAt: 2000 })
+    await seedSession({ token: 's-new-jon', traveler: 'jonathan', createdAt: 9000 })
+    const res = await call('/auth/revoke', { method: 'POST', token: TOK.jonathan, body: { sweep: true, beforeDate: 5000 } })
+    expect(res.status).toBe(200)
+    expect((await res.json()).revoked).toBe(2)
+    expect(await lookupSession(env.DB, 's-old-rafa')).toBe(null) // swept
+    expect(await lookupSession(env.DB, 's-old-aur')).toBe(null) // swept — crosses traveler scope
+    expect(await lookupSession(env.DB, 's-new-jon')).toBe('jonathan') // newer than the cutoff, survives
+  })
+
+  it('the sweep is ADULT-only — a child is refused (403), nothing revoked', async () => {
+    await seedSession({ token: 's-old', traveler: 'helen', createdAt: 1000 })
+    const res = await call('/auth/revoke', { method: 'POST', token: TOK.rafa, body: { sweep: true, beforeDate: 5000 } })
+    expect(res.status).toBe(403)
+    expect(await lookupSession(env.DB, 's-old')).toBe('helen')
+  })
+
+  it('the sweep REQUIRES beforeDate — no accidental wipe-all (400)', async () => {
+    await seedSession({ token: 's', traveler: 'helen', createdAt: 1000 })
+    const res = await call('/auth/revoke', { method: 'POST', token: TOK.jonathan, body: { sweep: true } })
+    expect(res.status).toBe(400)
+    expect(await lookupSession(env.DB, 's')).toBe('helen')
+    // function-level guard too
+    expect((await adminSweepSessions(env.DB, { beforeDate: undefined, now: 9999 })).error).toBe('beforeDate required')
+  })
+
+  it('the sweep can be scoped to one traveler', async () => {
+    await seedSession({ token: 's-rafa', traveler: 'rafa', createdAt: 1000 })
+    await seedSession({ token: 's-helen', traveler: 'helen', createdAt: 1000 })
+    const res = await call('/auth/revoke', { method: 'POST', token: TOK.jonathan, body: { sweep: true, beforeDate: 5000, traveler: 'rafa' } })
+    expect(res.status).toBe(200)
+    expect((await res.json()).revoked).toBe(1)
+    expect(await lookupSession(env.DB, 's-rafa')).toBe(null) // swept
+    expect(await lookupSession(env.DB, 's-helen')).toBe('helen') // out of scope, survives
+  })
+
+  it('a FUTURE beforeDate is refused (400) — can never catch a just-enrolled device', async () => {
+    await seedSession({ token: 's', traveler: 'helen', createdAt: 1000 })
+    const res = await call('/auth/revoke', { method: 'POST', token: TOK.jonathan, body: { sweep: true, beforeDate: Date.now() + 86_400_000 } })
+    expect(res.status).toBe(400)
+    expect(await lookupSession(env.DB, 's')).toBe('helen') // untouched
+  })
+
+  it('a present-but-UNKNOWN traveler scope fails loudly (400) — never silently widens to all', async () => {
+    await seedSession({ token: 's-rafa', traveler: 'rafa', createdAt: 1000 })
+    await seedSession({ token: 's-helen', traveler: 'helen', createdAt: 1000 })
+    const res = await call('/auth/revoke', { method: 'POST', token: TOK.jonathan, body: { sweep: true, beforeDate: 5000, traveler: 'nobody' } })
+    expect(res.status).toBe(400)
+    expect(await lookupSession(env.DB, 's-rafa')).toBe('rafa') // NOT widened to all
+    expect(await lookupSession(env.DB, 's-helen')).toBe('helen')
+  })
+})
+
+describe('cron link prune', () => {
+  it('deletes used + expired links, keeps live ones, never touches sessions', async () => {
+    const now = 10_000
+    await seedLink({ token: 'l-used', traveler: 'rafa', expiresAt: now + 1000, usedAt: 5000 })
+    await seedLink({ token: 'l-expired', traveler: 'rafa', expiresAt: now - 1000, usedAt: null })
+    await seedLink({ token: 'l-live', traveler: 'rafa', expiresAt: now + 1000, usedAt: null })
+    await seedSession({ token: 's-keep', traveler: 'rafa', createdAt: 1000 })
+
+    const { pruned } = await pruneExpiredLinks(env.DB, now)
+    expect(pruned).toBe(2) // the used one + the expired one
+
+    const live = await env.DB.prepare(`SELECT token FROM auth_links`).all()
+    expect(live.results.map((r) => r.token)).toEqual(['l-live'])
+    expect(await lookupSession(env.DB, 's-keep')).toBe('rafa') // sessions untouched
   })
 })
 
