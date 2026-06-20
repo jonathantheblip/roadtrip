@@ -7,6 +7,7 @@ import { thumbUrl } from '../lib/thumbUrl'
 import { useInView } from '../lib/useInView'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
+import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { HelenEntries } from './HelenEntries'
 import { LookBackStrip } from '../components/LookBackStrip'
@@ -60,6 +61,12 @@ export function HelenView({
   })
   const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
   const arrival = findArrivalStop(trip)
+  // Family-trips shift: a STAY leads with the place (mirrors JonathanView), and
+  // sheds road-trip scaffolding that makes no sense at a cabin — here, the
+  // arrival flight panel. Her signature threaded timeline is preserved below.
+  const stay = isStayTrip(trip)
+  const stayName = stayLabel(trip)
+  const nights = stayNights(trip)
 
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
@@ -128,7 +135,31 @@ export function HelenView({
         </div>
       </div>
 
-      {arrival?.day?.n === day.n && (
+      {/* STAY → lead with the place (the rest of the day reads as happening AT it). */}
+      {stay && (
+        <div style={{ padding: '14px 20px 0' }}>
+          <div
+            data-testid="helen-stay-place-card"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-card)', padding: '14px 16px' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
+              <Eyebrow color="var(--accent-text)">AT</Eyebrow>
+            </div>
+            <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 22, fontWeight: 700, marginTop: 5, lineHeight: 1.1, color: 'var(--text)' }}>
+              {stayName}
+            </div>
+            {nights > 0 && (
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, marginTop: 4, color: 'var(--muted)' }}>
+                {nights} {nights === 1 ? 'night' : 'nights'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Flight status — a road-trip/arrival concern; suppressed on a stay. */}
+      {!stay && arrival?.day?.n === day.n && (
         <div style={{ padding: '14px 20px 0' }}>
           <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
         </div>

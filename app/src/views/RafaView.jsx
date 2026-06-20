@@ -4,6 +4,7 @@ import { effectiveStatus } from '../data/trips'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { WeaveReady } from '../components/EntryCues'
 import { todayLocalIso } from '../lib/localDate'
+import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 
 // Rafa — "Mission." Redesign increment 4 (2026-06-05): big, bright,
 // rounded mission deck for a 4-year-old. Was oxblood + Fraunces; now warm
@@ -50,7 +51,18 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
     rafaStopsToday.find((s) => /monster|truck|rocket|axiom|circus|zoo|park/i.test(s.name)) ||
     rafaStopsToday[rafaStopsToday.length - 1] ||
     rafaStopsToday[0]
-  const others = rafaStopsToday.filter((s) => s.id !== featured?.id).slice(0, 2)
+  // Family-trips shift: a STAY has no "exciting stop" to feature — on a cabin
+  // weekend the featured-stop logic finds nothing and the hero card vanished
+  // (a blank screen). The PLACE becomes the hero instead, in Rafa's candy voice.
+  const stay = isStayTrip(trip)
+  const stayName = stayLabel(trip)
+  const nights = stayNights(trip)
+  // On a stay the place is the hero, so the day's stops (a dinner out, a surprise
+  // cover/teaser) ALL show as cards below — nothing dropped. On a route the
+  // featured stop is the hero, so the others exclude it (unchanged).
+  const others = stay
+    ? rafaStopsToday.slice(0, 6)
+    : rafaStopsToday.filter((s) => s.id !== featured?.id).slice(0, 2)
 
   // Status string drives the eyebrow: planning → INCOMING, archived →
   // COMPLETE, live → ACTIVE. Derived from dates via effectiveStatus so
@@ -239,8 +251,35 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
         </div>
       </div>
 
-      {/* Anchor card — big ochre candy card */}
-      {featured && (
+      {/* Anchor card — a STAY leads with the PLACE ("🏡 Our cabin! 3 nights"),
+          a road trip leads with the most exciting stop. */}
+      {stay ? (
+        <div
+          data-testid="rafa-stay-place-card"
+          style={{
+            width: 'calc(100% - 28px)',
+            margin: '10px 14px 0',
+            padding: 18,
+            background: 'var(--accent)',
+            color: 'var(--accent-ink)',
+            borderRadius: 28,
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: `0 8px 0 ${shade('#FFB12E', -45)}, 0 14px 24px -8px rgba(0,0,0,0.4)`,
+          }}
+        >
+          <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: 'rgba(255,255,255,0.16)' }} />
+          <div style={{ fontSize: 44, position: 'relative', lineHeight: 1 }}>🏡</div>
+          <div style={{ fontFamily: FREDOKA, fontSize: 26, fontWeight: 700, lineHeight: 1.02, marginTop: 10, position: 'relative' }}>
+            {stayName}!
+          </div>
+          {nights > 0 && (
+            <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 15, marginTop: 8, opacity: 0.9, position: 'relative' }}>
+              {nights} {nights === 1 ? 'night' : 'nights'} here! 🎉
+            </div>
+          )}
+        </div>
+      ) : featured ? (
         <button
           type="button"
           onClick={() => onOpenStop(featured.day, featured.id)}
@@ -327,7 +366,7 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
             </div>
           )}
         </button>
-      )}
+      ) : null}
 
       {/* Two chunky alt cards — sticker blue + green (the resolved palette) */}
       {others.length > 0 && (
@@ -516,11 +555,14 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
         </div>
       )}
 
-      {/* TELL A STORY — big coral mic candy button */}
+      {/* TELL A STORY — opens a stop to record into; hidden when there's no stop
+          to attach to (e.g. a hangout stay with nothing planned) so it's never a
+          dead button. */}
+      {featured && (
       <div style={{ padding: '22px 14px 0' }}>
         <button
           type="button"
-          onClick={() => featured && onOpenStop(featured.day, featured.id)}
+          onClick={() => onOpenStop(featured.day, featured.id)}
           style={{
             width: '100%',
             minHeight: 86,
@@ -568,6 +610,7 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
           HOLD AND TALK · MAMA AND PAPA WILL HEAR
         </div>
       </div>
+      )}
     </div>
   )
 }

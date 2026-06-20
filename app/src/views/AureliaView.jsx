@@ -9,6 +9,7 @@ import { TRAVELERS } from '../data/travelers'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { PostcardComposer } from '../components/PostcardComposer'
 import { allStops } from '../data/trips'
+import { isStayTrip, stayLabel } from '../lib/tripShape'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { AureliaEntries } from './AureliaEntries'
 import { LookBackStrip } from '../components/LookBackStrip'
@@ -43,6 +44,11 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
     return onToday?.n || trip.days[0]?.n
   })
   const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
+  // Family-trips shift: a STAY leads with the place, in her film-roll voice.
+  // Aurelia is already photo-centric (postcards), so this is the light touch —
+  // an "At [place]" line, not a remodel.
+  const stay = isStayTrip(trip)
+  const stayName = stayLabel(trip)
   const mems = listMemoriesForTrip(trip.id, traveler)
   const stopsById = new Map(
     allStops(trip).map((s) => [s.id, s])
@@ -329,6 +335,11 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
 
       {/* Day eyebrow + serif day title */}
       <div style={{ padding: '14px 18px 0' }}>
+        {stay && (
+          <div data-testid="aurelia-stay-place" style={{ fontFamily: SERIF, fontSize: 20, fontStyle: 'italic', color: 'var(--accent-text)', lineHeight: 1.1, marginBottom: 4 }}>
+            At {stayName}
+          </div>
+        )}
         <Eyebrow color="var(--muted)">
           DAY {day.n} · {(day.date || '').toUpperCase()}
         </Eyebrow>

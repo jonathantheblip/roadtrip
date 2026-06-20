@@ -5,6 +5,7 @@ import { RafaMap, stopArt } from './RafaMap'
 import { RafaGames } from './RafaGames'
 import { RafaSound } from '../lib/rafaSound'
 import { WeaveReady, SurpriseReveal } from '../components/EntryCues'
+import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 
 // RafaPad — Rafa's iPad "command center" home (design_handoff_rafa_adventure_map).
 // Landscape 4×4 quadrant of chunky candy tiles: two BIG tiles (My games / Show
@@ -53,6 +54,13 @@ export function RafaPad({
   const countdown = useMemo(() => tripCountdown(trip, destStop), [trip, destStop])
   const highlights = allRafaStops.slice(0, 6)
 
+  // Family-trips shift: on a STAY there are no exciting stops to fill the grid,
+  // and the road/countdown map tile points at nothing. The PLACE becomes a tile
+  // (🏡 Our cabin! N nights) — still opens the adventure map (stay empty-state).
+  const stay = isStayTrip(trip)
+  const stayName = stayLabel(trip)
+  const nights = stayNights(trip)
+
   const bigDefs = {
     games: { label: 'My games', emo: '🎮', tint: ST[2], onClick: () => setGamesOpen(true) },
     person: { label: 'Show me, me!', emo: '📸', tint: ST[4], onClick: () => (onShowMe ? onShowMe('rafa') : onOpenPhotos && onOpenPhotos()) },
@@ -74,8 +82,13 @@ export function RafaPad({
   // 8 small slots: the feature tiles, then tell-a-story, the adventure-map tile, highlights.
   const smalls = [
     ...featureTiles,
-    { kind: 'tell', label: 'Tell a story', tint: ST[3], onClick: () => featured && onOpenStop(featured.day, featured.id) },
+    // Tell-a-story needs a stop to record into — omit it when there's none (a
+    // hangout stay) so it's never a dead tile.
+    ...(featured ? [{ kind: 'tell', label: 'Tell a story', tint: ST[3], onClick: () => onOpenStop(featured.day, featured.id) }] : []),
     { kind: 'map', onClick: () => setMapOpen(true) },
+    // On a STAY, add the place as its own hero tile (🏡 Our cabin · N nights) —
+    // additive, so the map tile + any real stops still show.
+    ...(stay ? [{ kind: 'place', label: stayName, nights, onClick: () => setMapOpen(true) }] : []),
     ...highlights.map((s) => ({ kind: 'stop', label: s.name, emo: emojiFor(s), tint: pickTint(s.id), onClick: () => onOpenStop(s.day, s.id) })),
   ].slice(0, 8)
   const slotPos = [[3, 1], [4, 1], [3, 2], [4, 2], [1, 3], [2, 3], [1, 4], [2, 4]]
@@ -128,6 +141,23 @@ function BigTile({ b, col, row }) {
 
 function SmallTile({ s, vehicle, destEmoji, countdown, col, row }) {
   const [pressed, setPressed] = useState(false)
+
+  if (s.kind === 'place') {
+    // STAY hero tile — the place, in candy. Replaces the road/countdown map tile;
+    // still opens the adventure map (which shows a stay empty-state).
+    return (
+      <button type="button" data-testid="rafa-pad-place-tile" onClick={s.onClick} onPointerDown={() => setPressed(true)} onPointerUp={() => setPressed(false)} onPointerLeave={() => setPressed(false)}
+        style={{ gridColumn: col, gridRow: row, border: 'none', cursor: 'pointer', borderRadius: 30, background: `radial-gradient(120% 120% at 50% 20%, ${shade('#FFB12E', 12)}, ${shade('#FFB12E', -38)})`, boxShadow: pressed ? `0 3px 0 ${shade('#FFB12E', -52)}` : `0 9px 0 ${shade('#FFB12E', -52)}`, transform: pressed ? 'translateY(6px)' : 'none', transition: 'transform .12s, box-shadow .12s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: 10, gap: 6 }}>
+        <div style={{ fontSize: 52, lineHeight: 1 }}>🏡</div>
+        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 15, color: CANDY_INK, textAlign: 'center', lineHeight: 1.1 }}>{s.label}</div>
+        {s.nights > 0 && (
+          <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 12, color: CANDY_INK, opacity: 0.82 }}>
+            {s.nights} {s.nights === 1 ? 'night' : 'nights'}
+          </div>
+        )}
+      </button>
+    )
+  }
 
   if (s.kind === 'map') {
     // ADVENTURE-MAP tile — mini winding road + vehicle; countdown tucked in a corner chip.

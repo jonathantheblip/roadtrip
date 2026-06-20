@@ -4,6 +4,7 @@ import { allStops } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { flattenPhotoEntries } from '../lib/photoEntries'
 import { RafaSound } from '../lib/rafaSound'
+import { isStayTrip, stayLabel } from '../lib/tripShape'
 
 // RafaMap — Rafa's Adventure Map (iPad only). A storybook road winding through
 // the trip's real stops: visited ones lit green with a ⭐, the vehicle on the
@@ -202,6 +203,26 @@ export function RafaMap({ trip, traveler = 'rafa', onClose }) {
       else { RafaSound.engineStop(); RafaSound.honk(); setDriving(false); setDrive(null) }
     }
     rafRef.current = requestAnimationFrame(frame)
+  }
+
+  // A STAY with no planned stops has no road to wind — show the place itself as
+  // the destination instead of a degenerate empty road (family-trips shift).
+  if (isStayTrip(trip) && stops.length === 0) {
+    return (
+      <div data-testid="rafa-map" style={{ position: 'fixed', inset: 0, zIndex: 60, overflow: 'hidden', fontFamily: FREDOKA,
+        background: `radial-gradient(120% 90% at 30% 0%, ${shade(c.bg, 16)}, ${c.bg} 70%)`,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: 24 }}>
+        <button type="button" aria-label="Close" onClick={onClose}
+          style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top) + 18px)', left: 24, width: 56, height: 56, borderRadius: '50%', border: 'none', cursor: 'pointer', background: shade(c.bg, 40), color: c.ink, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ChevronLeft size={30} />
+        </button>
+        <div style={{ fontSize: 120, lineHeight: 1 }}>🏡</div>
+        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 38, color: c.ink, textAlign: 'center', lineHeight: 1.05 }}>{stayLabel(trip)}!</div>
+        <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 20, color: shade(c.ink, -50), textAlign: 'center', maxWidth: 420, lineHeight: 1.3 }}>
+          Our home base! Take pictures and they’ll show up here. 📸
+        </div>
+      </div>
+    )
   }
 
   return (
