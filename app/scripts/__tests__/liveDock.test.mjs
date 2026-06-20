@@ -167,3 +167,43 @@ test('buildLedgeModel: cue priority — a reveal outranks weave-ready', () => {
   const w = buildLedgeModel({ trip: TRIP, traveler: 'jonathan', now: NOON_D2, weaveReady: true })
   assert.equal(w.cueKind, 'weave-ready')
 })
+
+// ── Place-aware ledge (family-trips shift): on a STAY, the rail says "At [place]"
+// when THIS device is actually there — not the clock's next timed stop. ──
+const STAY = {
+  id: 'stay', dateRangeStart: '2026-05-22', dateRangeEnd: '2026-05-24',
+  homeBase: { lat: 41.32, lng: -72.09, label: 'Beach Bungalow' },
+  lodging: { name: 'Beach Bungalow' },
+  days: [
+    { isoDate: '2026-05-22', lodging: 'Beach Bungalow', stops: [{ id: 'a', name: 'Beach Bungalow', kind: 'lodging', time: 'Evening' }] },
+    { isoDate: '2026-05-23', lodging: 'Beach Bungalow', stops: [{ id: 'din', name: 'Dinner out', time: '7:00 PM' }] },
+    { isoDate: '2026-05-24', lodging: '— (home)', stops: [{ id: 'd', name: 'Drive home', time: '10:00 AM' }] },
+  ],
+}
+const AT_BUNGALOW = { lat: 41.3201, lng: -72.0901, accuracy: 20 }
+const FAR_AWAY = { lat: 41.5, lng: -72.5, accuracy: 20 }
+
+test('buildLedgeModel: STAY + at the place → "At [place]", next = today’s next timed event', () => {
+  const m = buildLedgeModel({ trip: STAY, traveler: 'jonathan', now: NOON_D2, position: AT_BUNGALOW })
+  assert.equal(m.now, 'At Beach Bungalow')
+  assert.equal(m.atPlace, true)
+  assert.equal(m.next, 'Dinner out 7:00 PM') // the clock event still shows as "next"
+})
+
+test('buildLedgeModel: STAY but NOT near the place → honest clock readout (unchanged), no "At"', () => {
+  const m = buildLedgeModel({ trip: STAY, traveler: 'jonathan', now: NOON_D2, position: FAR_AWAY })
+  assert.notEqual(m.now, 'At Beach Bungalow')
+  assert.ok(!m.atPlace)
+})
+
+test('buildLedgeModel: STAY with no location fix → clock readout (honest fallback)', () => {
+  const m = buildLedgeModel({ trip: STAY, traveler: 'jonathan', now: NOON_D2, position: null })
+  assert.ok(!m.atPlace)
+  assert.notEqual(m.now, 'At Beach Bungalow')
+})
+
+test('buildLedgeModel: a ROUTE trip is NEVER place-aware, even with a position at a stop', () => {
+  const m = buildLedgeModel({ trip: TRIP, traveler: 'jonathan', now: NOON_D2, position: AT_BUNGALOW })
+  assert.ok(!m.atPlace)
+  assert.equal(m.now, 'Morning swim') // today's clock readout, exactly as before
+})

@@ -54,6 +54,23 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
     })
   }
 
+  // Family-trips shift (Phase 1): the STAY home view replaces the road-trip ticker
+  // with a place card. Render-level coverage for the new conditional surface + its
+  // contrast (a brand-new branch + serif/mono labels — the class of bug that only
+  // axe/e2e real-renders ever caught on this project).
+  test('jonathan stay home — place card renders + no serious a11y', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP) // volleyball = a STAY (one base + homeBase)
+    await page.goto(`/?person=jonathan&trip=volleyball-2026&nosw=1`)
+    await expect(page.getByTestId('stay-place-card')).toBeVisible()
+    // The "nearest bathroom/fast-food" queue is a driving need — gone on a stay.
+    await expect(page.getByText("WHERE'S THE NEAREST")).toHaveCount(0)
+    await expectNoSeriousA11y(page, {
+      include: '[data-testid="stay-place-card"]',
+      only: ['color-contrast'],
+      label: 'jonathan stay place card',
+    })
+  })
+
   test('Claude-in-app panel — no serious/critical violations', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await mockClaudeChatWorker(page)

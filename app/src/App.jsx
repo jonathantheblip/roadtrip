@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, useMemo, lazy, Suspense } from 'react'
 import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
-import { buildLedgeModel, itineraryNearToday } from './lib/liveDock'
+import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
+import { isStayTrip } from './lib/tripShape'
+import { useGeolocationWhen } from './hooks/useGeolocation'
 import { useNowTick } from './hooks/useNowTick'
 import { useLiveEta } from './hooks/useLiveEta'
 import { JonathanView } from './views/JonathanView'
@@ -587,12 +589,19 @@ export default function App() {
   // shows. `now` ticks (useNowTick) so the readout advances through the day on
   // its own instead of freezing at the last render.
   const now = useNowTick()
+  // On a LIVE STAY trip, read this device's location so the live rail can say "At
+  // the cabin" by geofencing against the trip's place. Gated to live + stay so a
+  // road trip (or any non-live view) never starts a watch here — the route's GPS
+  // ETA keeps using the Live Map's passive watch. No fix yet → honest clock readout.
+  const stayLive = !!tripForView && !tripForView.draft && isStayTrip(tripForView) && isTripLive(tripForView, now)
+  const stayGeo = useGeolocationWhen(stayLive)
   const dockLedge = buildLedgeModel({
     trip: tripForView,
     traveler,
     now,
     weaveReady,
     surpriseRevealCue,
+    position: stayLive && stayGeo.status === 'granted' ? stayGeo.position : null,
   })
   // Live-GPS ETA upgrade: when this device is actually ON the trip route (and
   // location was granted via the Live Map — read passively, never prompts), the
@@ -1423,8 +1432,13 @@ export default function App() {
           // never the live ledge (which belongs to an open trip). Everywhere
           // else the system-driven ledge model decides.
           ledge={view.name === 'index' ? 'none' : dockLedge.mode}
-          now={liveEta?.now ?? dockLedge.now}
-          next={liveEta?.next ?? dockLedge.next}
+          // The GPS ETA upgrade is for being ON A ROUTE. When the place-aware ledge
+          // has decided we're AT the stay ("At the cabin"), the ETA must NOT shadow
+          // it — otherwise a 2-stop stay whose route line passes through the cabin
+          // flips the rail back to "Dinner Out · ETA 7:14" (the exact mishmash this
+          // shift kills). atPlace wins; everywhere else the ETA override stands.
+          now={dockLedge.atPlace ? dockLedge.now : (liveEta?.now ?? dockLedge.now)}
+          next={dockLedge.atPlace ? dockLedge.next : (liveEta?.next ?? dockLedge.next)}
           cueKind={view.name === 'index' ? null : dockLedge.cueKind}
           onLedge={openMap}
           onCue={() =>

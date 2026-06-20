@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { tripHomeBase } from '../data/trips'
+import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { AvatarStack } from '../components/Avatar'
 import { NearbyResultsModal } from '../components/NearbyResultsModal'
 import { findArrivalStop } from './FlightStatus'
@@ -273,6 +274,12 @@ function JOps({
   const title = rawTitle ? rawTitle.charAt(0).toUpperCase() + rawTitle.slice(1) + '.' : 'Underway.'
   const dek = truncateAtWord(trip.overview, 140) || trip.subtitle || ''
 
+  // Trip SHAPE (family-trips shift): a STAY sheds the road-trip scaffolding — the
+  // DRIVE/FLIGHT/ETA-HOME ticker and the "nearest bathroom/fast-food" queue make no
+  // sense at a cabin. A ROUTE (road trip) is byte-identical to before.
+  const stay = isStayTrip(trip)
+  const stayName = stay ? stayLabel(trip) : null
+  const nights = stay ? stayNights(trip) : 0
   const ticker = [
     ['DRIVE', day?.drive ? `${day.drive.miles} mi · ${day.drive.hours}` : `${totalDriveMiles} mi · ${totalDriveHours}h`],
     ['FLIGHT', arrival ? flightHeadline(arrival) : '—'],
@@ -346,29 +353,55 @@ function JOps({
         )}
       </div>
 
-      {/* TICKER */}
-      <div
-        style={{
-          margin: '16px 16px 0',
-          borderTop: '1px solid var(--line-bold)',
-          borderBottom: '1px solid var(--line-bold)',
-          padding: '11px 0',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-        }}
-      >
-        {ticker.map(([k, v], i) => (
-          <div key={k} style={{ padding: '0 11px', borderLeft: i ? '1px solid var(--border)' : 'none' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)' }} />
-              <JLabel color="var(--muted)" size={8.5}>{k}</JLabel>
-            </div>
-            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, marginTop: 4, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--text)' }}>
-              {v || '—'}
-            </div>
+      {/* TICKER — a road trip's DRIVE/FLIGHT/ETA-HOME band; a STAY leads with the
+          place instead ("At the cabin · 3 nights"). */}
+      {stay ? (
+        <div
+          data-testid="stay-place-card"
+          style={{
+            margin: '16px 16px 0',
+            borderTop: '1px solid var(--line-bold)',
+            borderBottom: '1px solid var(--line-bold)',
+            padding: '12px 11px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)' }} />
+            <JLabel color="var(--muted)" size={8.5}>AT</JLabel>
           </div>
-        ))}
-      </div>
+          <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 19, fontWeight: 700, marginTop: 4, lineHeight: 1.15, color: 'var(--text)' }}>
+            {stayName}
+          </div>
+          {nights > 0 && (
+            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, marginTop: 3, color: 'var(--muted)' }}>
+              {nights} {nights === 1 ? 'night' : 'nights'}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div
+          style={{
+            margin: '16px 16px 0',
+            borderTop: '1px solid var(--line-bold)',
+            borderBottom: '1px solid var(--line-bold)',
+            padding: '11px 0',
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+          }}
+        >
+          {ticker.map(([k, v], i) => (
+            <div key={k} style={{ padding: '0 11px', borderLeft: i ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)' }} />
+                <JLabel color="var(--muted)" size={8.5}>{k}</JLabel>
+              </div>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, marginTop: 4, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--text)' }}>
+                {v || '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* RISK WATCH — wired to real pending items (tentative/unconfirmed
           stops). The prototype's cascade *recompute* (real traffic deltas)
@@ -485,11 +518,16 @@ function JOps({
 
       {/* QUEUE — runtime "where's the nearest one?" queries (the live
           Places search, NOT a journal — the design's "Quick log" names a
-          log-the-stop behavior this app deliberately removed as a bug). */}
-      <JSectionHead label="Queue" meta="WHERE'S THE NEAREST" />
-      <div style={{ padding: '4px 16px 0' }}>
-        <QueueButtons trip={trip} traveler={traveler} />
-      </div>
+          log-the-stop behavior this app deliberately removed as a bug).
+          Hidden on a STAY: "nearest bathroom/fast food" is a driving need. */}
+      {!stay && (
+        <>
+          <JSectionHead label="Queue" meta="WHERE'S THE NEAREST" />
+          <div style={{ padding: '4px 16px 0' }}>
+            <QueueButtons trip={trip} traveler={traveler} />
+          </div>
+        </>
+      )}
 
       {/* THE RECORD — secondary archive entry kept visible in OPS so the
           all-photos baseline + entry tests still fire from the home. */}

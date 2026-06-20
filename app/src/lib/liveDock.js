@@ -12,6 +12,7 @@
 // so the helper was centralized. Re-exported here so existing importers of
 // `localDateIso` from liveDock keep working.
 import { localDateIso } from './localDate.js'
+import { inferTripShape, stayPlace, atPlace } from './tripShape.js'
 export { localDateIso }
 
 // Parse a stop's free-text clock label ("3:45 PM", "9:00 AM") into a local
@@ -185,6 +186,7 @@ export function buildLedgeModel({
   now = new Date(),
   weaveReady,
   surpriseRevealCue,
+  position = null,
 }) {
   if (!trip || trip.draft) return { mode: 'none' }
   if (traveler === 'rafa') return { mode: 'none' }
@@ -208,6 +210,27 @@ export function buildLedgeModel({
   const today = localDateIso(now)
   const effectiveNow = nowStop && nowStop.isoDate === today ? nowStop : null
   const cueKind = revealed ? 'surprise-revealed' : weaveReady ? 'weave-ready' : null
+
+  // PLACE-AWARE (family-trips shift, FAMILY_TRIPS_VISION §5). On a STAY, if THIS
+  // device is actually at the declared place, "now" is "At [the cabin]" — the
+  // place we're at, not the clock's next timed stop (kills the mishmash where the
+  // rail says "Lunch" while we're clearly hanging out at the cabin). The next TIMED
+  // thing today (a dinner out) still shows as "next". No location / not near / not
+  // a stay → falls through to the honest clock readout below, exactly as today.
+  if (inferTripShape(trip) === 'stay' && position) {
+    const place = stayPlace(trip)
+    if (place && atPlace(place, position)) {
+      const upcoming = nextStop && nextStop.isoDate === today ? nextStop : null
+      return {
+        mode: 'live',
+        now: `At ${place.name}`,
+        next: upcoming ? ledgeNext({ isoDate: today }, upcoming) : '',
+        cueKind,
+        atPlace: true,
+      }
+    }
+  }
+
   return {
     mode: 'live',
     now: ledgeNow(effectiveNow, nextStop),

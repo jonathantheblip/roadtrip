@@ -143,3 +143,23 @@ export function useGeolocationPassive() {
 
   return snapshot
 }
+
+// Start the shared watch ONLY WHEN `enabled` — e.g. viewing a LIVE stay trip, so
+// the LiveDock can say "At the cabin" by geofencing this device against the trip's
+// place. Gated so a normal app load never starts a watch (or prompts) on its own;
+// the watch belongs to the Live Map and to a live trip in progress. Subscribes to
+// the same shared state, so it coexists with the map's watcher.
+export function useGeolocationWhen(enabled) {
+  const [snapshot, setSnapshot] = useState(state)
+
+  useEffect(() => {
+    if (enabled) ensureWatch()
+    listeners.add(setSnapshot)
+    setSnapshot(state)
+    return () => {
+      listeners.delete(setSnapshot)
+    }
+  }, [enabled])
+
+  return snapshot
+}
