@@ -96,3 +96,57 @@ test('stayLabel: falls back to a day lodging, then the homeBase first segment, t
   assert.equal(stayLabel({ homeBase: { label: '613 Forest Mountain Rd, Peru, VT' }, days: [] }), '613 Forest Mountain Rd')
   assert.equal(stayLabel({ title: 'Cabin Weekend', days: [] }), 'Cabin Weekend')
 })
+
+// ── Phase 2: the geocoded lodging ADDRESS is now a coord source ──
+const { stayPlaceCoords, detectCurrentPlace } = await import('../../src/lib/tripShape.js')
+
+test('stayPlaceCoords: reads the geocoded lodging.lat/lng (the address-only stay P1.5 couldn’t place)', () => {
+  // The real-world case: a cabin trip that typed only an address — no homeBase,
+  // no located lodging stop. Before Phase 2 this returned null and "At [place]"
+  // silently no-op'd. The confirm-pin geocode now writes lodging.lat/lng.
+  const c = stayPlaceCoords({ lodging: { name: 'The Cabin', address: '613 Forest Mountain Rd', lat: 43.21, lng: -72.9 }, days: [] })
+  assert.deepEqual([c.lat, c.lng], [43.21, -72.9])
+})
+
+test('stayPlaceCoords: source precedence homeBase > lodging.lat/lng > lodging stop', () => {
+  // homeBase wins (deliberate anchor, e.g. volleyball-2026)
+  const hb = stayPlaceCoords({ homeBase: { lat: 1, lng: 1 }, lodging: { lat: 2, lng: 2 }, days: [{ stops: [{ kind: 'lodging', lat: 3, lng: 3 }] }] })
+  assert.deepEqual([hb.lat, hb.lng], [1, 1])
+  // no homeBase → the geocoded lodging address wins over a lodging stop
+  const lod = stayPlaceCoords({ lodging: { lat: 2, lng: 2 }, days: [{ stops: [{ kind: 'lodging', lat: 3, lng: 3 }] }] })
+  assert.deepEqual([lod.lat, lod.lng], [2, 2])
+  // neither → fall back to the located lodging stop
+  const stop = stayPlaceCoords({ days: [{ stops: [{ kind: 'lodging', lat: 3, lng: 3 }] }] })
+  assert.deepEqual([stop.lat, stop.lng], [3, 3])
+  // nothing located → null
+  assert.equal(stayPlaceCoords({ lodging: { name: 'Cabin' }, days: [] }), null)
+})
+
+test('stayPlace: an address-only stay now resolves to a place once geocoded (Phase 2)', () => {
+  const p = stayPlace({ lodging: { name: 'The Cabin', address: '613 Forest Mountain Rd', lat: 43.21, lng: -72.9 }, days: [] })
+  assert.deepEqual([p.lat, p.lng], [43.21, -72.9])
+  assert.equal(p.name, 'The Cabin')
+})
+
+// ── Phase 2: detectCurrentPlace — the live rail's shared "are we here?" test ──
+test('detectCurrentPlace: stay + device inside the footprint → the place', () => {
+  const trip = { lodging: { name: 'The Cabin', lat: 43.21, lng: -72.9 }, days: [{ lodging: 'The Cabin' }, { lodging: 'The Cabin' }] }
+  const here = detectCurrentPlace(trip, { lat: 43.2101, lng: -72.9001, accuracy: 20 })
+  assert.ok(here)
+  assert.equal(here.name, 'The Cabin')
+})
+
+test('detectCurrentPlace: stay but device far away → null (rail falls back to the clock)', () => {
+  const trip = { lodging: { name: 'The Cabin', lat: 43.21, lng: -72.9 }, days: [{ lodging: 'The Cabin' }, { lodging: 'The Cabin' }] }
+  assert.equal(detectCurrentPlace(trip, { lat: 44.0, lng: -73.5 }), null)
+})
+
+test('detectCurrentPlace: a ROUTE trip is never "at the place", even standing on the coords → null (G5)', () => {
+  const route = { days: [{ lodging: 'Motel A', stops: [{ kind: 'lodging', lat: 43.21, lng: -72.9 }] }, { lodging: 'Motel B' }] }
+  assert.equal(detectCurrentPlace(route, { lat: 43.21, lng: -72.9, accuracy: 5 }), null)
+})
+
+test('detectCurrentPlace: no position → null (no silent place claim without a fix)', () => {
+  const trip = { lodging: { name: 'The Cabin', lat: 43.21, lng: -72.9 }, days: [{ lodging: 'The Cabin' }, { lodging: 'The Cabin' }] }
+  assert.equal(detectCurrentPlace(trip, null), null)
+})

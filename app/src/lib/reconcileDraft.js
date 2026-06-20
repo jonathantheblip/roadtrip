@@ -25,7 +25,7 @@
 // Output: a structured draft (see buildReconciliationDraft) the triage
 // view renders directly and Helen edits on top of.
 
-import { MATCH_THRESHOLDS, matchPhotosToStops } from './photoMatch.js'
+import { MATCH_THRESHOLDS, matchPhotosToStops, tripImplicitBase, implicitBaseIdForDay } from './photoMatch.js'
 import { parseStopTime } from './photoBackfill.js'
 
 // The one NEW tunable reconciliation adds on top of the matcher's
@@ -240,6 +240,16 @@ export function buildReconciliationDraft(photos, trip, opts = {}) {
     ensure(autoStopsByDay, dayN, () => []).push(autoStop)
   }
 
+  // The trip's implicit base ("At the cabin") — a destination-less stay's
+  // place, which is NOT a planned stop. Photos can be filed to its per-day
+  // synthetic id (matchPhotoToStop's no-GPS-stay default + GPS base-priority),
+  // so the draft must surface it as a first-class "At [place]" stop or those
+  // photos would be invisible in the reconcile editor (they'd still SAVE via the
+  // raw-match fallback, but the editor wouldn't show them under a card). A
+  // PLANNED base stop needs none of this — it's already in day.stops. Computed
+  // once; null for route trips (→ this whole block is inert, G5).
+  const baseTemplate = tripImplicitBase(trip)
+
   // ── Assemble per-day draft ────────────────────────────────────────
   const days = []
   const summary = {
@@ -280,9 +290,41 @@ export function buildReconciliationDraft(photos, trip, opts = {}) {
     const autoStops = autoStopsByDay.get(day.n) || []
     summary.autoAdded += autoStops.length
 
-    // Combine planned + auto-added and order by parsed time so an
+    // The implicit base, if photos filed to this day's place. Leads the day (no
+    // clock time — it's where we are all day), carries source 'implicit_base' so
+    // applyReconciliation binds its photos but never persists the synthetic stop
+    // into trip.days. Only present on a stay day that actually has place photos.
+    const baseId = day.isoDate ? implicitBaseIdForDay(day.isoDate) : null
+    const basePhotoIds = baseId ? photosByStop.get(baseId) || [] : []
+    let baseStops = []
+    if (baseTemplate && basePhotoIds.length) {
+      summary.happened += 1
+      const dayStartMs = Date.parse(`${day.isoDate}T00:00:00.000Z`)
+      baseStops = [{
+        stopId: baseId,
+        name: baseTemplate.name,
+        time: '',
+        kind: 'lodging',
+        for: Array.isArray(trip?.travelers) ? [...trip.travelers] : [],
+        state: STOP_STATE.HAPPENED,
+        source: 'implicit_base',
+        addedDuringReconciliation: false,
+        isBase: true,
+        photoIds: basePhotoIds,
+        clusterId: null,
+        centroid:
+          Number.isFinite(baseTemplate.lat) && Number.isFinite(baseTemplate.lng)
+            ? { lat: baseTemplate.lat, lng: baseTemplate.lng }
+            : null,
+        distanceToRouteMeters: null,
+        // 1ms before the day starts → sorts ahead of every clock stop.
+        _parsedAt: Number.isFinite(dayStartMs) ? dayStartMs - 1 : -1,
+      }]
+    }
+
+    // Combine base + planned + auto-added and order by parsed time so an
     // auto-added stop lands in the right slot in the day's flow.
-    const stops = [...plannedStops, ...autoStops]
+    const stops = [...baseStops, ...plannedStops, ...autoStops]
       .sort((a, b) => safeNum(a._parsedAt) - safeNum(b._parsedAt))
       .map((s) => {
         const { _parsedAt, ...rest } = s

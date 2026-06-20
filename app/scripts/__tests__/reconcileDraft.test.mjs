@@ -324,3 +324,41 @@ test('buildReconciliationDraft tolerates an empty / malformed trip', () => {
     },
   })
 })
+
+// ─── Phase 2: the implicit base surfaces as a first-class "At [place]" stop ───
+// A destination-less stay's place is a synthetic per-day id, not a planned stop.
+// A no-GPS (or GPS-base) photo files to it; the draft must surface it so those
+// photos are visible in the reconcile editor (else only the raw-match fallback
+// saved them — invisible during triage).
+
+test('implicit base: the draft surfaces "At [place]" as a leading stop carrying the place photos', () => {
+  const trip = makeTrip(
+    [
+      { n: 1, isoDate: '2026-04-17', title: 'Day 1', stops: [{ id: 'din', time: '7:00 PM', name: 'Dinner out', kind: 'food' }] },
+      { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] },
+    ],
+    { lodging: { name: 'The Cabin', address: 'somewhere', lat: 43.21, lng: -72.9 } }
+  )
+  const photos = [{ id: 'p1', capturedAt: '2026-04-17T15:00:00Z' }] // no GPS → the place
+  const draft = buildReconciliationDraft(photos, trip)
+  const day1 = draft.days.find((d) => d.dayN === 1)
+  const baseStop = day1.stops.find((s) => s.source === 'implicit_base')
+  assert.ok(baseStop, 'the draft surfaces an implicit-base stop')
+  assert.equal(baseStop.name, 'The Cabin')
+  assert.equal(baseStop.isBase, true)
+  assert.equal(baseStop.kind, 'lodging')
+  assert.deepEqual(baseStop.photoIds, ['p1'])
+  assert.equal(baseStop.state, STOP_STATE.HAPPENED)
+  assert.equal(day1.stops[0].source, 'implicit_base') // leads the day, no clock time
+})
+
+test('implicit base: a ROUTE trip never gets a synthetic base stop in the draft (G5)', () => {
+  const trip = makeTrip([
+    { n: 1, isoDate: '2026-04-17', title: 'Day 1', lodging: 'Motel A', stops: [{ id: 's', time: '12:00 PM', name: 'Lunch', kind: 'food' }] },
+    { n: 2, isoDate: '2026-04-18', title: 'Day 2', lodging: 'Motel B', stops: [] },
+  ])
+  const draft = buildReconciliationDraft([{ id: 'p1', capturedAt: '2026-04-17T15:00:00Z' }], trip)
+  for (const d of draft.days) {
+    assert.ok(!d.stops.some((s) => s.source === 'implicit_base'), 'no synthetic base on a route trip')
+  }
+})

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, Mic, Sparkles,
   MapPin, Image as ImageIcon, Check, Loader, AlertTriangle, Eye,
@@ -13,6 +13,10 @@ import { saveAsset, makeAssetKey } from '../lib/memAssets'
 import { saveMemory, listMemoriesForStop } from '../lib/memoryStore'
 import { VoiceRecorder } from '../components/VoiceRecorder'
 import { newTripId } from '../utils/ids'
+
+// Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
+// pulled in when a trip actually has a located lodging (Phase 2).
+const LodgingPinConfirm = lazy(() => import('../components/LodgingPinConfirm'))
 
 // The trip editor (change order 2026-05-17 §4). There was no editor in
 // the codebase — NewTrip was create-only and its "next pass" was never
@@ -760,10 +764,46 @@ function Travelers({ label = 'Travelers', value, onChange, pool = TRAVELER_ORDER
 }
 function Lodging({ value, onChange }) {
   const set = (p) => onChange({ ...value, ...p })
+  const [geoNote, setGeoNote] = useState('')
+  // Bumped only when a fresh geocode lands, so dragging the pin (which updates
+  // lat/lng) doesn't remount the map mid-drag, but a NEW address re-centers it.
+  const [pinKey, setPinKey] = useState(0)
+  const located = Number.isFinite(value.lat) && Number.isFinite(value.lng)
+
+  // Geocode the lodging address (Phase 2). Unlike a stop pin, this point is
+  // load-bearing for the WHOLE stay — the live rail's "At [place]" geofence and
+  // no-GPS photo filing both read it — so we surface a draggable pin to confirm
+  // (Jonathan's call) rather than geocoding silently.
+  async function onAddressBlur() {
+    const a = (value.address || '').trim()
+    if (!a) return
+    if (located && a === (value.geoFor || '')) return // already located this exact address
+    setGeoNote('Locating…')
+    const hit = await geocodeAddress(a)
+    if (hit) {
+      set({ lat: hit.lat, lng: hit.lng, geoFor: a })
+      setGeoNote('Found it — if the pin’s off, refine the address above or drag the pin.')
+      setPinKey((k) => k + 1)
+    } else {
+      set({ lat: undefined, lng: undefined, geoFor: undefined })
+      setGeoNote('Couldn’t find this address — it’s saved, but “At [place]” needs a located address.')
+    }
+  }
+
   return (
     <>
       <Text label="Lodging name" value={value.name} onChange={(v) => set({ name: v })} placeholder="Jessica & Yoav's cabin" />
-      <Text label="Address" value={value.address} onChange={(v) => set({ address: v })} placeholder="Pending host confirmation" />
+      <Text label="Address" value={value.address} onChange={(v) => set({ address: v })} onBlur={onAddressBlur} placeholder="Pending host confirmation" />
+      {geoNote && (
+        <p className="f-dm text-[11px] mt-1" style={{ opacity: 0.6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <MapPin size={11} /> {geoNote}
+        </p>
+      )}
+      {located && (
+        <Suspense fallback={<p className="f-dm text-[11px] mt-1" style={{ opacity: 0.5 }}>Loading map…</p>}>
+          <LodgingPinConfirm key={pinKey} lat={value.lat} lng={value.lng} onMove={(c) => set({ lat: c.lat, lng: c.lng })} />
+        </Suspense>
+      )}
       <Row>
         <Text label="Check in" value={value.checkIn} onChange={(v) => set({ checkIn: v })} placeholder="Fri Jun 19, 4:00 PM" />
         <Text label="Check out" value={value.checkOut} onChange={(v) => set({ checkOut: v })} placeholder="Sun Jun 21, 10:00 AM" />

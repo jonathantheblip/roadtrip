@@ -67,6 +67,18 @@ export function applyReconciliation(draft, trip) {
       // Skipped stops are removed from the reconciled record.
       if (draftStop.state === STOP_STATE.DIDNT_HAPPEN) continue
 
+      // The implicit base ("At the cabin") is a SYNTHETIC stop the draft surfaces
+      // so its photos are visible + editable in the reconcile editor. Bind those
+      // photos to its per-day id, but NEVER write the synthetic stop into the
+      // trip's planned stops (it isn't one — it's the trip's lodging place). The
+      // saved result equals what the raw-match fallback already produced.
+      if (draftStop.source === 'implicit_base') {
+        for (const pid of draftStop.photoIds || []) {
+          photoBindings[pid] = draftStop.stopId
+        }
+        continue
+      }
+
       if (draftStop.source === 'planned') {
         const orig = origStopById.get(draftStop.stopId) || {}
         newStops.push({

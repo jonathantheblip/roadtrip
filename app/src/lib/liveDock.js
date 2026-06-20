@@ -12,7 +12,7 @@
 // so the helper was centralized. Re-exported here so existing importers of
 // `localDateIso` from liveDock keep working.
 import { localDateIso } from './localDate.js'
-import { inferTripShape, stayPlace, atPlace } from './tripShape.js'
+import { detectCurrentPlace } from './tripShape.js'
 export { localDateIso }
 
 // Parse a stop's free-text clock label ("3:45 PM", "9:00 AM") into a local
@@ -217,17 +217,15 @@ export function buildLedgeModel({
   // rail says "Lunch" while we're clearly hanging out at the cabin). The next TIMED
   // thing today (a dinner out) still shows as "next". No location / not near / not
   // a stay → falls through to the honest clock readout below, exactly as today.
-  if (inferTripShape(trip) === 'stay' && position) {
-    const place = stayPlace(trip)
-    if (place && atPlace(place, position)) {
-      const upcoming = nextStop && nextStop.isoDate === today ? nextStop : null
-      return {
-        mode: 'live',
-        now: `At ${place.name}`,
-        next: upcoming ? ledgeNext({ isoDate: today }, upcoming) : '',
-        cueKind,
-        atPlace: true,
-      }
+  const here = detectCurrentPlace(trip, position)
+  if (here) {
+    const upcoming = nextStop && nextStop.isoDate === today ? nextStop : null
+    return {
+      mode: 'live',
+      now: `At ${here.name}`,
+      next: upcoming ? ledgeNext({ isoDate: today }, upcoming) : '',
+      cueKind,
+      atPlace: true,
     }
   }
 

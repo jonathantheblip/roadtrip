@@ -834,9 +834,10 @@ function StopCard({
   )
 }
 
-// Nearest non-removed stops on each side, for merge targets.
+// Nearest non-removed stops on each side, for merge targets. The implicit base
+// is never a merge target — you can't fold a real stop into the trip's place.
 function mergeNeighbors(stops, index) {
-  const ok = (s) => s && s.state !== STOP_STATE.DIDNT_HAPPEN
+  const ok = (s) => s && s.state !== STOP_STATE.DIDNT_HAPPEN && !s.isBase
   let prev = null
   let next = null
   for (let i = index - 1; i >= 0; i--) if (ok(stops[i])) { prev = stops[i]; break }
@@ -846,9 +847,13 @@ function mergeNeighbors(stops, index) {
 
 function StopEditPanel({ stop, dayN, stops, index, onRename, onRetime, onMarkDidntHappen, onDemote, onMerge, onSplit }) {
   const hasPhotos = stop.photoIds.length > 0
-  const canSplit = stop.photoIds.length >= 2
+  // The implicit base ("At the cabin") is the trip's place, not an editable
+  // cluster — it can't be split/merged/demoted ("not a stop" makes no sense for
+  // where you're staying). Its photos can still be unchecked individually.
+  const canSplit = stop.photoIds.length >= 2 && !stop.isBase
   const canDidntHappen = !hasPhotos // photos are proof
-  const canDemote = stop.source !== 'planned'
+  const canDemote = stop.source !== 'planned' && !stop.isBase
+  const canMerge = !stop.isBase
   const { prev, next } = mergeNeighbors(stops, index)
 
   const fieldStyle = {
@@ -911,12 +916,12 @@ function StopEditPanel({ stop, dayN, stops, index, onRename, onRetime, onMarkDid
             <Scissors size={12} /> Split here
           </button>
         )}
-        {prev && (
+        {canMerge && prev && (
           <button type="button" className="btn-pill" style={actionStyle} onClick={() => onMerge(dayN, stop.stopId, prev.stopId)}>
             Merge into {truncate(prev.name)}
           </button>
         )}
-        {next && (
+        {canMerge && next && (
           <button type="button" className="btn-pill" style={actionStyle} onClick={() => onMerge(dayN, stop.stopId, next.stopId)}>
             Merge into {truncate(next.name)}
           </button>

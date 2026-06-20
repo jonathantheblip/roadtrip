@@ -26,6 +26,7 @@ const {
   dayStopIds,
   dayForStopId,
 } = await import('../../src/lib/photoMatch.js')
+const { isStayTrip } = await import('../../src/lib/tripShape.js')
 
 // ─── Geometry primitives ──────────────────────────────────────────
 
@@ -857,6 +858,97 @@ test('implicit base (smart): a photo right at a dinner near the lodging still fi
     ],
   })
   // 50m < baseYield(150) AND closer than the base(300m) → clearly AT the diner.
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'diner')
+})
+
+// ─── Phase 2: a no-GPS photo on a STAY defaults to the place ───────────────
+// THE album half of the mishmash. Most cabin photos have no GPS (location off,
+// or indoors); they used to fall to the nearest timed event by the clock →
+// "dinner". On a stay they now default to the place (Jonathan: the place is the
+// spine; only a photo's OWN GPS pulls it to an event). A GPS photo never reaches
+// this branch. Strictly gated on isStay → route trips byte-identical (G5).
+
+const photoNoGps = (id = 'png', capturedAt = '2026-04-17T19:30:00Z') => ({ id, capturedAt })
+
+test('Phase 2: a no-GPS photo on a stay files to the place, NOT the 7:00 dinner (the mishmash)', () => {
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin' },
+    days: [dinnerDay('2026-04-17', 1), { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] }],
+  })
+  // 7:30pm — squarely inside the dinner window; the OLD rule bound it to dinner.
+  const m = matchPhotoToStop(photoNoGps('p', '2026-04-17T19:30:00Z'), buildDayIndex(trip))
+  assert.equal(m.stopId, implicitBaseIdForDay('2026-04-17'))
+  assert.ok(isImplicitBaseId(m.stopId))
+  assert.equal(m.matchType, 'time')
+})
+
+test('Phase 2: works from a geocoded lodging ADDRESS alone — no homeBase, no lodging stop (the real cabin case)', () => {
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin', address: '613 Forest Mtn Rd', lat: NORTH(250), lng: -73.0 },
+    homeBase: undefined,
+    days: [dinnerDay('2026-04-17', 1), { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] }],
+  })
+  assert.ok(tripImplicitBase(trip)) // the geocoded address lit up the place
+  const m = matchPhotoToStop(photoNoGps('p', '2026-04-17T15:00:00Z'), buildDayIndex(trip))
+  assert.equal(m.stopId, implicitBaseIdForDay('2026-04-17'))
+})
+
+test('Phase 2 (G5): no-GPS on a ROUTE trip ignores even an injected base — the isStay gate holds', () => {
+  // Two distinct overnight bases → route, even though a homeBase anchor exists.
+  // A base template would otherwise be injected; the place default must NOT fire.
+  const trip = makeTrip([
+    { n: 1, isoDate: '2026-04-17', title: 'Day 1', lodging: 'Motel A', stops: [{ id: 'lunch', kind: 'food', time: '12:00 PM', name: 'Lunch' }] },
+    { n: 2, isoDate: '2026-04-18', title: 'Day 2', lodging: 'Motel B', stops: [] },
+  ])
+  trip.homeBase = { lat: NORTH(250), lng: -73.0, label: 'anchor' }
+  assert.equal(isStayTrip(trip), false)
+  const m = matchPhotoToStop(photoNoGps('p', '2026-04-17T13:00:00Z'), buildDayIndex(trip))
+  assert.equal(m.stopId, 'lunch') // clock binding — the place default never fires on a route
+  assert.equal(m.matchType, 'time')
+})
+
+test('Phase 2: a no-GPS photo on a HOME day of a stay never files to the place (never your house)', () => {
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin' },
+    days: [
+      dinnerDay('2026-04-17', 1),
+      { n: 2, isoDate: '2026-04-18', title: 'Home', lodging: '— (home)', stops: [{ id: 'brunch', kind: 'food', time: '10:00 AM', name: 'Brunch' }] },
+    ],
+  })
+  const m = matchPhotoToStop(photoNoGps('p', '2026-04-18T11:00:00Z'), buildDayIndex(trip))
+  assert.ok(!isImplicitBaseId(m.stopId || ''))
+  assert.equal(m.stopId, 'brunch') // clock binding on the home day, unchanged
+})
+
+test('Phase 2: no-GPS on a stay whose base is a PLANNED lodging stop also files to that place (volleyball case)', () => {
+  // Caught while walking the real app: the volleyball stay models its lodging as
+  // planned check-in stops, so there's NO implicit base. A no-GPS photo must
+  // still default to that planned place, not the clock's dinner — "the place you
+  // stay" behaves the same in both stay models.
+  const trip = makeTrip([{
+    n: 1, isoDate: '2026-04-17', title: 'Day 1', stops: [
+      { id: 'bungalow', kind: 'lodging', time: '4:00 PM', name: 'Beach Bungalow', lat: NORTH(0), lng: -73.0 },
+      { id: 'dinner', kind: 'food', time: '7:00 PM', name: 'Dinner out', lat: NORTH(5000), lng: -73.0 },
+    ],
+  }])
+  assert.equal(isStayTrip(trip), true)
+  assert.equal(tripImplicitBase(trip), null) // planned base → no implicit base
+  const m = matchPhotoToStop(photoNoGps('p', '2026-04-17T20:00:00Z'), buildDayIndex(trip))
+  assert.equal(m.stopId, 'bungalow') // the place, not the 7:00 dinner
+  assert.equal(m.matchType, 'time')
+})
+
+test('Phase 2: a GPS photo on a stay still files by its coordinates, not the place default', () => {
+  // The place default is a NO-GPS fallback; a located photo's coords still win.
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin' },
+    days: [
+      { n: 1, isoDate: '2026-04-17', title: 'Day 1', stops: [{ id: 'diner', kind: 'food', time: '1:00 PM', name: 'The Diner', lat: NORTH(50), lng: -73.0 }] },
+      { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] },
+    ],
+  })
+  // photoAtP is AT the diner (50m, inside baseYield) → diner wins, not the base.
   const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
   assert.equal(m.stopId, 'diner')
 })

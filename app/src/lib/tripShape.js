@@ -85,25 +85,41 @@ export function stayNights(trip) {
   return Math.max(0, days.length - homeNights)
 }
 
-// The located place a stay is anchored on — { lat, lng, name } or null. Coords from
-// the trip's homeBase (by convention the lodging) or the first located lodging stop;
-// name from the lodging label (friendly), falling back to the first address segment.
-export function stayPlace(trip) {
-  let coords = null
+// THE one source of "where the stay is", in meters — so the live rail and the
+// photo filer can never disagree about the place (FAMILY_TRIPS_VISION §5; the
+// "mishmash" was each surface finding the place its own way). Returns
+// { lat, lng, label } | null, most authoritative source first:
+//   1. a deliberately-set homeBase (the located anchor, e.g. volleyball-2026),
+//   2. the geocoded + confirmed lodging ADDRESS (Phase 2 — the real-world
+//      address-only stay where P1.5 silently no-op'd for lack of coords),
+//   3. a located lodging STOP.
+// NOTE: coords live on `trip.lodging.lat/lng`, NOT `trip.homeBase` — homeBase
+// feeds road-trip scaffolding (drive-home ETA, the "nearest fast-food" queue),
+// which a stay must shed, so we never auto-populate it.
+export function stayPlaceCoords(trip) {
   const hb = trip?.homeBase
   if (hb && Number.isFinite(hb.lat) && Number.isFinite(hb.lng)) {
-    coords = { lat: hb.lat, lng: hb.lng, label: hb.label || '' }
-  } else {
-    for (const d of trip?.days || []) {
-      for (const s of d?.stops || []) {
-        if (s?.kind === 'lodging' && Number.isFinite(s.lat) && Number.isFinite(s.lng)) {
-          coords = { lat: s.lat, lng: s.lng, label: s.address || s.name || '' }
-          break
-        }
+    return { lat: hb.lat, lng: hb.lng, label: hb.label || '' }
+  }
+  const lod = trip?.lodging
+  if (lod && typeof lod === 'object' && Number.isFinite(lod.lat) && Number.isFinite(lod.lng)) {
+    return { lat: lod.lat, lng: lod.lng, label: lod.name || lod.address || '' }
+  }
+  for (const d of trip?.days || []) {
+    for (const s of d?.stops || []) {
+      if (s?.kind === 'lodging' && Number.isFinite(s.lat) && Number.isFinite(s.lng)) {
+        return { lat: s.lat, lng: s.lng, label: s.address || s.name || '' }
       }
-      if (coords) break
     }
   }
+  return null
+}
+
+// The located place a stay is anchored on — { lat, lng, name } or null. Coords
+// from the shared stayPlaceCoords; name from the lodging label (friendly),
+// falling back to the first address segment.
+export function stayPlace(trip) {
+  const coords = stayPlaceCoords(trip)
   if (!coords) return null
   let name = lodgingName(trip?.lodging)
   if (!name) for (const d of trip?.days || []) { const n = lodgingName(d?.lodging); if (n && !HOME.test(n)) { name = n; break } }
@@ -130,4 +146,17 @@ export function atPlace(place, position, radius = AT_PLACE_METERS) {
   if (!place || !position || !Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return false
   const d = haversineM(place.lat, place.lng, position.lat, position.lng)
   return d <= radius + (Number.isFinite(position.accuracy) ? Math.min(position.accuracy, 200) : 0)
+}
+
+// The live rail's question: is THIS device at the stay place right now? Returns
+// the place ({lat,lng,name}) when it's a stay AND we have a fix AND it's inside
+// the footprint; else null (→ the live rail falls back to its honest clock
+// readout). One named, tested function so the rail no longer re-derives this
+// inline. The photo filer asks a DIFFERENT question — does this PHOTO belong
+// here — but both read the SAME place via stayPlace/stayPlaceCoords, so they
+// can never tell two different stories about where "here" is.
+export function detectCurrentPlace(trip, position) {
+  if (!isStayTrip(trip) || !position) return null
+  const place = stayPlace(trip)
+  return place && atPlace(place, position) ? place : null
 }

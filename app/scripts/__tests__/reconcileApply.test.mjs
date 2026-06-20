@@ -244,3 +244,26 @@ test('tolerates a malformed trip', () => {
   assert.equal(r.trip, null)
   assert.deepEqual(r.photoBindings, {})
 })
+
+// ─── Phase 2: implicit-base photos bind to the place, base never persisted ───
+
+test('implicit base: applyReconciliation binds place photos to the base id but never writes the synthetic stop into the trip', () => {
+  const trip = makeTrip(
+    [
+      { n: 1, isoDate: '2026-04-17', title: 'Day 1', stops: [{ id: 'din', time: '7:00 PM', name: 'Dinner out', kind: 'food' }] },
+      { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] },
+    ],
+    { lodging: { name: 'The Cabin', address: 'somewhere', lat: 43.21, lng: -72.9 } }
+  )
+  const photos = [{ id: 'p1', capturedAt: '2026-04-17T15:00:00Z' }] // no GPS → the place
+  const draft = buildReconciliationDraft(photos, trip)
+  const { trip: out, photoBindings } = applyReconciliation(draft, trip)
+  // the photo is bound to the per-day base id
+  assert.equal(photoBindings.p1, '__trip_base__:2026-04-17')
+  // the synthetic base is NOT written into the persisted trip's planned stops
+  for (const d of out.days) {
+    assert.ok(!d.stops.some((s) => String(s.id).startsWith('__trip_base__')), 'no synthetic base persisted')
+  }
+  // day 1 still has exactly its one planned stop
+  assert.deepEqual(out.days[0].stops.map((s) => s.id), ['din'])
+})

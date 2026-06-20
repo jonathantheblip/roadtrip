@@ -13,6 +13,7 @@
 // stays unit-testable without mocks.
 
 import { parseStopTime } from './photoBackfill.js'
+import { stayPlaceCoords, isStayTrip } from './tripShape.js'
 
 // Distance in meters between two lat/lng pairs via the haversine
 // formula. Accurate to within a few meters at trip-scale distances.
@@ -166,14 +167,14 @@ export function isImplicitBaseId(id) {
 // base must never turn your actual house into a photo place on a day trip.
 const HOME_LODGING = /^[\s—–-]*\(?\s*home\s*\)?[\s—–-]*$/i
 
-// Located stay anchor — homeBase only. (A located lodging STOP is already a Phase-1
-// base, so it's handled there, not here.)
+// Located stay anchor — THE shared source (homeBase → geocoded lodging address
+// → located lodging stop), so the filer and the live rail agree on where the
+// place is. (A located lodging STOP also short-circuits gate 2 below, so reading
+// it here is harmless — tripImplicitBase still returns null for those, they're
+// already Phase-1 bases.) Phase 2: a geocoded `trip.lodging.lat/lng` now lights
+// this up for an address-only stay where P1.5 had no coords and silently no-op'd.
 function tripStayCoords(trip) {
-  const hb = trip?.homeBase
-  if (hb && Number.isFinite(hb.lat) && Number.isFinite(hb.lng)) {
-    return { lat: hb.lat, lng: hb.lng, label: hb.label || '' }
-  }
-  return null
+  return stayPlaceCoords(trip)
 }
 
 // Human name of where you're staying — the lodging (object or legacy string).
@@ -200,6 +201,11 @@ function hasPlannedBaseStop(trip) {
 // (Phase 1 owns those); (3) a real STAY signal — a set lodging that isn't literally
 // "home", OR a multi-day trip (an overnight means you stayed somewhere away).
 export function tripImplicitBase(trip) {
+  // STRICTLY stays only — never an implicit base on a route trip (G5). The coord
+  // + hasPlannedBaseStop gates below almost always catch routes, but an explicit
+  // shape gate makes it bulletproof: a 2+-base route that happens to carry a
+  // homeBase anchor must NOT sprout an "At the cabin" place.
+  if (!isStayTrip(trip)) return null
   const coords = tripStayCoords(trip)
   if (!coords) return null
   if (hasPlannedBaseStop(trip)) return null
@@ -270,6 +276,11 @@ export function buildDayIndex(trip) {
   // ONLY — never sortedClockStops/looseStops/polyline (which would warp the day's
   // time windows + route). A per-day id keeps each day's "At [place]" distinct.
   const baseTemplate = tripImplicitBase(trip)
+  // Whether this is a STAY (one place you return to). Computed once; carried on
+  // each entry so matchPhotoToStop can default a no-GPS photo to the place
+  // WITHOUT re-deriving the shape per photo — and strictly gates the Phase-2
+  // no-GPS default to stays, leaving route trips byte-identical (G5).
+  const stay = isStayTrip(trip)
   for (const day of trip.days) {
     if (!day || !day.isoDate) continue
     const sortedClockStops = []
@@ -305,6 +316,7 @@ export function buildDayIndex(trip) {
       looseStops,
       allStops: dayBase ? [...allStops, dayBase] : allStops,
       polyline,
+      isStay: stay,
     })
   }
   return out
@@ -344,7 +356,7 @@ export function matchPhotoToStop(photo, dayIndex) {
     }
   }
   if (!dayEntry) return unmatched()
-  const { day, sortedClockStops, allStops } = dayEntry
+  const { day, sortedClockStops, allStops, isStay } = dayEntry
 
   // Temporal bracket: the clock stops immediately before/after this photo.
   // Used to LABEL an interstitial ("from A to B") and to bind a no-GPS photo
@@ -444,6 +456,34 @@ export function matchPhotoToStop(photo, dayIndex) {
     }
     // No located stop in the day at all → GPS can't place the photo; fall
     // through to the time-only binding below (treat like a no-GPS photo).
+  }
+
+  // FAMILY-TRIPS (Phase 2, FAMILY_TRIPS_VISION §5). On a STAY, a photo with no
+  // GPS is most likely "we're just here at the place" — so default it to the
+  // day's place instead of guessing the nearest event by the clock (the
+  // road-trip-era proxy that filed a cabin-hangout video to "dinner"). Jonathan's
+  // call: the place is the spine; an event only pulls a photo away when the
+  // photo's OWN GPS proves it (a GPS photo never reaches here). "The place" is the
+  // day's base in EITHER stay model — the implicit base (a destination-less stay,
+  // P1.5) OR a planned base/lodging stop (a marked base, P1) — so the two model
+  // shapes behave the same. Skipped on a home day (never your own house) and on
+  // route trips (isStay is false) → those paths stay byte-identical (G5).
+  if (isStay && !isHomeDay(day)) {
+    const base =
+      allStops.find((s) => isImplicitBaseId(s.id)) ||
+      allStops.find((s) => stopIsBase(s))
+    if (base) {
+      return {
+        photoId: photo.id,
+        dayIsoDate: day.isoDate,
+        dayN: day.n,
+        stopId: base.id,
+        matchType: 'time',
+        interstitialBefore: null,
+        interstitialAfter: null,
+        distanceMeters: null,
+      }
+    }
   }
 
   // No GPS → time-only. Bind to the clock stop whose window contains the photo
