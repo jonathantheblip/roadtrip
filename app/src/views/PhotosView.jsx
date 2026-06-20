@@ -242,7 +242,6 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
             fontSize: 10,
             letterSpacing: '0.18em',
             textTransform: 'uppercase',
-            opacity: 0.7,
             marginBottom: 18,
           }}
         >
@@ -523,8 +522,10 @@ function StopGroup({ group, onOpen }) {
             fontSize: 9,
             letterSpacing: '0.18em',
             textTransform: 'uppercase',
+            // --muted is already the de-emphasis; the extra opacity multiplier
+            // dropped this 9px eyebrow below AA contrast on 3/4 personas (the
+            // "--faint = decorative-only" trap). --muted alone clears 4.5:1.
             color: 'var(--muted)',
-            opacity: 0.8,
           }}
         >
           {group.isBase

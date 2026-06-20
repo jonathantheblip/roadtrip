@@ -5,20 +5,18 @@ import {
   FIXTURE_TRIP,
   TINY_RED_PNG_DATA_URL,
 } from './_fixtures/withTrip.js'
+import { expectNoSeriousA11y } from './_fixtures/axe.js'
 // Phase 1 — "being at a PLACE". The two NEW rendered surfaces of the base/place
 // model, end-to-end (not just the unit tests): the album's "At [place]" section
 // and the planning toggle.
 //
-// NOTE on axe: these surfaces (PhotosView album, TripEditor) were never
-// axe-scanned before, and a first scan flags PRE-EXISTING contrast debt — the
-// album eyebrow style (opacity 0.8 on --muted, shared by the existing time +
-// "From A to B" eyebrows) and the editor's field-label style (Lbl, opacity-70).
-// The base section's "AT" eyebrow and the "Base" toggle label reuse those exact
-// existing styles, so they add no NEW violation class. Cleaning the album/editor
-// small-text contrast is a separate a11y pass (it re-styles existing eyebrows +
-// every field label and re-blesses baselines), tracked as a follow-up — so this
-// spec asserts the feature RENDER, not a page-wide axe gate it can't meet
-// without that out-of-scope fix.
+// These were the first axe scans of the PhotosView album + the TripEditor; they
+// surfaced pre-existing small-text contrast debt (the eyebrow's opacity-0.8 on
+// --muted, the tile date/location labels, and the editor's opacity-50/60 micro-
+// labels — all the "--faint = decorative" trap). That debt is now FIXED (the
+// opacity multipliers are gone), so these specs re-gate axe on both surfaces,
+// helen included (the light persona where --muted has the thinnest margin), so
+// the contrast can't silently regress again.
 
 function photoOn(stopId, id, caption) {
   return {
@@ -66,6 +64,10 @@ test.describe('PhotosView — base ("At [place]") section', () => {
     await expect(base).toContainText(/AT · Fri May 22/i)
     // The stop's "Evening" clock label is suppressed for a base (it's a place).
     await expect(base).not.toContainText(/Evening/i)
+
+    // Contrast: the album eyebrows + tile labels now meet AA (helen is the
+    // light-persona worst case — --muted has the thinnest margin here).
+    await expectNoSeriousA11y(page, { label: 'photos base section (helen)' })
   })
 })
 
@@ -94,20 +96,25 @@ const DRAFT_TRIP = {
 }
 
 test.describe('TripEditor — base toggle', () => {
-  test('a lodging stop defaults to base ON, a non-lodging stop OFF', async ({ page }) => {
-    await seedTripIntoCache(page, DRAFT_TRIP)
-    await page.goto('/?person=jonathan&nosw=1')
-    // Reach the trips index, where drafts (and their Edit affordance) live.
-    await page.getByRole('button', { name: /trips/i }).first().click()
-    await page.getByRole('button', { name: `Edit draft ${DRAFT_TRIP.title}` }).click()
+  for (const person of ['jonathan', 'helen']) {
+    test(`a lodging stop defaults to base ON, a non-lodging stop OFF (${person})`, async ({ page }) => {
+      await seedTripIntoCache(page, DRAFT_TRIP)
+      await page.goto(`/?person=${person}&nosw=1`)
+      // Reach the trips index, where drafts (and their Edit affordance) live.
+      await page.getByRole('button', { name: /trips/i }).first().click()
+      await page.getByRole('button', { name: `Edit draft ${DRAFT_TRIP.title}` }).click()
 
-    const toggles = page.getByRole('checkbox', { name: /staying here/i })
-    await expect(toggles).toHaveCount(2)
-    await expect(toggles.nth(0)).toBeChecked() // lodging → base by default
-    await expect(toggles.nth(1)).not.toBeChecked() // food → not a base
+      const toggles = page.getByRole('checkbox', { name: /staying here/i })
+      await expect(toggles).toHaveCount(2)
+      await expect(toggles.nth(0)).toBeChecked() // lodging → base by default
+      await expect(toggles.nth(1)).not.toBeChecked() // food → not a base
 
-    // Opt the lodging stop OUT; it persists as an explicit off.
-    await toggles.nth(0).uncheck()
-    await expect(toggles.nth(0)).not.toBeChecked()
-  })
+      // Opt the lodging stop OUT; it persists as an explicit off.
+      await toggles.nth(0).uncheck()
+      await expect(toggles.nth(0)).not.toBeChecked()
+
+      // The editor field + micro-labels meet AA (helen = light-persona worst case).
+      await expectNoSeriousA11y(page, { label: `trip editor base toggle (${person})` })
+    })
+  }
 })

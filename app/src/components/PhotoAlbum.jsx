@@ -249,8 +249,9 @@ export function PhotoTile({ entry, onOpen }) {
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 9,
             letterSpacing: '0.10em',
+            // --muted only (no opacity multiplier) — the 9px tile date/location
+            // label must clear AA contrast; opacity 0.85 on --muted didn't.
             color: 'var(--muted)',
-            opacity: 0.85,
           }}
           data-testid="tile-date-source"
           data-source={entry.capturedAtSource}
@@ -266,7 +267,7 @@ export function PhotoTile({ entry, onOpen }) {
           >
             {formatShortDate(entry.capturedAt)}
             {entry.capturedAtSource === 'createdAt' && (
-              <span style={{ marginLeft: 2, opacity: 0.7 }}>· uploaded</span>
+              <span style={{ marginLeft: 2 }}>· uploaded</span>
             )}
           </span>
           {entry.locationLabel && (

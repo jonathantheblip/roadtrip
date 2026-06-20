@@ -268,7 +268,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
             <h1 className="f-news tt-tightest text-4xl leading-95">
               {trip.title?.trim() || 'Untitled trip'}
             </h1>
-            <p className="f-dm text-[11px] opacity-60 mt-2">
+            <p className="f-dm text-[11px] opacity-70 mt-2">
               {trip.draft ? 'DRAFT — not shown in the trip list until you publish' : 'PUBLISHED'}
             </p>
           </div>
@@ -329,7 +329,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
         action={<IconBtn onClick={addDay} label="Add day"><Plus size={14} /> Add day</IconBtn>}
       >
         {(trip.days || []).length === 0 && (
-          <p className="f-news-i text-sm opacity-60">No days yet. Add the first one.</p>
+          <p className="f-news-i text-sm opacity-70">No days yet. Add the first one.</p>
         )}
         {(trip.days || []).map((d, di) => (
           <DayBlock
@@ -379,7 +379,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
               </div>
             )}
             {comp.ok && (
-              <p className="f-news-i text-sm opacity-60 mt-3">
+              <p className="f-news-i text-sm opacity-70 mt-3">
                 Everything the themed views need is filled in. Publishing
                 makes this trip appear alongside the others.
               </p>
@@ -454,7 +454,7 @@ function DayBlock(props) {
           <IconBtn onClick={onAddStop} label="Add stop"><Plus size={13} /> Add stop</IconBtn>
         </div>
         {(day.stops || []).length === 0 && (
-          <p className="f-news-i text-xs opacity-50 mb-2">No stops yet.</p>
+          <p className="f-news-i text-xs opacity-70 mb-2">No stops yet.</p>
         )}
         {(day.stops || []).map((s, si) => (
           <StopBlock
@@ -541,7 +541,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 10, background: 'var(--card)' }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <p className="f-mono text-[10px] opacity-50">STOP {index + 1}</p>
+        <p className="f-mono text-[10px] opacity-70">STOP {index + 1}</p>
         <div className="flex" style={{ gap: 4 }}>
           <IconBtn onClick={() => onMove(-1)} label="Move stop up" disabled={index === 0}><ArrowUp size={12} /></IconBtn>
           <IconBtn onClick={() => onMove(1)} label="Move stop down" disabled={index === count - 1}><ArrowDown size={12} /></IconBtn>
@@ -599,7 +599,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
       <Text label="Link (tickets / menu / info)" value={stop.url} onChange={(v) => onUpdate({ url: v })} placeholder="https://…" />
 
       <div style={{ marginTop: 8, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
-        <p className="smallcaps f-dm text-[11px] opacity-60 mb-2">Logistics</p>
+        <p className="smallcaps f-dm text-[11px] opacity-70 mb-2">Logistics</p>
         <Row>
           <Text label="Reservation" value={stop.reservation} onChange={(v) => onUpdate({ reservation: v })} placeholder="Resy 7:30 PM, 4 guests" />
           <Text label="Confirmation #" value={stop.confirmation} onChange={(v) => onUpdate({ confirmation: v })} placeholder="ABC123" />
