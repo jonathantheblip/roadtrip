@@ -644,6 +644,42 @@ export function updateMemoryCapturedAt(memoryId, isoOrNull) {
   return null
 }
 
+// Fill in a video memory's poster (posterKey/posterUrl) AFTER the fact — used by
+// the poster-retry queue when a poster upload finally lands on a video that had
+// already synced without a still. Patches the video ref(s) and re-mirrors so the
+// real frame appears everywhere. Mirrors updateMemoryCapturedAt's by-id search.
+export function updateMemoryPoster(memoryId, posterKey, posterUrl) {
+  if (!memoryId || !posterKey) return null
+  const isVideoRef = (r) =>
+    !!r &&
+    (r.kind === 'video' ||
+      (typeof r.mime === 'string' && r.mime.startsWith('video/')) ||
+      typeof r.posterKey === 'string' ||
+      typeof r.posterUrl === 'string')
+  const patchRef = (r) => (isVideoRef(r) ? { ...r, posterKey, posterUrl } : r)
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    const m = list[idx]
+    const now = new Date().toISOString()
+    const patched = { ...m, updatedAt: now }
+    if (m.photoRef) patched.photoRef = patchRef({ ...m.photoRef })
+    if (Array.isArray(m.photoRefs)) patched.photoRefs = m.photoRefs.map((r) => patchRef({ ...r }))
+    list[idx] = patched
+    writeJson(key, list)
+    scheduleMirror({ type: 'save', record: patched })
+    return patched
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return null
+}
+
 // Manual reveal: flip a surprise from hidden → visible for its hideFrom list.
 // Stamps `revealed` so the read-side transform stops masking it (everyone sees
 // the real row from now on). Surprises live in the shared zone. Re-mirrors so

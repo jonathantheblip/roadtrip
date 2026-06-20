@@ -38,7 +38,8 @@ import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
-import { pullAll, isWorkerConfigured, workerFetch, uploadPoster, hasCredential } from './lib/workerSync'
+import { pullAll, isWorkerConfigured, workerFetch, hasCredential } from './lib/workerSync'
+import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
@@ -184,7 +185,7 @@ async function uploadQueueRunner(item) {
   // tile renders a still, not a fallback icon (best-effort; mirrors
   // uploadOrQueueVideo + PhotosView.triggerDrain so the three can't drift).
   if (item.kind === 'video' && item.posterBlob) {
-    const poster = await uploadPoster(item.id, item.posterBlob, asAuthor)
+    const poster = await uploadPosterOrQueue(item.id, item.posterBlob, asAuthor)
     if (poster) Object.assign(photoRef, poster)
   }
   saveMemory({
@@ -423,8 +424,15 @@ export default function App() {
       drainInFlight = true
       try {
         const pending = await queueCount()
-        if (cancelled || pending === 0) return
-        await drainQueue(uploadQueueRunner)
+        if (!cancelled && pending > 0) {
+          await drainQueue(uploadQueueRunner)
+        }
+        // Retry any video posters that failed to upload — independent of the
+        // upload queue (a poster can be pending while the queue is empty, e.g. an
+        // online video that uploaded but whose poster blipped).
+        if (!cancelled && isWorkerConfigured()) {
+          await drainPendingPosters()
+        }
       } catch (err) {
         // Drain failures stay silent — the items remain in the queue
         // for the next attempt. The sync pill (in PhotosView header)

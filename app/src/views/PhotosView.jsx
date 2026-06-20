@@ -6,7 +6,8 @@ import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/Phot
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
-import { isWorkerConfigured, workerFetch, uploadPoster } from '../lib/workerSync'
+import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
+import { uploadPosterOrQueue } from '../lib/posterRetry'
 import { removeAsset } from '../lib/memAssets'
 import { saveMemory } from '../lib/memoryStore'
 import { isVideoEncodeSupported } from '../lib/videoPipeline'
@@ -168,7 +169,7 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
         // Re-upload a queued video's poster so the synced tile renders a still
         // (best-effort; mirrors uploadOrQueueVideo + App.jsx uploadQueueRunner).
         if (item.kind === 'video' && item.posterBlob) {
-          const poster = await uploadPoster(item.id, item.posterBlob, asAuthor)
+          const poster = await uploadPosterOrQueue(item.id, item.posterBlob, asAuthor)
           if (poster) Object.assign(photoRef, poster)
         }
         saveMemory({

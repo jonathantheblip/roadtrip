@@ -383,28 +383,108 @@ async function estimateFrameRate(video) {
 // ─── first-frame poster ──────────────────────────────────────────
 
 async function extractFirstFramePoster(video, w, h) {
-  try {
-    await seekTo(video, 0)
-  } catch {
-    /* keep going */
-  }
   const max = 320 // posters live as small thumbnails
   const scale = Math.min(1, max / Math.max(w, h))
-  const tw = Math.round(w * scale)
-  const th = Math.round(h * scale)
+  const tw = Math.max(1, Math.round(w * scale))
+  const th = Math.max(1, Math.round(h * scale))
   const canvas =
     typeof OffscreenCanvas === 'function'
       ? new OffscreenCanvas(tw, th)
       : Object.assign(document.createElement('canvas'), { width: tw, height: th })
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) return null
-  ctx.drawImage(video, 0, 0, tw, th)
+
+  // The naive "seek to 0 and draw" often yields a BLACK frame (many clips open
+  // on black) or an UNPAINTED one (a seek's 'seeked' can fire before the pixels
+  // land on iOS). So try a small positive offset first (skip the black open),
+  // wait for paint, and skip a near-blank result — falling back to t=0.
+  const dur = Number.isFinite(video.duration) ? video.duration : 0
+  const offsets = uniqNums([
+    dur ? Math.min(0.2, dur * 0.05) : 0.2,
+    dur ? Math.min(1.0, dur * 0.2) : 1.0,
+    0,
+  ])
+
+  let drew = false
+  for (const t of offsets) {
+    // Bounded — a seek that never fires 'seeked' must not strand poster
+    // extraction (it's awaited before the encode worker starts). Draw whatever
+    // frame is current if the seek doesn't settle in time.
+    await seekToWithTimeout(video, t)
+    await nextPaint()
+    try {
+      ctx.drawImage(video, 0, 0, tw, th)
+      drew = true
+    } catch {
+      continue
+    }
+    let blank = true
+    try {
+      blank = isBlankImageData(ctx.getImageData(0, 0, tw, th).data)
+    } catch {
+      blank = false // can't sample (rare canvas taint) → accept what we drew
+    }
+    if (!blank) break
+  }
+  if (!drew) return null
+
   if (typeof canvas.convertToBlob === 'function') {
     return await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 })
   }
   return await new Promise((resolve) => {
     canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7)
   })
+}
+
+function uniqNums(arr) {
+  return arr.filter((v, i) => arr.indexOf(v) === i)
+}
+
+// Like seekTo but bounded — resolves (never rejects) on success, a seek error,
+// OR a timeout, so a decode that never fires 'seeked' can't hang the poster
+// extraction. Only used for the poster; the frame-walk's seek path is unchanged.
+function seekToWithTimeout(video, t, ms = 1500) {
+  return Promise.race([
+    seekTo(video, t).catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, ms)),
+  ])
+}
+
+// Resolve after the browser has had a chance to paint the seeked frame. Two
+// rAFs is the reliable "the frame is on screen now" signal; setTimeout is the
+// non-DOM fallback.
+function nextPaint() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    } else {
+      setTimeout(resolve, 32)
+    }
+  })
+}
+
+// True when an RGBA pixel buffer carries no real image content — a near-black
+// opening frame or an unpainted seek (near-uniform). Pure + exported so it's
+// unit-testable without a real <video>/canvas.
+export function isBlankImageData(data) {
+  if (!data || data.length < 4) return true
+  let min = 255
+  let max = 0
+  let sum = 0
+  let n = 0
+  // Sample ~1024 pixels (stride) for speed; luminance per sample.
+  const stride = Math.max(1, Math.floor(data.length / 4 / 1024)) * 4
+  for (let i = 0; i + 2 < data.length; i += stride) {
+    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    if (lum < min) min = lum
+    if (lum > max) max = lum
+    sum += lum
+    n++
+  }
+  if (n === 0) return true
+  const mean = sum / n
+  // Blank = almost no contrast (uniform frame) OR very dark overall.
+  return max - min < 8 || mean < 6
 }
 
 function withCode(code, message) {

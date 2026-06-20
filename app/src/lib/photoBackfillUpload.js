@@ -22,7 +22,8 @@ import { saveMemory } from './memoryStore'
 import { mergeRefIntoExisting } from './photoRefMerge'
 import { preparePhotoForUpload } from './photoPipeline'
 import { enqueue, registerBackgroundSync } from './uploadQueue'
-import { workerFetch, uploadPoster } from './workerSync'
+import { workerFetch } from './workerSync'
+import { uploadPosterOrQueue } from './posterRetry'
 
 function makeMemoryId() {
   return `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
@@ -303,9 +304,10 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     })
     const remote = await r.json()
     const ref = { ...baseRef, storage: 'r2', key: remote.key, url: remote.url }
-    // Upload the poster too (best-effort) so the synced album tile renders a
-    // still instead of a fallback icon. A poster failure leaves `ref` as-is.
-    const poster = await uploadPoster(memoryId, posterBlob)
+    // Upload the poster too so the synced tile renders a still instead of a
+    // fallback icon. If it fails, uploadPosterOrQueue parks it for retry (part 2)
+    // rather than dropping it silently; `ref` is left as-is until the retry lands.
+    const poster = await uploadPosterOrQueue(memoryId, posterBlob, { asTraveler: traveler })
     if (poster) Object.assign(ref, poster)
     return ref
   } catch (err) {

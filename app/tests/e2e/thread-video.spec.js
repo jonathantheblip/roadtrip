@@ -72,9 +72,36 @@ test('a synced video with NO poster shows the icon fallback (not a blank box) an
 
   // Poster-less video → a Play-glyph fallback, not an invisible/blank tile.
   await expect(page.getByTestId('thread-video-fallback').first()).toBeVisible()
+  // No retry pending for this one → no "uploading" hint.
+  await expect(page.getByTestId('thread-poster-pending')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Open video' }).first().click()
   const lightbox = page.getByTestId('photo-lightbox')
   await expect(lightbox.getByTestId('lightbox-video')).toBeAttached()
   await expect(lightbox.locator('img')).toHaveCount(0)
+})
+
+test('a poster-less video whose poster retry is pending shows a "thumbnail uploading" hint', async ({ page, browserName }) => {
+  // The hint render is engine-agnostic CSS (proven on chromium). On webkit the
+  // async cold-load poster-drain races this fake marker (whose blob isn't in
+  // idb) and clears it before the assert — the same idb/timing family as the
+  // other webkit-idb skips. Skip webkit rather than seed fragile webkit idb.
+  test.skip(browserName === 'webkit', 'poster-drain vs fake-marker race on webkit idb')
+  await seedTripIntoCache(page, FIXTURE_TRIP)
+  await seedMemoriesIntoCache(page, [videoMem({ id: 'vpending', stopId: 'vb1-3' })])
+  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+  // Set the pending-poster marker AFTER boot: the cold-load drain would
+  // otherwise drop a marker whose (fake) blob isn't in idb — a real "vanished
+  // blob" cleanup. hasPendingPoster('vpending') is then true on the thread render.
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'rt_pending_posters_v1',
+      JSON.stringify([{ memoryId: 'vpending', posterIdbKey: 'k', asTraveler: 'helen', attempts: 1 }])
+    )
+  })
+  await page.getByRole('button', { name: /DAY 1/i }).first().click()
+  await page.getByRole('button', { name: /Beach Bungalow/i }).first().click()
+
+  await expect(page.getByTestId('thread-video-fallback').first()).toBeVisible()
+  await expect(page.getByTestId('thread-poster-pending').first()).toBeVisible()
 })

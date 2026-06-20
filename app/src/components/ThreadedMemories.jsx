@@ -9,6 +9,7 @@ import {
 import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
 import { refIdbAssetKey } from '../lib/photoEntries'
+import { hasPendingPoster } from '../lib/posterRetry'
 import { Avatar, AvatarStack } from './Avatar'
 import { VoiceRecorder } from './VoiceRecorder'
 import { PhotoLightbox } from './PhotoAlbum'
@@ -471,6 +472,9 @@ function PhotoBubble({ mem, onOpenLightbox }) {
     : mem.photoRef
       ? [mem.photoRef]
       : []
+  // A video whose poster upload failed is retrying in the background — show a
+  // gentle "thumbnail still uploading" hint instead of a bare icon (part 2).
+  const posterPending = hasPendingPoster(mem.id)
   const [urls, setUrls] = useState({})
   useEffect(() => {
     let cancelled = false
@@ -642,9 +646,22 @@ function PhotoBubble({ mem, onOpenLightbox }) {
           color: 'var(--muted)',
         }}
       >
-        {/* poster-less video → a Play glyph stands in for the missing still */}
+        {/* poster-less video → a Play glyph stands in for the missing still,
+            plus a "still uploading" hint on the large tile while the poster
+            retry is in flight (part 2) */}
         {m.isVideo && !m.posterSrc && (
-          <Play data-testid="thread-video-fallback" size={big ? 26 : 18} strokeWidth={1.5} />
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <Play data-testid="thread-video-fallback" size={big ? 26 : 18} strokeWidth={1.5} />
+            {big && posterPending && (
+              <span
+                data-testid="thread-poster-pending"
+                className="f-mono"
+                style={{ fontSize: 8, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.7 }}
+              >
+                thumbnail…
+              </span>
+            )}
+          </span>
         )}
         {/* video WITH a still → a small play badge over the poster */}
         {m.isVideo && m.posterSrc && (
