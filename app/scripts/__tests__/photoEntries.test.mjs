@@ -85,6 +85,9 @@ function trip({ id, title, dateRangeStart, days }) {
         name: s.name,
         address: s.address,
         time: s.time || '',
+        kind: s.kind,
+        isBase: s.isBase,
+        baseRadiusMeters: s.baseRadiusMeters,
       })),
     })),
   }
@@ -209,6 +212,60 @@ test('groupByStop is unchanged from its per-trip contract', () => {
   ])
   const groups = groupByStop(entries, t)
   assert.deepEqual(groups.map((g) => g.stopKey), ['a', 'b'])
+})
+
+test('groupByStop marks a base (a place you stay) with isBase and drops its time label', () => {
+  // A lodging stop is a base by default → it renders as an "At [place]"
+  // section: isBase true, the clock time suppressed (it's a place, not an event).
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-06-14',
+    days: [
+      {
+        n: 1,
+        date: 'Jun 14',
+        isoDate: '2026-06-14',
+        stops: [
+          { id: 'cabin', name: 'The Cabin', kind: 'lodging', time: '6:00 PM' },
+          { id: 'dinner', name: 'Dinner', kind: 'food', time: '7:30 PM' },
+        ],
+      },
+    ],
+  })
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'm1', tripId: 't', stopId: 'cabin', refs: ['u://1'], capturedAt: '2026-06-14T20:00:00.000Z' }),
+    photoMem({ id: 'm2', tripId: 't', stopId: 'dinner', refs: ['u://2'], capturedAt: '2026-06-14T23:30:00.000Z' }),
+  ])
+  const byKey = Object.fromEntries(groupByStop(entries, t).map((g) => [g.stopKey, g]))
+  assert.equal(byKey.cabin.isBase, true)
+  assert.equal(byKey.cabin.timeLabel, '') // time dropped for a base
+  assert.equal(byKey.cabin.stopName, 'The Cabin')
+  // The dinner stop is a normal timed event — not a base, keeps its time.
+  assert.equal(byKey.dinner.isBase, false)
+  assert.equal(byKey.dinner.timeLabel, '7:30 PM')
+})
+
+test('groupByStop: isBase:false opts a lodging stop out of the base section', () => {
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-06-14',
+    days: [
+      {
+        n: 1,
+        date: 'Jun 14',
+        isoDate: '2026-06-14',
+        stops: [{ id: 'hotel', name: 'Airport Inn', kind: 'lodging', isBase: false, time: '11:00 PM' }],
+      },
+    ],
+  })
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'm1', tripId: 't', stopId: 'hotel', refs: ['u://1'], capturedAt: '2026-06-14T23:30:00.000Z' }),
+  ])
+  const [g] = groupByStop(entries, t)
+  assert.equal(g.isBase, false)
+  assert.equal(g.timeLabel, '11:00 PM') // ordinary stop keeps its time
 })
 
 test('groupByStop label precedence: stored label → stop → raw coords (a GPS fix never replaces a stop name with a decimal pair)', () => {

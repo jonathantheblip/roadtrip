@@ -20,6 +20,8 @@
 // sibling. Single-photo memories (post-M2 dispatch composer) render
 // normally.
 
+import { stopIsBase } from './photoMatch.js'
+
 export function flattenPhotoEntries(memories) {
   const out = []
   for (const m of memories || []) {
@@ -180,8 +182,9 @@ function memCreatedMs(e) {
 }
 
 // Per-trip grouping — used by PhotosView. Returns an array of
-// { stopKey, stopName, dayLabel, timeLabel, _dayN, _stopOrder,
-//   entries[] } sorted by day then stop position.
+// { stopKey, stopName, dayLabel, timeLabel, isBase, _dayN, _stopOrder,
+//   entries[] } sorted by day then stop position. `isBase` marks a
+// "place you're staying" section (rendered "At [place]", time dropped).
 export function groupByStop(entries, trip) {
   if (!entries.length) return []
   // Collapse the SAME photo referenced by more than one memory down to a
@@ -273,6 +276,10 @@ export function groupByStop(entries, trip) {
     const sid = entry.stopId || '__unassigned'
     if (!buckets.has(sid)) buckets.set(sid, [])
     const ctx = stopIndex.get(sid) || null
+    // A base (a place you're staying) renders as an "At [place]" section: it
+    // carries an `isBase` flag and drops the clock time, since it's a place,
+    // not a timed event.
+    const isBase = stopIsBase(ctx?.stop)
     buckets.get(sid).push({
       ...entry,
       stopName: ctx?.stop?.name || 'Unfiled',
@@ -295,7 +302,8 @@ export function groupByStop(entries, trip) {
         ? (ctx.day?.stops || []).findIndex((s) => s.id === ctx.stop.id)
         : 99,
       _dayLabel: ctx?.day?.date || ctx?.day?.title || '',
-      _timeLabel: ctx?.stop?.time || '',
+      _timeLabel: isBase ? '' : ctx?.stop?.time || '',
+      _isBase: isBase,
     })
   }
   const groups = []
@@ -310,6 +318,7 @@ export function groupByStop(entries, trip) {
       stopName: first?.stopName || 'Unfiled',
       dayLabel: first?._dayLabel || '',
       timeLabel: first?._timeLabel || '',
+      isBase: first?._isBase || false,
       _dayN: first?._dayN ?? 99,
       _stopOrder: first?._stopOrder ?? 99,
       entries: list,

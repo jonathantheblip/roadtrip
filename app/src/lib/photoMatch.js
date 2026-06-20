@@ -106,9 +106,44 @@ export const MATCH_THRESHOLDS = {
   // genuinely-off-stop clusters (an unplanned lunch ~2.6km out) to the
   // deviation→auto_added path. Tunable; measure with scripts/reconcile-report.
   gpsMatchMeters: 1_000,
+  // A photo within this of a SPECIFIC (non-base) stop counts as taken AT that
+  // stop even when a base also covers the area — so a meal at a restaurant near
+  // the cabin files to the restaurant, not "At the cabin". Kept tight on
+  // purpose: a base still wins for general hanging-out (the cabin-video-filed-
+  // as-dinner bug); only a photo essentially INSIDE a specific venue overrides
+  // the base. The one tuning knob for the base/specific tradeoff.
+  baseYieldMeters: 150,
   clusterDistanceMeters: 500, // 3+ photos within this of each other = cluster
   routeDeviationMeters: 2_000, // cluster >this from route line = deviation
   clusterMinSize: 3,
+}
+
+// A stop is a "BASE" — a place you're staying or hanging out at (the cabin, the
+// hotel), as opposed to a timed event. Bases catch the untimed "we're just
+// here" photos in the matcher (before the nearest-stop pass) and render as an
+// "At [place]" section in the album. A place you STAY is a base automatically
+// (kind 'lodging'); an explicit `isBase` (true OR false) always overrides that
+// default, so a one-night hotel can be opted out or a non-lodging spot (a visit
+// to Grandma's) opted in. Shared by the matcher, the album, and the planning
+// toggle so all three agree on what a base is.
+export function stopIsBase(stop) {
+  if (!stop) return false
+  if (typeof stop.isBase === 'boolean') return stop.isBase
+  return stop.kind === 'lodging'
+}
+
+// How far out a base CLAIMS PRIORITY — the radius within which it grabs the
+// "we're just here" photos ahead of a closer timed stop. Per-base override via
+// `baseRadiusMeters`; defaults to the standard GPS attach radius. NOTE: this
+// governs base PRIORITY, not an exclusive catch boundary — beyond it a base can
+// still pick up a photo through the ordinary nearest-stop attach (gpsMatchMeters),
+// exactly as any stop would. A future per-base size control could tighten this
+// into a hard footprint; today there's no UI to set it, so every base uses the
+// 1000m default and the distinction is invisible.
+export function stopBaseRadiusMeters(stop) {
+  return Number.isFinite(stop?.baseRadiusMeters)
+    ? stop.baseRadiusMeters
+    : MATCH_THRESHOLDS.gpsMatchMeters
 }
 
 // Build the per-day stop time map. Returns a Map<dayIsoDate,
@@ -223,12 +258,53 @@ export function matchPhotoToStop(photo, dayIndex) {
   // off-plan time — the April run put a shot 81m from the Menil Collection in
   // "interstitial" because the plan timed that hour at a different stop.)
   if (photoHasGps(photo)) {
+    // One pass over the day's located stops: track the overall nearest (the
+    // fallback), the nearest BASE (with its own footprint radius), and the
+    // nearest SPECIFIC (non-base) stop.
     let best = null
+    let nearestBase = null
+    let nearestSpecific = null
     for (const s of allStops) {
       if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng)) continue
       const d = haversineMeters(photo.lat, photo.lng, s.lat, s.lng)
       if (!best || d < best.distance) best = { stop: s, distance: d }
+      if (stopIsBase(s)) {
+        if (!nearestBase || d < nearestBase.distance) {
+          nearestBase = { stop: s, distance: d, radius: stopBaseRadiusMeters(s) }
+        }
+      } else if (!nearestSpecific || d < nearestSpecific.distance) {
+        nearestSpecific = { stop: s, distance: d }
+      }
     }
+
+    // BASE-PRIORITY (but smart). A base is a place you're staying/hanging out
+    // at, so it claims the untimed "we're just here" photos within its
+    // footprint BEFORE the nearest-stop pass — a porch shot files to "At the
+    // cabin", not the nearest timed event (the cabin-video-filed-as-dinner
+    // bug). EXCEPTION: a photo essentially INSIDE a specific nearby stop
+    // (within baseYieldMeters AND closer than the base) belongs to that stop —
+    // dinner at a restaurant near the cabin is "dinner", not the cabin. When
+    // the base yields, we fall through to the nearest-stop pass below, which
+    // picks that specific stop (it is then the overall nearest).
+    if (nearestBase && nearestBase.distance <= nearestBase.radius) {
+      const specificWins =
+        nearestSpecific &&
+        nearestSpecific.distance <= MATCH_THRESHOLDS.baseYieldMeters &&
+        nearestSpecific.distance < nearestBase.distance
+      if (!specificWins) {
+        return {
+          photoId: photo.id,
+          dayIsoDate: day.isoDate,
+          dayN: day.n,
+          stopId: nearestBase.stop.id,
+          matchType: 'gps+time',
+          interstitialBefore: null,
+          interstitialAfter: null,
+          distanceMeters: nearestBase.distance,
+        }
+      }
+    }
+
     if (best) {
       // The day has located stops, so GPS is decisive.
       if (best.distance <= MATCH_THRESHOLDS.gpsMatchMeters) {

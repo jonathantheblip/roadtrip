@@ -527,8 +527,9 @@ function StopGroup({ group, onOpen }) {
             opacity: 0.8,
           }}
         >
-          {group.dayLabel}
-          {group.timeLabel ? ` · ${group.timeLabel}` : ''}
+          {group.isBase
+            ? `AT${group.dayLabel ? ` · ${group.dayLabel}` : ''}`
+            : `${group.dayLabel}${group.timeLabel ? ` · ${group.timeLabel}` : ''}`}
         </div>
         <div
           style={{

@@ -17,6 +17,8 @@ const {
   promoteDeviationClusters,
   matchPhotosToStops,
   MATCH_THRESHOLDS,
+  stopIsBase,
+  stopBaseRadiusMeters,
 } = await import('../../src/lib/photoMatch.js')
 
 // ─── Geometry primitives ──────────────────────────────────────────
@@ -619,4 +621,139 @@ test('matchPhotosToStops: thresholds are exposed for tuning', () => {
   assert.equal(MATCH_THRESHOLDS.clusterDistanceMeters, 500)
   assert.equal(MATCH_THRESHOLDS.routeDeviationMeters, 2_000)
   assert.equal(MATCH_THRESHOLDS.clusterMinSize, 3)
+  assert.equal(MATCH_THRESHOLDS.baseYieldMeters, 150)
+})
+
+// ─── Base (place-you're-staying) detection ────────────────────────
+
+test('stopIsBase: a place you STAY (lodging) is a base by default', () => {
+  assert.equal(stopIsBase({ kind: 'lodging' }), true)
+})
+
+test('stopIsBase: a non-lodging stop is not a base by default', () => {
+  assert.equal(stopIsBase({ kind: 'food' }), false)
+  assert.equal(stopIsBase({ kind: 'sights' }), false)
+  assert.equal(stopIsBase({}), false)
+  assert.equal(stopIsBase(null), false)
+})
+
+test('stopIsBase: an explicit isBase ALWAYS overrides the lodging default', () => {
+  // opt a one-night hotel OUT
+  assert.equal(stopIsBase({ kind: 'lodging', isBase: false }), false)
+  // opt a non-lodging spot (Grandma's) IN
+  assert.equal(stopIsBase({ kind: 'visit', isBase: true }), true)
+})
+
+test('stopBaseRadiusMeters: defaults to the GPS attach radius, override wins', () => {
+  assert.equal(stopBaseRadiusMeters({}), MATCH_THRESHOLDS.gpsMatchMeters)
+  assert.equal(stopBaseRadiusMeters({ baseRadiusMeters: 2_000 }), 2_000)
+  // a junk override falls back to the default
+  assert.equal(stopBaseRadiusMeters({ baseRadiusMeters: NaN }), MATCH_THRESHOLDS.gpsMatchMeters)
+})
+
+// ─── Base-priority matching ───────────────────────────────────────
+// Photo P sits at (42.0000, -73.0000). Stops are offset due NORTH, so
+// the distance from P is ~111_111 × Δlat meters (≈ 200m per 0.0018°).
+
+const P = { lat: 42.0, lng: -73.0 }
+const NORTH = (meters) => 42.0 + meters / 111_111
+
+function baseDay(stops) {
+  return makeTrip([{ n: 1, isoDate: '2026-04-17', title: 'At the cabin', stops }])
+}
+function photoAtP(id = 'p') {
+  return { id, capturedAt: '2026-04-17T12:00:00Z', lat: P.lat, lng: P.lng }
+}
+
+test('base-priority: a hangout photo files to the BASE, not a closer timed stop (the cabin-video-in-dinner bug)', () => {
+  // The dinner stop is CLOSER (200m) than the cabin base (250m), so the old
+  // nearest-stop rule filed the porch video into "dinner". The base now wins
+  // because the photo isn't essentially INSIDE the dinner stop.
+  const trip = baseDay([
+    { id: 'cabin', kind: 'lodging', time: '6:00 PM', name: 'The Cabin', lat: NORTH(250), lng: -73.0 },
+    { id: 'dinner', kind: 'food', time: '7:00 PM', name: 'Dinner', lat: NORTH(200), lng: -73.0 },
+  ])
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'cabin')
+  assert.equal(m.matchType, 'gps+time')
+})
+
+test('base-priority (smart): a photo taken RIGHT AT a specific nearby stop files to that stop, not the base', () => {
+  // The restaurant is within baseYieldMeters (50m < 150m) AND closer than the
+  // cabin (300m) — you're clearly AT the restaurant, so it wins.
+  const trip = baseDay([
+    { id: 'cabin', kind: 'lodging', time: '9:00 AM', name: 'The Cabin', lat: NORTH(300), lng: -73.0 },
+    { id: 'rstrnt', kind: 'food', time: '1:00 PM', name: 'The Diner', lat: NORTH(50), lng: -73.0 },
+  ])
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'rstrnt')
+  assert.equal(m.matchType, 'gps+time')
+})
+
+test('base-priority: a non-base stop just BEYOND the yield radius does NOT steal from the base', () => {
+  // 200m > baseYieldMeters(150) → not "clearly at" the stop → base keeps it,
+  // even though the stop is marginally closer than the base (250m).
+  const trip = baseDay([
+    { id: 'cabin', kind: 'lodging', time: '9:00 AM', name: 'The Cabin', lat: NORTH(250), lng: -73.0 },
+    { id: 'shop', kind: 'sights', time: '1:00 PM', name: 'Farm stand', lat: NORTH(200), lng: -73.0 },
+  ])
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'cabin')
+})
+
+test('base-priority: two bases in a day → the NEAREST base wins', () => {
+  const trip = baseDay([
+    { id: 'base1', kind: 'lodging', time: '8:00 AM', name: 'Cabin A', lat: NORTH(400), lng: -73.0 },
+    { id: 'base2', kind: 'lodging', time: '9:00 PM', name: 'Cabin B', lat: NORTH(200), lng: -73.0 },
+  ])
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'base2')
+})
+
+test('base-priority: an explicit isBase:true opts a NON-lodging stop in (it beats a closer specific stop)', () => {
+  const trip = baseDay([
+    { id: 'grandma', kind: 'visit', isBase: true, time: '9:00 AM', name: "Grandma's", lat: NORTH(300), lng: -73.0 },
+    { id: 'store', kind: 'food', time: '1:00 PM', name: 'Corner store', lat: NORTH(250), lng: -73.0 },
+  ])
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'grandma')
+})
+
+test('base-priority: isBase:false opts a lodging stop OUT (no base priority → nearest wins)', () => {
+  // The hotel is opted out, so it's an ordinary stop. The food stop is nearest
+  // (250m vs 300m) and wins by plain nearest-stop — the hotel does NOT steal it.
+  const trip = baseDay([
+    { id: 'hotel', kind: 'lodging', isBase: false, time: '8:00 PM', name: 'Airport Inn', lat: NORTH(300), lng: -73.0 },
+    { id: 'cafe', kind: 'food', time: '1:00 PM', name: 'Cafe', lat: NORTH(250), lng: -73.0 },
+  ])
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'cafe')
+})
+
+test('base-priority: a no-base day is byte-identical to plain nearest-stop matching', () => {
+  // No lodging, no isBase → the base pass is inert; the nearest located stop
+  // wins exactly as before (regression guard for S2).
+  const trip = baseDay([
+    { id: 'a', kind: 'food', time: '9:00 AM', name: 'A', lat: NORTH(250), lng: -73.0 },
+    { id: 'b', kind: 'sights', time: '1:00 PM', name: 'B', lat: NORTH(200), lng: -73.0 },
+  ])
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'b') // nearest, no priority
+  assert.equal(m.matchType, 'gps+time')
+})
+
+test('base-priority: baseRadiusMeters extends a base footprint past the default', () => {
+  // Photo is 1500m from the base — beyond the default 1000m, so without an
+  // override it falls to interstitial. A 2000m baseRadiusMeters claims it.
+  const far = { id: 'cabin', kind: 'lodging', time: '9:00 AM', name: 'Sprawling Cabin', lat: NORTH(1_500), lng: -73.0 }
+  const withoutOverride = matchPhotoToStop(photoAtP(), buildDayIndex(baseDay([{ ...far }])))
+  assert.equal(withoutOverride.matchType, 'interstitial')
+  assert.equal(withoutOverride.stopId, null)
+
+  const withOverride = matchPhotoToStop(
+    photoAtP(),
+    buildDayIndex(baseDay([{ ...far, baseRadiusMeters: 2_000 }]))
+  )
+  assert.equal(withOverride.matchType, 'gps+time')
+  assert.equal(withOverride.stopId, 'cabin')
 })

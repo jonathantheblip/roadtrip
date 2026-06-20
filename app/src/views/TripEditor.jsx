@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { TRAVELER_ORDER, TRAVELERS } from '../data/travelers'
 import { geocodeAddress } from '../lib/geocode'
+import { stopIsBase } from '../lib/photoMatch'
 import { suggestPitch, isAiAssistConfigured } from '../lib/aiAssist'
 import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { uploadTripCover } from '../lib/workerSync'
@@ -553,7 +554,11 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
       </Row>
       <Row>
         <Select label="Kind" value={stop.kind} options={STOP_KINDS} onChange={(v) => onUpdate({ kind: v })} />
-        <div />
+        <BaseToggle
+          value={stopIsBase(stop)}
+          onChange={(v) => onUpdate({ isBase: v })}
+          located={Number.isFinite(stop.lat) && Number.isFinite(stop.lng)}
+        />
       </Row>
       <Travelers compact label="Who it's for" value={stop.for || []} onChange={(v) => onUpdate({ for: v })} pool={travelers} />
       <div>
@@ -692,6 +697,37 @@ function Select({ label, value, options, onChange }) {
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </label>
+  )
+}
+// The base toggle. Sits in the slot beside "Kind". `value` is the DERIVED
+// base-ness (a place you stay is on by default — see stopIsBase); ticking
+// stores an explicit on/off so a hotel can be opted out or any spot opted in.
+// When a base has no located address it can't catch photos, so we say so.
+function BaseToggle({ value, onChange, located }) {
+  return (
+    <div className="flex flex-col" style={{ gap: 6 }}>
+      <Lbl label="Base" />
+      <label
+        className="memory-textarea"
+        style={{
+          minHeight: 'auto', padding: 10, fontSize: 14, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={value}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{ accentColor: 'var(--accent)', width: 16, height: 16, flexShrink: 0 }}
+        />
+        <span>We're staying here</span>
+      </label>
+      {value && !located && (
+        <p className="f-dm text-[11px]" style={{ opacity: 0.65, marginTop: 2 }}>
+          Add an address above so photos here can file to this base.
+        </p>
+      )}
+    </div>
   )
 }
 function Travelers({ label = 'Travelers', value, onChange, pool = TRAVELER_ORDER, compact }) {
