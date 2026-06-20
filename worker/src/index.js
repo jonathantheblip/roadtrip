@@ -602,6 +602,34 @@ async function postMemory(env, traveler, request, url, cors) {
   if (body.masked) {
     return json({ ok: true, skipped: 'masked-projection', id: body.id }, 200, cors)
   }
+  // OPTIMISTIC CONCURRENCY (memory-sync conflict guard). Mirrors the postTrip
+  // guard (~1207). The client MAY send the server `updated_at` it last saw as
+  // `baseUpdatedAt` (epoch ms — the client tracks a server-issued serverUpdatedAt
+  // precisely so this compare is server-clock vs server-clock, never the device
+  // clock). If the stored row has moved on since (someone else saved in between),
+  // refuse with 409 so a STALE background push — the poster-retry / capturedAt /
+  // reveal patch firing on a copy that went stale — can't blind-LWW-revert a newer
+  // edit made elsewhere. BACKWARD COMPATIBLE: an older client (or a never-synced
+  // record) sends no base → the check is skipped and last-write-wins is unchanged.
+  // The base is a transport field, not memory data — strip it (postMemory binds
+  // columns individually so it would never reach a column, but strip for parity +
+  // defense). The 409 carries storedUpdatedAt so a concurrency-aware client can
+  // re-pull, re-apply its one field onto the fresh row, and retry.
+  const baseUpdatedAt =
+    Number.isFinite(body.baseUpdatedAt) ? body.baseUpdatedAt : null
+  if ('baseUpdatedAt' in body) delete body.baseUpdatedAt
+  if (baseUpdatedAt != null) {
+    const storedRow = await env.DB.prepare(
+      'SELECT updated_at FROM memories WHERE id = ?'
+    ).bind(body.id).first()
+    if (storedRow && Number(storedRow.updated_at) > baseUpdatedAt) {
+      return json(
+        { error: 'conflict', id: body.id, storedUpdatedAt: Number(storedRow.updated_at) },
+        409,
+        cors
+      )
+    }
+  }
   // Server stamps updated_at to ensure monotonic incremental sync.
   const updatedAt = Date.now()
   const createdAt = body.createdAt

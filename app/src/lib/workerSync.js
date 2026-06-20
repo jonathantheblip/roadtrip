@@ -242,10 +242,14 @@ export async function draftCover(context) {
 
 // ─── Memories ─────────────────────────────────────────────────────────
 
-export async function pullAll() {
+export async function pullAll({ asTraveler } = {}) {
   if (!isWorkerConfigured()) return []
   try {
-    const r = await workerFetch('/memories')
+    // `asTraveler` (optional) authenticates the pull AS a specific person — used by
+    // the conflict-recovery re-pull so a private / surprise memory is fetched under
+    // its real AUTHOR (getMemories masks + filters per identity). Defaults to the
+    // active traveler (every existing caller), unchanged.
+    const r = await workerFetch('/memories', {}, { asTraveler })
     const arr = await r.json()
     return Array.isArray(arr) ? arr : []
   } catch (err) {
@@ -256,7 +260,24 @@ export async function pullAll() {
   }
 }
 
-export async function pushMemory(memory) {
+// Convert an optimistic-concurrency base to epoch ms for the wire. Accepts an ISO
+// string (what rowToMemory emits) or a raw number; returns NaN for anything that
+// can't be a real timestamp (undefined / '' / unparseable), so the caller OMITS it
+// and the worker stays last-write-wins. Exported for unit tests.
+export function baseToEpochMs(v) {
+  if (typeof v === 'number') return v
+  if (typeof v === 'string' && v) return Date.parse(v)
+  return NaN
+}
+
+// baseUpdatedAt (optional): the SERVER updated_at this record was last known at
+// (an ISO string or epoch ms). When present + finite it rides as the
+// optimistic-concurrency base — the worker refuses with 409 if the stored row has
+// moved on, so a STALE push can't blind-revert a newer edit. Omitted for a
+// never-synced record → the worker keeps last-write-wins (safe create). Returns the
+// stored memory row on success (so the caller can capture the new serverUpdatedAt);
+// a 409 throws out of workerFetch with err.status === 409 for the caller to recover.
+export async function pushMemory(memory, { baseUpdatedAt } = {}) {
   if (!isWorkerConfigured()) return null
   // A masked projection (Surprises, 010) — a teaser stub / cover stand-in the
   // worker emitted for a recipient. It carries stripped content; pushing it back
@@ -330,11 +351,19 @@ export async function pushMemory(memory) {
     if (!updated.photoRef && newRefs[0]) updated.photoRef = newRefs[0]
   }
 
-  await workerFetch('/memories', {
+  // Attach the optimistic-concurrency base, numeric only (the worker compares
+  // Number(stored) > base). Non-finite (undefined / NaN / a never-synced record) is
+  // OMITTED so the worker stays last-write-wins — never sent as null/0/NaN.
+  const baseEpoch = baseToEpochMs(baseUpdatedAt)
+  if (Number.isFinite(baseEpoch)) updated.baseUpdatedAt = baseEpoch
+
+  const r = await workerFetch('/memories', {
     method: 'POST',
     body: JSON.stringify(updated),
   }, { asTraveler: asAuthor })
-  return true
+  // Hand back the stored row (carries the server-stamped updatedAt). On a parse
+  // miss fall back to `true` so old truthiness-only callers still see success.
+  return await r.json().catch(() => true)
 }
 
 export async function deleteRemote(memory) {

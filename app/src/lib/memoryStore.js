@@ -318,6 +318,11 @@ export function saveMemory({
     ...mask,
     createdAt: existingShared?.createdAt || existingPriv?.createdAt || now,
     updatedAt: now,
+    // Carry the server-known version forward so a foreground edit sends it as the
+    // optimistic-concurrency base (a save built on a stale local copy is then
+    // refused → re-pulled → re-pushed on top of fresh, rather than blind-clobbering).
+    // Undefined for a brand-new memory → the worker creates it (no base, LWW).
+    serverUpdatedAt: existingShared?.serverUpdatedAt || existingPriv?.serverUpdatedAt,
   }
 
   // Re-read the target key (in case it was the one we just rewrote)
@@ -435,13 +440,115 @@ export function removePhotoFromMemory({ memoryId, author, photoUrl, refKey } = {
     next.updatedAt = new Date().toISOString()
     list[idx] = next
     writeJson(key, list)
-    scheduleMirror({ type: 'save', record: next })
+    // On a 409, re-apply ONLY this photo's removal onto the FRESH server row (a
+    // targeted edit — must not blanket-overwrite a caption/reaction another device
+    // changed in the meantime). If removing it from fresh would empty the memory
+    // (another device's photos are gone too), leave fresh untouched rather than
+    // delete a memory someone may be adding to — conservative on a rare conflict.
+    scheduleMirror({
+      type: 'save',
+      record: next,
+      reapply: (fresh) => {
+        const { record: r } = removePhotoFromRecord(fresh, { photoUrl, refKey })
+        return r ? { ...r, updatedAt: new Date().toISOString() } : fresh
+      },
+    })
     const remaining =
       (next.photoRefs?.length || (next.photoRef ? 1 : 0)) +
       (next.photoExternalURLs?.length || 0)
     return { status: 'removed-photo', remaining }
   }
   return { status: 'not-found' }
+}
+
+// Stamp the SERVER's version onto a record taken from a remote pull. r.updatedAt
+// IS the server's updated_at (rowToMemory emits it), so it becomes serverUpdatedAt
+// — the skew-free base a later patch sends for the optimistic-concurrency guard.
+// (The LWW field `updatedAt` can be a device clock; serverUpdatedAt never is.)
+function stampServer(r) {
+  if (r && r.updatedAt) r.serverUpdatedAt = r.updatedAt
+  return r
+}
+
+// Force-write one record into its bucket by id (shared, or the author's private
+// zone) — used by conflict recovery, which must land a specific merged record even
+// though the optimistic local copy is timestamped newer than the server (so the
+// LWW mergeFromRemote would refuse the fresh row).
+function putLocalRecord(record) {
+  if (!record?.id) return
+  const key = record.visibility === 'private' ? PRIVATE_KEY(record.authorTraveler) : SHARED_KEY
+  const list = readJson(key)
+  const idx = list.findIndex((m) => m.id === record.id)
+  if (idx >= 0) list[idx] = record
+  else list.push(record)
+  writeJson(key, list)
+}
+
+// Record the server-issued updatedAt onto the local copy after a successful push,
+// so the NEXT patch sends a fresh, server-sourced base (monotonic — never lowers).
+export function recordServerUpdatedAt(id, author, iso) {
+  if (!id || !iso) return
+  const bump = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === id)
+    if (idx < 0) return false
+    const cur = list[idx].serverUpdatedAt
+    if (!cur || iso > cur) {
+      list[idx] = { ...list[idx], serverUpdatedAt: iso }
+      writeJson(key, list)
+    }
+    return true
+  }
+  if (bump(SHARED_KEY)) return
+  // A private record lives in its author's bucket — go straight there when we know
+  // the author (the push always carries it); fall back to a scan only when we don't.
+  if (author) { bump(PRIVATE_KEY(author)); return }
+  for (const t of ['jonathan', 'helen', 'aurelia', 'rafa']) if (bump(PRIVATE_KEY(t))) return
+}
+
+const MIRROR_CONFLICT_RETRIES = 2
+
+// Recover from a 409 (the worker refused our push because the stored row moved on).
+// Re-pull the conflicting memory AS ITS AUTHOR (not the active persona — on a shared
+// device that's usually the wrong identity and would mask/hide the row), then either
+// re-apply ONLY our one field onto the fresh row (background patch → true merge,
+// never clobbers a neighbor) or re-push the whole edit on top of fresh (foreground →
+// last deliberate edit wins). Push-then-write: local is updated to the merged state
+// only AFTER a successful re-push, so a mid-recovery failure can't strand local ahead
+// of the server (an island the next pull would refuse).
+export async function resolveSaveConflict(sync, op, attempt = 0) {
+  let remote
+  try {
+    remote = await sync.pullAll({ asTraveler: op.record.authorTraveler || undefined })
+  } catch {
+    return // offline mid-conflict — leave local as-is (same as a plain failed push)
+  }
+  if (!Array.isArray(remote) || remote.errors) return // transient — don't strand in a loop
+  const fresh = remote.find((r) => r.id === op.record.id)
+  if (!fresh || fresh.masked) return // can't see the real row / masked stub — leave canonical
+  const merged = op.reapply ? op.reapply(fresh) : { ...op.record }
+  merged.serverUpdatedAt = fresh.updatedAt
+  try {
+    const res = await sync.pushMemory(merged, { baseUpdatedAt: fresh.updatedAt })
+    const serverUpdatedAt = res && typeof res === 'object' && res.updatedAt ? res.updatedAt : fresh.updatedAt
+    // Stamp local's LWW `updatedAt` with the SERVER's value (not the reapply's client
+    // wall clock). If the periodic auto-sync (App.jsx runSync) merged an even-newer
+    // edit to this id during our pull→push window, a future-dated client stamp would
+    // out-rank it forever (shouldTakeRemote compares updatedAt) and the edit would be
+    // lost permanently. Server-stamped, the next pull self-heals it — and
+    // preserveLocalPhotoMeta carries our poster onto that newer row. Force-write
+    // because the optimistic local copy is timestamped ahead of the server.
+    putLocalRecord({ ...merged, updatedAt: serverUpdatedAt, serverUpdatedAt })
+  } catch (err) {
+    if (err?.status === 409 && attempt < MIRROR_CONFLICT_RETRIES) {
+      return resolveSaveConflict(sync, { ...op, record: merged }, attempt + 1)
+    }
+    // Give up this burst WITHOUT an island: adopt the fresh server row, carrying our
+    // local poster/EXIF forward (preserveLocalPhotoMeta) so a synced video keeps its
+    // still and the durable posterRetry queue can re-push later. updatedAt becomes
+    // the server's, so the next pull reconciles cleanly.
+    putLocalRecord(stampServer(preserveLocalPhotoMeta({ ...fresh }, op.record)))
+  }
 }
 
 // Tiny serial queue so a fast burst of saves doesn't fan out to N
@@ -452,10 +559,23 @@ function scheduleMirror(op) {
     .then(async () => {
       try {
         const sync = await import('./workerSync.js')
-        if (op.type === 'save') await sync.pushMemory(op.record)
-        else if (op.type === 'delete') await sync.deleteRemote(op.record)
+        if (op.type === 'delete') {
+          await sync.deleteRemote(op.record)
+          return
+        }
+        // save — send the server-known base so a STALE push is refused (409)
+        // instead of clobbering; capture the new server version on success.
+        try {
+          const res = await sync.pushMemory(op.record, { baseUpdatedAt: op.record.serverUpdatedAt })
+          if (res && typeof res === 'object' && res.updatedAt) {
+            recordServerUpdatedAt(op.record.id, op.record.authorTraveler, res.updatedAt)
+          }
+        } catch (err) {
+          if (err?.status === 409) await resolveSaveConflict(sync, op, 0)
+          /* else offline / unconfigured / Worker error — local stays canonical */
+        }
       } catch {
-        /* offline / unconfigured / Worker error — local stays canonical */
+        /* import failed / offline — local stays canonical */
       }
     })
     .catch(() => {})
@@ -499,13 +619,13 @@ export function mergeFromRemote(remoteRecords) {
       const bucket = getPrivateBucket(author)
       const existing = bucket.get(r.id)
       if (shouldTakeRemote(r, existing)) {
-        bucket.set(r.id, existing ? preserveLocalPhotoMeta(r, existing) : r)
+        bucket.set(r.id, stampServer(existing ? preserveLocalPhotoMeta(r, existing) : r))
         added += 1
       }
     } else {
       const existing = sharedMap.get(r.id)
       if (shouldTakeRemote(r, existing)) {
-        sharedMap.set(r.id, existing ? preserveLocalPhotoMeta(r, existing) : r)
+        sharedMap.set(r.id, stampServer(existing ? preserveLocalPhotoMeta(r, existing) : r))
         added += 1
       }
     }
@@ -627,11 +747,20 @@ export function updateMemoryCapturedAt(memoryId, isoOrNull) {
     const list = readJson(key)
     const idx = list.findIndex((m) => m.id === memoryId)
     if (idx < 0) return null
+    // Never patch a masked projection (a teaser stub / cover stand-in) — it isn't a
+    // valid write target; bumping its updatedAt would also suppress the real reveal.
+    if (list[idx].masked) return list[idx]
     const now = new Date().toISOString()
     const patched = { ...list[idx], capturedAt: next, updatedAt: now }
     list[idx] = patched
     writeJson(key, list)
-    scheduleMirror({ type: 'save', record: patched })
+    // On a 409, re-apply ONLY the capture-date override onto the fresh server row
+    // (a deliberate single-field override — set it, don't gap-fill).
+    scheduleMirror({
+      type: 'save',
+      record: patched,
+      reapply: (fresh) => ({ ...fresh, capturedAt: next, updatedAt: new Date().toISOString() }),
+    })
     return patched
   }
   const inShared = tryUpdateIn(SHARED_KEY)
@@ -657,10 +786,15 @@ export function updateMemoryPoster(memoryId, posterKey, posterUrl) {
       typeof r.posterKey === 'string' ||
       typeof r.posterUrl === 'string')
   const patchRef = (r) => (isVideoRef(r) ? { ...r, posterKey, posterUrl } : r)
+  // For the 409 re-push: fill the poster ONLY on a fresh video ref that still lacks
+  // one — idempotent, so it never overwrites a poster another device already set,
+  // and never blanket-restamps a ref the fresh row legitimately changed.
+  const gapFillRef = (r) => (isVideoRef(r) && !r.posterKey ? { ...r, posterKey, posterUrl } : r)
   const tryUpdateIn = (key) => {
     const list = readJson(key)
     const idx = list.findIndex((m) => m.id === memoryId)
     if (idx < 0) return null
+    if (list[idx].masked) return list[idx] // never patch a masked projection
     const m = list[idx]
     const now = new Date().toISOString()
     const patched = { ...m, updatedAt: now }
@@ -668,7 +802,16 @@ export function updateMemoryPoster(memoryId, posterKey, posterUrl) {
     if (Array.isArray(m.photoRefs)) patched.photoRefs = m.photoRefs.map((r) => patchRef({ ...r }))
     list[idx] = patched
     writeJson(key, list)
-    scheduleMirror({ type: 'save', record: patched })
+    scheduleMirror({
+      type: 'save',
+      record: patched,
+      reapply: (fresh) => {
+        const f = { ...fresh, updatedAt: new Date().toISOString() }
+        if (fresh.photoRef) f.photoRef = gapFillRef({ ...fresh.photoRef })
+        if (Array.isArray(fresh.photoRefs)) f.photoRefs = fresh.photoRefs.map((r) => gapFillRef({ ...r }))
+        return f
+      },
+    })
     return patched
   }
   const inShared = tryUpdateIn(SHARED_KEY)
@@ -689,11 +832,18 @@ export function revealSurprise(memoryId) {
   const list = readJson(SHARED_KEY)
   const idx = list.findIndex((m) => m.id === memoryId)
   if (idx < 0) return null
+  if (list[idx].masked) return list[idx] // never patch a masked projection
   const now = new Date().toISOString()
   const patched = { ...list[idx], revealed: now, updatedAt: now }
   list[idx] = patched
   writeJson(SHARED_KEY, list)
-  scheduleMirror({ type: 'save', record: patched })
+  // On a 409, set `revealed` on the fresh row — but keep an existing reveal if one
+  // already landed (reveal is one-way; don't move the timestamp backward/forward).
+  scheduleMirror({
+    type: 'save',
+    record: patched,
+    reapply: (fresh) => ({ ...fresh, revealed: fresh.revealed || now, updatedAt: new Date().toISOString() }),
+  })
   return patched
 }
 
