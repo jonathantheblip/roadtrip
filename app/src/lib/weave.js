@@ -1,5 +1,6 @@
 import { listMemoriesForTrip } from './memoryStore'
 import { workerFetch, isWorkerConfigured } from './workerSync'
+import { dayStopIds } from './photoMatch'
 
 // ── Day selection ────────────────────────────────────────────────────
 //
@@ -20,7 +21,7 @@ export function selectWeaveDay(trips, traveler, todayIso) {
 
   // Helper: check whether a trip has any memory on a given day.
   function dayHasMemory(trip, day) {
-    const stopIds = new Set((day.stops || []).map((s) => s.id))
+    const stopIds = dayStopIds(trip, day) // planned stops + the implicit base ("At the cabin")
     const mems = listMemoriesForTrip(trip.id, traveler)
     return mems.some((m) => stopIds.has(m.stopId))
   }
@@ -69,7 +70,7 @@ export function selectWeaveDay(trips, traveler, todayIso) {
 // per person.  Beat preference: voice > photo > text (most distinctive
 // first).  Returns [{ who, kind, snippet, memory }].
 export function buildBeats(trip, day, memories) {
-  const stopIds = new Set((day.stops || []).map((s) => s.id))
+  const stopIds = dayStopIds(trip, day) // planned stops + the implicit base ("At the cabin")
   const dayMems = memories.filter((m) => stopIds.has(m.stopId))
 
   // Group by author.

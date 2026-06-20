@@ -20,7 +20,7 @@
 // sibling. Single-photo memories (post-M2 dispatch composer) render
 // normally.
 
-import { stopIsBase } from './photoMatch.js'
+import { stopIsBase, tripImplicitBase, implicitBaseIdForDay, isHomeDay } from './photoMatch.js'
 
 export function flattenPhotoEntries(memories) {
   const out = []
@@ -198,9 +198,18 @@ export function groupByStop(entries, trip) {
   // flattenPhotoEntries do not, so they keep every raw entry.
   entries = dedupeByPhoto(entries)
   const stopIndex = new Map()
+  // The trip's implicit base ("At the cabin") isn't a planned stop, so resolve it
+  // here per-day with the same day-scoped id the matcher files photos to — else a
+  // base-filed photo would render under "Unfiled". Per day → one "At [place]"
+  // section per day, mirroring a planned per-day base stop.
+  const baseTemplate = tripImplicitBase(trip)
   for (const day of trip?.days || []) {
     for (const stop of day.stops || []) {
       stopIndex.set(stop.id, { stop, day })
+    }
+    if (baseTemplate && day.isoDate && !isHomeDay(day)) {
+      const id = implicitBaseIdForDay(day.isoDate)
+      stopIndex.set(id, { stop: { ...baseTemplate, id }, day })
     }
   }
   // Resolve a between-stops ("from A to B") section's label + position from
@@ -298,9 +307,14 @@ export function groupByStop(entries, trip) {
           ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
           : null),
       _dayN: ctx?.day?.n ?? 99,
-      _stopOrder: ctx?.stop?.id
-        ? (ctx.day?.stops || []).findIndex((s) => s.id === ctx.stop.id)
-        : 99,
+      // The implicit base ("At the cabin") leads its day deliberately (it's the
+      // place the day hangs off, not a timed event) — explicit, not an accidental
+      // findIndex(-1). A planned stop sorts by its position in the day.
+      _stopOrder: ctx?.stop?._implicitBase
+        ? -1
+        : ctx?.stop?.id
+          ? (ctx.day?.stops || []).findIndex((s) => s.id === ctx.stop.id)
+          : 99,
       _dayLabel: ctx?.day?.date || ctx?.day?.title || '',
       _timeLabel: isBase ? '' : ctx?.stop?.time || '',
       _isBase: isBase,

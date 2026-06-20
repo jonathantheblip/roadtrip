@@ -773,6 +773,38 @@ export function updateMemoryCapturedAt(memoryId, isoOrNull) {
   return null
 }
 
+// Re-file a memory to a different stop (used by the "sort to places" re-file when
+// the trip's implicit base appears AFTER photos were already imported). Patches the
+// single stopId field + re-mirrors so other devices pick up the move. Idempotent
+// (a no-op when already there); a masked projection is never a valid target.
+export function updateMemoryStop(memoryId, stopId) {
+  if (!memoryId) return null
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    if (list[idx].masked) return list[idx]
+    if (list[idx].stopId === stopId) return list[idx] // already filed there
+    const now = new Date().toISOString()
+    const patched = { ...list[idx], stopId, updatedAt: now }
+    list[idx] = patched
+    writeJson(key, list)
+    scheduleMirror({
+      type: 'save',
+      record: patched,
+      reapply: (fresh) => ({ ...fresh, stopId, updatedAt: new Date().toISOString() }),
+    })
+    return patched
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return null
+}
+
 // Fill in a video memory's poster (posterKey/posterUrl) AFTER the fact — used by
 // the poster-retry queue when a poster upload finally lands on a video that had
 // already synced without a still. Patches the video ref(s) and re-mirrors so the

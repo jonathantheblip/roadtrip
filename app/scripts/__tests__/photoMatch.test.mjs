@@ -19,6 +19,12 @@ const {
   MATCH_THRESHOLDS,
   stopIsBase,
   stopBaseRadiusMeters,
+  tripImplicitBase,
+  implicitBaseIdForDay,
+  isImplicitBaseId,
+  isHomeDay,
+  dayStopIds,
+  dayForStopId,
 } = await import('../../src/lib/photoMatch.js')
 
 // ─── Geometry primitives ──────────────────────────────────────────
@@ -756,4 +762,161 @@ test('base-priority: baseRadiusMeters extends a base footprint past the default'
   )
   assert.equal(withOverride.matchType, 'gps+time')
   assert.equal(withOverride.stopId, 'cabin')
+})
+
+// ─── Implicit base (the trip's stay-place, no planned stop — P1.5) ─────────
+// A destination-less stay (a cabin weekend) plans only dinners out; the cabin
+// itself is the trip's lodging/home anchor, not a stop. The implicit base files
+// footprint photos to "At [the cabin]" without a planned base stop.
+
+function stayTrip({ lodging, days, homeBase = { lat: NORTH(250), lng: -73.0, label: '613 Forest Mtn Rd' } }) {
+  return {
+    id: 'stay', dateRangeStart: days[0].isoDate, dateRangeEnd: days[days.length - 1].isoDate,
+    lodging, homeBase, days,
+  }
+}
+const dinnerDay = (isoDate, n) => ({
+  n, isoDate, title: `Day ${n}`,
+  stops: [{ id: `dinner-${n}`, kind: 'food', time: '7:00 PM', name: 'Dinner out', lat: NORTH(200), lng: -73.0 }],
+})
+
+test('implicit base: a cabin-weekend photo files to the trip lodging, NOT the nearest dinner', () => {
+  // homeBase (cabin) is 250m, the dinner 200m (closer) — the old rule filed it in
+  // "dinner". With no planned base stop, the trip's lodging now claims it.
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin', address: '613 Forest Mtn Rd' },
+    days: [dinnerDay('2026-04-17', 1), { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] }],
+  })
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, implicitBaseIdForDay('2026-04-17'))
+  assert.ok(isImplicitBaseId(m.stopId))
+  assert.equal(m.matchType, 'gps+time')
+})
+
+test('implicit base: a single-day trip with no lodging gets NO base (nearest stop wins, unchanged)', () => {
+  const trip = stayTrip({ lodging: undefined, days: [dinnerDay('2026-04-17', 1)] })
+  assert.equal(tripImplicitBase(trip), null)
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'dinner-1') // unchanged
+})
+
+test('implicit base: lodging literally "home" on a single-day trip is NOT a base (never file your house)', () => {
+  const trip = stayTrip({ lodging: '— (home)', days: [dinnerDay('2026-04-17', 1)] })
+  assert.equal(tripImplicitBase(trip), null)
+})
+
+test('implicit base: a multi-day trip implies a stay → base fires even without a lodging name', () => {
+  const trip = stayTrip({
+    lodging: undefined,
+    homeBase: { lat: NORTH(250), lng: -73.0, label: 'Lake House' },
+    days: [dinnerDay('2026-04-17', 1), { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] }],
+  })
+  const base = tripImplicitBase(trip)
+  assert.ok(base)
+  assert.equal(base.name, 'Lake House') // falls back to the homeBase label
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, implicitBaseIdForDay('2026-04-17'))
+})
+
+test('implicit base: a trip with a planned base STOP gets NO implicit base (Phase 1 owns it)', () => {
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin' },
+    homeBase: { lat: NORTH(900), lng: -73.0, label: 'far' },
+    days: [{
+      n: 1, isoDate: '2026-04-17', title: 'Day 1', stops: [
+        { id: 'cabinstop', kind: 'lodging', time: '6:00 PM', name: 'The Cabin', lat: NORTH(250), lng: -73.0 },
+        { id: 'dinner', kind: 'food', time: '7:00 PM', name: 'Dinner', lat: NORTH(200), lng: -73.0 },
+      ],
+    }],
+  })
+  assert.equal(tripImplicitBase(trip), null)
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'cabinstop') // the planned P1 base catches it
+})
+
+test('implicit base: joins allStops ONLY — not the clock windows or route polyline (no warp)', () => {
+  const trip = stayTrip({
+    lodging: { name: 'Cabin' },
+    days: [dinnerDay('2026-04-17', 1), { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] }],
+  })
+  const d1 = buildDayIndex(trip).get('2026-04-17')
+  assert.equal(d1.allStops.length, 2) // dinner + base
+  assert.ok(d1.allStops.some((s) => isImplicitBaseId(s.id)))
+  assert.equal(d1.sortedClockStops.length, 1) // only the timed dinner
+  assert.ok(!d1.sortedClockStops.some((s) => isImplicitBaseId(s.id)))
+  assert.equal(d1.polyline.length, 1) // base is not a route waypoint
+})
+
+test('implicit base (smart): a photo right at a dinner near the lodging still files to the dinner', () => {
+  const trip = stayTrip({
+    lodging: { name: 'Cabin' },
+    homeBase: { lat: NORTH(300), lng: -73.0, label: 'Cabin' },
+    days: [
+      { n: 1, isoDate: '2026-04-17', title: 'Day 1', stops: [{ id: 'diner', kind: 'food', time: '1:00 PM', name: 'The Diner', lat: NORTH(50), lng: -73.0 }] },
+      { n: 2, isoDate: '2026-04-18', title: 'Day 2', stops: [] },
+    ],
+  })
+  // 50m < baseYield(150) AND closer than the base(300m) → clearly AT the diner.
+  const m = matchPhotoToStop(photoAtP(), buildDayIndex(trip))
+  assert.equal(m.stopId, 'diner')
+})
+
+// ─── Per-day home suppression + the shared dayStopIds rule ─────────────
+
+test('isHomeDay: a day whose lodging note literally says "home" is a home day', () => {
+  assert.equal(isHomeDay({ lodging: '— (home)' }), true)
+  assert.equal(isHomeDay({ lodging: 'home' }), true)
+  assert.equal(isHomeDay({ lodging: '(Home)' }), true)
+  assert.equal(isHomeDay({ lodging: 'The Cabin' }), false)
+  assert.equal(isHomeDay({ lodging: '' }), false)
+  assert.equal(isHomeDay({}), false)
+})
+
+test('home guard (per-day, real shape): an object lodging trip whose LAST day is at home suppresses the base THAT day only', () => {
+  // The real data shape: trip.lodging is an OBJECT (never "home"); the "we slept
+  // at home" marker lives on day.lodging. The base must be suppressed on the home
+  // day so your own house never becomes "At [place]".
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin', address: '613 Forest Mtn Rd' },
+    days: [
+      dinnerDay('2026-04-17', 1),
+      { n: 2, isoDate: '2026-04-18', title: 'Drive home', lodging: '— (home)', stops: [] },
+    ],
+  })
+  assert.ok(tripImplicitBase(trip), 'the trip still has a stay base')
+  const di = buildDayIndex(trip)
+  assert.ok(di.get('2026-04-17').allStops.some((s) => isImplicitBaseId(s.id)), 'cabin day: base present')
+  assert.ok(!di.get('2026-04-18').allStops.some((s) => isImplicitBaseId(s.id)), 'home day: base SUPPRESSED')
+})
+
+test('dayStopIds: the shared rule includes the implicit base on a stay day, excludes it on a home day', () => {
+  const trip = stayTrip({
+    lodging: { name: 'The Cabin' },
+    days: [
+      dinnerDay('2026-04-17', 1),
+      { n: 2, isoDate: '2026-04-18', title: 'Home', lodging: '(home)', stops: [{ id: 'x', kind: 'food', time: '1 PM', name: 'X' }] },
+    ],
+  })
+  const stayIds = dayStopIds(trip, trip.days[0])
+  assert.ok(stayIds.has('dinner-1'))
+  assert.ok(stayIds.has(implicitBaseIdForDay('2026-04-17')), 'base included on the stay day')
+  const homeIds = dayStopIds(trip, trip.days[1])
+  assert.ok(homeIds.has('x'))
+  assert.ok(!homeIds.has(implicitBaseIdForDay('2026-04-18')), 'base excluded on the home day')
+})
+
+test('dayStopIds: a trip with no implicit base returns ONLY the planned stop ids (byte-identical to before)', () => {
+  const trip = stayTrip({ lodging: undefined, days: [dinnerDay('2026-04-17', 1)] }) // single-day, no lodging → no base
+  const ids = dayStopIds(trip, trip.days[0])
+  assert.deepEqual([...ids], ['dinner-1'])
+})
+
+test('dayForStopId: resolves an implicit-base id to its day (so replay/weave find it)', () => {
+  const trip = stayTrip({
+    lodging: { name: 'Cabin' },
+    days: [dinnerDay('2026-04-17', 1), { n: 2, isoDate: '2026-04-18', title: 'd2', stops: [] }],
+  })
+  const d = dayForStopId(trip, implicitBaseIdForDay('2026-04-18'))
+  assert.equal(d?.isoDate, '2026-04-18')
+  assert.equal(dayForStopId(trip, 'dinner-1')?.isoDate, '2026-04-17')
 })

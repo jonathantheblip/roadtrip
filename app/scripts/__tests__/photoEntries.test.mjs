@@ -7,6 +7,7 @@ const {
   groupAcrossTrips,
   refIdbAssetKey,
 } = await import('../../src/lib/photoEntries.js')
+const { implicitBaseIdForDay } = await import('../../src/lib/photoMatch.js')
 
 // refIdbAssetKey — the single source of truth for "which idb blob renders this
 // ref" (offline-imported photos/videos). Used by the hydration hook AND the
@@ -244,6 +245,32 @@ test('groupByStop marks a base (a place you stay) with isBase and drops its time
   // The dinner stop is a normal timed event — not a base, keeps its time.
   assert.equal(byKey.dinner.isBase, false)
   assert.equal(byKey.dinner.timeLabel, '7:30 PM')
+})
+
+test('groupByStop renders the trip IMPLICIT base ("At [lodging]") for a photo filed to it (no planned stop)', () => {
+  // A destination-less stay: only a dinner is planned, but a cabin photo was filed
+  // to the trip's implicit base (the lodging anchor). It must resolve to an "At
+  // [place]" section, not "Unfiled".
+  const baseId = implicitBaseIdForDay('2026-06-19')
+  const t = {
+    id: 't', title: 'Vermont weekend', dateRangeStart: '2026-06-19',
+    lodging: { name: 'The Cabin', address: '613 Forest Mtn Rd' },
+    homeBase: { lat: 43.21, lng: -72.9, label: '613 Forest Mtn Rd' },
+    days: [
+      { n: 1, date: 'Jun 19', isoDate: '2026-06-19', stops: [{ id: 'dinner', name: 'Dinner out', kind: 'food', time: '7:00 PM' }] },
+      { n: 2, date: 'Jun 20', isoDate: '2026-06-20', stops: [] },
+    ],
+  }
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'm1', tripId: 't', stopId: baseId, refs: ['u://1'], capturedAt: '2026-06-19T20:00:00.000Z' }),
+    photoMem({ id: 'm2', tripId: 't', stopId: 'dinner', refs: ['u://2'], capturedAt: '2026-06-19T23:30:00.000Z' }),
+  ])
+  const byKey = Object.fromEntries(groupByStop(entries, t).map((g) => [g.stopKey, g]))
+  assert.ok(byKey[baseId], 'the implicit-base group resolves (not Unfiled)')
+  assert.equal(byKey[baseId].isBase, true)
+  assert.equal(byKey[baseId].timeLabel, '') // a place, not a timed event
+  assert.equal(byKey[baseId].stopName, 'The Cabin')
+  assert.equal(byKey.dinner.isBase, false)
 })
 
 test('groupByStop: isBase:false opts a lodging stop out of the base section', () => {

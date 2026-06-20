@@ -3,6 +3,7 @@ import { Play, Pause, X, ChevronDown } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { capturedBy } from '../lib/replayPresence'
 import { flattenPhotoEntries, formatFullDate } from '../lib/photoEntries'
+import { dayStopIds, dayForStopId, tripImplicitBase, implicitBaseIdForDay, isHomeDay } from '../lib/photoMatch'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { thumbUrl } from '../lib/thumbUrl'
 import { fetchStoredWeave } from '../lib/weave'
@@ -260,6 +261,16 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
         }
       }
     }
+    // The implicit base ("At the cabin") isn't a planned stop, so map its per-day
+    // id to the lodging name → the live chip reads "Day N · At the cabin".
+    const base = tripImplicitBase(scopeTrip)
+    if (base) {
+      for (const d of scopeTrip?.days || []) {
+        if (d.isoDate && !isHomeDay(d)) {
+          map[implicitBaseIdForDay(d.isoDate)] = { dayN: d.n, stopName: base.name }
+        }
+      }
+    }
     return map
   }, [scopeTrip])
 
@@ -269,7 +280,7 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
   const dayList = useMemo(() => {
     const out = []
     for (const d of scopeTrip?.days || []) {
-      const stopIds = new Set((d.stops || []).map((s) => s.id))
+      const stopIds = dayStopIds(scopeTrip, d)
       const idx = sequence.findIndex((e) => e.stopId && stopIds.has(e.stopId))
       if (idx >= 0) {
         out.push({ n: d.n, isoDate: d.isoDate, title: d.title || d.date || '', cursorIndex: idx })
@@ -285,7 +296,7 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
     const dayN = initial?.dayN != null ? initial.dayN : defaultDayN(scopeTrip)
     if (dayN != null) {
       const day = (scopeTrip?.days || []).find((d) => d.n === dayN)
-      const stopIds = new Set((day?.stops || []).map((s) => s.id))
+      const stopIds = day ? dayStopIds(scopeTrip, day) : new Set()
       const idx = sequence.findIndex((e) => e.stopId && stopIds.has(e.stopId))
       if (idx >= 0) return idx
     }
@@ -306,9 +317,7 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
   // The current memory's day (for the chip label + which day's weave to fetch).
   const currentDay = useMemo(() => {
     if (!current?.stopId) return null
-    return (
-      (scopeTrip?.days || []).find((d) => (d.stops || []).some((s) => s.id === current.stopId)) || null
-    )
+    return dayForStopId(scopeTrip, current.stopId)
   }, [current?.stopId, scopeTrip])
 
   // The current day's stored woven narrative (nightly or kept) — RE-HOMED onto

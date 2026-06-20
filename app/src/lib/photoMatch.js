@@ -146,6 +146,108 @@ export function stopBaseRadiusMeters(stop) {
     : MATCH_THRESHOLDS.gpsMatchMeters
 }
 
+// ── The trip's IMPLICIT base (the place you're STAYING, with no planned stop) ──
+// Phase 1 only filed "At the cabin" when you marked a STOP as a base. A
+// destination-less stay — a family weekend at a cabin, where the only planned
+// things are dinners out — has no such stop, so cabin photos fell to the nearest
+// dinner. This surfaces the trip's lodging/home anchor (which the app already
+// tracks for drive-home ETA — `trip.homeBase`, by convention the lodging) as a
+// base place so footprint photos file to "At [the cabin]" with no extra planning.
+
+export const IMPLICIT_BASE_PREFIX = '__trip_base__'
+export function implicitBaseIdForDay(isoDate) {
+  return `${IMPLICIT_BASE_PREFIX}:${isoDate}`
+}
+export function isImplicitBaseId(id) {
+  return typeof id === 'string' && id.startsWith(`${IMPLICIT_BASE_PREFIX}:`)
+}
+
+// "home" / "(home)" / "— (home)" — a trip you DIDN'T stay away for. The implicit
+// base must never turn your actual house into a photo place on a day trip.
+const HOME_LODGING = /^[\s—–-]*\(?\s*home\s*\)?[\s—–-]*$/i
+
+// Located stay anchor — homeBase only. (A located lodging STOP is already a Phase-1
+// base, so it's handled there, not here.)
+function tripStayCoords(trip) {
+  const hb = trip?.homeBase
+  if (hb && Number.isFinite(hb.lat) && Number.isFinite(hb.lng)) {
+    return { lat: hb.lat, lng: hb.lng, label: hb.label || '' }
+  }
+  return null
+}
+
+// Human name of where you're staying — the lodging (object or legacy string).
+function lodgingLabel(trip) {
+  const lod = trip?.lodging
+  if (lod && typeof lod === 'object') return ((lod.name || lod.address) || '').trim()
+  if (typeof lod === 'string') return lod.trim()
+  return ''
+}
+
+function hasPlannedBaseStop(trip) {
+  for (const day of trip?.days || []) {
+    for (const s of day.stops || []) {
+      if (stopIsBase(s) && Number.isFinite(s.lat) && Number.isFinite(s.lng)) return true
+    }
+  }
+  return false
+}
+
+// Returns the implicit-base TEMPLATE {name, lat, lng, isBase} or null.
+// buildDayIndex + groupByStop stamp it with a per-DAY id so a multi-night stay
+// renders as one "At [place]" section per day (matching the per-day-stop model).
+// GATES: (1) a located anchor exists; (2) no planned base stop already covers it
+// (Phase 1 owns those); (3) a real STAY signal — a set lodging that isn't literally
+// "home", OR a multi-day trip (an overnight means you stayed somewhere away).
+export function tripImplicitBase(trip) {
+  const coords = tripStayCoords(trip)
+  if (!coords) return null
+  if (hasPlannedBaseStop(trip)) return null
+  const name = lodgingLabel(trip)
+  const namedStay = !!name && !HOME_LODGING.test(name)
+  const multiDay = Array.isArray(trip?.days) && trip.days.length >= 2
+  if (!namedStay && !multiDay) return null
+  return {
+    // A named lodging wins; otherwise the homeBase label is usually a full street
+    // address — show just its first segment ("41 Lower Boulevard") rather than a
+    // postal address masquerading as a place name, and a neutral phrase if blank.
+    name: namedStay ? name : (coords.label ? coords.label.split(',')[0].trim() : 'Where we’re staying'),
+    lat: coords.lat,
+    lng: coords.lng,
+    isBase: true,
+    _implicitBase: true,
+  }
+}
+
+// A night spent at home — the per-day lodging note literally says "home". The
+// implicit base is SUPPRESSED on these days, so your own house never becomes a
+// "place" on a trip that starts or ends at home (the homeBase anchor can itself be
+// your house). This is the real "never file your house" guard — it lives on the
+// per-DAY lodging string, which is where the family actually records "home".
+export function isHomeDay(day) {
+  const lod = typeof day?.lodging === 'string' ? day.lodging.trim() : ''
+  return !!lod && HOME_LODGING.test(lod)
+}
+
+// THE one source of truth for "which stop ids a memory can be filed to on this
+// day" — the planned stops PLUS the trip's implicit base (when it applies to the
+// day). Every surface that groups memories by stop (album, weave, resurface,
+// replay) must use this, or a base-filed "At the cabin" photo gets silently
+// dropped by a surface that only knows about planned stops.
+export function dayStopIds(trip, day) {
+  const ids = new Set((day?.stops || []).map((s) => s.id))
+  if (day?.isoDate && !isHomeDay(day) && tripImplicitBase(trip)) {
+    ids.add(implicitBaseIdForDay(day.isoDate))
+  }
+  return ids
+}
+
+// The day a stopId belongs to — works for a planned stop AND an implicit base id.
+export function dayForStopId(trip, stopId) {
+  if (!stopId) return null
+  return (trip?.days || []).find((d) => dayStopIds(trip, d).has(stopId)) || null
+}
+
 // Build the per-day stop time map. Returns a Map<dayIsoDate,
 // { day, sortedClockStops, looseStops, allStops, polyline }>.
 //
@@ -163,6 +265,11 @@ export function stopBaseRadiusMeters(stop) {
 export function buildDayIndex(trip) {
   const out = new Map()
   if (!trip || !Array.isArray(trip.days)) return out
+  // The trip's implicit base is a candidate on EVERY day (you stay there each
+  // night). It has no clock time, so it joins `allStops` (the base/nearest scan)
+  // ONLY — never sortedClockStops/looseStops/polyline (which would warp the day's
+  // time windows + route). A per-day id keeps each day's "At [place]" distinct.
+  const baseTemplate = tripImplicitBase(trip)
   for (const day of trip.days) {
     if (!day || !day.isoDate) continue
     const sortedClockStops = []
@@ -189,11 +296,14 @@ export function buildDayIndex(trip) {
         polyline.push({ lat: s.lat, lng: s.lng })
       }
     }
+    const dayBase = baseTemplate && !isHomeDay(day)
+      ? { ...baseTemplate, id: implicitBaseIdForDay(day.isoDate) }
+      : null
     out.set(day.isoDate, {
       day,
       sortedClockStops,
       looseStops,
-      allStops,
+      allStops: dayBase ? [...allStops, dayBase] : allStops,
       polyline,
     })
   }

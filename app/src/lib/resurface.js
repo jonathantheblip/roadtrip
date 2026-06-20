@@ -9,6 +9,7 @@
 
 import { listMemoriesForTrip } from './memoryStore'
 import { flattenPhotoEntries } from './photoEntries'
+import { dayStopIds } from './photoMatch'
 
 function agoLabel(iso, todayMs) {
   const then = new Date(iso + 'T00:00:00').getTime()
@@ -42,7 +43,7 @@ export function pickResurface(trips, traveler, todayIso) {
     if (!mems.length) continue
     for (const day of trip.days || []) {
       if (!day.isoDate || day.isoDate >= today) continue
-      const stopIds = new Set((day.stops || []).map((s) => s.id))
+      const stopIds = dayStopIds(trip, day) // planned stops + the implicit base ("At the cabin")
       const photos = flattenPhotoEntries(mems.filter((m) => stopIds.has(m.stopId)))
       if (photos.length) {
         candidates.push({ trip, day, photo: photos[0], photoCount: photos.length })

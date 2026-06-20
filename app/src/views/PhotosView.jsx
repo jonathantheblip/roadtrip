@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Image as ImageIcon, ImagePlus, RefreshCw } from 'lucide-react'
+import { ChevronLeft, Image as ImageIcon, ImagePlus, RefreshCw, MapPin } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
+import { tripImplicitBase } from '../lib/photoMatch'
+import { refileTripToPlaces } from '../lib/refilePlaces'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
 import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
@@ -56,6 +58,25 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
     [photoEntries, trip]
   )
 
+  // "Sort to places" — when the trip has an implicit base (the lodging/home you're
+  // staying at, with no planned stop) and photos were imported BEFORE it existed,
+  // they're filed to the nearest dinner. Offer a one-tap re-sort, shown only when
+  // there's actually something to move (a dry run counts candidates).
+  const implicitBase = useMemo(() => tripImplicitBase(trip), [trip])
+  const refileCount = useMemo(
+    () => (implicitBase ? refileTripToPlaces(trip, { traveler, dryRun: true }).movedPhotos : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trip, traveler, memoryTick, implicitBase]
+  )
+  // Two-step so a bulk move of real photos across every device is never a single
+  // stray tap (Jonathan: confirm first). false → the offer; true → Move / Not now.
+  const [confirmRefile, setConfirmRefile] = useState(false)
+  // Reset the confirm whenever the candidate set empties (a move, an import, a queue
+  // drain) so a later batch can't re-mount straight into "Move?", skipping the offer.
+  useEffect(() => {
+    if (refileCount === 0) setConfirmRefile(false)
+  }, [refileCount])
+
   // Lightbox state: which photo is open. The viewer accepts a "list"
   // (the same-stop sibling array) so prev/next stays within the group
   // the user opened from — switching stops mid-swipe would be jarring.
@@ -103,6 +124,20 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
   useEffect(() => () => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
   }, [])
+  function showToastMessage(message) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast({ message })
+    toastTimerRef.current = setTimeout(() => setToast(null), 3400)
+  }
+  // Apply the confirmed re-file: move the photos, refresh, acknowledge.
+  function runRefile() {
+    const { movedPhotos } = refileTripToPlaces(trip, { traveler })
+    setConfirmRefile(false)
+    setMemoryTick((t) => t + 1)
+    if (movedPhotos > 0) {
+      showToastMessage(`Moved ${movedPhotos} ${movedPhotos === 1 ? 'photo' : 'photos'} to “At ${implicitBase?.name || 'your place'}”`)
+    }
+  }
 
   // Sync pill: live count from the IndexedDB queue. Subscribes so a
   // save anywhere in the app updates this view without polling.
@@ -309,6 +344,40 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
 
       <GridPausedProvider paused={!!lightbox}>
         <div style={{ padding: '12px 14px 0' }}>
+          {refileCount > 0 && (
+            <div
+              data-testid="refile-to-places"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                padding: '10px 12px', marginBottom: 12,
+                border: '1px solid var(--border)', borderRadius: 10,
+                background: 'var(--card)', color: 'var(--text)',
+              }}
+            >
+              <MapPin size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              {confirmRefile ? (
+                <>
+                  <span style={{ fontSize: 13, lineHeight: 1.35, flex: 1 }}>
+                    Move {refileCount} {refileCount === 1 ? 'photo' : 'photos'} to “At {implicitBase?.name}”? Everyone will see the change.
+                  </span>
+                  <button type="button" onClick={runRefile} data-testid="refile-confirm"
+                    style={{ font: 'inherit', fontSize: 13, fontWeight: 700, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+                    Move
+                  </button>
+                  <button type="button" onClick={() => setConfirmRefile(false)} data-testid="refile-cancel"
+                    style={{ font: 'inherit', fontSize: 13, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+                    Not now
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={() => setConfirmRefile(true)} data-testid="refile-offer"
+                  style={{ font: 'inherit', fontSize: 13, lineHeight: 1.35, color: 'var(--text)', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', flex: 1 }}>
+                  {refileCount} {refileCount === 1 ? 'photo belongs' : 'photos belong'} at “At {implicitBase?.name}”.{' '}
+                  <strong>Sort {refileCount === 1 ? 'it' : 'them'} →</strong>
+                </button>
+              )}
+            </div>
+          )}
           {groups.length === 0 ? (
             <EmptyState />
           ) : (
