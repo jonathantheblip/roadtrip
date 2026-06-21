@@ -1,0 +1,97 @@
+/* tokens.css — Family Trips "Hangout" build tokens
+ * One trip-data spine, four role-shaped lenses. Each lens re-skins the entire
+ * app: palette + display font + corner radius + identity dot. Apply a lens by
+ * setting data-lens on a root element and reading the custom properties.
+ *
+ *   <div data-lens="helen"> … uses --bg, --ink, --accent, etc. … </div>
+ *
+ * `--dot` is the person-identity colour and is CONSTANT across every lens, so a
+ * person reads the same everywhere (avatars, vote tallies, woven rail). Do not
+ * drift it. Everything else is per-lens.
+ *
+ * Colours are exact values from the prototype (hangout/tokens.jsx). Whites and
+ * blacks are intentionally warm/cool-toned, never pure #fff / #000.
+ */
+
+:root {
+  /* ── type ─────────────────────────────────────────────── */
+  --font-fraunces: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-inter: "Inter Tight", -apple-system, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-instrument: "Instrument Serif", "Times New Roman", serif;
+  --font-fredoka: "Fredoka", "Inter Tight", system-ui, sans-serif;
+
+  /* ── category accents (the pantry "what kind" axis) ───── */
+  --cat-meal: #8A5A3C;        /* "A bite"      */
+  --cat-energy: #3C6E55;      /* "Burn energy" */
+  --cat-look: #8A476A;        /* "Aesthetic" / for Aurelia */
+  --cat-together: #4A5A78;    /* "All of us"   */
+
+  /* ── neutral editorial skin (the strategy/board panels) ─ */
+  --paper-bg: #16140F;
+  --paper-ink: #F0EBDF;
+  --paper-muted: rgba(240,235,223,0.62);
+  --paper-accent: #E2A04A;
+
+  /* ── status / condition semantics ─────────────────────── */
+  /* "live" = a person's accent used for adverse-condition flags & alerts.
+     "good" = a calm confirmation green. Both are per-lens (below). */
+}
+
+/* ════════════════ JONATHAN — Dad · Command + Keep ════════════════
+   Broadsheet ops. Hard corners, editorial. Dark. */
+[data-lens="jonathan"] {
+  --dot: #2E6BB8;
+  --bg: #0E0F11; --bg2: #15171A; --surface: #1C1E22; --raise: #24262B;
+  --ink: #EDE6D6; --muted: rgba(237,230,214,0.60); --faint: rgba(237,230,214,0.32);
+  --line: rgba(237,230,214,0.14); --line-bold: rgba(237,230,214,0.30);
+  --accent: #E0654F; --accent-text: #EC8770; --accent-ink: #16100C;
+  --live: #E0654F; --good: #7FB069;
+  --radius: 2px;
+  --font-display: var(--font-fraunces); --font-body: var(--font-inter);
+}
+
+/* ════════════════ HELEN — Mom · Remember + Plan ════════════════
+   Warm editorial paper. Soft corners. Light. (A primary decider.) */
+[data-lens="helen"] {
+  --dot: #2E7D52;
+  --bg: #F4F0E7; --bg2: #ECE6D9; --surface: #FFFFFF; --raise: #FBF8F1;
+  --ink: #1C2A21; --muted: rgba(28,42,33,0.62); --faint: rgba(28,42,33,0.34);
+  --line: rgba(28,42,33,0.12); --line-bold: rgba(28,42,33,0.22);
+  --accent: #2E7D52; --accent-text: #256B45; --accent-ink: #FFFFFF;
+  --live: #C2603A; --good: #2E7D52;
+  --radius: 18px;
+  --font-display: var(--font-fraunces); --font-body: var(--font-inter);
+}
+
+/* ════════════════ AURELIA — 13 · Send + Discover ════════════════
+   Dark film-roll. Italic display (Instrument Serif). Eye trained by the feed. */
+[data-lens="aurelia"] {
+  --dot: #E8478C;
+  --bg: #0B0A0C; --bg2: #141215; --surface: #1A171B; --raise: #241F26;
+  --ink: #F3EEE9; --muted: rgba(243,238,233,0.56); --faint: rgba(243,238,233,0.30);
+  --line: rgba(243,238,233,0.12); --line-bold: rgba(243,238,233,0.24);
+  --accent: #FF3D78; --accent-text: #FF5C8E; --accent-ink: #0B0A0C;
+  --live: #FF3D78; --good: #C7B5FF;
+  --radius: 4px;
+  --font-display: var(--font-instrument); --font-body: var(--font-inter);
+}
+
+/* ════════════════ RAFA — 5 · Play / Tell / Watch ════════════════
+   Bright, chunky, big touch targets. Fredoka. Calls family Mama/Papa/Sissy. */
+[data-lens="rafa"] {
+  --dot: #E8552E;
+  --bg: #1B1108; --bg2: #28190C; --surface: #33200F; --raise: #41290F;
+  --ink: #FFF3DF; --muted: rgba(255,243,223,0.74); --faint: rgba(255,243,223,0.42);
+  --line: rgba(255,243,223,0.16); --line-bold: rgba(255,243,223,0.30);
+  --accent: #FFB12E; --accent-text: #FFC247; --accent-ink: #1B1108;
+  --live: #FF6B4D; --good: #4CC36E;
+  --radius: 24px;
+  --font-display: var(--font-fredoka); --font-body: var(--font-fredoka);
+}
+
+/* Rafa sticker palette (app-icon / accents): #FFB12E #3DA5E0 #4CC36E #FF6B4D #C77DFF */
+
+/* Type scale (prototype): display 22–30px (lens-dependent), body 11.5–14px,
+   mono labels 8–10.5px uppercase letter-spacing ~0.4–1.4px. On a 390px phone,
+   never below 11px for body. Min touch target 44px (Rafa: much larger). */
