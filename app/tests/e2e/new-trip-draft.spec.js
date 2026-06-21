@@ -45,10 +45,23 @@ async function gotoIndex(page) {
   await expect(newTrip).toBeVisible({ timeout: 5000 })
 }
 
-async function fillAndCreateDraft(page, title) {
+async function fillAndCreateDraft(page, title, opts = {}) {
   await page.getByRole('button', { name: /New trip/i }).click()
   await expect(page.getByRole('heading', { name: /New Trip/i })).toBeVisible()
-  await page.getByPlaceholder("Rafa's Birthday Weekend").fill(title)
+  await page.getByPlaceholder('A weekend at the cabin').fill(title)
+  // Place-first (the stay spine), shown by default.
+  if (opts.placeName != null) {
+    await page.getByPlaceholder(/Grandma's/).fill(opts.placeName)
+  }
+  if (opts.placeAddress != null) {
+    await page.getByPlaceholder(/find it on the map/i).fill(opts.placeAddress)
+  }
+  // Road-trip toggle reveals start/end city.
+  if (opts.driving) {
+    await page.getByLabel(/driving between places/i).check()
+    if (opts.startCity != null) await page.getByPlaceholder('Belmont, MA').fill(opts.startCity)
+    if (opts.endCity != null) await page.getByPlaceholder('New York, NY').fill(opts.endCity)
+  }
   await page.getByRole('button', { name: /^Create trip$/i }).click()
 }
 
@@ -73,11 +86,66 @@ test.describe('NewTrip — manual-add draft', () => {
     const draft = cache.find((t) => t.title === 'Maine Cabin Weekend')
     expect(draft).toBeTruthy()
     expect(draft.draft).toBe(true)
+    // Place-first: a trip is a STAY by default (the frequent case), and carries
+    // no end city (which would feed the drive-home scaffolding a stay sheds).
+    expect(draft.shape).toBe('stay')
+    expect(draft.endCity).toBe('')
 
     // ...and was NEVER POSTed to the shared worker (the draft gate). Give the
     // best-effort sync a beat to (not) fire.
     await page.waitForTimeout(300)
     expect(posts.posts).toBe(0)
+  })
+
+  test('place-first: a stay carries its place + geocoded coords and reads as a stay', async ({ page }) => {
+    await countTripPosts(page)
+    // Mock the geocoder (Nominatim) so the test is deterministic + offline-safe,
+    // and so we can assert the address→coords wiring that the stay relies on.
+    await page.route(/nominatim\.openstreetmap\.org/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ lat: '44.5001', lon: '-72.5002' }]) })
+    )
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+
+    await gotoIndex(page)
+    await fillAndCreateDraft(page, 'Lake House Long Weekend', {
+      placeName: 'The lake house',
+      placeAddress: '10 Shoreline Dr, Anytown',
+    })
+    await expect(page.getByText(/DRAFT — not shown in the trip list/i)).toBeVisible({ timeout: 7000 })
+
+    const cache = await readCache(page)
+    const draft = cache.find((t) => t.title === 'Lake House Long Weekend')
+    expect(draft).toBeTruthy()
+    // The place is the spine: shape 'stay' + the lodging name/address + the coords
+    // geocoded at submit (so the place card, live rail, and photo filer engage).
+    expect(draft.shape).toBe('stay')
+    expect(draft.lodging?.name).toBe('The lake house')
+    expect(draft.lodging?.address).toBe('10 Shoreline Dr, Anytown')
+    expect(draft.lodging?.lat).toBeCloseTo(44.5001, 3)
+    expect(draft.lodging?.lng).toBeCloseTo(-72.5002, 3)
+  })
+
+  test('the road-trip toggle produces a route trip with an end city', async ({ page }) => {
+    await countTripPosts(page)
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+
+    await gotoIndex(page)
+    await fillAndCreateDraft(page, 'The Big Drive', {
+      driving: true,
+      startCity: 'Belmont, MA',
+      endCity: 'Asheville, NC',
+    })
+    await expect(page.getByText(/DRAFT — not shown in the trip list/i)).toBeVisible({ timeout: 7000 })
+
+    const cache = await readCache(page)
+    const draft = cache.find((t) => t.title === 'The Big Drive')
+    expect(draft).toBeTruthy()
+    // Driving on → an explicit road trip that keeps its drive scaffolding (G5).
+    expect(draft.shape).toBe('route')
+    expect(draft.endCity).toBe('Asheville, NC')
+    expect(draft.startCity).toBe('Belmont, MA')
   })
 
   test('a fresh draft surfaces in the index Drafts section and is deletable', async ({ page }) => {

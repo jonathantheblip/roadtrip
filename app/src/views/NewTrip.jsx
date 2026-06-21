@@ -1,10 +1,24 @@
 import { useRef, useState } from 'react'
 import { ChevronLeft, Check, Loader } from 'lucide-react'
 import { newTripId } from '../utils/ids'
+import { geocodeAddress } from '../lib/geocode'
 
 // Manual trip entry. Creates a renderer-safe *draft* trip and hands off
 // to the editor so Days/Stops/pitches get filled in incrementally —
 // Helen never re-enters a trip because a tap didn't take.
+//
+// PLACE-FIRST (2026-06-20, FAMILY_TRIPS_VISION): most family trips are a STAY
+// (a cabin, Grandma's, a beach house), not a drive A→B. So creation leads with
+// "Where are you staying?" and is a STAY by default; "we're driving between
+// places" is a toggle you flip only for the rare road trip. This is the root-cause
+// fix for trips landing as 'route' (the old form had NO place field, so a stay's
+// address got stuffed into "End city" and the whole app wore road-trip clothing).
+//   - STAY  → trip.shape='stay' + trip.lodging{name,address,lat,lng}; the place is
+//             the spine. The address geocodes here; the pin is confirmed next in
+//             the editor (where LodgingPinConfirm already lives).
+//   - ROUTE → trip.shape='route' + startCity/endCity (today's road-trip fields).
+// An explicit trip.shape is the top-priority signal inferTripShape reads, so the
+// shape chosen here is authoritative (no reliance on heuristics).
 //
 // Duplicate-bug fix (change order 2026-05-17 §3):
 //  - The trip id is minted ONCE per form instance (useRef), not per
@@ -23,8 +37,18 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
   const [title, setTitle] = useState('')
   const [subtitle, setSubtitle] = useState('')
   const [dateRange, setDateRange] = useState('')
+
+  // Place-first (the STAY spine). The address is geocoded at SUBMIT (not on blur —
+  // an on-blur re-render races the Create tap and eats the first click), so
+  // lat/lng/geoFor ride onto trip.lodging and the stay engages from the start.
+  const [placeName, setPlaceName] = useState('')
+  const [placeAddress, setPlaceAddress] = useState('')
+
+  // Off = a STAY (the frequent case). On = a road trip (start→end city).
+  const [driving, setDriving] = useState(false)
   const [startCity, setStartCity] = useState('')
   const [endCity, setEndCity] = useState('')
+
   const [travelers, setTravelers] = useState(['jonathan', 'helen', 'aurelia', 'rafa'])
 
   const [phase, setPhase] = useState('idle') // idle | saving | done
@@ -50,25 +74,44 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
     setError('')
     setPhase('saving')
 
-    // Renderer-safe shape: every field the themed views read exists,
-    // with safe empties. `draft: true` keeps it out of the polished
-    // views (and the cold-start picker) until it's published.
+    // Geocode the stay address now (keyless, throttled, never throws → null on a
+    // miss). Coords let the place card + live rail + no-GPS photo filing engage
+    // the moment the trip publishes; the editor's draggable pin refines it next.
+    let stayCoords = null
+    const addr = placeAddress.trim()
+    if (!driving && addr) {
+      const hit = await geocodeAddress(addr)
+      if (hit) stayCoords = { lat: hit.lat, lng: hit.lng, geoFor: addr }
+    }
+
+    // Renderer-safe shape: every field the themed views read exists, with safe
+    // empties. `draft: true` keeps it out of the polished views (and the
+    // cold-start picker) until it's published. `shape` is set explicitly so the
+    // trip is what the user said it is, not what a heuristic guesses.
     const trip = {
       id: idRef.current,
       draft: true,
       status: 'planning',
+      shape: driving ? 'route' : 'stay',
       title: trimmedTitle,
       subtitle: subtitle.trim(),
       epigraph: '',
       dateRange: dateRange.trim() || 'TBD',
       dateRangeStart: null,
       dateRangeEnd: null,
-      startCity: startCity.trim(),
-      endCity: endCity.trim(),
+      // Road-trip fields only when it IS a road trip — a stay must not carry an
+      // end city (it feeds the drive-home ETA scaffolding a stay sheds).
+      startCity: driving ? startCity.trim() : '',
+      endCity: driving ? endCity.trim() : '',
       miles: 0,
       travelers,
       overview: '',
       sharedAlbumURL: '',
+      // The stay spine. Always present (renderer-safe); filled for a stay. Coords
+      // ride along when the address geocoded so the place card + filer engage now.
+      lodging: !driving
+        ? { name: placeName.trim(), address: addr, ...(stayCoords || {}) }
+        : {},
       days: [],
     }
 
@@ -134,7 +177,7 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
               setTitle(e.target.value)
               if (titleError) setTitleError('')
             }}
-            placeholder="Rafa's Birthday Weekend"
+            placeholder="A weekend at the cabin"
             className="memory-textarea"
             style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
             disabled={busy || done}
@@ -146,7 +189,7 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
           <input
             value={subtitle}
             onChange={(e) => setSubtitle(e.target.value)}
-            placeholder="A long weekend in New York"
+            placeholder="Three nights away, nothing on the schedule"
             className="memory-textarea"
             style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
             disabled={busy || done}
@@ -157,35 +200,84 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
           <input
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
-            placeholder="June 19 – 21, 2026"
+            placeholder="July 3 – 6, 2026"
             className="memory-textarea"
             style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
             disabled={busy || done}
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Start city">
-            <input
-              value={startCity}
-              onChange={(e) => setStartCity(e.target.value)}
-              placeholder="Belmont, MA"
-              className="memory-textarea"
-              style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
-              disabled={busy || done}
-            />
-          </Field>
-          <Field label="End city">
-            <input
-              value={endCity}
-              onChange={(e) => setEndCity(e.target.value)}
-              placeholder="New York, NY"
-              className="memory-textarea"
-              style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
-              disabled={busy || done}
-            />
-          </Field>
-        </div>
+        {/* PLACE-FIRST: the stay spine, shown unless this is a road trip. */}
+        {!driving && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Field label="Where are you staying?">
+              <input
+                value={placeName}
+                onChange={(e) => setPlaceName(e.target.value)}
+                placeholder="The cabin · Grandma's · the beach house"
+                className="memory-textarea"
+                style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+                disabled={busy || done}
+              />
+            </Field>
+            <Field label="Address">
+              <input
+                value={placeAddress}
+                onChange={(e) => setPlaceAddress(e.target.value)}
+                placeholder="We’ll find it on the map (you can refine it later)"
+                className="memory-textarea"
+                style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+                disabled={busy || done}
+              />
+            </Field>
+          </div>
+        )}
+
+        {/* The shape toggle. Off = a stay (the common case). On reveals the
+            road-trip fields. Default off so the frequent trip lands right. */}
+        <label
+          className="flex items-center justify-between"
+          style={{ gap: 12, cursor: busy || done ? 'default' : 'pointer' }}
+        >
+          <span className="flex flex-col" style={{ gap: 2 }}>
+            <span className="smallcaps f-dm text-[11px] opacity-70">We’re driving between places</span>
+            <span className="f-dm text-[11px] opacity-50">Turn on for a road trip — moving through different places each night.</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={driving}
+            onChange={(e) => setDriving(e.target.checked)}
+            disabled={busy || done}
+            style={{ width: 20, height: 20, flexShrink: 0, cursor: 'inherit', accentColor: 'var(--accent, var(--text))' }}
+            aria-label="We’re driving between places (a road trip)"
+          />
+        </label>
+
+        {/* Road-trip fields — only when driving. */}
+        {driving && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Start city">
+              <input
+                value={startCity}
+                onChange={(e) => setStartCity(e.target.value)}
+                placeholder="Belmont, MA"
+                className="memory-textarea"
+                style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+                disabled={busy || done}
+              />
+            </Field>
+            <Field label="End city">
+              <input
+                value={endCity}
+                onChange={(e) => setEndCity(e.target.value)}
+                placeholder="New York, NY"
+                className="memory-textarea"
+                style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+                disabled={busy || done}
+              />
+            </Field>
+          </div>
+        )}
 
         <Field label="Travelers">
           <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
