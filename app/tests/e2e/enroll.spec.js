@@ -107,19 +107,22 @@ test('a transient redeem failure on a tapped link is recoverable via "Try again"
   expect(stored).toBe('sess-after-retry')
 })
 
-test('self-enroll: an adult sets up their own device in one tap (mint + redeem)', async ({ page }) => {
+test('post-cutover: a fresh device (no shared token) sets up via a pasted link, not one-tap', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await mockMintLink(page) // /auth/link
-  await mockRedeem(page, 'helen') // /auth/redeem — registered last so it wins
-  await page.goto('/?person=helen&nosw=1') // helen has the bundled token in e2e (an adult)
+  // A brand-new device post-cutover: no session for anyone, and the bundled
+  // tokens are gone from the build — so there is NO credential to one-tap with.
+  await page.addInitScript(() => {
+    for (const t of ['jonathan', 'helen', 'aurelia', 'rafa']) localStorage.removeItem('rt_session_' + t)
+  })
+  await page.goto('/?person=helen&nosw=1')
   await page.getByText('Fun @ the Sun').first().click()
   await openTopMenuItem(page, /Settings/i)
 
-  await page.getByTestId('settings-selfenroll').click()
-  await expect(page.getByTestId('settings-device-msg')).toContainText(/signed in as Helen/i)
-  // The one-tap path stored a real per-device session under the active adult.
-  const stored = await page.evaluate(() => localStorage.getItem('rt_session_helen'))
-  expect(stored).toBe('sess-e2e-xyz')
+  // One-tap self-enroll is GONE — canSelfEnroll needs an own bundled token, which
+  // no longer ships. Enrollment is link-based now.
+  await expect(page.getByTestId('settings-selfenroll')).toHaveCount(0)
+  // ...the device sets up by pasting a personal link/code an adult minted.
+  await expect(page.getByTestId('settings-enroll')).toBeVisible()
 })
 
 test('sign out my other devices: an enrolled device revokes the rest, keeps itself (close-the-door item 4)', async ({ page }) => {
@@ -143,42 +146,31 @@ test('sign out my other devices: an enrolled device revokes the rest, keeps itse
   expect(revokeBody).toEqual({ all: true, except: 'sess-helen-here' })
 })
 
-test('sign out is hidden when this device has no session for the active person (bundled-token only)', async ({ page }) => {
+test('post-cutover: a device with no login offers neither one-tap self-enroll nor sign-out (link setup only)', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await page.goto('/?person=jonathan&nosw=1') // jonathan via the bundled token, no per-device session
+  await page.addInitScript(() => {
+    for (const t of ['jonathan', 'helen', 'aurelia', 'rafa']) localStorage.removeItem('rt_session_' + t)
+  })
+  await page.goto('/?person=jonathan&nosw=1')
   await page.getByText('Fun @ the Sun').first().click()
   await openTopMenuItem(page, /Settings/i)
-  await expect(page.getByTestId('settings-selfenroll')).toBeVisible() // device section rendered
+  await expect(page.getByTestId('settings-selfenroll')).toHaveCount(0) // no bundled token → no one-tap
   await expect(page.getByTestId('settings-signout-others')).toHaveCount(0) // no session → nothing to sign out
+  await expect(page.getByTestId('settings-enroll')).toBeVisible() // ...but you can still set up with a code
 })
 
-test('self-enroll is for everyone: a non-adult self-mints with HER OWN credential, and cannot mint for others', async ({ page }) => {
+test('a non-adult is enrolled-but-restricted: she can sign out her devices but cannot mint a link for someone else', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  // Capture the credential the mint call actually sends.
-  let mintAuth = null
-  await page.route('**/auth/link', async (route) => {
-    mintAuth = route.request().headers()['authorization'] || ''
-    const token = 'mintedtoken1234567890ABCDEF_-'
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ url: `https://jonathantheblip.github.io/roadtrip/?enroll=${token}`, token, traveler: 'aurelia', expiresAt: 9999999999999 }),
-    })
-  })
-  await mockRedeem(page, 'aurelia')
-  await page.goto('/?person=aurelia&nosw=1') // a non-adult, with her own bundled token (test env)
+  // Aurelia is enrolled on this device — the per-device session is seeded for all
+  // personas via storageState (the post-cutover credential; bundled tokens are gone).
+  await page.goto('/?person=aurelia&nosw=1')
   await page.getByText('Fun @ the Sun').first().click()
   await openTopMenuItem(page, /Settings/i)
 
-  // The one-tap self-enroll button is present for a non-adult.
-  await page.getByTestId('settings-selfenroll').click()
-  await expect(page.getByTestId('settings-device-msg')).toContainText(/signed in as Aurelia/i)
-  // It minted with AURELIA's OWN token — NOT a cross-traveler fallback to Helen's.
-  expect(mintAuth).toContain('aurelia')
-  expect(mintAuth).not.toContain('helen')
-  const stored = await page.evaluate(() => localStorage.getItem('rt_session_aurelia'))
-  expect(stored).toBe('sess-e2e-xyz')
-  // ...but a non-adult never gets the "create a link for someone else" control.
+  // She holds her own session → she can sign out her other devices...
+  await expect(page.getByTestId('settings-signout-others')).toBeVisible()
+  // ...but a non-adult NEVER gets the "create a link for someone else" control
+  // (minting for others is adult-only — enforced on the worker too).
   await expect(page.getByTestId('settings-createlink')).toHaveCount(0)
 })
 
@@ -196,10 +188,11 @@ test('an adult can mint a setup link for another family member (to text them)', 
   await expect(link).toContainText('enroll=') // a real, shareable enroll link
 })
 
-test('a dead session self-heals: a 401 clears it and falls back to the bundled token', async ({ page }) => {
+test('a dead session self-heals: a 401 clears the dead session (post-cutover: no bundled fallback)', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   // /memories: 401 for the dead session token, 200 (empty) for anything else
-  // (i.e. the bundled-token retry). Registered after the seed so it wins.
+  // (post-cutover the retry carries no credential — the dead session is simply
+  // dropped and the device re-enrolls). Registered after the seed so it wins.
   await page.route('**/memories**', async (route) => {
     const auth = route.request().headers()['authorization'] || ''
     if (auth.includes('dead-session')) {

@@ -46,6 +46,12 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',
+    // Post-"close the door": auth is per-device SESSIONS only (the bundled
+    // FAMILY_TOKEN_* are gone from the build). Seed a session for all four
+    // personas so isWorkerConfigured() is true and the dock offers everyone —
+    // the runtime equivalent of the old all-four-bundled-tokens state. Specs that
+    // need a FRESH/no-credential device clear these in an addInitScript (enroll).
+    storageState: './tests/e2e/_fixtures/authState.json',
   },
   projects: [
     {
@@ -68,38 +74,17 @@ export default defineConfig({
     timeout: 30_000,
     stdout: 'ignore',
     stderr: 'pipe',
-    // Config floor for the claude-* e2e specs. The chat client only fires
-    // the /claude/* requests that page.route intercepts when
-    // isWorkerConfigured() is true — i.e. VITE_WORKER_URL + at least one
-    // VITE_FAMILY_TOKEN_* present at vite-serve time (see
-    // src/lib/workerSync.js). Without them, workerFetch throws "worker not
-    // configured" BEFORE any route can fire, so every claude spec goes red
-    // on a bare clone (no .env is committed). Setting them here makes the
-    // suite env-independent.
-    //
-    // The token is a TRANSPARENTLY-FAKE placeholder, NOT a credential: every
-    // e2e network flow is mocked via page.route, which fulfills before the
-    // request ever reaches the worker, so the token is never transmitted or
-    // validated. Any non-empty string works. The URL is the public worker
-    // origin only because the route regexes match on that host.
-    // ALL FOUR family tokens are set so the e2e build matches the PRODUCTION
-    // pre-cutover state (deploy-client.yml bakes all four). The enrolled-only
-    // persona switcher offers a persona only when the device holds a credential
-    // for it (session OR bundled token), so a PARTIAL token set here would make
-    // the dock narrow + show the "add a family member" pill in CI — a state that
-    // does NOT match the deployed all-four dock. With all four present the dock
-    // is unchanged (the narrowing only fires post-cutover, when the tokens are
-    // removed — that path is unit-tested in scripts/__tests__/auth.test.mjs since
-    // it can't be reproduced while ANY bundled token ships). Transparently FAKE —
-    // every network flow is page.route-mocked, so the tokens are never validated.
+    // Config floor for the e2e suite's auth. The client only talks to the worker
+    // (and the claude-* specs only fire their page.route'd requests) when
+    // isWorkerConfigured() is true — i.e. VITE_WORKER_URL set AND at least one
+    // credential present (see src/lib/workerSync.js). Post-"close the door" the
+    // ONLY credential is a per-device SESSION (the bundled FAMILY_TOKEN_* are gone
+    // from the build), so the four sessions are seeded in localStorage via
+    // `use.storageState` above — NOT here. This env block sets only the worker
+    // URL. The URL is the public worker origin because the route regexes match on
+    // that host; every network flow is page.route-mocked, so nothing is validated.
     env: {
       VITE_WORKER_URL: 'https://roadtrip-sync.jonathan-d-jackson.workers.dev',
-      VITE_FAMILY_TOKEN_JONATHAN: 'fake-e2e-token-jonathan-routes-are-mocked-not-a-credential',
-      VITE_FAMILY_TOKEN_HELEN: 'fake-e2e-token-helen-routes-are-mocked-not-a-credential',
-      // Aurelia (a non-adult) has her OWN bundled token so the self-enroll spec can
-      // verify she self-mints with HER credential, not a cross-traveler fallback.
-      VITE_FAMILY_TOKEN_AURELIA: 'fake-e2e-token-aurelia-routes-are-mocked-not-a-credential',
-      VITE_FAMILY_TOKEN_RAFA: 'fake-e2e-token-rafa-routes-are-mocked-not-a-credential',
     },
   },
 })

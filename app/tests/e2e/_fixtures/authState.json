@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5181",
+      "localStorage": [
+        { "name": "rt_session_jonathan", "value": "e2e-session-jonathan-routes-are-mocked-not-a-credential" },
+        { "name": "rt_session_helen", "value": "e2e-session-helen-routes-are-mocked-not-a-credential" },
+        { "name": "rt_session_aurelia", "value": "e2e-session-aurelia-routes-are-mocked-not-a-credential" },
+        { "name": "rt_session_rafa", "value": "e2e-session-rafa-routes-are-mocked-not-a-credential" }
+      ]
+    }
+  ]
+}

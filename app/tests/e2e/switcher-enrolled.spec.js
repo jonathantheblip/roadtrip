@@ -1,16 +1,16 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 
-// Enrolled-only persona switcher (close-the-door step 2). The dock now offers only
+// Enrolled-only persona switcher (close-the-door step 2). The dock offers only
 // personas this device holds a credential for + an "add a family member" pill when
-// it's genuinely narrowed. PRE-CUTOVER the bundled family tokens are still in the
-// build, so every persona is credentialed → the dock is UNCHANGED and the add pill
-// is ABSENT. This guards that behavior-preserving invariant (the actual narrowing
-// logic, which only fires once the tokens are removed at the cutover, is unit-
-// tested in scripts/__tests__/auth.test.mjs — it can't be exercised at runtime
-// because the dev/e2e build always carries the bundled tokens).
+// it's genuinely narrowed. Post-cutover the credential is a per-device SESSION; the
+// e2e harness seeds a session for ALL FOUR personas (playwright.config storageState),
+// so every persona is credentialed → the dock is UNCHANGED and the add pill is
+// ABSENT. This guards that all-enrolled invariant (the narrowing logic, which fires
+// when a device holds only SOME sessions, is unit-tested in
+// scripts/__tests__/auth.test.mjs).
 
-test('pre-cutover: the dock shows all four personas and no "add" pill (unchanged)', async ({ page }) => {
+test('all-enrolled: the dock shows all four personas and no "add" pill', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
 

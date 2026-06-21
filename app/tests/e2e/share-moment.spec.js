@@ -34,15 +34,24 @@ async function seed(page, { shareStatus = 200 } = {}) {
     localStorage.setItem('rt_person_v2', 'helen')
   }, { trip: FIXTURE_TRIP, mem: PHOTO_MEM })
 
-  await page.route(/workers\.dev\/(memories|trips)(\?|$)/, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
-  await page.route(/\/share$/, (route) => {
-    if (route.request().method() !== 'POST') return route.continue()
-    if (shareStatus === 200) {
-      return route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ token: 'abc-mystic', url: 'https://roadtrip-sync.test/m/abc-mystic' }) })
+  // ONE catch-all on the worker domain so the test is fully hermetic. This matters
+  // post-"close the door": the e2e seeds per-device SESSIONS (playwright.config
+  // storageState), and an unmocked endpoint would hit the REAL worker, 401 the fake
+  // session, and trigger workerFetch's self-heal (clear + retry) churn — which
+  // flaked the lightbox/share flow. 404 (not 401) for unknown paths avoids it.
+  await page.route(/roadtrip-sync\.jonathan-d-jackson\.workers\.dev/, (route) => {
+    const p = new URL(route.request().url()).pathname
+    if (p === '/share' && route.request().method() === 'POST') {
+      if (shareStatus === 200) {
+        return route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ token: 'abc-mystic', url: 'https://roadtrip-sync.test/m/abc-mystic' }) })
+      }
+      return route.fulfill({ status: shareStatus, contentType: 'application/json', body: JSON.stringify({ error: 'not-shareable' }) })
     }
-    return route.fulfill({ status: shareStatus, contentType: 'application/json', body: JSON.stringify({ error: 'not-shareable' }) })
+    if (p === '/memories' || p.startsWith('/memories/') || p === '/trips' || p.startsWith('/trips/')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
+    return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not found"}' })
   })
 }
 
@@ -95,13 +104,19 @@ test('a shared TEXT memory shares from the thread; a private one cannot', async 
     localStorage.setItem('rt_memories_private_jonathan_v1', JSON.stringify([priv]))
     localStorage.setItem('rt_person_v2', 'jonathan')
   }, { trip: FIXTURE_TRIP, shared: SHARED_TEXT, priv: PRIVATE_TEXT })
-  await page.route(/workers\.dev\/(memories|trips)(\?|$)/, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
-  await page.route(/\/share$/, (route) =>
-    route.request().method() === 'POST'
-      ? route.fulfill({ status: 200, contentType: 'application/json',
-          body: JSON.stringify({ token: 't-text', url: 'https://roadtrip-sync.test/m/t-text' }) })
-      : route.continue())
+  // Hermetic catch-all (see seed()): a seeded fake session must never reach the
+  // real worker, 401, and trip workerFetch's self-heal churn. 404 unknown paths.
+  await page.route(/roadtrip-sync\.jonathan-d-jackson\.workers\.dev/, (route) => {
+    const p = new URL(route.request().url()).pathname
+    if (p === '/share' && route.request().method() === 'POST') {
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ token: 't-text', url: 'https://roadtrip-sync.test/m/t-text' }) })
+    }
+    if (p === '/memories' || p.startsWith('/memories/') || p === '/trips' || p.startsWith('/trips/')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
+    return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not found"}' })
+  })
 
   await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
   // Open day-2's stop → its memory thread (the dock ledge also shows the stop

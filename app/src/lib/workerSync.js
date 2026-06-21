@@ -20,12 +20,15 @@ import { getSession, clearSession, redeemLink } from './auth'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) || {}
 const WORKER_URL = (env.VITE_WORKER_URL || '').replace(/\/+$/, '')
-const TOKENS = {
-  jonathan: env.VITE_FAMILY_TOKEN_JONATHAN || '',
-  helen: env.VITE_FAMILY_TOKEN_HELEN || '',
-  aurelia: env.VITE_FAMILY_TOKEN_AURELIA || '',
-  rafa: env.VITE_FAMILY_TOKEN_RAFA || '',
-}
+// Close-the-door (013) COMPLETE: the bundled FAMILY_TOKEN_* are GONE. They are no
+// longer read from import.meta.env — so they no longer ship in the public client
+// bundle (closing audit ROOT 2: tokens in the bundle = anyone-with-the-URL access)
+// — and the worker (commit 2f28cff) no longer accepts them. A device authenticates
+// ONLY with its per-device SESSION (lib/auth). TOKENS stays an all-empty map so the
+// session-aware fallbacks below (authHeader, hasCredential, canSelfEnroll,
+// isWorkerConfigured) keep working unchanged: they already treat an empty bundled
+// token as "no bundled credential — use the session," which is now the only path.
+const TOKENS = { jonathan: '', helen: '', aurelia: '', rafa: '' }
 const TRAVELER_ORDER = ['jonathan', 'helen', 'aurelia', 'rafa']
 
 export function isWorkerConfigured() {
