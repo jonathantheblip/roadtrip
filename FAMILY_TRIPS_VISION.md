@@ -10,6 +10,10 @@
 
 ## 0. THE SHIFT, IN ONE LINE
 
+> **SETTLED — do not relitigate or re-scope.** This direction is decided. New windows build *toward* it; they
+> do not reopen "is this a road-trip app?" or quietly narrow features back to the road-trip engine. Surface new
+> *facts*, never re-pose this *question*. (WORKING_AGREEMENT §2 #7.)
+
 This is a **family-trips app for ANY kind of trip** — a cabin weekend, a city break, a beach week,
 a flight to Grandma's, a museum day, a lazy stay with nothing planned. We *built* it for a family
 **road trip**, but **the vast majority of our trips will NOT have that structure.** The road-trip

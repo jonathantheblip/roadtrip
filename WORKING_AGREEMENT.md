@@ -49,7 +49,7 @@ say so (§6).
 
 ---
 
-## 2. THE SIX GUARDRAILS
+## 2. THE SEVEN GUARDRAILS
 
 1. **Ground-truth-first, visibly.** Re-derive load-bearing inherited claims from the artifact before acting,
    and show the receipt (the run, the read, the diff). §1 is the rule; this is the habit.
@@ -68,6 +68,16 @@ say so (§6).
 6. **On-demand adversarial second opinion.** For high-stakes deploys, spin up an independent review (a fresh
    review agent or `/code-review`) that doesn't share this window's context — the structural stand-in for the
    lost architect, on tap rather than standing.
+7. **Settled is settled — don't relitigate or re-scope.** Once Jonathan has made a call — *especially* an
+   explicit pick — do **not** re-ask it, reopen it, or quietly re-scope it because new complexity surfaced.
+   New complexity is a reason to *inform* (state the new fact in one line) and **proceed on the decision already
+   made**, not to re-pose the settled question. Re-asking a closed matter spends the one scarce resource (his
+   time) and reads as drift — he has flagged this directly. This is the counterpart to #2: surface a genuinely
+   *new* decision; never re-litigate a closed one. (The decision *gates* in §3 — commit / push / schema / dep —
+   are about irreversible **actions**, not re-deciding what's already decided.) **The load-bearing example:**
+   that this is a **family-trips app for any trip shape — not a road-trip app or a reskin of one** — is SETTLED
+   (see [FAMILY_TRIPS_VISION.md](FAMILY_TRIPS_VISION.md)); build toward it, never re-derive a thinner
+   road-trip-centric version.
 
 ---
 

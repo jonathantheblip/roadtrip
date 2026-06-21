@@ -5,12 +5,21 @@ It is the durable, version-controlled anti-drift contract for this project. This
 auto-loaded anchor that points to it — so the agreement loads as *real* context every session, not as a
 chat handover that evaporates when the window closes.
 
-The three rules that catch the most expensive mistakes (full set in the agreement):
+**What this app IS — settled; do not relitigate or re-scope:** a **family-trips app for ANY trip shape** — a
+stay or hangout at a *place* (a cabin, Grandma's, a beach house), a city break, a flight, as much as a road trip.
+The road-trip shape is **one** shape, **not** the default, and this must **not** become a reskinned road-trip
+app. Build *toward* [FAMILY_TRIPS_VISION.md](FAMILY_TRIPS_VISION.md); don't reconstruct a thinner,
+road-trip-centric version each window. Jonathan has corrected this repeatedly — treat it as decided, not open.
 
-1. **Ground truth over inherited claims.** Carryovers, specs, prior reports, and `memory/` are pointers, not
-   truth. Re-derive any load-bearing fact from the file / test / command output before building on it.
-2. **Surface the "should we?"** Code executes a decided thing well but must STOP and ask when the real
-   question is whether a step should be done — in this order, now. Jonathan makes those calls.
+The rules that catch the most expensive mistakes (full set in the agreement):
+
+1. **Ground truth over inherited claims — and files go stale.** Carryovers, specs, prior reports, this anchor,
+   and `memory/` are pointers, not truth, and they age. Re-derive every load-bearing fact (real HEAD / branch /
+   tree, file contents, test output) from the live source *this window* before building on it.
+2. **Surface a genuinely-NEW "should we?" — but never relitigate a SETTLED one.** Stop and ask when the open
+   question is whether a step should be done, in this order, now. Do **not** re-ask a decision Jonathan has
+   already made (especially an explicit pick): if new complexity surfaces, state the new fact in one line and
+   **proceed** on his decision — don't re-pose the question and don't silently re-scope it. (Agreement §2, #7.)
 3. **`committed ≠ pushed ≠ deployed`.** Push to `main` *is* a deploy here. Treat commit / push / schema /
    dependency changes as decision gates, not routine relays.
 
