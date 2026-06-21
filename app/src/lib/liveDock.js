@@ -12,7 +12,7 @@
 // so the helper was centralized. Re-exported here so existing importers of
 // `localDateIso` from liveDock keep working.
 import { localDateIso } from './localDate.js'
-import { detectCurrentPlace } from './tripShape.js'
+import { detectCurrentPlace, isStayTrip, stayLabel } from './tripShape.js'
 export { localDateIso }
 
 // Parse a stop's free-text clock label ("3:45 PM", "9:00 AM") into a local
@@ -174,6 +174,23 @@ function ledgeNext(nowStop, nextStop) {
   return `${nextStop.name || ''}${time}`.trim()
 }
 
+// A timed stop counts as "now" only WITHIN a bounded window — from its start
+// until the next stop, capped at MAX_NOW_WINDOW_MS — so a passed stop stops
+// reading as "now" once its moment is over. This is the fix for the cabin-stay
+// mishmash where a 10am brunch still read as "now" at 3pm. Used only on a STAY;
+// a route keeps the schedule's plain most-recent-passed "now" (G5).
+const MAX_NOW_WINDOW_MS = 2.5 * 60 * 60 * 1000
+function withinNowWindow(nowStop, nextStop, now) {
+  if (!nowStop) return false
+  const start = effectiveTime(nowStop, nowStop.isoDate)
+  if (!start) return false
+  let end = start.getTime() + MAX_NOW_WINDOW_MS
+  const nextT = nextStop ? effectiveTime(nextStop, nextStop.isoDate) : null
+  if (nextT && nextT.getTime() < end) end = nextT.getTime()
+  const ms = now.getTime()
+  return ms >= start.getTime() && ms < end
+}
+
 // The full ledge model for the dock. PURE (returns data + a `cueKind` string;
 // the dock renders the cue chip). Presence is system-driven — never a setting:
 //   jonathan / helen → persistent live readout during a live trip
@@ -211,12 +228,16 @@ export function buildLedgeModel({
   const effectiveNow = nowStop && nowStop.isoDate === today ? nowStop : null
   const cueKind = revealed ? 'surprise-revealed' : weaveReady ? 'weave-ready' : null
 
-  // PLACE-AWARE (family-trips shift, FAMILY_TRIPS_VISION §5). On a STAY, if THIS
-  // device is actually at the declared place, "now" is "At [the cabin]" — the
-  // place we're at, not the clock's next timed stop (kills the mishmash where the
-  // rail says "Lunch" while we're clearly hanging out at the cabin). The next TIMED
-  // thing today (a dinner out) still shows as "next". No location / not near / not
-  // a stay → falls through to the honest clock readout below, exactly as today.
+  // PLACE-AWARE (family-trips recenter, FAMILY_TRIPS_VISION §5). On a STAY the
+  // place is the home the day hangs off — not a stale timed stop. Most-certain
+  // first:
+  //   1. GPS confirms we're AT the place        → "At [place]" (atPlace).
+  //   2. a timed stop is genuinely happening NOW → that stop (windowed).
+  //   3. otherwise the place IS the baseline: with no fix we lead with it (the
+  //      best guess — the design leads with the place; refined later by the
+  //      "we're here/out" tap + shared location); with a fix that puts us
+  //      elsewhere we don't claim it, we lead with what's next.
+  // A ROUTE trip skips all of this and keeps the exact clock readout (G5).
   const here = detectCurrentPlace(trip, position)
   if (here) {
     const upcoming = nextStop && nextStop.isoDate === today ? nextStop : null
@@ -227,6 +248,30 @@ export function buildLedgeModel({
       cueKind,
       atPlace: true,
     }
+  }
+
+  if (isStayTrip(trip)) {
+    // A timed stop counts as "now" only while it's actually happening — the fix
+    // for "now: Brunch" reading all afternoon on the cabin stay.
+    const inEvent = withinNowWindow(effectiveNow, nextStop, now) ? effectiveNow : null
+    if (inEvent) {
+      return { mode: 'live', now: ledgeNow(inEvent, nextStop), next: ledgeNext(inEvent, nextStop), cueKind }
+    }
+    // No active event. A fix that ISN'T at the place means we know we're out —
+    // lead with what's next, don't claim the place. With no fix the place is the
+    // honest default on a stay (the design leads with it).
+    const knownAway = !!position
+    if (!knownAway) {
+      const upcoming = nextStop && nextStop.isoDate === today ? nextStop : null
+      return {
+        mode: 'live',
+        now: `At ${stayLabel(trip)}`,
+        next: upcoming ? ledgeNext({ isoDate: today }, upcoming) : '',
+        cueKind,
+        placeGuess: true,
+      }
+    }
+    return { mode: 'live', now: ledgeNow(null, nextStop), next: '', cueKind }
   }
 
   return {

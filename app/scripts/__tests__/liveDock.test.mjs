@@ -196,10 +196,44 @@ test('buildLedgeModel: STAY but NOT near the place → honest clock readout (unc
   assert.ok(!m.atPlace)
 })
 
-test('buildLedgeModel: STAY with no location fix → clock readout (honest fallback)', () => {
+test('buildLedgeModel: STAY with no fix, no active event → leads with the place (recenter), not the clock', () => {
+  // RECENTER (FAMILY_TRIPS_VISION §5): the place is the baseline "now" on a stay —
+  // the design leads with it. Was: fell back to the clock readout. The
+  // "we're here/out" tap + shared location refine this when the family is out.
   const m = buildLedgeModel({ trip: STAY, traveler: 'jonathan', now: NOON_D2, position: null })
+  assert.equal(m.now, 'At Beach Bungalow')
+  assert.equal(m.placeGuess, true)
   assert.ok(!m.atPlace)
-  assert.notEqual(m.now, 'At Beach Bungalow')
+  assert.equal(m.next, 'Dinner out 7:00 PM') // tonight's plan still shows as next
+})
+
+// A one-day stay with a morning + an evening plan — the cabin-stay shape that
+// produced the live mishmash ("now: Brunch" all afternoon).
+const STAY_DAY = {
+  id: 'stayday', dateRangeStart: '2026-05-23', dateRangeEnd: '2026-05-23',
+  homeBase: { lat: 41.32, lng: -72.09, label: 'The Cabin' },
+  lodging: { name: 'The Cabin' },
+  days: [
+    { isoDate: '2026-05-23', lodging: 'The Cabin', stops: [
+      { id: 'br', name: 'Brunch out', time: '10:00 AM' },
+      { id: 'din', name: 'Dinner out', time: '7:00 PM' },
+    ] },
+  ],
+}
+
+test('buildLedgeModel: STAY, a morning plan is NOT "now" in the afternoon → leads with the place', () => {
+  const afternoon = new Date('2026-05-23T15:00:00') // brunch was 5h ago, window long closed
+  const m = buildLedgeModel({ trip: STAY_DAY, traveler: 'jonathan', now: afternoon, position: null })
+  assert.equal(m.now, 'At The Cabin') // NOT "Brunch out"
+  assert.equal(m.placeGuess, true)
+  assert.equal(m.next, 'Dinner out 7:00 PM') // tonight's plan still shows as next
+})
+
+test('buildLedgeModel: STAY, DURING the event window the timed stop IS "now"', () => {
+  const brunchtime = new Date('2026-05-23T10:30:00') // inside the brunch window
+  const m = buildLedgeModel({ trip: STAY_DAY, traveler: 'jonathan', now: brunchtime, position: null })
+  assert.equal(m.now, 'Brunch out')
+  assert.ok(!m.placeGuess)
 })
 
 test('buildLedgeModel: a ROUTE trip is NEVER place-aware, even with a position at a stop', () => {
