@@ -19,8 +19,17 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-j', helen: 'tok-h', aurelia: 'tok-a', rafa: 'tok-r' }
+// Make each bundled-token STRING a real per-device session row so the existing
+// call-sites authenticate unchanged (the bundled FAMILY_TOKEN_* path is gone).
+async function seedSessions() {
+  await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+  await seedSession(env.DB, TOKENS.helen, 'helen')
+  await seedSession(env.DB, TOKENS.aurelia, 'aurelia')
+  await seedSession(env.DB, TOKENS.rafa, 'rafa')
+}
 function authEnv() {
   return {
     ...env,
@@ -50,6 +59,7 @@ async function call(path, { method = 'GET', token, body, origin = 'http://localh
 describe('ROOT 1 — conversation identity comes from the token, not the body', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSessions()
     await env.DB.prepare('DELETE FROM conversations').run()
     await env.DB.prepare('DELETE FROM conversation_messages').run()
   })
@@ -105,6 +115,7 @@ describe('ROOT 1 — conversation identity comes from the token, not the body', 
 describe('postMemory stamps the author from the token, never the body', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSessions()
     await env.DB.prepare('DELETE FROM memories').run()
   })
 
@@ -139,6 +150,7 @@ describe('postMemory stamps the author from the token, never the body', () => {
 describe('public share refuses a memory whose parent TRIP or STOP is a secret', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSessions()
     await env.DB.prepare('DELETE FROM memories').run()
     await env.DB.prepare('DELETE FROM trips').run()
     await env.DB.prepare('DELETE FROM shares').run()
@@ -215,6 +227,7 @@ describe('public share refuses a memory whose parent TRIP or STOP is a secret', 
 describe('ROOT 3 — postTrip optimistic concurrency (409 on a stale base)', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSessions()
     await env.DB.prepare('DELETE FROM trips').run()
   })
 
@@ -270,6 +283,7 @@ describe('ROOT 3 — postTrip optimistic concurrency (409 on a stale base)', () 
 describe('getTrips defensively never serves a draft trip', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSessions()
     await env.DB.prepare('DELETE FROM trips').run()
   })
 
@@ -290,6 +304,7 @@ describe('getTrips defensively never serves a draft trip', () => {
 describe('ROOT 1 — deletes are authorship / surprise scoped', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSessions()
     await env.DB.prepare('DELETE FROM memories').run()
     await env.DB.prepare('DELETE FROM trips').run()
   })

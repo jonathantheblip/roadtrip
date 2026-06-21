@@ -9,6 +9,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKEN = 'tok-jonathan'
 const authEnv = () => ({ ...env, FAMILY_TOKEN_JONATHAN: TOKEN, ANTHROPIC_API_KEY: 'test-key' })
@@ -53,6 +54,7 @@ async function rowKeptAt(id) {
 
 beforeEach(async () => {
   await applySchema(env.DB)
+  await seedSession(env.DB, TOKEN, 'jonathan')
   await env.DB.prepare('DELETE FROM weaves').run()
 })
 

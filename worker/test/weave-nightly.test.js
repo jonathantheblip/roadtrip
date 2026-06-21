@@ -23,6 +23,7 @@ import {
   regenerateStoredWeaves,
 } from '../src/weaveGen.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKEN = 'tok-jonathan'
 const authEnv = () => ({ ...env, FAMILY_TOKEN_JONATHAN: TOKEN, ANTHROPIC_API_KEY: 'test-key' })
@@ -83,6 +84,11 @@ async function getLatest(qs, { token = TOKEN } = {}) {
 
 beforeEach(async () => {
   await applySchema(env.DB)
+  // Bundled FAMILY_TOKEN_* auth is gone (013) — each token string must be a real
+  // per-device session row to authenticate. tok-rafa is seeded so the adults-only
+  // /weave/regenerate test reaches the 403 (child) check, not a 401 (unknown token).
+  await seedSession(env.DB, TOKEN, 'jonathan')
+  await seedSession(env.DB, 'tok-rafa', 'rafa')
   // miniflare D1 storage persists across beforeEach within a file — clean
   // slate so each test's exact-row assertions are isolated.
   await env.DB.prepare('DELETE FROM weaves').run()

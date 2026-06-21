@@ -25,6 +25,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 // FAMILY_TOKEN_* are wrangler secrets (NOT in wrangler.toml), so the test
 // runtime has none by default — every request would 401 regardless of the gate,
@@ -84,6 +85,8 @@ const GATED = [
 describe('CHECK 1 — auth boundary', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
   })
 
   it('rejects every gated route with NO token (401)', async () => {
@@ -141,6 +144,8 @@ async function memoryIdsAs(token) {
 describe('CHECK 4 — private-memory isolation', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
     await env.DB.prepare('DELETE FROM memories').run() // clean slate per test
     await seedMemory({ id: 'm-shared', author: 'jonathan', visibility: 'shared' })
     await seedMemory({ id: 'm-priv-jonathan', author: 'jonathan', visibility: 'private' })

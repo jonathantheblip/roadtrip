@@ -9,9 +9,9 @@
 //   - a redeemed link CANNOT be redeemed twice (drop the atomic used_at claim →
 //     replay mints a 2nd session);
 //   - an EXPIRED link is refused (drop the expiry check → it redeems);
-//   - dual-auth accepts BOTH a bundled family token AND a session (remove the
-//     session fallback → the session 401s; remove the family branch → the
-//     bundled token 401s);
+//   - the door is CLOSED: a bundled FAMILY_TOKEN_* value is REJECTED even when
+//     set in env (re-add the family branch → it would authenticate again); only
+//     a real per-device session authenticates;
 //   - revoke kills a session (drop revoked_at filter → the dead token still works);
 //   - only ADULTS mint links (drop isAdult → rafa mints);
 //   - a session resolves to the LINK's traveler, never a body-supplied one
@@ -87,6 +87,13 @@ beforeEach(async () => {
   await applySchema(env.DB)
   await env.DB.prepare('DELETE FROM auth_links').run()
   await env.DB.prepare('DELETE FROM auth_sessions').run()
+  // "Close the door" is COMPLETE — the worker no longer accepts the bundled
+  // FAMILY_TOKEN_*; auth is sessions-only. Make each TOK.* string a real SESSION
+  // so the credentialed calls in these tests authenticate the new way. createdAt
+  // is far in the future so they never fall inside a sweep's beforeDate cutoff.
+  for (const t of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    await seedSession({ token: TOK[t], traveler: t, createdAt: 9_000_000_000_000 })
+  }
 })
 
 // ─── Enroll → session → authenticated request ─────────────────────────────
@@ -117,23 +124,28 @@ describe('enrollment happy path', () => {
   })
 })
 
-// ─── Dual-auth (the cutover safety net) ───────────────────────────────────
-describe('dual-auth during cutover', () => {
-  it('accepts a bundled family token (legacy path unchanged)', async () => {
-    const res = await call('/', { token: TOK.jonathan })
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, traveler: 'jonathan' })
+// ─── The door is closed: bundled FAMILY_TOKEN_* no longer authenticate ─────
+describe('close-the-door: bundled family tokens are dead', () => {
+  it('ignores FAMILY_TOKEN_* env entirely — a value set there but not a session is 401', async () => {
+    // Inject a family token the way prod used to, then send it as the bearer.
+    // The worker must NOT honor it (the audit ROOT-2 fix): only a real per-device
+    // session authenticates now. Re-adding the family branch would flip this to 200.
+    const envWithFamilyToken = { ...env, DB: env.DB, FAMILY_TOKEN_HELEN: 'legacy-helen-bundle-token' }
+    const req = new Request('https://worker.test/', {
+      headers: { Origin: 'http://localhost:5173', Authorization: 'Bearer legacy-helen-bundle-token' },
+    })
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(req, envWithFamilyToken, ctx)
+    await waitOnExecutionContext(ctx)
+    expect(res.status).toBe(401)
   })
 
-  it('accepts a session token (new path) — both work simultaneously', async () => {
-    const { token } = await mintLink(TOK.jonathan, 'aurelia')
+  it('a real per-device session is the only thing that authenticates', async () => {
+    const { token } = await mintLink(TOK.jonathan, 'aurelia') // TOK.jonathan is an adult session → may mint
     const { data } = await redeem(token)
     const viaSession = await call('/', { token: data.sessionToken })
-    const viaBundled = await call('/', { token: TOK.aurelia })
     expect(viaSession.status).toBe(200)
-    expect(viaBundled.status).toBe(200)
     expect((await viaSession.json()).traveler).toBe('aurelia')
-    expect((await viaBundled.json()).traveler).toBe('aurelia')
   })
 })
 

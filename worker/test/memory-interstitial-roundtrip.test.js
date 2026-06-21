@@ -15,6 +15,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-jonathan' }
 function authEnv() {
@@ -44,6 +45,7 @@ const REF = { storage: 'r2', key: 'jonathan/m/p0', mime: 'image/jpeg' }
 describe('migration 007 — memory.interstitial survives postMemory → rowToMemory', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
     await env.DB.prepare('DELETE FROM memories').run()
   })
 

@@ -14,6 +14,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-jonathan' }
 function authEnv() {
@@ -40,6 +41,7 @@ const LOC = { lat: 41.4943, lng: -72.09163, capturedAt: '2026-05-24T17:02:29.000
 describe('LEG-C — photoRefs lat/lng/capturedAt survive postMemory → rowToMemory', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
     await env.DB.prepare('DELETE FROM memories').run()
   })
 
@@ -152,6 +154,7 @@ const VIDEO_POSTER_KEY = 'jonathan/m-vid/poster-abc123'
 describe('Stage 3 step 1 — video posterKey survives postMemory → rowToMemory', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
     await env.DB.prepare('DELETE FROM memories').run()
   })
 

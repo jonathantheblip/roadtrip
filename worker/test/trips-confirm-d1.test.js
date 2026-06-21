@@ -25,6 +25,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 // Push a trip exactly as the client does on confirm: POST /trips, full trip
 // JSON, family bearer token. Goes through the real worker (auth + routing +
@@ -88,6 +89,10 @@ function baseTrip() {
 describe('Unit 6 — confirm → /trips write → real-D1 round-trip', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    // The pushTrip helper authenticates as helen with the fixed string
+    // 'test-token' (FAMILY_TOKEN_HELEN: 'test-token'). In the sessions-only
+    // world that string must be a real auth_sessions row.
+    await seedSession(env.DB, 'test-token', 'helen')
   })
 
   it('persists a confirmed card edit to real D1 and reads the change back', async () => {

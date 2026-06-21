@@ -13,6 +13,7 @@ import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { renderShareCard } from '../src/sharePage.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-j', helen: 'tok-h', aurelia: 'tok-a', rafa: 'tok-r' }
 function authEnv() {
@@ -91,6 +92,8 @@ describe('renderShareCard (pure HTML build)', () => {
 describe('GET /m/:token/card.png — masking + graceful fallback', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.aurelia, 'aurelia')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
     await env.DB.prepare('DELETE FROM memories').run()
     await env.DB.prepare('DELETE FROM trips').run()
     await env.DB.prepare('DELETE FROM shares').run()

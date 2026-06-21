@@ -19,8 +19,9 @@
 //   - Sessions resolve to the SAME lowercase traveler id the rest of the worker
 //     authorizes against — never a body-supplied identity.
 //   - A missing table (pre-migration) degrades the hot-path session lookup to
-//     "no session" instead of a 500, so dual-auth falls back to the bundled token
-//     and nobody is locked out by deploy ordering.
+//     "no session" instead of a 500. Now that the door is closed (no bundled-token
+//     fallback) this means the worker FAIL-CLOSES: every request 401s until
+//     migration 013 (auth_sessions/auth_links) is applied. 013 IS applied on prod.
 
 export const TRAVELERS = ['jonathan', 'helen', 'aurelia', 'rafa']
 // Only adults mint enrollment links (a teen/child never sets up a device alone).
@@ -97,10 +98,10 @@ export async function redeemAuthLink(db, { linkToken, deviceLabel, now }) {
   return { sessionToken, traveler: row.traveler }
 }
 
-// Resolve a session token → traveler, or null. THE hot path (every request).
-// A revoked or unknown token → null. A missing table (pre-migration) → null
-// (narrow swallow, matching getStoredWeave / schema.js) so dual-auth falls back
-// to the bundled family token instead of 500ing.
+// Resolve a session token → traveler, or null. THE hot path (every request) —
+// and, since the door is closed, the ONLY auth path. A revoked or unknown token
+// → null. A missing table (pre-migration) → null (narrow swallow, matching
+// getStoredWeave / schema.js) → the request 401s (fail-closed) rather than 500ing.
 export async function lookupSession(db, sessionToken) {
   if (!sessionToken || typeof sessionToken !== 'string') return null
   try {

@@ -16,6 +16,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-jonathan' }
 function authEnv() {
@@ -66,6 +67,7 @@ async function storedCaption() {
 describe('POST /memories optimistic-concurrency (409) guard', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
     await env.DB.prepare('DELETE FROM memories').run()
   })
 

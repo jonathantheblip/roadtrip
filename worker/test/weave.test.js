@@ -7,8 +7,10 @@
 // with garbled data); the empty-beats case asserts 400 before Claude is
 // called at all.
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import worker from '../src/index.js'
+import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKEN = 'tok-jonathan'
 const authEnv = () => ({ ...env, FAMILY_TOKEN_JONATHAN: TOKEN, ANTHROPIC_API_KEY: 'test-key' })
@@ -45,6 +47,11 @@ async function postWeave(body, { token = TOKEN } = {}) {
   await waitOnExecutionContext(ctx)
   return res
 }
+
+beforeEach(async () => {
+  await applySchema(env.DB)
+  await seedSession(env.DB, TOKEN, 'jonathan')
+})
 
 afterEach(() => vi.unstubAllGlobals())
 

@@ -18,6 +18,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 // FAMILY_TOKEN_* are wrangler secrets (absent from the test runtime), so inject
 // one so authenticate() can map a valid token → traveler 'jonathan' (the key
@@ -41,6 +42,7 @@ async function postAsset(path, { body, contentType, token = TOKEN } = {}) {
 describe('asset upload route', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKEN, 'jonathan')
   })
 
   it('POST /assets/video/:id is routed — stores the blob and round-trips from R2', async () => {

@@ -6,8 +6,10 @@
 // (same 60 s bucket), and the duration is parsed from the mocked seconds.
 
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import worker from '../src/index.js'
+import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKEN = 'tok-jonathan'
 const authEnv = () => ({ ...env, FAMILY_TOKEN_JONATHAN: TOKEN, GOOGLE_PLACES_API_KEY: 'test-key' })
@@ -29,6 +31,13 @@ async function postEta(bodyObj, { token = TOKEN } = {}) {
   await waitOnExecutionContext(ctx)
   return res
 }
+
+beforeEach(async () => {
+  // Auth is now sessions-only: make TOKEN a real auth_sessions row so the
+  // existing `Bearer tok-jonathan` calls authenticate as jonathan.
+  await applySchema(env.DB)
+  await seedSession(env.DB, TOKEN, 'jonathan')
+})
 
 afterEach(() => vi.unstubAllGlobals())
 

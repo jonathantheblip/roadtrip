@@ -1,8 +1,10 @@
 // Surprises Slice 3 — POST /cover. Claude drafts a believable cover story for a
 // surprise (Anthropic seam, stubbed). Auth-gated; 503 fallback without a key.
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import worker, { coverModel, parseCoverJson } from '../src/index.js'
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const STUB_BASE = 'https://anthropic.stub'
 
@@ -64,6 +66,10 @@ describe('parseCoverJson — clamp + require a title', () => {
 })
 
 describe('POST /cover — Claude drafts a cover story', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+    await seedSession(env.DB, 'test-token', 'helen') // FAMILY_TOKEN_HELEN value → helen's session
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('returns the parsed cover fields (no real secret echoed back)', async () => {

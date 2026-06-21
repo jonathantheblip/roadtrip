@@ -27,6 +27,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const STUB_BASE = 'https://anthropic.stub'
 
@@ -151,6 +152,7 @@ async function readAssistantRow(conversationId) {
 describe('Unit 4 — /claude/chat native-SSE translation + D1 persistence', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, 'test-token', 'helen')
   })
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -258,6 +260,7 @@ function nativeToolUseSse({ text, toolName, toolId, inputChunks, inputTokens = 6
 describe('Unit 4b — /claude/chat tool round-trip (tool_use → execute → continue)', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, 'test-token', 'helen')
   })
   afterEach(() => {
     vi.unstubAllGlobals()

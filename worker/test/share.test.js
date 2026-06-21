@@ -17,6 +17,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-j', helen: 'tok-h', aurelia: 'tok-a', rafa: 'tok-r' }
 function authEnv() {
@@ -80,6 +81,7 @@ async function mint(memoryId, token = TOKENS.aurelia) {
 describe('share-out — mint + resolve, and the masking is enforced', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.aurelia, 'aurelia')
     await env.DB.prepare('DELETE FROM memories').run()
     await env.DB.prepare('DELETE FROM trips').run()
     await env.DB.prepare('DELETE FROM shares').run()
@@ -192,6 +194,7 @@ describe('share-out — mint + resolve, and the masking is enforced', () => {
 describe('share-out E2 — the collage layout is stored on mint + honored on resolve', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.aurelia, 'aurelia')
     await env.DB.prepare('DELETE FROM memories').run()
     await env.DB.prepare('DELETE FROM trips').run()
     await env.DB.prepare('DELETE FROM shares').run()

@@ -2,8 +2,10 @@
 //   POST /game       — Claude writes a self-contained HTML game (Anthropic seam)
 //   POST /transcribe — Whisper via Workers AI (env.AI), 503 fallback without it
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import worker, { gameModel } from '../src/index.js'
+import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const STUB_BASE = 'https://anthropic.stub'
 
@@ -36,6 +38,13 @@ const anthropicHtml = (text) =>
     status: 200,
     headers: { 'content-type': 'application/json' },
   })
+
+// Per-device sessions only (013): make the fixed 'test-token' a real session row
+// (it maps to helen via FAMILY_TOKEN_HELEN) so every existing call-site authenticates.
+beforeEach(async () => {
+  await applySchema(env.DB)
+  await seedSession(env.DB, 'test-token', 'helen')
+})
 
 describe('gameModel knob', () => {
   it('defaults to Sonnet', () => {

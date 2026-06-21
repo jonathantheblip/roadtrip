@@ -1,9 +1,11 @@
 // Roadtrip sync Worker. Replaces CloudKit.
 //
-// Auth: 4 family bearer tokens (FAMILY_TOKEN_<TRAVELER> secrets). Each
-// token maps to one of jonathan / helen / aurelia / rafa. Anyone with a
-// valid token can read every shared memory + their own private memories,
-// and write/delete on behalf of the traveler their token belongs to.
+// Auth: per-device SESSION tokens (migration 013, "close the door" complete).
+// A device authenticates only by redeeming a personal one-time enrollment link
+// into a per-device session; the session resolves to one of jonathan / helen /
+// aurelia / rafa. The legacy bundled FAMILY_TOKEN_* path has been REMOVED — it
+// shipped the four tokens inside the public client bundle (audit ROOT 2: anyone
+// with the URL had full access), and that hole is now closed on both ends.
 //
 // Storage:
 //   D1 (binding DB)       — memories, trips
@@ -35,8 +37,6 @@ import { renderSharePage, renderShareError, renderShareCard } from './sharePage.
 // (~250 KB compressed). CPU per resize at 5712×4284 → 2048: roughly
 // 100 ms — fine under the Workers Standard plan (30s CPU/request).
 import { PhotonImage, resize, SamplingFilter } from '@cf-wasm/photon'
-
-const TRAVELERS = ['jonathan', 'helen', 'aurelia', 'rafa']
 
 export default {
   async fetch(request, env, ctx) {
@@ -155,8 +155,8 @@ export default {
       }
 
       // Magic-link auth (013): mint enrollment links + revoke sessions. Both
-      // are below the gate — the caller is an already-enrolled (or, during
-      // cutover, bundled-token) traveler. /auth/redeem is the only PUBLIC one.
+      // are below the gate — the caller is an already-enrolled (session) traveler.
+      // /auth/redeem is the only PUBLIC one (how a fresh device bootstraps).
       if (path === '/auth/link' && request.method === 'POST') {
         return await postAuthLink(env, traveler, request, cors)
       }
@@ -379,32 +379,19 @@ export async function runScheduledStopReveals(env, todayIso) {
 
 // ─── Auth ─────────────────────────────────────────────────────────────
 
-// Dual-auth during the staged cutover (013). Order is deliberate:
-//   1) Bundled family token — cheap, synchronous, NO DB. Keeps the legacy path
-//      byte-identical and free for old clients still sending FAMILY_TOKEN_*.
-//   2) Per-device session token — a D1 lookup. Only reached when the token is
-//      NOT a family token, so session devices pay one read and legacy devices
-//      pay none. A missing auth_sessions table (pre-migration) resolves to null
-//      (lookupSession swallows "no such table") → unauthorized, never a 500.
-// The "close the door" push later drops step 1 (and the bundled secrets).
+// Per-device SESSION auth (013, "close the door" complete). A request
+// authenticates ONLY with a per-device session token (minted by redeeming a
+// personal enrollment link). The bundled FAMILY_TOKEN_* branch is GONE — the
+// tokens no longer ship in the client bundle and the worker no longer accepts
+// them, closing the audit's ROOT-2 hole (public-bundle tokens = URL-reachable
+// access). A missing auth_sessions table (pre-migration) makes lookupSession
+// resolve to null (it swallows "no such table") → unauthorized, never a 500.
 async function authenticate(request, env) {
   const auth = request.headers.get('Authorization') || ''
   const m = auth.match(/^Bearer\s+(.+)$/)
   if (!m) return null
   const token = m[1].trim()
-  for (const t of TRAVELERS) {
-    const expected = env[`FAMILY_TOKEN_${t.toUpperCase()}`]
-    if (expected && timingSafeEqual(token, expected)) return t
-  }
   return await lookupSession(env.DB, token)
-}
-
-function timingSafeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return diff === 0
 }
 
 // ─── Magic-link auth routes (013) ─────────────────────────────────────

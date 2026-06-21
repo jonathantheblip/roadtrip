@@ -21,6 +21,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import worker, { anthropicMessagesUrl } from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const REAL = 'https://api.anthropic.com/v1/messages'
 const STUB_BASE = 'https://anthropic.stub'
@@ -43,8 +44,12 @@ describe('anthropicMessagesUrl — production-preserving seam', () => {
 
 describe('seam redirects both live Anthropic call sites to a local stub', () => {
   let fetchCalls
-  beforeEach(() => {
+  beforeEach(async () => {
     fetchCalls = []
+    await applySchema(env.DB)
+    // 'test-token' is helen's token (FAMILY_TOKEN_HELEN below); make it a real
+    // session row so the bundled-token Bearer calls authenticate under sessions-only auth.
+    await seedSession(env.DB, 'test-token', 'helen')
   })
   afterEach(() => {
     vi.unstubAllGlobals()

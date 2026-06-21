@@ -11,6 +11,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker, { runScheduledStopReveals, buildClaudeSystemPrompt } from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-j', helen: 'tok-h', rafa: 'tok-r' }
 function authEnv() {
@@ -69,6 +70,9 @@ async function seedTrip(trip) {
 describe('per-stop masking (Slice 2) — GET /trips is the read boundary', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
+    await seedSession(env.DB, TOKENS.rafa, 'rafa')
     await env.DB.prepare('DELETE FROM trips').run()
     await seedTrip(TRIP)
   })
@@ -132,6 +136,9 @@ describe('per-stop masking (Slice 2) — GET /trips is the read boundary', () =>
 describe('per-stop masking — Claude must not spoil a hidden stop', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
+    await seedSession(env.DB, TOKENS.rafa, 'rafa')
     await env.DB.prepare('DELETE FROM trips').run()
     await seedTrip(TRIP)
   })
@@ -153,6 +160,9 @@ describe('per-stop masking — Claude must not spoil a hidden stop', () => {
 describe('per-stop masking — POST /trips is the save-back boundary (clobber guard)', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
+    await seedSession(env.DB, TOKENS.rafa, 'rafa')
     await env.DB.prepare('DELETE FROM trips').run()
     await seedTrip(TRIP)
   })
@@ -192,6 +202,9 @@ describe('per-stop masking — POST /trips is the save-back boundary (clobber gu
 describe('per-stop masking — date auto-reveal cron', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
+    await seedSession(env.DB, TOKENS.rafa, 'rafa')
     await env.DB.prepare('DELETE FROM trips').run()
   })
 

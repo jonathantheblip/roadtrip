@@ -14,6 +14,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 import { maskMemoryForViewer } from '../src/surprises.js'
 
 const TOKENS = { aurelia: 'tok-a', rafa: 'tok-r' }
@@ -59,6 +60,8 @@ const mint = (memoryId, token = TOKENS.aurelia) => call('/share', { method: 'POS
 describe('share-out E4 — heterogeneous pieces round-trip + render', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.aurelia, 'aurelia')
+    await seedSession(env.DB, TOKENS.rafa, 'rafa')
     await env.DB.prepare('DELETE FROM memories').run()
     await env.DB.prepare('DELETE FROM trips').run()
     await env.DB.prepare('DELETE FROM shares').run()

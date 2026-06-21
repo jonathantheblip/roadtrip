@@ -21,6 +21,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import worker, { hasExplicitHero, resolveTripHero } from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKEN = 'test-token'
 const PLACES_HOST = 'places.googleapis.com'
@@ -148,6 +149,7 @@ describe('hasExplicitHero — §0 guard (byte-identical to client)', () => {
 describe('trip-hero resolution via GET /trips (real D1 + R2, stubbed Places)', () => {
   beforeEach(async () => {
     await applySchema(env.DB)
+    await seedSession(env.DB, TOKEN, 'helen')
     await env.DB.prepare('DELETE FROM trips').run()
     // miniflare's D1 + R2 bindings persist across tests in a file, so
     // scrub both for per-case isolation (otherwise a prior resolve's R2

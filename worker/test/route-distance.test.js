@@ -10,9 +10,11 @@
 // invalidation Jonathan asked for, proven both directions.
 
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import worker from '../src/index.js'
 import { callRoutesDistance, decodePolyline } from '../src/leaveWhen.js'
+import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
 
 const TOKEN = 'tok-jonathan'
 const authEnv = () => ({ ...env, FAMILY_TOKEN_JONATHAN: TOKEN, GOOGLE_PLACES_API_KEY: 'test-key' })
@@ -37,6 +39,11 @@ async function postRoute(stops, { token = TOKEN } = {}) {
   await waitOnExecutionContext(ctx)
   return res
 }
+
+beforeEach(async () => {
+  await applySchema(env.DB)
+  await seedSession(env.DB, TOKEN, 'jonathan')
+})
 
 afterEach(() => vi.unstubAllGlobals())
 
