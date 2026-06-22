@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, Star, X, Footprints, Car } from 'lucide-react'
 import { isStayTrip, stayPlaceCoords, stayLabel } from '../lib/tripShape'
 import { searchNearby, formatDistance } from '../lib/placesNearby'
-import { TRAVELERS } from '../data/travelers'
+import { TRAVELERS, TRAVELER_DOT, TRAVELER_ORDER } from '../data/travelers'
 import {
   WE_COULD_CATEGORIES,
   buildTray,
@@ -21,13 +21,16 @@ import {
 // handful of nearby ideas from the place's coordinates so the tab is never
 // blank. Each person curates their own device's tray (keep / hide).
 //
+// The cards follow the design authority (app/docs/design/family-trips-hangout,
+// "We could…" / the Pantry): a category-tinted header, a category kicker, the
+// title, a detail line, the who-it's-for face row, travel time, and an action.
+// Rafa gets the big-card variant. (The propose→decide multiplayer action is a
+// later slice; here the action is the client-local "Keep". Real place photos
+// need a worker change and are a flagged follow-on — the header band stands in.)
+//
 // G5: renders ONLY on a stay that has coordinates — route trips and
 // coordinate-less stays get nothing (byte-identical to before). All network
 // failure modes degrade quietly; the tray never shows a broken state.
-//
-// Reuses the existing Worker /places/nearby proxy (Google key server-side)
-// via searchNearby. Results are cached in-memory per trip so navigating away
-// and back doesn't re-pay for the Places calls within a session.
 
 const trayCache = new Map() // key -> built tray (session lifetime)
 
@@ -42,8 +45,6 @@ async function fetchTray(coords) {
         .then((res) => ({ category, results: Array.isArray(res?.results) ? res.results : [] })),
     ),
   )
-  // If EVERY category call rejected, treat it as a real error (offline / key
-  // missing) rather than "nothing nearby". A single success → we have a tray.
   const ok = settled.filter((s) => s.status === 'fulfilled').map((s) => s.value)
   if (ok.length === 0) throw new Error('all nearby queries failed')
   return buildTray(ok)
@@ -61,6 +62,7 @@ export function WeCouldNearby({ trip, traveler }) {
   const coords = useMemo(() => stayPlaceCoords(trip), [trip])
   const isStay = isStayTrip(trip)
   const enabled = isStay && !!coords
+  const big = traveler === 'rafa'
 
   const [status, setStatus] = useState('idle') // idle | loading | ready | error
   const [tray, setTray] = useState([])
@@ -112,21 +114,7 @@ export function WeCouldNearby({ trip, traveler }) {
   }
 
   return (
-    <section data-testid="wecould-nearby" style={{ padding: '14px 14px 4px' }}>
-      <div
-        style={{
-          fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-          fontSize: 10,
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          opacity: 0.65,
-          fontWeight: 700,
-          color: 'var(--text)',
-          padding: '0 4px 4px',
-        }}
-      >
-        We could…
-      </div>
+    <section data-testid="wecould-nearby" style={{ padding: '4px 14px 4px' }}>
       <div
         style={{
           fontFamily: 'Fraunces, Georgia, serif',
@@ -134,7 +122,6 @@ export function WeCouldNearby({ trip, traveler }) {
           fontStyle: 'italic',
           // Full-contrast token, not --muted: small text must clear WCAG AA on
           // every lens surface, and --muted lands at ~4.1:1 on the card fill.
-          // (No opacity — it would silently drop the effective contrast.)
           color: 'var(--text)',
           padding: '0 4px 12px',
         }}
@@ -155,19 +142,135 @@ export function WeCouldNearby({ trip, traveler }) {
       )}
 
       {status === 'ready' && view.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {view.map((card) => (
-            <NearbyCard
-              key={card.id}
-              card={card}
-              traveler={traveler}
-              onPin={() => onPin(card.id)}
-              onHide={() => onHide(card.id)}
-            />
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: big ? 12 : 11 }}>
+          {view.map((card) =>
+            big ? (
+              <RafaCard
+                key={card.id}
+                card={card}
+                traveler={traveler}
+                onPin={() => onPin(card.id)}
+                onHide={() => onHide(card.id)}
+              />
+            ) : (
+              <NearbyCard
+                key={card.id}
+                card={card}
+                traveler={traveler}
+                onPin={() => onPin(card.id)}
+                onHide={() => onHide(card.id)}
+              />
+            ),
+          )}
         </div>
       )}
     </section>
+  )
+}
+
+// The four family dots — "who it's for". In this slice a nearby idea suits
+// everyone (Claude-scoped suits is a later slice), so the row reads as "the
+// whole family". Decorative; the labels live on the buttons + card text.
+function FaceDots({ ids = TRAVELER_ORDER, size = 16 }) {
+  return (
+    <span aria-hidden="true" style={{ display: 'inline-flex' }}>
+      {ids.map((id, i) => (
+        <span
+          key={id}
+          style={{
+            width: size,
+            height: size,
+            borderRadius: '50%',
+            background: TRAVELER_DOT[id] || 'var(--muted)',
+            border: '1.5px solid var(--card)',
+            marginLeft: i === 0 ? 0 : -size * 0.33,
+            display: 'inline-block',
+          }}
+        />
+      ))}
+    </span>
+  )
+}
+
+// A category-tinted header band — stands in for the real place photo (a worker
+// change is needed to fetch Places photos; that's a flagged follow-on). The
+// tints are dark enough that white overlay text clears WCAG AA.
+function CategoryBand({ card, height = 52, children }) {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        height,
+        background: `linear-gradient(135deg, ${card.tint}, color-mix(in srgb, ${card.tint} 70%, #000))`,
+        display: 'flex',
+        alignItems: 'flex-end',
+        padding: '8px 10px',
+      }}
+    >
+      <span
+        style={{
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 8.5,
+          letterSpacing: '0.16em',
+          textTransform: 'uppercase',
+          fontWeight: 700,
+          color: '#fff',
+        }}
+      >
+        {card.catLabel}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function HideButton({ name, onHide, onBand }) {
+  return (
+    <button
+      type="button"
+      data-testid="wecould-hide"
+      onClick={onHide}
+      aria-label={`Hide ${name}`}
+      style={{
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        background: onBand ? 'rgba(0,0,0,0.28)' : 'transparent',
+        border: 0,
+        borderRadius: '50%',
+        padding: 3,
+        cursor: 'pointer',
+        // Full-strength so the icon clears WCAG 1.4.11 (3:1) on every lens.
+        color: onBand ? '#fff' : 'var(--muted)',
+        display: 'inline-flex',
+      }}
+    >
+      <X size={15} />
+    </button>
+  )
+}
+
+function KeepButton({ pinned, name, onPin, accentFill }) {
+  return (
+    <button
+      type="button"
+      data-testid="wecould-keep"
+      onClick={onPin}
+      aria-pressed={!!pinned}
+      aria-label={pinned ? `Stop keeping ${name}` : `Keep ${name}`}
+      className="btn-pill"
+      style={{
+        cursor: 'pointer',
+        flexShrink: 0,
+        background: pinned ? 'var(--accent)' : accentFill ? 'rgba(255,255,255,0.22)' : 'transparent',
+        // Accent fill needs the lens's dark INK, never white.
+        color: pinned ? 'var(--accent-ink)' : accentFill ? '#fff' : 'inherit',
+        borderColor: pinned ? 'var(--accent)' : accentFill ? 'transparent' : 'var(--border)',
+      }}
+    >
+      <Star size={12} fill={pinned ? 'currentColor' : 'none'} />
+      {pinned ? 'Kept' : 'Keep'}
+    </button>
   )
 }
 
@@ -178,78 +281,58 @@ function NearbyCard({ card, traveler, onPin, onHide }) {
     <article
       data-testid="wecould-card"
       style={{
+        position: 'relative',
         borderRadius: 'min(var(--radius, 12px), 16px)',
         border: '1px solid var(--border)',
         background: 'var(--card, transparent)',
-        padding: '12px 12px 12px 14px',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-        // a thin category-tinted left edge gives each card a quiet identity
-        borderLeft: `3px solid ${card.tint}`,
+        overflow: 'hidden',
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 8,
-            marginBottom: 2,
-          }}
-        >
-          <span
-            style={{
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 9,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              // Category is carried by the tinted left edge (decorative); the
-              // LABEL is full-contrast --text (not the raw tint, which fails
-              // contrast on the dark lenses; not --muted, which lands ~4.1:1 on
-              // the card fill).
-              color: 'var(--text)',
-              fontWeight: 700,
-            }}
-          >
-            {card.catLabel}
-          </span>
-          {typeof card.openNow === 'boolean' && <OpenPill open={card.openNow} />}
-        </div>
+      <CategoryBand card={card} />
+      <HideButton name={card.name} onHide={onHide} onBand />
 
+      <div style={{ padding: '10px 12px 12px' }}>
         <h3
           style={{
             fontFamily: 'Fraunces, Georgia, serif',
             fontSize: 17,
             fontWeight: 700,
-            lineHeight: 1.2,
+            lineHeight: 1.18,
             margin: 0,
             color: 'var(--text)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
           }}
         >
           {card.name}
         </h3>
+
+        {card.address && (
+          <div
+            style={{
+              fontFamily: 'Inter Tight, system-ui, sans-serif',
+              fontSize: 12,
+              lineHeight: 1.35,
+              color: 'var(--text)',
+              opacity: 0.92,
+              marginTop: 4,
+            }}
+          >
+            {card.address}
+          </div>
+        )}
 
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            marginTop: 6,
+            marginTop: 8,
             fontFamily: 'Inter Tight, system-ui, sans-serif',
             fontSize: 12.5,
-            // Full-contrast --text (not --muted) — see the kicker note.
             color: 'var(--text)',
             flexWrap: 'wrap',
           }}
         >
           {travel && (
-            // The mode icon is a soft HINT, not an asserted fact — the minutes
-            // are a straight-line estimate (the "~"), not a routed ETA (G6).
-            // The full honest detail lives in the title tooltip.
             <span
               style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
               title={`about ${travel.minutes} min by ${travel.mode} — straight-line estimate`}
@@ -258,67 +341,99 @@ function NearbyCard({ card, traveler, onPin, onHide }) {
               ~{travel.minutes} min
             </span>
           )}
-          {Number.isFinite(card.distanceMeters) && (
-            <span>· {formatDistance(card.distanceMeters)}</span>
-          )}
+          {Number.isFinite(card.distanceMeters) && <span>· {formatDistance(card.distanceMeters)}</span>}
+          {typeof card.openNow === 'boolean' && <OpenPill open={card.openNow} />}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            data-testid="wecould-keep"
-            onClick={onPin}
-            aria-pressed={!!card.pinned}
-            aria-label={card.pinned ? `Stop keeping ${card.name}` : `Keep ${card.name}`}
-            className="btn-pill"
-            style={{
-              cursor: 'pointer',
-              background: card.pinned ? 'var(--accent)' : 'transparent',
-              // Accent fill needs the lens's dark INK, never white — Rafa's
-              // ochre + Jonathan's clay are too light for white text.
-              color: card.pinned ? 'var(--accent-ink)' : 'inherit',
-              borderColor: card.pinned ? 'var(--accent)' : 'var(--border)',
-            }}
-          >
-            <Star size={12} fill={card.pinned ? 'currentColor' : 'none'} />
-            {card.pinned ? 'Kept' : 'Keep'}
-          </button>
-          {href && (
-            <a className="btn-pill" href={href} target="_blank" rel="noreferrer" style={{ cursor: 'pointer' }}>
-              <MapPin size={12} />
-              {TRAVELERS[traveler]?.maps === 'waze' ? 'Waze' : 'Maps'}
-            </a>
-          )}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            marginTop: 11,
+          }}
+        >
+          <FaceDots />
+          <span style={{ display: 'inline-flex', gap: 8 }}>
+            {href && (
+              <a className="btn-pill" href={href} target="_blank" rel="noreferrer" style={{ cursor: 'pointer' }}>
+                <MapPin size={12} />
+                {TRAVELERS[traveler]?.maps === 'waze' ? 'Waze' : 'Maps'}
+              </a>
+            )}
+            <KeepButton pinned={card.pinned} name={card.name} onPin={onPin} />
+          </span>
         </div>
       </div>
+    </article>
+  )
+}
 
-      <button
-        type="button"
-        data-testid="wecould-hide"
-        onClick={onHide}
-        aria-label={`Hide ${card.name}`}
+// Rafa's big-card variant — a tall tinted card with the title over a gradient,
+// per the design (Rafa gets bigger, bolder cards and a candy action).
+function RafaCard({ card, traveler, onPin, onHide }) {
+  const travel = estimateTravel(card.distanceMeters)
+  return (
+    <article
+      data-testid="wecould-card"
+      style={{
+        position: 'relative',
+        borderRadius: 'min(var(--radius, 22px), 24px)',
+        overflow: 'hidden',
+        height: 150,
+        background: `linear-gradient(135deg, ${card.tint}, color-mix(in srgb, ${card.tint} 60%, #000))`,
+      }}
+    >
+      <span
         style={{
-          flexShrink: 0,
-          background: 'transparent',
-          border: 0,
-          padding: 4,
-          cursor: 'pointer',
-          // Full-strength --muted (no opacity): the icon must clear the
-          // WCAG 1.4.11 non-text 3:1 bar on Helen's light lens, where the
-          // 0.7 opacity dropped it to ~2.7:1.
-          color: 'var(--muted)',
+          position: 'absolute',
+          top: 10,
+          left: 12,
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 8.5,
+          letterSpacing: '0.16em',
+          textTransform: 'uppercase',
+          fontWeight: 700,
+          color: '#fff',
         }}
       >
-        <X size={16} />
-      </button>
+        {card.catLabel}
+      </span>
+      <HideButton name={card.name} onHide={onHide} onBand />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+          background: 'linear-gradient(transparent, rgba(0,0,0,0.6))',
+          padding: '22px 14px 13px',
+        }}
+      >
+        <div style={{ fontFamily: 'var(--font-display, Fredoka), sans-serif', fontWeight: 700, fontSize: 23, color: '#fff', lineHeight: 1.05 }}>
+          {card.name}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <FaceDots />
+          {travel && (
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: 'rgba(255,255,255,0.9)' }}>
+              ~{travel.minutes} MIN {travel.mode.toUpperCase()}
+            </span>
+          )}
+          <span style={{ marginLeft: 'auto' }}>
+            <KeepButton pinned={card.pinned} name={card.name} onPin={onPin} accentFill />
+          </span>
+        </div>
+      </div>
     </article>
   )
 }
 
 function OpenPill({ open }) {
   // A colored DOT carries the open/closed signal; the LABEL stays neutral
-  // (var(--muted)) so it's contrast-safe on every lens surface. The dot is
-  // decorative (aria-hidden) — the word "Open now"/"Closed" is the a11y text.
+  // (var(--text)) so it's contrast-safe on every lens surface.
   return (
     <span
       style={{
@@ -330,7 +445,6 @@ function OpenPill({ open }) {
         letterSpacing: '0.1em',
         textTransform: 'uppercase',
         fontWeight: 700,
-        // Full-contrast label; the colored DOT carries the open/closed signal.
         color: 'var(--text)',
       }}
     >
@@ -370,12 +484,12 @@ function Notice({ children }) {
 
 function SkeletonRows() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} aria-hidden="true">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }} aria-hidden="true">
       {[0, 1, 2].map((i) => (
         <div
           key={i}
           style={{
-            height: 78,
+            height: 120,
             borderRadius: 12,
             border: '1px solid var(--border)',
             background:

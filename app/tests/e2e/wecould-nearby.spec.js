@@ -115,8 +115,8 @@ test.describe('We could… nearby tray (slice 3a)', () => {
 
     await expect(page.getByTestId('wecould-nearby')).toContainText(/Couldn.t load nearby ideas/i)
     await expect(page.getByTestId('wecould-card')).toHaveCount(0)
-    // the rest of the surface still renders (the curated "Things to do" page)
-    await expect(page.getByText('Things to do')).toBeVisible()
+    // the rest of the surface still renders (the "We could…" page heading)
+    await expect(page.getByText('We could…', { exact: true })).toBeVisible()
   })
 
   // Contrast gate across every lens — the accent-fill ("Kept") + category

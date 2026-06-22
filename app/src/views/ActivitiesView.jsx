@@ -122,7 +122,7 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
             color: 'var(--text)',
           }}
         >
-          Things to do
+          {nearbyEnabled ? 'We could…' : 'Things to do'}
         </div>
         {subtitle && (
           <div
