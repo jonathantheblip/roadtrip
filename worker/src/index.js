@@ -75,6 +75,18 @@ export default {
       }
     }
 
+    // GET /places/photo is PUBLIC (above the gate) like /assets — an <img src>
+    // can't send a bearer header. The key stays server-side; the handler only
+    // resolves a well-formed Places photo resource name.
+    if (request.method === 'GET' && path === '/places/photo') {
+      try {
+        return await getPlacesPhoto(env, url, cors)
+      } catch (err) {
+        console.error('places photo error', err?.stack || err)
+        return new Response('photo error', { status: 502, headers: cors })
+      }
+    }
+
     // Share-out: GET /m/:token is PUBLIC (no bearer) — a non-app family member
     // opens it from a texted link. Above the auth gate, like /assets. The token
     // is unguessable; the handler re-derives masking from the live memory row so
@@ -1850,10 +1862,43 @@ async function postPlacesNearby(env, request, cors) {
       radius: body?.radius,
       limit: body?.limit,
     })
+    // Turn each photo resource name into a key-safe proxied URL on THIS worker
+    // (the Google key never reaches the client). photoName drops out of the
+    // payload — the client only ever sees the proxied photoUrl.
+    const origin = new URL(request.url).origin
+    out.results = out.results.map(({ photoName, ...r }) => ({
+      ...r,
+      photoUrl: photoName
+        ? `${origin}/places/photo?name=${encodeURIComponent(photoName)}&w=640`
+        : null,
+    }))
     return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
   } catch (e) {
     return json({ error: e?.message || String(e) }, 502, cors)
   }
+}
+
+// GET /places/photo?name=places/X/photos/Y&w=640 — proxy a Google Places photo
+// so the API key stays on the worker. PUBLIC (above the bearer gate) because an
+// <img src> can't carry an auth header — same posture as /assets. Guarded to a
+// well-formed photo resource name so it's not an open image proxy.
+async function getPlacesPhoto(env, url, cors) {
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    return new Response('Places API not configured', { status: 500, headers: cors })
+  }
+  const name = url.searchParams.get('name') || ''
+  if (!/^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_-]+$/.test(name)) {
+    return new Response('bad photo name', { status: 400, headers: cors })
+  }
+  const w = Math.max(120, Math.min(1200, Number(url.searchParams.get('w')) || 640))
+  const media = `https://places.googleapis.com/v1/${name}/media?maxWidthPx=${w}&key=${env.GOOGLE_PLACES_API_KEY}`
+  const res = await fetch(media) // follows the 302 to the image bytes
+  if (!res.ok) return new Response('photo unavailable', { status: 502, headers: cors })
+  const headers = new Headers(cors)
+  headers.set('Content-Type', res.headers.get('Content-Type') || 'image/jpeg')
+  // The image for a (name, width) is immutable — cache hard on the device.
+  headers.set('Cache-Control', 'public, max-age=86400, immutable')
+  return new Response(res.body, { status: 200, headers })
 }
 
 // Core Places (New) text search with optional distance bias. Shared by
@@ -1888,7 +1933,7 @@ async function placesTextSearch(env, { query, lat, lng, radius, limit }) {
       'content-type': 'application/json',
       'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
       'x-goog-fieldmask':
-        'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber',
+        'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber,places.photos.name',
     },
     body: JSON.stringify(reqBody),
   })
@@ -1921,6 +1966,9 @@ async function placesTextSearch(env, { query, lat, lng, radius, limit }) {
           null,
         businessStatus: p.businessStatus || null,
         phone: p.nationalPhoneNumber || null,
+        // The first photo's resource name ("places/X/photos/Y"); the HTTP
+        // handler turns it into a key-safe proxied URL. null when none.
+        photoName: (Array.isArray(p.photos) && p.photos[0]?.name) || null,
       }
     })
     .filter(Boolean)

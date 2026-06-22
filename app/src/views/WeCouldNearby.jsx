@@ -290,23 +290,46 @@ function FaceDots({ ids = TRAVELER_ORDER, size = 16 }) {
   )
 }
 
-// A category-tinted header band — stands in for the real place photo (a worker
-// change is needed to fetch Places photos; that's a flagged follow-on). The
-// tints are dark enough that white overlay text clears WCAG AA.
-function CategoryBand({ card, height = 52, children }) {
+// The card's header band: the place's real photo when we have one, falling
+// back to a category-tinted gradient. A dark scrim keeps the white category
+// label readable over any photo; the tint is dark enough on its own too.
+function CategoryBand({ card, height = 64, children }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const showPhoto = !!card.photoUrl && !imgFailed
   return (
     <div
       style={{
         position: 'relative',
         height,
+        overflow: 'hidden',
         background: `linear-gradient(135deg, ${card.tint}, color-mix(in srgb, ${card.tint} 70%, #000))`,
         display: 'flex',
         alignItems: 'flex-end',
         padding: '8px 10px',
       }}
     >
+      {showPhoto && (
+        <img
+          src={card.photoUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImgFailed(true)}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: showPhoto ? 'linear-gradient(transparent 35%, rgba(0,0,0,0.6))' : 'none',
+        }}
+      />
       <span
         style={{
+          position: 'relative',
+          zIndex: 1,
           fontFamily: 'JetBrains Mono, monospace',
           fontSize: 8.5,
           letterSpacing: '0.16em',
@@ -472,6 +495,8 @@ function NearbyCard({ card, traveler, onPin, onHide }) {
 // per the design (Rafa gets bigger, bolder cards and a candy action).
 function RafaCard({ card, traveler, onPin, onHide }) {
   const travel = estimateTravel(card.distanceMeters)
+  const [imgFailed, setImgFailed] = useState(false)
+  const showPhoto = !!card.photoUrl && !imgFailed
   return (
     <article
       data-testid="wecould-card"
@@ -483,9 +508,20 @@ function RafaCard({ card, traveler, onPin, onHide }) {
         background: `linear-gradient(135deg, ${card.tint}, color-mix(in srgb, ${card.tint} 60%, #000))`,
       }}
     >
+      {showPhoto && (
+        <img
+          src={card.photoUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImgFailed(true)}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
       <span
         style={{
           position: 'absolute',
+          zIndex: 1,
           top: 10,
           left: 12,
           fontFamily: 'JetBrains Mono, monospace',

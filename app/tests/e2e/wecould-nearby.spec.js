@@ -29,8 +29,9 @@ const STAY = {
 // Deterministic nearby results keyed off the category query the tray sends.
 const BY_QUERY = [
   { match: 'restaurant', results: [
-    { placeId: 'r1', name: 'Cabin Diner', address: '1 Main St', lat: 43.24, lng: -72.90, distanceMeters: 800, openNow: true, phone: null },
-    { placeId: 'r2', name: 'The Tavern', address: '2 Main St', lat: 43.25, lng: -72.91, distanceMeters: 2600, openNow: false, phone: null },
+    // Cabin Diner carries a (worker-proxied) photoUrl; The Tavern has none → tint-band fallback.
+    { placeId: 'r1', name: 'Cabin Diner', address: '1 Main St', lat: 43.24, lng: -72.90, distanceMeters: 800, openNow: true, phone: null, photoUrl: 'https://example.test/places/photo?name=places/r1/photos/x&w=640' },
+    { placeId: 'r2', name: 'The Tavern', address: '2 Main St', lat: 43.25, lng: -72.91, distanceMeters: 2600, openNow: false, phone: null, photoUrl: null },
   ] },
   { match: 'park', results: [
     { placeId: 'p1', name: 'Pine Playground', address: 'Forest Rd', lat: 43.26, lng: -72.92, distanceMeters: 1500, openNow: true, phone: null },
@@ -43,7 +44,21 @@ const BY_QUERY = [
   ] },
 ]
 
+// A 1×1 PNG so a card's photoUrl actually LOADS (otherwise the <img> fires
+// onError and correctly falls back to the tint band — which would race the
+// "photo renders" assertion).
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+)
+
 async function mockNearby(page, { fail = false } = {}) {
+  // The photo proxy URL the worker hands back — return a real image so the
+  // card's <img> loads (and the fallback path is exercised by The Tavern,
+  // which has no photoUrl at all).
+  await page.route(/\/places\/photo\?/, (route) =>
+    route.fulfill({ status: 200, contentType: 'image/png', body: PNG_1x1 }),
+  )
   // Registered AFTER the fixture's worker catch-all, so this wins for the
   // /places/nearby calls the tray makes.
   await page.route(/workers\.dev\/places\/nearby$/, async (route) => {
@@ -107,6 +122,16 @@ test.describe('We could… nearby tray (slice 3a)', () => {
     await expect(page.getByTestId('wecould-card')).toHaveCount(2) // Cabin Diner + The Tavern
     await chips.getByRole('button', { name: 'A bite' }).click() // tap again to clear
     await expect(page.getByTestId('wecould-card')).toHaveCount(5)
+  })
+
+  test('a card with a photo renders the real image; one without falls back to the tint band', async ({ page }) => {
+    await seedTripIntoCache(page, STAY)
+    await mockNearby(page)
+    await openWeCould(page, 'jonathan')
+    const diner = page.getByTestId('wecould-card').filter({ hasText: 'Cabin Diner' })
+    await expect(diner.locator('img')).toHaveAttribute('src', /places\/photo\?name=/)
+    // The Tavern has no photoUrl → no <img>, just the category band.
+    await expect(page.getByTestId('wecould-card').filter({ hasText: 'The Tavern' }).locator('img')).toHaveCount(0)
   })
 
   test('keep floats a card to the top; hide removes it', async ({ page }) => {

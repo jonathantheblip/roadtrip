@@ -50,6 +50,9 @@ export function mapNearbyResult(result, category) {
     distanceMeters: Number.isFinite(result.distanceMeters) ? result.distanceMeters : null,
     openNow: typeof result.openNow === 'boolean' ? result.openNow : null,
     phone: result.phone || null,
+    // A key-safe, worker-proxied photo URL (null when the place has none) —
+    // the card shows it as the header image, falling back to the tint band.
+    photoUrl: typeof result.photoUrl === 'string' ? result.photoUrl : null,
     // 3a: a nearby place suits everyone until Claude scopes it (3b). Tagging
     // all four keeps it visible under the default "Everyone" who-filter
     // (the filter is a strict intersection — a narrower tag set would hide
