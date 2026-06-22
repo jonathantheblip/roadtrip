@@ -21,6 +21,8 @@ import { TripEditor } from './views/TripEditor'
 import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
 import { AllPhotosView } from './views/AllPhotosView'
+import { ImportFlow, ImportToast } from './components/ImportFlow'
+import { isVideoEncodeSupported } from './lib/videoPipeline'
 import { ReplayView } from './views/ReplayView'
 import { MapView } from './views/MapView'
 import { ImportView } from './views/ImportView'
@@ -287,6 +289,29 @@ export default function App() {
   const tripsApi = useTrips()
   const isIpad = useIsIpad()
   const allTrips = tripsApi.trips
+
+  // Bulk photo import, launchable from the trip's top page (not buried in the
+  // Photos tab). A hidden file input lives in the shell; the ⋯ menu's "Add
+  // photos" clicks it, and once files are picked the ImportFlow takes over the
+  // screen (same component + behavior as the Photos tab's importer). The new
+  // photos land in the shared store and show in the Photos tab on next visit.
+  const bulkImportInputRef = useRef(null)
+  const [bulkImportFiles, setBulkImportFiles] = useState(null)
+  const [bulkImportToast, setBulkImportToast] = useState(null)
+  const bulkImportToastTimer = useRef(null)
+  function openBulkImport() {
+    bulkImportInputRef.current?.click()
+  }
+  function showBulkImportToast(results) {
+    const props = bulkImportToastProps(results)
+    if (!props) return
+    if (bulkImportToastTimer.current) clearTimeout(bulkImportToastTimer.current)
+    setBulkImportToast(props)
+    bulkImportToastTimer.current = setTimeout(() => setBulkImportToast(null), 3400)
+  }
+  useEffect(() => () => {
+    if (bulkImportToastTimer.current) clearTimeout(bulkImportToastTimer.current)
+  }, [])
   // Drafts (manual-add, not yet published) never appear in the polished
   // surfaces — not the index, not the trip switcher, not the cold-start
   // pick. They live only in the editor and the Settings → Drafts list.
@@ -1035,6 +1060,24 @@ export default function App() {
     return null // the guard effect is switching to a set-up persona this frame
   }
 
+  // Bulk import takes over the whole screen while triaging (same as the Photos
+  // tab's importer), so a "We could / Now / Photos" tab tap can't fight it.
+  if (bulkImportFiles && bulkImportFiles.length > 0 && trip) {
+    return (
+      <ImportFlow
+        trip={trip}
+        traveler={traveler}
+        files={bulkImportFiles}
+        tripsApi={tripsApi}
+        onCancel={() => setBulkImportFiles(null)}
+        onComplete={(results) => {
+          setBulkImportFiles(null)
+          showBulkImportToast(results)
+        }}
+      />
+    )
+  }
+
   return (
     <>
       {/* Surprises (Slice 2): arrival-reveal geofence. Mounted ONLY when the
@@ -1255,6 +1298,7 @@ export default function App() {
                           { label: 'Live map', glyph: '▣', onClick: openMap },
                           { label: 'Surprises', glyph: '🎁', onClick: openSurprises },
                           { label: 'Share a moment', glyph: '🖼', onClick: openCompose },
+                          { label: 'Add photos', glyph: '📷', onClick: openBulkImport },
                         ]
                       : []),
                     ...(trip && bookHasPages ? [{ label: 'The book', glyph: '❏', onClick: openBook }] : []),
@@ -1521,6 +1565,34 @@ export default function App() {
         // and the worker only emits those in-trip.
         onCardSave={handleClaudeCardSave}
       />
+
+      {/* Bulk-import file picker — lives in the shell so the ⋯ menu's "Add
+          photos" can launch it from the trip's top page. Same accept rules as
+          the Photos-tab importer (video only where WebCodecs can encode it). */}
+      <input
+        ref={bulkImportInputRef}
+        type="file"
+        accept={isVideoEncodeSupported() ? 'image/*,video/*' : 'image/*'}
+        multiple
+        data-testid="home-import-file-input"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const files = Array.from(e.target.files || [])
+          e.target.value = '' // re-picking the same batch still fires
+          if (files.length > 0) setBulkImportFiles(files)
+        }}
+      />
+      {bulkImportToast && <ImportToast {...bulkImportToast} />}
     </>
   )
+}
+
+// Map the bulk-import results → <ImportToast> props (mirrors PhotosView's quiet,
+// count-first acknowledgement so the two import entries read identically).
+function bulkImportToastProps(r) {
+  if (!r) return null
+  if (r.nothingNew) return { message: 'Nothing new to import' }
+  if (r.ok > 0) return { count: r.ok, noun: r.ok === 1 ? 'photo' : 'photos', syncing: r.queued || 0 }
+  if (r.reattached > 0) return { message: `${r.reattached} re-attached` }
+  return { message: 'Nothing new to import' }
 }
