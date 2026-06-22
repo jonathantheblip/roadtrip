@@ -13,6 +13,8 @@ import {
 } from '../data/sideActivities'
 import { computeOpenState, openStateColor } from '../lib/openState'
 import { LeaveWhenModal } from '../components/LeaveWhenModal'
+import { isStayTrip, stayPlaceCoords } from '../lib/tripShape'
+import { WeCouldNearby } from './WeCouldNearby'
 
 // Things to do — trip-scoped activity menu. Filter chips at the top
 // (4 family members + Everyone, strict intersection); category-grouped
@@ -66,6 +68,18 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
   )
   const sections = useMemo(() => groupByCategory(filtered), [filtered])
 
+  // On a STAY with coordinates, the "We could…" nearby tray leads — so a
+  // brand-new trip with no curated list never opens to a blank page
+  // (FAMILY_TRIPS_VISION §2/§3). When that tray is present, drop the
+  // dead-end "No activities seeded" line; the tray speaks for the page.
+  const nearbyEnabled = isStayTrip(trip) && !!stayPlaceCoords(trip)
+  const subtitle =
+    activities.length === 0
+      ? nearbyEnabled
+        ? ''
+        : 'No activities seeded for this trip yet.'
+      : activitiesSubtitle(trip)
+
   return (
     <div
       style={{
@@ -110,20 +124,22 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
         >
           Things to do
         </div>
-        <div
-          style={{
-            fontFamily: 'Fraunces, Georgia, serif',
-            fontSize: 14,
-            fontStyle: 'italic',
-            color: 'var(--muted)',
-            marginTop: 6,
-          }}
-        >
-          {activities.length === 0
-            ? 'No activities seeded for this trip yet.'
-            : activitiesSubtitle(trip)}
-        </div>
+        {subtitle && (
+          <div
+            style={{
+              fontFamily: 'Fraunces, Georgia, serif',
+              fontSize: 14,
+              fontStyle: 'italic',
+              color: 'var(--muted)',
+              marginTop: 6,
+            }}
+          >
+            {subtitle}
+          </div>
+        )}
       </header>
+
+      <WeCouldNearby trip={trip} traveler={traveler} />
 
       {onOpenImport && (
         <div style={{ padding: '14px 14px 0' }}>
