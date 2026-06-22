@@ -128,7 +128,7 @@ test.describe('photos album per traveler', () => {
       await page.waitForTimeout(400)
       await expect(page).toHaveScreenshot(`album-${traveler}.png`, {
         fullPage: true,
-        mask: [page.locator('.switcher'), page.locator('.stay-tabbar')], // + the stay tab bar (same bottom-zone mono gremlin)
+        mask: [page.getByTestId('trip-topbar'), page.locator('.switcher'), page.locator('.stay-tabbar')], // + top bar (masked like trip-view: off-runner font-AA gremlin + the Claude glyph)
       })
     })
   }
@@ -146,7 +146,7 @@ test.describe('all-photos cross-trip per traveler', () => {
         await page.waitForTimeout(400)
         await expect(page).toHaveScreenshot(`all-photos-${traveler}.png`, {
           fullPage: true,
-          mask: [page.locator('.switcher'), page.locator('.stay-tabbar')], // + the stay tab bar (same bottom-zone mono gremlin)
+          mask: [page.getByTestId('trip-topbar'), page.locator('.switcher'), page.locator('.stay-tabbar')], // + top bar (masked like trip-view: off-runner font-AA gremlin + the Claude glyph)
         })
       } else {
         // Surface this as a baseline gap — annotate but don't fail.

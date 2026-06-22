@@ -1,8 +1,9 @@
 // Glyphs — the two single-ink family-trips marks (design handoff
 // design-handoffs/claude-glyph/.../handoff/icons.jsx, ported verbatim).
 //
-//   • ClaudeGlyph — a bold filled crescent cradling a thin uneven spark that
-//     peeks past the curve. Replaces the old four-point Anthropic spark.
+//   • ClaudeGlyph — a sparkles mark (one large four-point twinkle + two small
+//     ones), stroked in one ink. The friendlier "magic" glyph Jonathan picked
+//     over the earlier crescent-and-spark.
 //   • WeaveMark   — a real over-under three-strand braid. Replaces the old ✦
 //     four-point star wherever "the Weave" surfaces.
 //
@@ -15,12 +16,14 @@
 // default; pass a `title` to make it an announced standalone image instead.
 
 const PATHS = {
-  // bold crescent (filled) + thin uneven spark (stroked), peeking past the curve
+  // sparkles — a large four-point twinkle (left-of-centre) + two small ones
+  // (stroked, one ink). Ported from the Tabler "sparkles" mark.
   claude: (
-    <>
-      <path d="M13.4 5.8 A6.4 6.4 0 1 0 13.4 18.2 A5.0 5.0 0 1 1 13.4 5.8 Z" fill="currentColor" />
-      <path d="M16.00 7.80L16.00 14.04M18.59 9.96L13.93 13.10M18.13 13.14L13.28 9.87" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </>
+    <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z" />
+      <path d="M16 6a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2z" />
+      <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2z" />
+    </g>
   ),
   // three-strand over-under braid (stroked); the back strand breaks at each crossing
   weave: (

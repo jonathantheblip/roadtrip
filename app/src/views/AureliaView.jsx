@@ -29,7 +29,7 @@ import { todayLocalIso } from '../lib/localDate'
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue }) {
+export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -92,31 +92,47 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
           {mems.length} {mems.length === 1 ? 'FRAME' : 'FRAMES'}
         </Eyebrow>
       </div>
-      <div style={{ padding: '6px 18px 12px' }}>
-        <div
-          style={{
-            fontFamily: SERIF,
-            fontSize: 52,
-            fontWeight: 400,
-            lineHeight: 0.95,
-            fontStyle: 'italic',
-            letterSpacing: '-0.01em',
-            color: 'var(--text)',
-          }}
-        >
-          aurelia
+      {/* Title row carries the identity dot (→ Settings) on the right — matches
+          the other lenses' headers (whose roll this is + the way into Settings;
+          the bottom dock that holds identity elsewhere is gone on a stay). It
+          sits beside the big title so it doesn't grow the masthead. */}
+      <div style={{ padding: '6px 18px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: SERIF,
+              fontSize: 52,
+              fontWeight: 400,
+              lineHeight: 0.95,
+              fontStyle: 'italic',
+              letterSpacing: '-0.01em',
+              color: 'var(--text)',
+            }}
+          >
+            aurelia
+          </div>
+          <div
+            style={{
+              fontFamily: SERIF,
+              fontSize: 16,
+              fontStyle: 'italic',
+              color: 'var(--muted)',
+              marginTop: 6,
+            }}
+          >
+            a place for what you actually cared about.
+          </div>
         </div>
-        <div
-          style={{
-            fontFamily: SERIF,
-            fontSize: 16,
-            fontStyle: 'italic',
-            color: 'var(--muted)',
-            marginTop: 6,
-          }}
-        >
-          a place for what you actually cared about.
-        </div>
+        {onOpenSettings && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label="Settings"
+            style={{ background: 'transparent', border: 0, padding: 0, cursor: 'pointer', lineHeight: 0, flexShrink: 0, marginTop: 2 }}
+          >
+            <Avatar id="aurelia" size={32} ring />
+          </button>
+        )}
       </div>
 
       {/* Personal letter from another traveler, if the trip carries one
