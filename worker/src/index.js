@@ -29,6 +29,7 @@ import { runNightlyWeave, beatSignature, regenerateStoredWeaves } from './weaveG
 import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
+import { listProposals, createProposal, voteProposal, decideProposal, isNoTable } from './proposals.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -164,6 +165,25 @@ export default {
       const tripMatch = path.match(/^\/trips\/([^/]+)$/)
       if (tripMatch && request.method === 'DELETE') {
         return await deleteTrip(env, traveler, tripMatch[1], cors)
+      }
+
+      // Propose → decide (014): the family's "what should we do?" loop. List +
+      // create ride the existing pull cadence; vote is a soft "I'm in"; decide
+      // (accept/decline) is ADULTS-ONLY, enforced in decideProposal() — not just
+      // the UI. All identities come from `traveler` (the session), never the body.
+      if (path === '/proposals' && request.method === 'GET') {
+        return await getProposals(env, url, cors)
+      }
+      if (path === '/proposals' && request.method === 'POST') {
+        return await postProposal(env, traveler, request, cors)
+      }
+      const propVoteMatch = path.match(/^\/proposals\/([^/]+)\/vote$/)
+      if (propVoteMatch && request.method === 'POST') {
+        return await postProposalVote(env, traveler, propVoteMatch[1], cors)
+      }
+      const propDecideMatch = path.match(/^\/proposals\/([^/]+)\/decide$/)
+      if (propDecideMatch && request.method === 'POST') {
+        return await postProposalDecide(env, traveler, propDecideMatch[1], request, cors)
       }
 
       // Magic-link auth (013): mint enrollment links + revoke sessions. Both
@@ -542,6 +562,72 @@ async function postAuthRevoke(env, traveler, request, cors) {
   const r = await revokeSession(env.DB, { sessionToken, traveler, now })
   if (r.error === 'forbidden') return json({ error: 'not your session' }, 403, cors)
   return json({ ok: true, revoked: r.revoked }, 200, cors)
+}
+
+// ─── Propose → decide (014) ────────────────────────────────────────────
+// Thin wrappers over proposals.js. Identity (proposer/voter/decider) is always
+// `traveler` (the session), never the body. A missing table (pre-migration)
+// degrades: GET → [] (listProposals swallows it), writes → 503.
+
+async function getProposals(env, url, cors) {
+  // Family-shared within a trip, so no per-viewer masking (proposals reference
+  // nearby spots, not surprises). no-store so a pull is always fresh.
+  const out = await listProposals(env.DB, url.searchParams.get('tripId') || '')
+  return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+async function postProposal(env, traveler, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  try {
+    const res = await createProposal(env.DB, {
+      id: body?.id,
+      traveler, // proposer = the session traveler, never the body
+      tripId: body?.tripId,
+      spotId: body?.spotId,
+      spot: body?.spot,
+      recipients: body?.recipients,
+      note: body?.note,
+      now: Date.now(),
+    })
+    if (res.error) return json(res, 400, cors)
+    return json(res, 200, cors)
+  } catch (err) {
+    if (isNoTable(err)) return json({ error: 'proposals not yet enabled' }, 503, cors)
+    throw err
+  }
+}
+
+async function postProposalVote(env, traveler, id, cors) {
+  try {
+    const res = await voteProposal(env.DB, { traveler, id, now: Date.now() })
+    if (res.error) return json(res, res.error === 'not found' ? 404 : 409, cors)
+    return json(res, 200, cors)
+  } catch (err) {
+    if (isNoTable(err)) return json({ error: 'proposals not yet enabled' }, 503, cors)
+    throw err
+  }
+}
+
+async function postProposalDecide(env, traveler, id, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  try {
+    const res = await decideProposal(env.DB, { traveler, id, decision: body?.decision, now: Date.now() })
+    if (res.error) return json({ error: res.error }, res.status || 400, cors)
+    return json(res, 200, cors)
+  } catch (err) {
+    if (isNoTable(err)) return json({ error: 'proposals not yet enabled' }, 503, cors)
+    throw err
+  }
 }
 
 // ─── CORS ─────────────────────────────────────────────────────────────

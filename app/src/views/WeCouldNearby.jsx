@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MapPin, Star, X, Footprints, Car } from 'lucide-react'
+import { MapPin, Star, X, Footprints, Car, Send } from 'lucide-react'
 import { isStayTrip, stayPlaceCoords, stayLabel } from '../lib/tripShape'
 import { searchNearby, formatDistance } from '../lib/placesNearby'
 import { sunTimes } from '../lib/sunTimes'
@@ -59,7 +59,20 @@ function mapsHref(card, travelerId) {
   return `https://maps.apple.com/?q=${encodeURIComponent(card.name || '')}&ll=${card.lat},${card.lng}`
 }
 
-export function WeCouldNearby({ trip, traveler }) {
+// A nearby card → the compact spot snapshot a proposal carries, so every family
+// device renders the same card without re-deriving the per-device nearby list.
+function toSpotSnapshot(card) {
+  return {
+    id: card.id,
+    title: card.name,
+    cat: card.cat,
+    tint: card.tint || null,
+    photoUrl: card.photoUrl || null,
+    travel: estimateTravel(card.distanceMeters),
+  }
+}
+
+export function WeCouldNearby({ trip, traveler, onPropose }) {
   const coords = useMemo(() => stayPlaceCoords(trip), [trip])
   const isStay = isStayTrip(trip)
   const enabled = isStay && !!coords
@@ -150,6 +163,7 @@ export function WeCouldNearby({ trip, traveler }) {
                 traveler={traveler}
                 onPin={() => onPin(card.id)}
                 onHide={() => onHide(card.id)}
+                onPropose={onPropose ? () => onPropose(toSpotSnapshot(card)) : undefined}
               />
             ) : (
               <NearbyCard
@@ -158,6 +172,7 @@ export function WeCouldNearby({ trip, traveler }) {
                 traveler={traveler}
                 onPin={() => onPin(card.id)}
                 onHide={() => onHide(card.id)}
+                onPropose={onPropose ? () => onPropose(toSpotSnapshot(card)) : undefined}
               />
             ),
           )}
@@ -395,7 +410,7 @@ function KeepButton({ pinned, name, onPin, accentFill }) {
   )
 }
 
-function NearbyCard({ card, traveler, onPin, onHide }) {
+function NearbyCard({ card, traveler, onPin, onHide, onPropose }) {
   const travel = estimateTravel(card.distanceMeters)
   const href = mapsHref(card, traveler)
   return (
@@ -477,6 +492,19 @@ function NearbyCard({ card, traveler, onPin, onHide }) {
         >
           <FaceDots />
           <span style={{ display: 'inline-flex', gap: 8 }}>
+            {onPropose && (
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={onPropose}
+                data-testid="propose-card"
+                aria-label={`Propose ${card.name} to the family`}
+                style={{ cursor: 'pointer' }}
+              >
+                <Send size={12} />
+                Propose
+              </button>
+            )}
             {href && (
               <a className="btn-pill" href={href} target="_blank" rel="noreferrer" style={{ cursor: 'pointer' }}>
                 <MapPin size={12} />
@@ -493,7 +521,7 @@ function NearbyCard({ card, traveler, onPin, onHide }) {
 
 // Rafa's big-card variant — a tall tinted card with the title over a gradient,
 // per the design (Rafa gets bigger, bolder cards and a candy action).
-function RafaCard({ card, traveler, onPin, onHide }) {
+function RafaCard({ card, traveler, onPin, onHide, onPropose }) {
   const travel = estimateTravel(card.distanceMeters)
   const [imgFailed, setImgFailed] = useState(false)
   const showPhoto = !!card.photoUrl && !imgFailed
@@ -556,7 +584,31 @@ function RafaCard({ card, traveler, onPin, onHide }) {
               ~{travel.minutes} MIN {travel.mode.toUpperCase()}
             </span>
           )}
-          <span style={{ marginLeft: 'auto' }}>
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+            {onPropose && (
+              <button
+                type="button"
+                onClick={onPropose}
+                data-testid="propose-card"
+                aria-label={`Ask to go to ${card.name}`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '8px 14px',
+                  borderRadius: 999,
+                  border: 0,
+                  cursor: 'pointer',
+                  background: 'rgba(255,255,255,0.92)',
+                  color: '#1A1614',
+                  fontFamily: 'Fredoka, system-ui, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 14,
+                }}
+              >
+                <Send size={14} /> Ask!
+              </button>
+            )}
             <KeepButton pinned={card.pinned} name={card.name} onPin={onPin} accentFill />
           </span>
         </div>

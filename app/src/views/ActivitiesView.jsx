@@ -15,6 +15,9 @@ import { computeOpenState, openStateColor } from '../lib/openState'
 import { LeaveWhenModal } from '../components/LeaveWhenModal'
 import { isStayTrip, stayPlaceCoords } from '../lib/tripShape'
 import { WeCouldNearby } from './WeCouldNearby'
+import { useProposals } from '../lib/proposals'
+import { ProposalsBanner } from '../components/ProposalsBanner'
+import { ProposeSheet } from '../components/ProposeSheet'
 
 // Things to do — trip-scoped activity menu. Filter chips at the top
 // (4 family members + Everyone, strict intersection); category-grouped
@@ -33,6 +36,13 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
   )
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteDraft, setPasteDraft] = useState('')
+
+  // Propose → decide (slice 6): the family loop lives here, on the "We could…"
+  // tab — where the ideas are. Gated to a stay (where the nearby tray runs); the
+  // hook no-ops without a worker. `proposeSpot` drives the bottom-sheet.
+  const proposalsOn = isStayTrip(trip)
+  const { pending, accepted, propose, vote, decide } = useProposals(proposalsOn ? trip?.id : null)
+  const [proposeSpot, setProposeSpot] = useState(null)
 
   // Default: Everyone on. Gives an immediate full view; chip
   // toggling narrows the list. State is local to this mount —
@@ -139,7 +149,33 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
         )}
       </header>
 
-      <WeCouldNearby trip={trip} traveler={traveler} />
+      {proposalsOn && (
+        <ProposalsBanner
+          pending={pending}
+          accepted={accepted}
+          traveler={traveler}
+          onVote={vote}
+          onDecide={decide}
+        />
+      )}
+
+      <WeCouldNearby
+        trip={trip}
+        traveler={traveler}
+        onPropose={proposalsOn ? setProposeSpot : undefined}
+      />
+
+      {proposeSpot && (
+        <ProposeSheet
+          spot={proposeSpot}
+          traveler={traveler}
+          onClose={() => setProposeSpot(null)}
+          onSend={async ({ recipients, note }) => {
+            await propose({ spotId: proposeSpot.id, spot: proposeSpot, recipients, note })
+            setProposeSpot(null)
+          }}
+        />
+      )}
 
       {onOpenImport && (
         <div style={{ padding: '14px 14px 0' }}>
