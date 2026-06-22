@@ -220,8 +220,13 @@ test.describe('TheWeave — save to Photos (slice 2)', () => {
     // Click → encoding starts.
     await saveBtn.click()
 
-    // Modal appears ("Creating your weave…").
-    await expect(page.getByText(/Creating your weave/i)).toBeVisible({ timeout: 3000 })
+    // Save modal opens. The mocked Worker resolves the encode almost instantly,
+    // so on a slow runner the transient "Creating your weave…" frame can come and
+    // go before this assertion polls — accept either the in-progress copy OR the
+    // completed confirmation, both of which mean the save flow opened and ran.
+    await expect(
+      page.getByText(/Creating your weave|Saved to (Photos|your device)/i),
+    ).toBeVisible({ timeout: 3000 })
 
     // After the mock worker resolves, "Saved to Photos" confirmation appears.
     await expect(page.getByText(/Saved to Photos/i)).toBeVisible({ timeout: 15_000 })
