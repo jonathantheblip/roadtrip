@@ -1,5 +1,6 @@
-# Playwright test artifacts (regenerated per run)
-app/test-results/
+# Playwright test artifacts (regenerated per run). Unanchored so a stray run
+# from the repo root (not app/) doesn't leave a committable test-results/ dir.
+test-results/
 app/playwright-report/
 # Simulator-gate failure evidence (screenshots saved only on test failure)
 app/tests/simulator/__artifacts__/
