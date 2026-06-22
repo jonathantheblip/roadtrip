@@ -134,8 +134,13 @@ test.describe('Trip reconciliation + archiving', () => {
   test('draft auto-builds the four stop states + a named auto stop + an interstitial', async ({ page }) => {
     await openReconcileTriage(page)
 
-    // Planned stop with a matching photo → happened.
-    await expect(page.getByText('McComb', { exact: true })).toBeVisible()
+    // Planned stop with a matching photo → happened. Exclude the dock's live
+    // ledge readout: the draft trip is live, so the FamilyDock surfaces "McComb"
+    // as the now/next stop too — without this the exact-text match resolves to
+    // both the editor stop AND the dock span (a strict-mode violation).
+    await expect(
+      page.getByText('McComb', { exact: true }).and(page.locator(':not(.dock-ledge-readout)'))
+    ).toBeVisible()
     await expect(page.getByText('Happened', { exact: true })).toBeVisible()
 
     // Planned stop with no photo → flagged. (exact: the interstitial
