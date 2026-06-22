@@ -173,5 +173,22 @@ build plan for the overhaul is scoped separately, against this north star.
 
 ---
 
+## 10. WHERE THE BUILD IS NOW (decided 2026-06-21 — a pointer that ages; verify against `memory/recenter-on-family-trips`)
+
+The recenter is being **built**, not just planned. The shape is settled:
+
+- **The home is a four-tab shell — "We could… · Now · Photos · Look back"** (from Jonathan's `/design:user-research`
+  pass — the authority, committed at `app/docs/design/family-trips-hangout/`). On a *stay* this shell becomes the
+  home; **road trips and the between-trips screen keep the old dock, untouched** — the whole reorg is a branch on
+  the stay-vs-route signal, so a route can never lose its drive scaffolding.
+- **Every device is single-enrolled** — each family member has their *own* device (Rafa's iPad is Rafa's). There
+  is no shared device and no multi-person switching in production, so the person-switcher is moot (a quiet
+  identity, not a switcher). This *refines* the older "shared iPad" assumption — it doesn't happen.
+- **"Where are we" is still the heart (§4)** — the live "At the cabin" readout + shared-location presence are the
+  big remaining pieces, sequenced after the shell stands up.
+
+---
+
 *Sources of truth for this doc: Jonathan, session `a50cb529` (2026-06-19) and on-device feedback
-(2026-06-20). Related durable memory: `all-family-trips-not-roadtrips`, `family-trips-place-model`.*
+(2026-06-20). Related durable memory: `all-family-trips-not-roadtrips`, `family-trips-place-model`,
+`recenter-on-family-trips`.*
