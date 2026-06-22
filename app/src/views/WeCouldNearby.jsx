@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, Star, X, Footprints, Car } from 'lucide-react'
 import { isStayTrip, stayPlaceCoords, stayLabel } from '../lib/tripShape'
 import { searchNearby, formatDistance } from '../lib/placesNearby'
+import { sunTimes } from '../lib/sunTimes'
 import { TRAVELERS, TRAVELER_DOT, TRAVELER_ORDER } from '../data/travelers'
 import {
   WE_COULD_CATEGORIES,
@@ -67,6 +68,7 @@ export function WeCouldNearby({ trip, traveler }) {
   const [status, setStatus] = useState('idle') // idle | loading | ready | error
   const [tray, setTray] = useState([])
   const [curation, setCuration] = useState(() => loadCuration(trip?.id))
+  const [catFilter, setCatFilter] = useState(null) // 'meal' | 'energy' | 'look' | 'treat' | null
   const reqId = useRef(0)
 
   useEffect(() => {
@@ -97,7 +99,8 @@ export function WeCouldNearby({ trip, traveler }) {
   if (!enabled) return null
 
   const placeName = stayLabel(trip)
-  const view = applyCuration(tray, curation)
+  const view = applyCuration(tray, curation) // all (curation applied)
+  const shown = view.filter((c) => !catFilter || c.cat === catFilter) // + category filter
 
   // Compute next from the current state, then set + persist — keeping the
   // localStorage write OUT of the setState updater (updaters must be pure;
@@ -115,19 +118,11 @@ export function WeCouldNearby({ trip, traveler }) {
 
   return (
     <section data-testid="wecould-nearby" style={{ padding: '4px 14px 4px' }}>
-      <div
-        style={{
-          fontFamily: 'Fraunces, Georgia, serif',
-          fontSize: 13,
-          fontStyle: 'italic',
-          // Full-contrast token, not --muted: small text must clear WCAG AA on
-          // every lens surface, and --muted lands at ~4.1:1 on the card fill.
-          color: 'var(--text)',
-          padding: '0 4px 12px',
-        }}
-      >
-        {placeName ? `Ideas near ${placeName}` : 'Ideas nearby'}
-      </div>
+      <ConditionsStrip placeName={placeName} coords={coords} />
+
+      {status === 'ready' && view.length > 0 && (
+        <CategoryChips value={catFilter} onChange={setCatFilter} />
+      )}
 
       {status === 'loading' && <SkeletonRows />}
 
@@ -141,9 +136,13 @@ export function WeCouldNearby({ trip, traveler }) {
         <Notice>Nothing turned up nearby — try the curated list below.</Notice>
       )}
 
-      {status === 'ready' && view.length > 0 && (
+      {status === 'ready' && view.length > 0 && shown.length === 0 && (
+        <Notice>Nothing nearby under that filter — try another, or clear it.</Notice>
+      )}
+
+      {status === 'ready' && shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: big ? 12 : 11 }}>
-          {view.map((card) =>
+          {shown.map((card) =>
             big ? (
               <RafaCard
                 key={card.id}
@@ -165,6 +164,105 @@ export function WeCouldNearby({ trip, traveler }) {
         </div>
       )}
     </section>
+  )
+}
+
+// The conditions strip — the place, a live clock, and the day's light
+// (golden hour + sunset, a free on-device astronomy calc; no weather API).
+// Per the design, this leads the "We could…" tab. Honest: it shows only what
+// it can actually compute — no fabricated temperature/weather.
+function ConditionsStrip({ placeName, coords }) {
+  const sun = useMemo(
+    () => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null),
+    [coords?.lat, coords?.lng],
+  )
+  const fmt = (d) => (d ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null)
+  return (
+    <div
+      data-testid="wecould-conditions"
+      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '2px 4px 12px' }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 13, fontStyle: 'italic', color: 'var(--text)' }}>
+          {placeName ? `Ideas near ${placeName}` : 'Ideas nearby'}
+        </div>
+        {sun?.sunset && (
+          <div
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 9,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--text)',
+              marginTop: 5,
+            }}
+          >
+            {sun.goldenHour ? `Golden ${fmt(sun.goldenHour)} · ` : ''}Sunset {fmt(sun.sunset)}
+          </div>
+        )}
+      </div>
+      <LiveClock />
+    </div>
+  )
+}
+
+// A second-ticking clock, scoped to its own state so the whole tray doesn't
+// re-render each second. (Under the e2e clock stub `new Date()` is frozen, so
+// it renders a fixed time — no test churn.)
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <span
+      style={{
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 13,
+        color: 'var(--accent-text)',
+        fontVariantNumeric: 'tabular-nums',
+        flexShrink: 0,
+      }}
+    >
+      {now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+    </span>
+  )
+}
+
+// The category filter — single-select, tap again to clear (matches the design's
+// "A bite · Burn energy · …" row). Narrows the tray by card.cat.
+function CategoryChips({ value, onChange }) {
+  return (
+    <div data-testid="wecould-cats" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '0 4px 14px' }}>
+      {WE_COULD_CATEGORIES.map((c) => {
+        const on = c.key === value
+        return (
+          <button
+            key={c.key}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? null : c.key)}
+            style={{
+              padding: '6px 11px',
+              borderRadius: 20,
+              border: '1px solid',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              fontFamily: 'Inter Tight, system-ui, sans-serif',
+              fontSize: 11.5,
+              fontWeight: 600,
+              borderColor: on ? 'var(--accent)' : 'var(--border)',
+              background: on ? 'var(--accent)' : 'transparent',
+              // accent fill → dark ink (never white); off → full-contrast text
+              color: on ? 'var(--accent-ink)' : 'var(--text)',
+            }}
+          >
+            {c.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

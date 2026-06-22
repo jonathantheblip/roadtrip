@@ -87,6 +87,28 @@ test.describe('We could… nearby tray (slice 3a)', () => {
     await expect(page.getByTestId('wecould-nearby').getByText('Open now').first()).toBeVisible()
   })
 
+  test('the conditions strip shows the place + the day\'s light, and category chips appear', async ({ page }) => {
+    await seedTripIntoCache(page, STAY)
+    await mockNearby(page)
+    await openWeCould(page, 'jonathan')
+    const cond = page.getByTestId('wecould-conditions')
+    await expect(cond).toContainText('Ideas near Our Cabin')
+    await expect(cond).toContainText(/Sunset/i) // golden-hour/sunset calc engaged for the stay's coords
+    await expect(page.getByTestId('wecould-cats')).toBeVisible()
+  })
+
+  test('the category filter narrows the tray and clears', async ({ page }) => {
+    await seedTripIntoCache(page, STAY)
+    await mockNearby(page)
+    await openWeCould(page, 'jonathan')
+    await expect(page.getByTestId('wecould-card')).toHaveCount(5)
+    const chips = page.getByTestId('wecould-cats')
+    await chips.getByRole('button', { name: 'A bite' }).click()
+    await expect(page.getByTestId('wecould-card')).toHaveCount(2) // Cabin Diner + The Tavern
+    await chips.getByRole('button', { name: 'A bite' }).click() // tap again to clear
+    await expect(page.getByTestId('wecould-card')).toHaveCount(5)
+  })
+
   test('keep floats a card to the top; hide removes it', async ({ page }) => {
     await seedTripIntoCache(page, STAY)
     await mockNearby(page)
