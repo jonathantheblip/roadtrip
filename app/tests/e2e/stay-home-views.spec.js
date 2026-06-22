@@ -2,7 +2,7 @@
 // JonathanView's "AT [place]" card), shedding road-trip scaffolding. Guards the
 // per-persona stay reshape (Helen / Aurelia / Rafa phone + RafaPad iPad).
 import { test, expect } from './_fixtures/clockStub.js'
-import { seedTripIntoCache } from './_fixtures/withTrip.js'
+import { seedTripIntoCache, FIXTURE_ROUTE_TRIP } from './_fixtures/withTrip.js'
 
 // A destination-less cabin STAY (geocoded lodging → isStayTrip true), dates
 // straddling the stubbed clock so it cold-loads as the active trip.
@@ -48,6 +48,34 @@ test.describe('stay home views — phone / standard', () => {
     const card = page.getByTestId('rafa-stay-place-card')
     await expect(card).toBeVisible({ timeout: 10000 })
     await expect(card).toContainText('Our Cabin')
+  })
+})
+
+// The dock carried a live "At [place] · next" readout; on a STAY the dock is
+// hidden, so the Now band's Live Map register shows that readout itself (the
+// lenses with a live ledge — jonathan/helen). On a ROUTE the dock still shows
+// it, so the band stays the generic "Where we are now" (G5 — no duplication).
+test.describe('Now-band live readout (stay re-home of the dock ledge)', () => {
+  for (const who of ['jonathan', 'helen']) {
+    test(`${who}: the Now band shows "At [place]" on a stay, not the generic link`, async ({ page }) => {
+      await seedTripIntoCache(page, STAY)
+      await page.goto(`/?person=${who}&trip=stay-home-2026&nosw=1`)
+      const band = page.getByTestId(`${who}-entries`)
+      await expect(band).toBeVisible({ timeout: 10000 })
+      await expect(band.getByText('At Our Cabin')).toBeVisible()
+    })
+  }
+
+  test('jonathan: a ROUTE keeps the generic "Where we are now" (the dock carries the readout)', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
+    await page.goto('/?person=jonathan&trip=roadtrip-2026&nosw=1')
+    const band = page.getByTestId('jonathan-entries')
+    await expect(band).toBeVisible({ timeout: 10000 })
+    // The generic title stands (readout is null on a route → not replaced); the
+    // dock carries the live readout instead. The route fixture's base is "Beach
+    // Bungalow", so a leaked readout would read "At Beach Bungalow".
+    await expect(band.getByText('Where we are now')).toBeVisible()
+    await expect(band.getByText('At Beach Bungalow')).toHaveCount(0)
   })
 })
 

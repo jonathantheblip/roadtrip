@@ -52,7 +52,7 @@ function Card({ onClick, label, children, style, 'data-testid': testId }) {
 }
 
 export function HelenEntries({
-  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages,
+  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages, nowReadout,
   onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
@@ -151,15 +151,22 @@ export function HelenEntries({
               </div>
             </Card>
 
-            {/* Live Map — soft "where we are now" */}
+            {/* Live Map — "where we are now". On a stay the dock is gone, so this
+                carries the live "At [place] · next" readout itself; on a route the
+                dock shows it → the generic "Open the map" stands. */}
             <Card onClick={onOpenMap} label="Open the live map">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--live, var(--accent))' }} />
                     <Eyebrow>Where we are now</Eyebrow>
                   </span>
-                  <div style={{ ...SERIF, fontSize: 16, marginTop: 5 }}>Open the map</div>
+                  <div style={{ ...SERIF, fontSize: 16, marginTop: 5 }}>{nowReadout?.now || 'Open the map'}</div>
+                  {nowReadout?.next && (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      Next · {nowReadout.next}
+                    </div>
+                  )}
                 </div>
                 <ReadCta>Open map</ReadCta>
               </div>

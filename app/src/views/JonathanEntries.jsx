@@ -71,7 +71,7 @@ function ArchiveLine({ onClick, kicker, title, cta, icon }) {
 }
 
 export function JonathanEntries({
-  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages,
+  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages, nowReadout,
   onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
@@ -132,9 +132,17 @@ export function JonathanEntries({
                 <Mono c="var(--muted)">Live Map</Mono>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ ...SERIF, fontSize: 17 }}>Where we are now</div>
+                {/* On a stay the dock is gone, so the band carries the live readout
+                    itself ("At [place]"); on a route the dock shows it → fall back
+                    to the generic label here. */}
+                <div style={{ ...SERIF, fontSize: 17 }}>{nowReadout?.now || 'Where we are now'}</div>
                 <ChevronRight size={16} style={{ color: 'var(--muted)' }} />
               </div>
+              {nowReadout?.next && (
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Next · {nowReadout.next}
+                </div>
+              )}
             </Register>
 
             {/* The Weave */}

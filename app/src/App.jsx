@@ -609,6 +609,20 @@ export default function App() {
   // ledge's now/next become "{heading-to} · ETA {time}" (real traffic-aware
   // drive time). Off-route / no GPS → null → the honest schedule readout stays.
   const liveEta = useLiveEta(tripForView, dockLedge.mode === 'live')
+  // The dock ledge's live readout, hoisted so BOTH the dock (route) and the
+  // stay home's Now band read the SAME source — never re-derived. The GPS-ETA
+  // upgrade wins when on-route; the at-place readout stays put.
+  const ledgeNow = dockLedge.atPlace ? dockLedge.now : (liveEta?.now ?? dockLedge.now)
+  const ledgeNext = dockLedge.atPlace ? dockLedge.next : (liveEta?.next ?? dockLedge.next)
+  // On a STAY the dock (which carried this readout) is hidden, so the Now-tab
+  // home band shows the live "At [place] · next" status itself — honest where the
+  // "Where we are now" link points at a still-empty live map. Only the lenses with
+  // a live ledge (jonathan/helen → mode 'live') get it; aurelia (cue-only) + rafa
+  // (none) have no readout. A ROUTE keeps the dock, so its band stays generic (G5).
+  const nowReadout =
+    dockLedge.mode === 'live' && tripForView && !tripForView.draft && isStayTrip(tripForView)
+      ? { now: ledgeNow, next: ledgeNext }
+      : null
 
   // Family-trips recenter shell: on a STAY the home is the 4-tab "WHAT" bar
   // (We could · Now · Photos · Look back). First cut maps the tabs to the
@@ -970,6 +984,7 @@ export default function App() {
       weaveReady,
       bookHasPages,
       surpriseRevealCue,
+      nowReadout, // stay-only live "At [place] · next" for the Now band (else null)
     }
     switch (traveler) {
       case 'helen':
@@ -1459,8 +1474,8 @@ export default function App() {
           // it — otherwise a 2-stop stay whose route line passes through the cabin
           // flips the rail back to "Dinner Out · ETA 7:14" (the exact mishmash this
           // shift kills). atPlace wins; everywhere else the ETA override stands.
-          now={dockLedge.atPlace ? dockLedge.now : (liveEta?.now ?? dockLedge.now)}
-          next={dockLedge.atPlace ? dockLedge.next : (liveEta?.next ?? dockLedge.next)}
+          now={ledgeNow}
+          next={ledgeNext}
           cueKind={view.name === 'index' ? null : dockLedge.cueKind}
           onLedge={openMap}
           onCue={() =>
