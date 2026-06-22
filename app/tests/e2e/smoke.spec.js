@@ -2,7 +2,7 @@ import { test, expect } from './_fixtures/clockStub.js'
 
 // Smoke test: app boots, the active trip resolver lands on volleyball
 // (its window contains "today" per the system clock during the
-// tournament), and the bottom switcher renders all four travelers.
+// tournament), and the trip's bottom navigation renders.
 // If this fails, none of the photo-pipeline tests will work either —
 // run it first when debugging.
 test('app boots and lands on the active trip', async ({ page }) => {
@@ -21,10 +21,10 @@ test('app boots and lands on the active trip', async ({ page }) => {
   const tripSelect = page.locator('select')
   await expect(tripSelect).toHaveValue('volleyball-2026', { timeout: 10_000 })
 
-  // Bottom switcher renders all four travelers. Constrain to <button>
-  // so we don't match the trip-switcher <option> text or the deeper
-  // body copy that mentions traveler names.
-  for (const name of ['Jonathan', 'Helen', 'Aurelia', 'Rafa']) {
-    await expect(page.locator('button', { hasText: name }).first()).toBeVisible()
-  }
+  // The trip's bottom navigation renders. Shape-agnostic: a STAY shows the
+  // 4-tab StayTabBar (the recenter hides the FamilyDock there), a route/index
+  // shows the dock pills — accept either so this canary isn't coupled to the
+  // live active trip's shape. (The dock's all-four-personas invariant is
+  // guarded by switcher-enrolled.spec.js on a route fixture.)
+  await expect(page.locator('.stay-tabbar, .switcher').first()).toBeVisible()
 })

@@ -157,6 +157,101 @@ export const FIXTURE_TRIP = {
   ],
 }
 
+// A ROUTE trip — the road-trip shape, distinguished from FIXTURE_TRIP by ONE
+// signal: 2+ distinct overnight bases (inferTripShape → 'route'; volleyball-2026
+// has a single base → 'stay'). This is the home for the live DOCK and the drive
+// scaffolding that a stay sheds — the recenter hides the FamilyDock on a stay
+// (the 4-tab StayTabBar replaces it), so the dock's own tests (live-dock,
+// switcher-enrolled, the S2 dock-contrast gate) seed THIS fixture, where the dock
+// legitimately still shows.
+//
+// Deliberately preserves FIXTURE_TRIP's window (the clockStub pins "today" to
+// 2026-05-23, inside it, so the trip is LIVE and the ledge renders) and the SAME
+// stop names + coords (so the ledge readout + the on-route GPS-ETA point at
+// 41.4/-72.094 between Bungalow 41.3225 and Empire 41.4923 read identically) —
+// only the trip SHAPE differs: two overnight bases (Beach Bungalow → Harbor Inn).
+export const FIXTURE_ROUTE_TRIP = {
+  id: 'roadtrip-2026',
+  status: 'planning',
+  title: 'Two-Base Road Trip',
+  subtitle: 'Test fixture (route)',
+  dateRange: 'May 22 – 25, 2026',
+  dateRangeStart: '2026-05-22',
+  dateRangeEnd: '2026-05-25',
+  startCity: 'Belmont, MA',
+  endCity: 'Belmont, MA',
+  locationLabel: 'New London → Mystic, CT',
+  miles: 220,
+  travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+  overview: 'Test fixture trip — a road trip with two overnight bases.',
+  homeBase: { lat: 41.3225, lng: -72.0943, label: '41 Lower Boulevard' },
+  days: [
+    {
+      n: 1,
+      date: 'Fri May 22',
+      isoDate: '2026-05-22',
+      title: 'Pickups',
+      drive: { from: 'Belmont', to: 'New London', hours: '2', miles: 110 },
+      lodging: 'Beach Bungalow', // overnight base 1
+      stops: [
+        {
+          id: 'vb1-3',
+          time: 'Evening',
+          name: 'Beach Bungalow',
+          kind: 'lodging',
+          for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+          note: '',
+          address: '41 Lower Boulevard, New London, CT',
+          lat: 41.3225,
+          lng: -72.0943,
+        },
+      ],
+    },
+    {
+      n: 2,
+      date: 'Sat May 23',
+      isoDate: '2026-05-23',
+      title: 'Pool play',
+      drive: { from: '', to: '', hours: '', miles: 30 },
+      lodging: 'Beach Bungalow', // still base 1
+      stops: [
+        {
+          id: 'vb2-3',
+          time: '3:45 PM',
+          name: 'vs BEV 13 Empire',
+          kind: 'tournament',
+          for: ['aurelia', 'jonathan', 'helen'],
+          note: '',
+          address: 'Court 1, Mohegan Sun',
+          lat: 41.4923,
+          lng: -72.0934,
+        },
+      ],
+    },
+    {
+      n: 3,
+      date: 'Sun May 24',
+      isoDate: '2026-05-24',
+      title: 'Round 2 Pool 2',
+      drive: { from: 'New London', to: 'Mystic', hours: '1', miles: 30 },
+      lodging: 'Harbor Inn', // overnight base 2 → 2 distinct bases → 'route'
+      stops: [
+        {
+          id: 'vb3-4',
+          time: '4:00 PM',
+          name: 'Match 1 vs Northeast 13.2',
+          kind: 'tournament',
+          for: ['aurelia', 'jonathan', 'helen'],
+          note: '',
+          address: 'Court 3, Mohegan Sun',
+          lat: 41.4923,
+          lng: -72.0934,
+        },
+      ],
+    },
+  ],
+}
+
 // Tiny 1×1 red PNG, base64 — small enough to embed inline so memory
 // fixtures don't need a separate file. Decoded as a data URL it
 // renders happily inside <img>.

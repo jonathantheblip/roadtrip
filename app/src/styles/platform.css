@@ -465,3 +465,77 @@ button { font: inherit; }
 
 .ticker { animation: ticker 30s linear infinite; white-space: nowrap; }
 @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+
+/* StayTabBar — the family-trips recenter "WHAT" tab bar (We could · Now ·
+   Photos · Look back). On a stay it is the SOLE bottom bar: the floating
+   FamilyDock is hidden there (every device is single-enrolled → there's no
+   persona-switch to show), so this replaces it. Route trips + the between-trips
+   index keep the dock. Flat full-width bar, themed per-lens via [data-theme]. */
+.stay-tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 48;
+  display: flex;
+  gap: 2px;
+  padding: 7px 8px max(10px, env(safe-area-inset-bottom)) 8px;
+  /* SOLID, not the translucent --bg-nav: a nav bar's label contrast must not
+     depend on what scrolls behind it. The translucent bar made axe unable to
+     resolve the background (it returned the labels as "incomplete", so the
+     contrast gate passed vacuously for the light/gradient lenses) and made the
+     real ratio engine-dependent (helen passed chromium, failed webkit at 1.8:1).
+     A solid --bg makes the contrast deterministic AND axe-verifiable for all 4. */
+  background: var(--bg);
+  border-top: 1px solid var(--border, rgba(127,127,127,0.18));
+}
+.stay-tab {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  text-align: center;
+  padding: 8px 2px;
+  border-radius: 12px;
+  cursor: pointer;
+  position: relative;
+  transition: background .15s ease;
+}
+.stay-tab.is-on { background: rgba(127,127,127,0.16); }
+.stay-tab-label {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--muted);
+}
+/* Rafa (5) — bigger, rounder, easier to read + hit: his Fredoka, larger label,
+   taller tap target, ochre active tint (the small mono caps are unusable for a
+   5-year-old; the other three lenses keep the editorial mono). */
+body[data-theme='rafa'] .stay-tab { padding: 12px 2px; }
+body[data-theme='rafa'] .stay-tab-label {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+body[data-theme='rafa'] .stay-tab.is-on { background: rgba(255, 177, 46, 0.18); }
+/* Helen (light paper lens): even on the now-solid paper bar, her sage --muted
+   (0.65 → ~3.4:1 at 9px) doesn't clear AA, so her inactive labels get a darker
+   ink (rgba(28,42,33,0.75) → ~6:1). The active label keeps --text via the rule
+   below. The other three (dark lenses) clear AA with --muted on their dark bar. */
+body[data-theme='helen'] .stay-tab-label { color: rgba(28, 42, 33, 0.75); }
+.stay-tab.is-on .stay-tab-label { color: var(--text); }
+.stay-tab-badge {
+  position: absolute; top: 5px; right: 26%;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+}
+/* Pad the page so the last content clears the fixed tab bar — the dock it
+   replaces was a narrow floating pill that didn't occlude, this bar is
+   full-width. The fixed term matches .stay-tabbar's chrome above its safe-area
+   pad: ~38px for the mono lenses (clears ~48px bar by ~10px). */
+body[data-stay-tabs] { padding-bottom: calc(48px + max(10px, env(safe-area-inset-bottom))); }
+/* Rafa's bar is taller — his 12px tap padding + 13px Fredoka labels make the bar
+   ~62px, so the 48px base would leave his last row of content under the bar
+   (worst on the most touch-reliant lens). Bump the clearance to match. */
+body[data-theme='rafa'][data-stay-tabs] { padding-bottom: calc(58px + max(10px, env(safe-area-inset-bottom))); }

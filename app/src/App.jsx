@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo, lazy, Suspense } from 'react'
 import { findDay, findStop } from './data/trips'
 import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
+import { StayTabBar, STAY_TABS, tabForView } from './views/StayTabBar'
 import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
 import { isStayTrip } from './lib/tripShape'
 import { useGeolocationWhen } from './hooks/useGeolocation'
@@ -608,6 +609,27 @@ export default function App() {
   // ledge's now/next become "{heading-to} · ETA {time}" (real traffic-aware
   // drive time). Off-route / no GPS → null → the honest schedule readout stays.
   const liveEta = useLiveEta(tripForView, dockLedge.mode === 'live')
+
+  // Family-trips recenter shell: on a STAY the home is the 4-tab "WHAT" bar
+  // (We could · Now · Photos · Look back). First cut maps the tabs to the
+  // EXISTING surfaces (route trips keep the shipped dock untouched — G5). The
+  // bar shows on the non-immersive stay surfaces; "Look back" launches the reel.
+  const stayTab = trip && !trip.draft && isStayTrip(trip) ? tabForView(view.name) : null
+  // RafaPad (rafa on an iPad) is a self-contained immersive command center with
+  // its own tile navigation and NO standard chrome (it also drops the top bar,
+  // below) — the flat tab bar would be a redundant, colliding second nav there.
+  const onRafaPad = traveler === 'rafa' && isIpad
+  const showStayTabs = stayTab !== null && !onRafaPad && ['trip', 'activities', 'photos'].includes(view.name)
+  const handleStayTab = (key) => {
+    const t = STAY_TABS.find((x) => x.key === key)
+    if (t) setView({ name: t.view })
+  }
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    if (showStayTabs) document.body.setAttribute('data-stay-tabs', '1')
+    else document.body.removeAttribute('data-stay-tabs')
+    return () => document.body.removeAttribute('data-stay-tabs')
+  }, [showStayTabs])
 
   // Enrolled-only persona switcher (close-the-door): offer only personas this
   // device holds a credential for (session OR — pre-cutover — bundled token).
@@ -1422,7 +1444,7 @@ export default function App() {
           there's no active trip, so the dock is just the plain pills (ledge
           'none'), never the live ledge. Still hidden on new/edit (the author is
           mid-create) and the immersive replay/map/identity surfaces. */}
-      {view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && (
+      {view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && !showStayTabs && (
         <Switcher
           active={traveler}
           onSwitch={handleTravelerSwitch}
@@ -1446,6 +1468,8 @@ export default function App() {
           }
         />
       )}
+
+      {showStayTabs && <StayTabBar active={stayTab} onTab={handleStayTab} />}
 
       {/* Claude-in-App M1 — floating entry on the trips index.
           Bottom-right, lifted ABOVE the persona dock now that the dock also

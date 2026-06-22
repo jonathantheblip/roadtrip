@@ -1,6 +1,6 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { openTopMenuItem } from './_fixtures/topNav.js'
-import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
+import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, FIXTURE_ROUTE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
 import { mockClaudeChatWorker } from './_fixtures/mockUpload.js'
 import { resolvePersona, TRAVELERS } from './_fixtures/persona.js'
 import { expectNoSeriousA11y } from './_fixtures/axe.js'
@@ -104,21 +104,54 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
 // pill (aurelia's pink dot needs dark ink) AND the three inactive pills AND the
 // --muted labels — is gated on EVERY CI run. A contrast fix on an ungated surface
 // regresses silently; this is the deliverable that prevents that.
-test.describe('a11y (axe, serious+critical) — S2 trip-view ×4 personas', () => {
+//
+// Scans BOTH trip shapes full-page, because the recenter splits the bottom nav:
+// a ROUTE keeps the FamilyDock (its active/inactive pill + --muted-label
+// contrast), a STAY swaps in the StayTabBar AND renders stay-only chrome (the
+// place card, the stay home body). Gating only one shape would drop the other's
+// body + bottom-nav from the full-page contrast sweep — and the STAY is the new
+// default, so Rafa's stay home (no entry-band/place-card scoped test of its own)
+// must stay covered. So: loop the four personas × both shapes.
+const TRIP_SHAPES = [
+  { name: 'route', fixture: FIXTURE_ROUTE_TRIP, trip: 'roadtrip-2026', bottomNav: '.switcher' },
+  { name: 'stay', fixture: FIXTURE_TRIP, trip: 'volleyball-2026', bottomNav: '.stay-tabbar' },
+]
+test.describe('a11y (axe, serious+critical) — S2 trip-view ×4 personas × shape', () => {
+  for (const shape of TRIP_SHAPES) {
+    for (const p of TRAVELERS) {
+      test(`trip view — ${shape.name} — ${p}`, async ({ page }) => {
+        await seedTripIntoCache(page, shape.fixture)
+        await mockClaudeChatWorker(page)
+        await page.goto(`/?person=${p}&trip=${shape.trip}&nosw=1`)
+        // Wait for the shape's bottom nav (route → dock, stay → tab bar) so the
+        // scan sees the final-state chrome, not a mid-render frame.
+        await expect(page.locator(shape.bottomNav)).toBeVisible()
+        // CONTRAST gate only: other serious/critical rules are separate findings
+        // tracked on their own, so a non-contrast change can't redden this gate.
+        await expectNoSeriousA11y(page, { label: `trip view ${shape.name} (${p})`, only: ['color-contrast'] })
+      })
+    }
+  }
+})
+
+// StayTabBar — the family-trips recenter's bottom "WHAT" bar (We could · Now ·
+// Photos · Look back) that REPLACES the dock on a stay. New surface, and exactly
+// the recurring trap: small mono labels (9px, `var(--muted)` when inactive) on a
+// per-lens nav background — the same --faint/--muted-fails-AA class that bit the
+// trips-index eyebrows and Helen's --muted on --bg2. The dock contrast moved to a
+// route fixture above; this gates the bar that took its place, ×4 personas, on a
+// STAY (volleyball-2026), where it actually renders.
+test.describe('a11y (axe, serious+critical) — StayTabBar ×4 personas', () => {
   for (const p of TRAVELERS) {
-    test(`trip view — ${p}`, async ({ page }) => {
-      await seedTripIntoCache(page, FIXTURE_TRIP)
-      await mockClaudeChatWorker(page)
+    test(`stay tab bar — ${p}`, async ({ page }) => {
+      await seedTripIntoCache(page, FIXTURE_TRIP) // volleyball = a STAY → the tab bar shows
       await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      // The FamilyDock switcher renders on S2 (hidden only on index/new/edit) —
-      // wait for it so the scan sees the active + inactive pills in final state.
-      await expect(page.locator('.switcher')).toBeVisible()
-      // CONTRAST gate (C2's job): only color-contrast. Other serious/critical
-      // rules on S2 (e.g. a pre-existing unlabeled control) are separate findings,
-      // not masked here — they're tracked + fixed on their own (the trip-switcher
-      // <select> got an aria-label in this pass). This keeps the contrast gate from
-      // going red for a non-contrast reason a future S2 edit might introduce.
-      await expectNoSeriousA11y(page, { label: `trip view (${p})`, only: ['color-contrast'] })
+      await expect(page.getByTestId('stay-tabbar')).toBeVisible()
+      await expectNoSeriousA11y(page, {
+        include: '[data-testid="stay-tabbar"]',
+        only: ['color-contrast'],
+        label: `stay tab bar (${p})`,
+      })
     })
   }
 })

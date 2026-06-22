@@ -103,7 +103,7 @@ test.describe('themed trip view per traveler', () => {
         // off-runner gremlin that masked the top bar — a sub-threshold-local
         // baseline failed CI's 0.2% tolerance). The dock is guarded by the S2
         // axe contrast gate + the Switcher functional tests instead.
-        mask: [page.getByTestId('trip-topbar'), page.locator('.switcher')],
+        mask: [page.getByTestId('trip-topbar'), page.locator('.switcher'), page.locator('.stay-tabbar')],
       })
     })
   }
@@ -128,7 +128,7 @@ test.describe('photos album per traveler', () => {
       await page.waitForTimeout(400)
       await expect(page).toHaveScreenshot(`album-${traveler}.png`, {
         fullPage: true,
-        mask: [page.locator('.switcher')], // off-runner-blurry FamilyDock (see trip view)
+        mask: [page.locator('.switcher'), page.locator('.stay-tabbar')], // + the stay tab bar (same bottom-zone mono gremlin)
       })
     })
   }
@@ -146,7 +146,7 @@ test.describe('all-photos cross-trip per traveler', () => {
         await page.waitForTimeout(400)
         await expect(page).toHaveScreenshot(`all-photos-${traveler}.png`, {
           fullPage: true,
-          mask: [page.locator('.switcher')], // off-runner-blurry FamilyDock (see trip view)
+          mask: [page.locator('.switcher'), page.locator('.stay-tabbar')], // + the stay tab bar (same bottom-zone mono gremlin)
         })
       } else {
         // Surface this as a baseline gap — annotate but don't fail.

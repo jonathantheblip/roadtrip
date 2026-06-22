@@ -1,14 +1,19 @@
 import { test, expect } from './_fixtures/clockStub.js'
-import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_ROUTE_TRIP } from './_fixtures/withTrip.js'
 import { expectNoSeriousA11y } from './_fixtures/axe.js'
 
 // LiveDock — the live "ledge" (NowBar × FamilyDock reconciliation). The dock
 // grows a slim live row above the switcher pills DURING a live trip. The clock
-// stub pins "today" to 2026-05-23, inside FIXTURE_TRIP's window (May 22–25),
-// so the seeded trip is live and the ledge renders. Presence per person:
+// stub pins "today" to 2026-05-23, inside the fixture's window (May 22–25), so
+// the seeded trip is live and the ledge renders. Presence per person:
 // Jonathan/Helen persistent · Aurelia cue-only · Rafa never.
-
-const tripUrl = (who) => `/?person=${who}&trip=volleyball-2026&nosw=1`
+//
+// SEEDS A ROUTE FIXTURE on purpose: the family-trips recenter hides the dock on
+// a STAY (the 4-tab StayTabBar replaces it), so the dock + its live ledge only
+// render on a route trip now. FIXTURE_ROUTE_TRIP keeps volleyball-2026's window,
+// stop names, and coords, so every assertion below reads identically — only the
+// trip SHAPE differs (two overnight bases → 'route' → the dock stays).
+const tripUrl = (who) => `/?person=${who}&trip=roadtrip-2026&nosw=1`
 
 // A surprise authored by someone else, hidden from `who`, already revealed →
 // drives surpriseRevealCue > 0 for `who` (summons Aurelia's ledge; rides the
@@ -16,7 +21,7 @@ const tripUrl = (who) => `/?person=${who}&trip=volleyball-2026&nosw=1`
 function revealFor(who) {
   return {
     id: `ld-reveal-${who}`,
-    tripId: 'volleyball-2026',
+    tripId: 'roadtrip-2026',
     stopId: null,
     authorTraveler: who === 'helen' ? 'jonathan' : 'helen',
     visibility: 'shared',
@@ -33,7 +38,7 @@ function revealFor(who) {
 test.describe('LiveDock — the live ledge', () => {
   for (const who of ['jonathan', 'helen']) {
     test(`${who}: persistent live ledge, schedule readout, taps to the live map`, async ({ page }) => {
-      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
       await page.goto(tripUrl(who))
       await expect(page.locator('.switcher')).toBeVisible()
       const ledge = page.getByTestId('live-dock-ledge')
@@ -49,14 +54,14 @@ test.describe('LiveDock — the live ledge', () => {
   }
 
   test('aurelia: cue-only — no ledge without a reveal', async ({ page }) => {
-    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
     await page.goto(tripUrl('aurelia'))
     await expect(page.locator('.switcher')).toBeVisible()
     await expect(page.getByTestId('live-dock-ledge')).toHaveCount(0)
   })
 
   test('aurelia: a revealed surprise summons the cue ledge, which opens Surprises', async ({ page }) => {
-    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
     await seedMemoriesIntoCache(page, [revealFor('aurelia')])
     await page.goto(tripUrl('aurelia'))
     const ledge = page.getByTestId('live-dock-ledge')
@@ -66,7 +71,7 @@ test.describe('LiveDock — the live ledge', () => {
   })
 
   test('rafa: never a ledge (his "Our trip!" tile is his anchor)', async ({ page }) => {
-    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
     await page.goto(tripUrl('rafa'))
     await expect(page.locator('.switcher')).toBeVisible()
     await expect(page.getByTestId('live-dock-ledge')).toHaveCount(0)
@@ -81,10 +86,10 @@ test.describe('LiveDock — live GPS ETA upgrade', () => {
   for (const who of ['jonathan', 'helen']) {
     test(`${who}: on-route GPS upgrades the readout to a live ETA`, async ({ page, context }) => {
       await context.grantPermissions(['geolocation'])
-      // A point ON the FIXTURE_TRIP route — between Beach Bungalow (41.3225) and
+      // A point ON the FIXTURE_ROUTE_TRIP route — between Beach Bungalow (41.3225) and
       // vs Empire (41.4923) at lng ~-72.094 → on-route, heading to vs Empire.
       await context.setGeolocation({ latitude: 41.4, longitude: -72.094 })
-      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
       // Mock the worker ETA (registered AFTER the seed catch-all so it wins).
       await page.route(/\/drive-eta$/, async (route) => {
         await route.fulfill({
@@ -111,7 +116,7 @@ test.describe('LiveDock — live GPS ETA upgrade', () => {
 test.describe('LiveDock — ledge + cue contrast on the dark glass', () => {
   for (const who of ['jonathan', 'helen', 'aurelia']) {
     test(`ledge + cue contrast — ${who}`, async ({ page }) => {
-      await seedTripIntoCache(page, FIXTURE_TRIP)
+      await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
       await seedMemoriesIntoCache(page, [revealFor(who)])
       await page.goto(tripUrl(who))
       await expect(page.getByTestId('live-dock-ledge')).toBeVisible()
