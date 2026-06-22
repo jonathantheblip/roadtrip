@@ -53,7 +53,7 @@ const TILE_THUMB_WIDTH = 600
 // cross-trip view needs the trip context), and the dev-mode capture-
 // date editor that persists into memory.capturedAt via memoryStore.
 
-export function PhotoTile({ entry, onOpen }) {
+export function PhotoTile({ entry, onOpen, faces }) {
   const posterColor = TRAVELER_DOT[entry.author] || 'var(--accent)'
   const [imgFailed, setImgFailed] = useState(false)
   const isFirstInMemory = (entry.photoIndexInMemory || 0) === 0
@@ -215,6 +215,40 @@ export function PhotoTile({ entry, onOpen }) {
             }}
           >
             {entry.photoIndexInMemory + 1}/{memoryCount}
+          </span>
+        )}
+        {Array.isArray(faces) && faces.length > 0 && (
+          <span
+            data-testid="tile-face-tags"
+            role="img"
+            aria-label={`In this photo: ${faces.map((id) => TRAVELERS[id]?.name || id).join(', ')}`}
+            style={{
+              position: 'absolute',
+              left: 6,
+              bottom: 6,
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px 5px',
+              borderRadius: 999,
+              // A dark scrim so the identity dots read on any photo; the names
+              // ride the aria-label (the dots are decorative color).
+              background: 'rgba(0,0,0,0.45)',
+            }}
+          >
+            {faces.map((id, i) => (
+              <span
+                key={id}
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  background: TRAVELER_DOT[id] || '#fff',
+                  border: '1.5px solid rgba(255,255,255,0.92)',
+                  marginLeft: i === 0 ? 0 : -4,
+                  display: 'inline-block',
+                }}
+              />
+            ))}
           </span>
         )}
       </div>

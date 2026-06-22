@@ -189,6 +189,19 @@ export function personCounts(entries, facesByKey, centroids, threshold, rejectio
   return counts
 }
 
+// PURE — the inverse of personCounts: who is in EACH photo, for the Photos-tab
+// "who's in the frame" overlay. → { [entryKey]: [personId, …] } in centroid
+// order (stable dot order). Uses the same matcher as selectPhotosWith; no model.
+export function computeFaceTags(entries, facesByKey, centroids, threshold, rejections) {
+  const byEntry = {}
+  for (const c of centroids) {
+    for (const m of selectPhotosWith(entries, facesByKey, centroids, c.personId, threshold, rejections)) {
+      ;(byEntry[m.entry.key] ||= []).push(c.personId)
+    }
+  }
+  return byEntry
+}
+
 function nowSafe() {
   try {
     return Date.now()

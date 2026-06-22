@@ -4,6 +4,7 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
+import { useFaceTags } from '../lib/useFaceTags'
 import { tripImplicitBase } from '../lib/photoMatch'
 import { refileTripToPlaces } from '../lib/refilePlaces'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
@@ -53,6 +54,9 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
   // ref dies on reload). No-op for already-synced (r2) photos.
   const hydratedMemories = useHydratedMemories(memories)
   const photoEntries = useMemo(() => flattenPhotoEntries(hydratedMemories), [hydratedMemories])
+  // Ambient "who's in the frame" tags (on-device; empty until faces are
+  // enrolled via "Show me, me"). Drives the per-tile face dots.
+  const faceTags = useFaceTags(photoEntries)
   const groups = useMemo(
     () => groupByStop(photoEntries, trip),
     [photoEntries, trip]
@@ -385,6 +389,7 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
               <StopGroup
                 key={group.stopKey}
                 group={group}
+                faceTags={faceTags}
                 onOpen={(entry) => openLightbox(entry, group.entries)}
               />
             ))
@@ -556,7 +561,7 @@ function EmptyState() {
   )
 }
 
-function StopGroup({ group, onOpen }) {
+function StopGroup({ group, onOpen, faceTags }) {
   // Partition the stop's entries into contiguous runs by memoryId.
   // Two memories captured at the same stop used to flow into one
   // CSS grid, so tile 5's "1/4" badge looked like a numbering
@@ -638,7 +643,7 @@ function StopGroup({ group, onOpen }) {
             }}
           >
             {run.entries.map((entry) => (
-              <PhotoTile key={entry.key} entry={entry} onOpen={() => onOpen(entry)} />
+              <PhotoTile key={entry.key} entry={entry} faces={faceTags?.[entry.key]} onOpen={() => onOpen(entry)} />
             ))}
           </div>
         ))}
