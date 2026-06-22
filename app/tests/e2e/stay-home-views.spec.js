@@ -79,6 +79,39 @@ test.describe('Now-band live readout (stay re-home of the dock ledge)', () => {
   })
 })
 
+// Destination auto-recognition: the cabin address sits in endCity with a BLANK
+// lodging (the real Vermont trip's shape) → it used to infer 'route' (drive
+// scaffolding, the dock, clock-picked stops). The safe rule recognizes the stay.
+const DEST_ONLY = {
+  id: 'dest-only-2026',
+  status: 'planning',
+  title: 'Vermont — Juneteenth',
+  subtitle: 'fixture',
+  dateRange: 'May 22 – 24, 2026',
+  dateRangeStart: '2026-05-22',
+  dateRangeEnd: '2026-05-24',
+  startCity: 'Belmont, MA',
+  endCity: '613 Forest Mountain Road, Peru, VT', // the place is in the DESTINATION
+  travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+  // No lodging, no homeBase → bases-empty; before auto-recognition this was 'route'.
+  days: [
+    { n: 1, date: 'Fri May 22', isoDate: '2026-05-22', title: 'At the cabin', drive: { from: 'Belmont, MA', to: '', hours: '', miles: 0 }, lodging: '', stops: [] },
+    { n: 2, date: 'Sat May 23', isoDate: '2026-05-23', title: 'Around the lake', drive: { from: '', to: 'Belmont, MA', hours: '', miles: 0 }, lodging: '', stops: [] },
+  ],
+}
+
+test.describe('destination auto-recognition (place typed as the trip end)', () => {
+  test('jonathan: a destination-only trip renders as a STAY, named from endCity', async ({ page }) => {
+    await seedTripIntoCache(page, DEST_ONLY)
+    await page.goto('/?person=jonathan&trip=dest-only-2026&nosw=1')
+    // It's recognized as a stay → the 4-tab bar shows (a route would show the dock).
+    await expect(page.getByTestId('stay-tabbar')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.switcher')).toHaveCount(0)
+    // The Now band leads with the place, named from the destination ("Peru").
+    await expect(page.getByTestId('jonathan-entries').getByText('At Peru')).toBeVisible()
+  })
+})
+
 test.describe('RafaPad (iPad) on a stay', () => {
   // iPad = width ≥768 + touch (pointer:coarse) → useIsIpad true. isMobile is a
   // Chromium emulation; skip elsewhere.

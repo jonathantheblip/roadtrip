@@ -49,6 +49,94 @@ function hasLocatedAnchor(trip) {
   return !!hb && Number.isFinite(hb.lat) && Number.isFinite(hb.lng)
 }
 
+// A clean LOCALITY out of a destination string, for the "AT [place]" card. Drops
+// a leading street/unit segment ("613 Forest Mountain Road" / "Apt 4B") and a
+// trailing state/country code ("VT" / "USA"), then takes the first of what's
+// left: "613 Forest Mountain Road, Peru, VT" → "Peru"; "New York, NY" → "New
+// York"; "Apt 4B, 200 Main St, Boston, MA" → "Boston". Empty/garbage → '' (the
+// caller then falls back to the trip title rather than rendering punctuation).
+const STREET_SEG = /^\d|^(apt|apartment|unit|suite|ste|flat|fl|floor|rm|room|po box|#)\b/i
+const REGION_CODE = /^[a-z]{2}$/i // a trailing 2-letter state/province/country code
+const COUNTRY_SEG = /^(usa|u\.s\.a\.?|us|uk|u\.k\.)$/i
+export function destinationLabel(endCity) {
+  let segs = String(endCity || '').split(',').map((s) => s.trim()).filter(Boolean)
+  if (!segs.length) return ''
+  while (segs.length > 1 && STREET_SEG.test(segs[0])) segs = segs.slice(1)
+  while (segs.length > 1 && (REGION_CODE.test(segs[segs.length - 1]) || COUNTRY_SEG.test(segs[segs.length - 1]))) {
+    segs = segs.slice(0, -1)
+  }
+  const cand = segs[0] || ''
+  // A street/unit, a bare number, punctuation-only, or a lone state/country code
+  // is NOT a place name (a one-segment "Suite 500" / "90210" / "!!!" / "VT" /
+  // "USA" skips the strip loops above) → '' so the caller falls back to the title.
+  if (!cand || STREET_SEG.test(cand) || !/[a-z]/i.test(cand) || REGION_CODE.test(cand) || COUNTRY_SEG.test(cand)) return ''
+  return cand
+}
+
+// A comparison key for a place string — its first comma-segment, lowercased. So
+// "Belmont, MA", "Belmont", and "Belmont, Massachusetts" all key to "belmont"
+// (the byte-exact match was brittle: a cabin trip whose return leg said "Belmont"
+// while startCity was "Belmont, MA" wrongly read as a route).
+function placeKey(s) {
+  return String(s || '').split(',')[0].trim().toLowerCase()
+}
+
+// A trip with NO recorded lodging (the bases-empty case) but a clear single
+// DESTINATION it's anchored at — the place typed as the trip's end — that it
+// STAYS at rather than drives past. The Vermont cabin trip: its address sat in
+// `endCity` with a blank lodging, so it read as a route. The guards below keep a
+// real road trip from mis-flipping (G5): a road trip records where it sleeps (≥2
+// bases → handled before this), OR drives to / visits MORE than the one
+// destination, OR is a long one-way haul (caught here). Conservative — when
+// unsure it stays a route.
+const STAY_RADIUS_MILES = 60 // a stay's stops cluster; a route's span farther + a
+//                              long no-return haul reads as a road trip, not a stay
+// The farthest any two LOCATED stops sit apart, in miles — a stay's stops cluster
+// near the place; a road trip's stops span far.
+function maxStopSpreadMiles(trip) {
+  const pts = []
+  for (const d of trip?.days || []) for (const s of d?.stops || []) {
+    if (Number.isFinite(s?.lat) && Number.isFinite(s?.lng)) pts.push(s)
+  }
+  let max = 0
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+    max = Math.max(max, haversineM(pts[i].lat, pts[i].lng, pts[j].lat, pts[j].lng) / 1609.34)
+  }
+  return max
+}
+function destinationOnlyStay(trip) {
+  const home = placeKey(trip?.startCity)
+  const dest = String(trip?.endCity || '').trim()
+  // Need a real, named destination (not blank/garbage, not "home", not a trip
+  // that ends back where it started).
+  if (!destinationLabel(dest) || HOME.test(dest) || placeKey(dest) === home) return false
+  // The one signal that holds up: how many DISTINCT places does the trip touch?
+  // One place = a stay (anchored there); several = a route through them. Count is
+  // the reliable signal — distance and one-way-vs-round-trip are NOT (a stay can
+  // be a long haul; "did you record the drive home" shouldn't change the answer).
+  //   • We DON'T match drive endpoints against endCity (the cabin's address/venue
+  //     and the geocoded town are different strings — that wrongly routed
+  //     "Grandma's House, Peru, VT").
+  //   • Home is matched by first-segment ("Belmont" == "Belmont, MA"); away-places
+  //     are keyed by FULL string ("Portland, ME" != "Portland, OR" — first-segment
+  //     would collide and flatten a real cross-country route).
+  // Tradeoff (conservative, G5-safe): a stay whose RECORDED drives visit 2+ named
+  // places (a city stay logging borough hops) reads as a route — the safe miss;
+  // the family can pin shape='stay'. The dangerous miss (a real multi-stop route
+  // → stay) can't happen: a route records 2+ places (→ here) or 2+ bases (→ above).
+  const awayPlaces = new Set()
+  for (const d of trip?.days || []) {
+    const dr = d?.drive || {}
+    for (const raw of [dr.from, dr.to]) {
+      const full = String(raw || '').trim().toLowerCase()
+      if (full && placeKey(raw) !== home) awayPlaces.add(full)
+    }
+  }
+  if (awayPlaces.size >= 2) return false // drives move through 2+ places → route
+  // Located stops spread far apart → the stops ARE a route's places → a route.
+  return maxStopSpreadMiles(trip) <= STAY_RADIUS_MILES
+}
+
 // 'stay' | 'route'. An explicit trip.shape always wins (so a future hand-override
 // or a mislabeled trip can be corrected without code).
 export function inferTripShape(trip) {
@@ -57,6 +145,9 @@ export function inferTripShape(trip) {
   const bases = overnightBases(trip)
   if (bases.size >= 2) return 'route' // you move → road trip
   if (bases.size === 1 || hasLocatedAnchor(trip)) return 'stay' // one base / a home anchor
+  // No lodging recorded, but a single destination you don't drive past → a stay
+  // at that place (the cabin-address-in-endCity case). Auto-recognition.
+  if (destinationOnlyStay(trip)) return 'stay'
   return 'route' // nothing to tell from → keep road-trip behavior (safe)
 }
 
@@ -73,6 +164,9 @@ export function stayLabel(trip) {
     for (const d of trip?.days || []) { const n = lodgingName(d?.lodging); if (n && !HOME.test(n)) { name = n; break } }
   }
   if (!name) name = (String(trip?.homeBase?.label || '').split(',')[0]).trim()
+  // A destination-only stay (no lodging set) names from the place typed as the
+  // trip's end — better than the trip title for the "AT [place]" card.
+  if (!name) name = destinationLabel(trip?.endCity)
   return name || trip?.title || 'where we’re staying'
 }
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { inferTripShape, overnightBases, isStayTrip } = await import('../../src/lib/tripShape.js')
+const { inferTripShape, overnightBases, isStayTrip, stayLabel, destinationLabel } = await import('../../src/lib/tripShape.js')
 const { JACKSON_TRIP, NYC_TRIP, VOLLEYBALL_TRIP } = await import('../../src/data/trips.js')
 
 // ── STOP-CONDITION: the detector must match the REAL trips. Mislabeling a road
@@ -15,6 +15,174 @@ test('jackson-2026 (drive across the country, 5+ distinct overnight lodgings) �
 test('volleyball-2026 (one Beach Bungalow base + homeBase) → STAY', () => {
   assert.equal(inferTripShape(VOLLEYBALL_TRIP), 'stay')
   assert.ok(isStayTrip(VOLLEYBALL_TRIP))
+})
+
+// ── Destination auto-recognition: a stay whose place was typed as the trip's
+// DESTINATION (endCity) with a blank lodging — the real Vermont cabin trip. The
+// safe rule fires only on the bases-EMPTY case + no inter-place driving, so a
+// road trip (which records lodging, or drives between places) can never mis-flip. ──
+const vermontPreFix = {
+  id: 'v', title: 'Vermont — Juneteenth Weekend', shape: null,
+  startCity: 'Belmont, MA', endCity: '613 Forest Mountain Road, Peru, VT',
+  days: [
+    { n: 1, drive: { from: 'Belmont, MA', to: '', miles: 0 }, lodging: '', stops: [] },
+    { n: 2, drive: { from: '', to: '', miles: 0 }, lodging: '', stops: [] },
+    { n: 3, drive: { from: '', to: 'Belmont, MA', miles: 0 }, lodging: '', stops: [] },
+  ],
+}
+
+test('THE GAP: cabin address in endCity, blank lodging, no driving → STAY (auto-recognized)', () => {
+  assert.equal(overnightBases(vermontPreFix).size, 0, 'no lodging recorded')
+  assert.equal(inferTripShape(vermontPreFix), 'stay')
+  assert.equal(stayLabel(vermontPreFix), 'Peru', 'names the place from endCity, not the trip title')
+})
+
+test('G5: a bases-empty ROAD TRIP (no lodging, multi-leg driving between places) → ROUTE', () => {
+  const roadNoLodging = {
+    id: 'r', shape: null, startCity: 'Belmont, MA', endCity: 'Houston, TX',
+    days: [
+      { n: 1, drive: { from: 'Belmont, MA', to: 'Catskills, NY', miles: 175 }, lodging: '', stops: [] },
+      { n: 2, drive: { from: 'Catskills, NY', to: 'Elizabethton, TN', miles: 690 }, lodging: '', stops: [] },
+      { n: 3, drive: { from: 'Elizabethton, TN', to: 'Houston, TX', miles: 730 }, lodging: '', stops: [] },
+    ],
+  }
+  assert.equal(overnightBases(roadNoLodging).size, 0)
+  assert.equal(inferTripShape(roadNoLodging), 'route', 'inter-place driving keeps it a route')
+})
+
+// ── Mis-flips the adversarial review caught (the both-endpoints-non-home guard
+// let one-way + multi-destination + stop-based routes slip to 'stay'). ──
+test('one destination = STAY by COUNT, not distance; a 2nd distinct place = ROUTE', () => {
+  // The signal is how many DISTINCT places the trip touches — not how far you
+  // drove or whether you logged the return. A single far destination is a stay
+  // (you're anchored there); a second distinct place makes it a route.
+  const oneDest = { shape: null, startCity: 'Belmont, MA', endCity: 'Chicago, IL', days: [{ drive: { from: 'Belmont, MA', to: 'Chicago, IL', miles: 980 }, lodging: '', stops: [] }] }
+  assert.equal(inferTripShape(oneDest), 'stay')
+  const twoDest = { ...oneDest, days: [...oneDest.days, { drive: { from: 'Chicago, IL', to: 'Detroit, MI', miles: 280 }, lodging: '', stops: [] }] }
+  assert.equal(inferTripShape(twoDest), 'route')
+})
+
+test('G5: two distinct destinations, both legs FROM home → ROUTE', () => {
+  const t = { shape: null, startCity: 'Belmont, MA', endCity: 'Chicago, IL', days: [
+    { drive: { from: 'Belmont, MA', to: 'Chicago, IL', miles: 500 }, lodging: '', stops: [] },
+    { drive: { from: 'Belmont, MA', to: 'Detroit, MI', miles: 300 }, lodging: '', stops: [] },
+  ] }
+  assert.equal(inferTripShape(t), 'route', 'a 2nd distinct destination makes it a route even from home')
+})
+
+test('G5: located stops spread far apart (driving in stops, not day.drive) → ROUTE', () => {
+  const t = { shape: null, startCity: 'Boston, MA', endCity: 'Houston, TX', days: [
+    { drive: {}, lodging: '', stops: [{ name: 'Catskills', lat: 42.19, lng: -74.13 }] },
+    { drive: {}, lodging: '', stops: [{ name: 'Nashville', lat: 36.16, lng: -86.78 }] },
+    { drive: {}, lodging: '', stops: [{ name: 'Memphis', lat: 35.14, lng: -90.05 }] },
+  ] }
+  assert.equal(inferTripShape(t), 'route', 'stops spanning 1000+mi are a route, not one stay')
+})
+
+test('G5: a short multi-city hop tour (sub-25mi legs, no lodging) → ROUTE', () => {
+  // A North Shore day tour: distinct towns, short legs. The earlier 25mi gate
+  // let these slip to 'stay'; a drive to a distinct NAMED place is movement.
+  const tour = { shape: null, startCity: 'Cambridge, MA', endCity: 'Salem, MA', days: [
+    { drive: { from: 'Cambridge, MA', to: 'Salem, MA', miles: 18 }, lodging: '', stops: [] },
+    { drive: { from: 'Salem, MA', to: 'Gloucester, MA', miles: 16 }, lodging: '', stops: [] },
+    { drive: { from: 'Gloucester, MA', to: 'Rockport, MA', miles: 7 }, lodging: '', stops: [] },
+  ] }
+  assert.equal(inferTripShape(tour), 'route')
+  // NYC borough-hopping is the same shape → route, not an NYC "stay".
+  const nyc = { shape: null, startCity: 'Belmont, MA', endCity: 'New York, NY', days: [
+    { drive: { from: 'Brooklyn', to: 'Manhattan', miles: 8 }, lodging: '', stops: [] },
+    { drive: { from: 'Manhattan', to: 'Queens', miles: 12 }, lodging: '', stops: [] },
+  ] }
+  assert.equal(inferTripShape(nyc), 'route')
+})
+
+test('G5: a cross-country loop through same-first-name cities (Portland ME vs OR) → ROUTE', () => {
+  // First-segment keying would collapse both Portlands and flatten the route.
+  const t = { shape: null, startCity: 'Belmont, MA', endCity: 'Portland', days: [
+    { drive: { from: 'Belmont, MA', to: 'Portland, ME', miles: 110 }, lodging: '', stops: [] },
+    { drive: { from: 'Portland, ME', to: 'Portland, OR', miles: 3100 }, lodging: '', stops: [] },
+    { drive: { from: 'Portland, OR', to: 'Belmont, MA', miles: 3100 }, lodging: '', stops: [] },
+  ] }
+  assert.equal(inferTripShape(t), 'route')
+})
+
+test('a NAMED-place destination (cabin / Grandma’s) whose drives use the town → STAY', () => {
+  // Vision-central shape: endCity is a venue ("Grandma's House, Peru, VT"); the
+  // drives reference the town ("Peru, VT"). Matching endCity to the drive string
+  // wrongly routed it — counting distinct non-home away-places fixes it.
+  const t = { title: 'Grandma’s for the holidays', shape: null, startCity: 'Belmont, MA', endCity: "Grandma's House, Peru, VT", days: [
+    { drive: { from: 'Belmont, MA', to: 'Peru, VT', miles: 182 }, lodging: '', stops: [{ name: 'Bromley Market', kind: 'food' }] },
+    { drive: { from: 'Peru, VT', to: 'Belmont, MA', miles: 182 }, lodging: '', stops: [] },
+  ] }
+  assert.equal(inferTripShape(t), 'stay')
+})
+
+test('a stay with CLUSTERED local stops (near the place) stays a STAY', () => {
+  const t = { shape: null, startCity: 'Belmont, MA', endCity: 'Peru, VT', days: [
+    { drive: { from: 'Belmont, MA', to: '', miles: 0 }, lodging: '', stops: [{ name: 'Lake', lat: 43.24, lng: -72.90 }] },
+    { drive: { from: '', to: 'Belmont, MA', miles: 0 }, lodging: '', stops: [{ name: 'Store', lat: 43.25, lng: -72.88 }] },
+  ] }
+  assert.equal(inferTripShape(t), 'stay')
+})
+
+test('a flight-stay (single far destination, zero driving) → STAY', () => {
+  const t = { shape: null, startCity: 'Belmont, MA', endCity: 'Paris, France', days: [{ drive: {}, lodging: '', stops: [] }, { drive: {}, lodging: '', stops: [] }] }
+  assert.equal(inferTripShape(t), 'stay')
+})
+
+test('edge: drove FAR to one place then stayed (legs involve home) → STAY', () => {
+  const farCabin = {
+    shape: null, startCity: 'Belmont, MA', endCity: 'Bar Harbor, ME',
+    days: [
+      { n: 1, drive: { from: 'Belmont, MA', to: 'Bar Harbor, ME', miles: 280 }, lodging: '', stops: [] },
+      { n: 2, drive: { from: '', to: '', miles: 0 }, lodging: '', stops: [] },
+      { n: 3, drive: { from: 'Bar Harbor, ME', to: 'Belmont, MA', miles: 280 }, lodging: '', stops: [] },
+    ],
+  }
+  assert.equal(inferTripShape(farCabin), 'stay')
+})
+
+test('edge: a round trip with NO destination (blank endCity) → ROUTE (safe default)', () => {
+  assert.equal(inferTripShape({ shape: null, startCity: 'Belmont, MA', endCity: '', days: [{ n: 1, drive: {}, lodging: '', stops: [] }] }), 'route')
+})
+
+test('edge: endCity === startCity (round trip back to start, no away-place) → ROUTE', () => {
+  assert.equal(inferTripShape({ shape: null, startCity: 'Belmont, MA', endCity: 'Belmont, MA', days: [{ n: 1, drive: { miles: 0 }, lodging: '', stops: [] }] }), 'route')
+})
+
+test('an explicit shape still wins over auto-recognition (hand-override)', () => {
+  assert.equal(inferTripShape({ ...vermontPreFix, shape: 'route' }), 'route')
+})
+
+test('home spelling variants ("Belmont" vs "Belmont, MA") still recognize the cabin stay', () => {
+  const make = (homeOnLeg) => ({ shape: null, startCity: 'Belmont, MA', endCity: 'Stowe, VT', days: [
+    { drive: { from: homeOnLeg, to: 'Stowe, VT', miles: 200 }, lodging: '', stops: [] },
+    { drive: { from: 'Stowe, VT', to: homeOnLeg, miles: 200 }, lodging: '', stops: [] },
+  ] })
+  assert.equal(inferTripShape(make('Belmont')), 'stay', '"Belmont" keys to the same place as "Belmont, MA"')
+  assert.equal(inferTripShape(make('Belmont, Massachusetts')), 'stay')
+})
+
+test('a garbage/empty endCity is NOT auto-recognized as a stay (and renders no junk label)', () => {
+  const t = { shape: null, startCity: 'Belmont, MA', endCity: '  ,  ,  ', title: 'Mystery', days: [{ drive: {}, lodging: '', stops: [] }] }
+  assert.equal(inferTripShape(t), 'route')
+  assert.equal(destinationLabel('  ,  ,  '), '')
+  assert.equal(stayLabel(t), 'Mystery', 'falls back to the title, not the comma string')
+})
+
+test('destinationLabel: drop a leading street/unit + a trailing state/country → the locality', () => {
+  assert.equal(destinationLabel('613 Forest Mountain Road, Peru, VT'), 'Peru')
+  assert.equal(destinationLabel('Apt 4B, 200 Main St, Boston, MA'), 'Boston')
+  assert.equal(destinationLabel('New York, NY'), 'New York')
+  assert.equal(destinationLabel('Bar Harbor, ME'), 'Bar Harbor')
+  assert.equal(destinationLabel('Stowe, VT, USA'), 'Stowe')
+  assert.equal(destinationLabel('10 Downing Street, London, UK'), 'London')
+  assert.equal(destinationLabel('The Cabin'), 'The Cabin')
+  assert.equal(destinationLabel(''), '')
+  // Not a place name → '' (so the caller falls back to the trip title).
+  for (const junk of ['!!!', 'Suite 500', '200 Main St', '123', '90210', 'PO Box 9', 'USA', 'VT', 'UK', '  ,  , VT']) {
+    assert.equal(destinationLabel(junk), '', `${junk} is not a locality`)
+  }
 })
 
 test('nyc-rafa (one Murray Hill base, drive-there-then-stay) → STAY', () => {
@@ -80,8 +248,8 @@ test('atPlace: inside the radius → true; far → false; missing position/place
   assert.equal(atPlace(null, { lat: 41.32, lng: -72.09 }), false)
 })
 
-// ── stayLabel + stayNights (home-view place card) ──
-const { stayLabel, stayNights } = await import('../../src/lib/tripShape.js')
+// ── stayLabel + stayNights (home-view place card) ── (stayLabel imported at top)
+const { stayNights } = await import('../../src/lib/tripShape.js')
 
 test('stayLabel: prefers the lodging name; stayNights counts real overnight days', () => {
   const t = { lodging: { name: 'Beach Bungalow' }, days: [
