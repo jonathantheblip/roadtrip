@@ -22,7 +22,6 @@ import {
   FIXTURE_TRIP,
   TINY_RED_PNG_DATA_URL,
 } from './_fixtures/withTrip.js'
-import { openTopMenuItem } from './_fixtures/topNav.js'
 
 // Memories on day 1 stop (vb1-3) — mixed kinds, one per author.
 // Day 2 (vb2-3, isoDate 2026-05-23 = today) is intentionally empty
@@ -370,9 +369,9 @@ test.describe('TheWeave — the little book (slice 3, part 2)', () => {
     await mockBook(page, [KEPT_PAGE])
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
 
-    // The Book entry lives in the ⋯ overflow menu now.
-    await page.getByRole('button', { name: 'More' }).click()
-    const bookItem = page.getByRole('menuitem', { name: /the book/i })
+    // On a stay the Book lives on the Now-tab home band ("Looking back" archive);
+    // the ⋯ menu sheds it (it stays in the menu on the route shape only).
+    const bookItem = page.getByRole('button', { name: /The Book · kept pages/i }).first()
     await expect(bookItem).toBeVisible()
     await bookItem.click()
 
@@ -391,9 +390,8 @@ test.describe('TheWeave — the little book (slice 3, part 2)', () => {
     await mockBook(page, []) // empty book
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
     await expect(page.getByRole('button', { name: /Weave/i }).first()).toBeVisible()
-    // Open the ⋯ menu — with no kept pages there's no Book item in it.
-    await page.getByRole('button', { name: 'More' }).click()
-    await expect(page.getByRole('menuitem', { name: /the book/i })).toHaveCount(0)
+    // With no kept pages there's no Book entry on the home band.
+    await expect(page.getByRole('button', { name: /The Book · kept pages/i })).toHaveCount(0)
   })
 
   test('Save the book stitches the kept days into one video and shares it', async ({ page }) => {
@@ -436,7 +434,7 @@ test.describe('TheWeave — the little book (slice 3, part 2)', () => {
       { ...KEPT_PAGE, dayIso: '2026-05-23', title: 'Day Two' },
     ])
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-    await openTopMenuItem(page, /the book/i)
+    await page.getByRole('button', { name: /The Book · kept pages/i }).first().click()
     await expect(page.getByTestId('weave-book')).toBeVisible()
 
     await page.getByTestId('weave-book-save').click()

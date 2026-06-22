@@ -8,7 +8,6 @@
 // ABSENT from the page — drop the client mask and they render right there.
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
-import { openTopMenuItem } from './_fixtures/topNav.js'
 
 // A trip with two hidden stops on the active day (2026-05-23): one COVER, one
 // TEASER, both hidden from rafa. Built off the fixture so the rest renders normally.
@@ -89,8 +88,7 @@ test('create a stop surprise via the composer → the stop is marked hidden', as
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-  await openTopMenuItem(page, /surprises/i)
+  await page.goto('/?person=jonathan&trip=volleyball-2026&surprises=1&nosw=1')
   await expect(page.getByTestId('surprises-view')).toBeVisible()
   await page.getByRole('button', { name: /New/i }).click()
 
@@ -118,8 +116,7 @@ test('the author can reveal a kept stop surprise — it un-hides', async ({ page
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
   await seedTripIntoCache(page, tripWithSecretStops())
-  await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-  await openTopMenuItem(page, /surprises/i)
+  await page.goto('/?person=jonathan&trip=volleyball-2026&surprises=1&nosw=1')
   await expect(page.getByTestId('surprises-view')).toBeVisible()
   // The two stop surprises show in "You're keeping" with a Reveal now button.
   await page.getByRole('button', { name: /Reveal now/i }).first().click()

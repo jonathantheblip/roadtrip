@@ -27,21 +27,26 @@ export function tabForView(viewName) {
   return t ? t.key : null
 }
 
-export function StayTabBar({ active, onTab, badge = 0 }) {
+// `nowCue` lights a dot on the "Now" tab — on a stay Surprises lives there, so
+// its reveal cue (which on a route rides the ⋯ button) follows it onto the tab,
+// keeping the signal visible from the We-could / Photos tabs too.
+export function StayTabBar({ active, onTab, badge = 0, nowCue = false }) {
   return (
     <nav className="stay-tabbar" aria-label="Trip sections" data-testid="stay-tabbar">
       {STAY_TABS.map(({ key, label }) => {
         const on = key === active
+        const cued = key === 'now' && nowCue
         return (
           <button
             key={key}
             type="button"
             className={`stay-tab${on ? ' is-on' : ''}`}
             aria-current={on ? 'page' : undefined}
+            aria-label={cued ? `${label} — a surprise was revealed` : undefined}
             onClick={() => onTab(key)}
           >
             <span className="stay-tab-label">{label}</span>
-            {key === 'wecould' && badge > 0 && (
+            {((key === 'wecould' && badge > 0) || cued) && (
               <span className="stay-tab-badge" aria-hidden="true" />
             )}
           </button>

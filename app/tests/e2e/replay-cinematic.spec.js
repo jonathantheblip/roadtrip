@@ -9,7 +9,10 @@
 // and auto-opens (otherwise the cold-load override drops to the index).
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
-import { openTopMenuItem } from './_fixtures/topNav.js'
+
+// On a stay the reel is opened from the "Look back" tab (the ⋯ menu sheds
+// Replay — it's a tab now). The tab routes to the same immersive replay view.
+const openReel = (page) => page.getByRole('button', { name: 'Look back' }).click()
 
 const PHOTO_MEM = {
   id: 'rpl-photo-1',
@@ -106,7 +109,7 @@ test.describe('Replay — the reel', () => {
     await seedMemoriesIntoCache(page, [PHOTO_MEM])
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
 
-    await openTopMenuItem(page, /Replay/i)
+    await openReel(page)
 
     // The reel mounts immediately — the cinematic layer carries the photo (only
     // CineStage emits .rpl-cine-layer), no zoom-out/descend needed.
@@ -127,7 +130,7 @@ test.describe('Replay — the reel', () => {
     await seedMemoriesIntoCache(page, [PHOTO_MEM, PHOTO_MEM_2])
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
 
-    await openTopMenuItem(page, /Replay/i)
+    await openReel(page)
     const reel = page.getByTestId('rpl-reel')
     await expect(reel).toBeVisible()
 
@@ -161,7 +164,7 @@ test.describe('Replay — the reel', () => {
       })
     })
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-    await openTopMenuItem(page, /Replay/i)
+    await openReel(page)
 
     // The day chip is now a button (2 jumpable days). Tapping opens the sheet,
     // which carries the day's woven narrative + a strip of days.
@@ -184,7 +187,7 @@ test.describe('Replay — the reel', () => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     await seedMemoriesIntoCache(page, [VIDEO_MEM])
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-    await openTopMenuItem(page, /Replay/i)
+    await openReel(page)
 
     const video = page.getByTestId('rpl-reel-video')
     await expect(video).toBeVisible()

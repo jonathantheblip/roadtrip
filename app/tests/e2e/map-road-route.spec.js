@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { openTopMenuItem } from './_fixtures/topNav.js'
-import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
+import { seedTripIntoCache, FIXTURE_ROUTE_TRIP } from './_fixtures/withTrip.js'
 
 // The live map upgrades from straight-line to the REAL road route fetched
 // from the worker /route endpoint (Google Routes, cached). This proves the
@@ -8,8 +8,10 @@ import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 // (the road distance). The road geometry itself drives the leaflet polyline;
 // the visible distance is the deterministic hook. Without a /route response
 // the map falls back to straight-line (covered by it simply not appearing).
+// Uses the ROUTE fixture: the live map is route-shape chrome (a stay sheds it
+// from the ⋯ menu), and a road distance only makes sense on a road trip.
 test('map: shows the real road distance fetched from /route', async ({ page }) => {
-  await seedTripIntoCache(page, FIXTURE_TRIP)
+  await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
   // Registered after the fixture's worker catch-all, so this wins for /route.
   await page.route(/workers\.dev\/route$/, async (route) => {
     await route.fulfill({
@@ -29,7 +31,7 @@ test('map: shows the real road distance fetched from /route', async ({ page }) =
   })
 
   await page.goto('/?person=jonathan&nosw=1')
-  await page.getByText('Fun @ the Sun').first().click()
+  await page.getByText('Two-Base Road Trip').first().click()
   await openTopMenuItem(page, /Live map/i)
 
   await expect(page.getByTestId('map-road-miles')).toHaveText(/540 mi by road/)

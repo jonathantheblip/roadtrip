@@ -260,8 +260,7 @@ test.describe('a11y (axe, serious+critical) — the book ×4 personas', () => {
           }),
         })
       })
-      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      await openTopMenuItem(page, /the book/i)
+      await page.goto(`/?person=${p}&trip=volleyball-2026&book=1&nosw=1`)
       await expect(page.getByTestId('weave-book')).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: '[data-testid="weave-book"]',
@@ -307,8 +306,7 @@ test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
           surprise: { what: 'A memory', icon: '🧁', title: 'Birthday cupcake', detail: 'a candle at breakfast.', tint: '#7A5A3A' },
         },
       ])
-      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      await openTopMenuItem(page, /surprises/i)
+      await page.goto(`/?person=${p}&trip=volleyball-2026&surprises=1&nosw=1`)
       await expect(page.getByTestId('surprises-view')).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: '[data-testid="surprises-view"]',
@@ -327,8 +325,7 @@ test.describe('a11y (axe, serious+critical) — Surprises ×4 personas', () => {
         visibility: 'shared', kind: 'photo', caption: 'a wrappable photo',
         photoExternalURLs: [TINY_RED_PNG_DATA_URL], createdAt: '2026-05-22T18:10:00.000Z', capturedAt: '2026-05-22T18:10:00.000Z',
       }])
-      await page.goto(`/?person=${p}&trip=volleyball-2026&nosw=1`)
-      await openTopMenuItem(page, /surprises/i)
+      await page.goto(`/?person=${p}&trip=volleyball-2026&surprises=1&nosw=1`)
       await expect(page.getByTestId('surprises-view')).toBeVisible()
       await page.getByRole('button', { name: /New/i }).click()
       // Pick "A photo" and wrap the real one → content step satisfied, so the

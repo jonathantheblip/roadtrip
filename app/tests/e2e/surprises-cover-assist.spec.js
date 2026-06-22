@@ -4,12 +4,12 @@
 // hand" fallback on failure (the cover form still works by hand either way).
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
-import { openTopMenuItem } from './_fixtures/topNav.js'
 
 const COVER = { icon: '🍦', title: 'Ice cream at the pier', loc: 'the pier', time: 'Sat 3:00 PM', weather: 'Mild', packing: 'A sweater' }
 
+// Opened with ?surprises=1 (the direct entry) — on a stay the ⋯ menu no longer
+// carries Surprises (it lives on the Now-tab home band).
 async function openCoverForm(page) {
-  await openTopMenuItem(page, /surprises/i)
   await expect(page.getByTestId('surprises-view')).toBeVisible()
   await page.getByRole('button', { name: /New/i }).click()
   await page.getByRole('button', { name: 'A stop' }).click()
@@ -25,7 +25,7 @@ test('Suggest a cover with Claude fills the cover fields', async ({ page }) => {
   await page.route(/workers\.dev\/cover/, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(COVER) })
   })
-  await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+  await page.goto('/?person=jonathan&trip=volleyball-2026&surprises=1&nosw=1')
   await openCoverForm(page)
 
   await page.getByRole('button', { name: 'Suggest a cover with Claude' }).click()
@@ -40,7 +40,7 @@ test('cover-assist failure shows the fill-it-in-by-hand fallback (form still usa
   await page.route(/workers\.dev\/cover/, async (route) => {
     await route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"not configured"}' })
   })
-  await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
+  await page.goto('/?person=jonathan&trip=volleyball-2026&surprises=1&nosw=1')
   await openCoverForm(page)
 
   await page.getByRole('button', { name: 'Suggest a cover with Claude' }).click()

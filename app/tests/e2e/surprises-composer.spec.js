@@ -6,7 +6,6 @@
 // hidden-from person, and its content is preserved) OR DESCRIBE a new one.
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
-import { openTopMenuItem } from './_fixtures/topNav.js'
 
 const HELEN_PHOTO = {
   id: 'mem_helen_photo', tripId: 'volleyball-2026', stopId: 'vb1-3', authorTraveler: 'helen',
@@ -17,8 +16,10 @@ const HELEN_PHOTO = {
 const sharedMemories = (page) =>
   page.evaluate(() => JSON.parse(localStorage.getItem('rt_memories_shared_v1') || '[]'))
 
+// On a stay the ⋯ menu no longer carries Surprises (it lives on the Now-tab
+// home band); the page is opened with ?surprises=1, the direct entry, so the
+// composer test doesn't depend on the per-lens band label or the menu shape.
 async function openComposer(page) {
-  await openTopMenuItem(page, /surprises/i)
   await expect(page.getByTestId('surprises-view')).toBeVisible()
   await page.getByRole('button', { name: /New/i }).click()
 }
@@ -28,7 +29,7 @@ test('wrap a real photo → masking attaches to that memory, content preserved',
   page.on('pageerror', (e) => errors.push(String(e)))
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await seedMemoriesIntoCache(page, [HELEN_PHOTO])
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+  await page.goto('/?person=helen&trip=volleyball-2026&surprises=1&nosw=1')
   await openComposer(page)
 
   await page.getByRole('button', { name: 'A photo' }).click()
@@ -55,7 +56,7 @@ test('wrap a real photo → masking attaches to that memory, content preserved',
 
 test('describe something new → a new content memory carries the secret', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
+  await page.goto('/?person=helen&trip=volleyball-2026&surprises=1&nosw=1')
   await openComposer(page)
 
   await page.getByRole('button', { name: 'A memory' }).click()
@@ -82,8 +83,7 @@ test('editing a wrapped surprise re-opens the composer pre-filled (no crash)', a
     hideFrom: ['jonathan'], reveal: { type: 'manual' }, conceal: 'teaser',
     surprise: { what: 'A photo', icon: '🖼️', title: 'rafa asleep in his coat', detail: 'Beach Bungalow', tint: '#5C4A52', source: 'wrap' },
   }])
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
-  await openTopMenuItem(page, /surprises/i)
+  await page.goto('/?person=helen&trip=volleyball-2026&surprises=1&nosw=1')
   await expect(page.getByTestId('surprises-view')).toBeVisible()
   await page.getByRole('button', { name: /Edit surprise/i }).click()
   // Opens in EDIT mode, pre-filled with the wrapped item (the SelectedSecret card).

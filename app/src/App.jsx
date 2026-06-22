@@ -74,6 +74,10 @@ function initialViewFromUrl() {
     // ?surprises=1 opens the Surprises & masking surface directly (temp entry,
     // for on-device testing).
     if (params.get('surprises') === '1') return { name: 'surprises' }
+    // ?book=1 opens the little book directly — a lens-agnostic entry (the book's
+    // on-screen entry differs per lens: an archive line for the adults, a tile
+    // for Rafa), mirroring ?surprises / ?personview.
+    if (params.get('book') === '1') return { name: 'book' }
     if (url || action === 'import') {
       return { name: 'import', importUrl: url }
     }
@@ -653,7 +657,14 @@ export default function App() {
   // (We could · Now · Photos · Look back). First cut maps the tabs to the
   // EXISTING surfaces (route trips keep the shipped dock untouched — G5). The
   // bar shows on the non-immersive stay surfaces; "Look back" launches the reel.
-  const stayTab = trip && !trip.draft && isStayTrip(trip) ? tabForView(view.name) : null
+  // A stay (vs a route) sheds road-trip chrome: the four-tab shell IS the
+  // navigation, so the ⋯ overflow menu drops everything the tabs already host
+  // (Replay → Look back; Live map → route-only; Surprises/Share/Book → the
+  // Now-tab home band) and keeps only what has no other home. Route trips keep
+  // the full menu byte-identical (G5). One flag drives both the tab bar and the
+  // slimmed menu so they can never disagree.
+  const tripIsStay = !!(trip && !trip.draft && isStayTrip(trip))
+  const stayTab = tripIsStay ? tabForView(view.name) : null
   // RafaPad (rafa on an iPad) is a self-contained immersive command center with
   // its own tile navigation and NO standard chrome (it also drops the top bar,
   // below) — the flat tab bar would be a redundant, colliding second nav there.
@@ -1251,7 +1262,10 @@ export default function App() {
             >
               ⋯
             </button>
-            {surpriseRevealCue > 0 && (
+            {/* On a stay Surprises lives on the Now tab, so its reveal cue
+                rides the Now tab badge (below), not this button. On a route the
+                menu still holds Surprises, so the dot stays here. */}
+            {surpriseRevealCue > 0 && !tripIsStay && (
               <span
                 aria-label="A surprise was revealed"
                 style={{
@@ -1292,16 +1306,31 @@ export default function App() {
                   }}
                 >
                   {[
+                    // On a STAY the four-tab shell is the navigation, so the
+                    // menu sheds what the tabs already host: Replay (→ Look back
+                    // tab), Live map (route-only), Surprises and The book (both
+                    // on the Now-tab home band, every phase). What stays: Share a
+                    // moment (the home band offers it only DURING a trip — the
+                    // ⋯ is its only after-trip path, per the lens comments),
+                    // Add photos (kept top-reachable on purpose), Show me me,
+                    // and Settings. ROUTE keeps the full menu (G5).
                     ...(trip
-                      ? [
-                          { label: 'Replay', glyph: '▶', onClick: () => openReplay() },
-                          { label: 'Live map', glyph: '▣', onClick: openMap },
-                          { label: 'Surprises', glyph: '🎁', onClick: openSurprises },
-                          { label: 'Share a moment', glyph: '🖼', onClick: openCompose },
-                          { label: 'Add photos', glyph: '📷', onClick: openBulkImport },
-                        ]
+                      ? tripIsStay
+                        ? [
+                            { label: 'Share a moment', glyph: '🖼', onClick: openCompose },
+                            { label: 'Add photos', glyph: '📷', onClick: openBulkImport },
+                          ]
+                        : [
+                            { label: 'Replay', glyph: '▶', onClick: () => openReplay() },
+                            { label: 'Live map', glyph: '▣', onClick: openMap },
+                            { label: 'Surprises', glyph: '🎁', onClick: openSurprises },
+                            { label: 'Share a moment', glyph: '🖼', onClick: openCompose },
+                            { label: 'Add photos', glyph: '📷', onClick: openBulkImport },
+                          ]
                       : []),
-                    ...(trip && bookHasPages ? [{ label: 'The book', glyph: '❏', onClick: openBook }] : []),
+                    ...(trip && bookHasPages && !tripIsStay
+                      ? [{ label: 'The book', glyph: '❏', onClick: openBook }]
+                      : []),
                     // "Show me, me" — the on-device face recognizer. Aurelia +
                     // Rafa reach it from their designed home tiles; this overflow
                     // entry is how Jonathan, Helen, and phone-Rafa reach the
@@ -1528,7 +1557,13 @@ export default function App() {
         />
       )}
 
-      {showStayTabs && <StayTabBar active={stayTab} onTab={handleStayTab} />}
+      {showStayTabs && (
+        <StayTabBar
+          active={stayTab}
+          onTab={handleStayTab}
+          nowCue={surpriseRevealCue > 0}
+        />
+      )}
 
       {/* Claude-in-App M1 — floating entry on the trips index.
           Bottom-right, lifted ABOVE the persona dock now that the dock also
