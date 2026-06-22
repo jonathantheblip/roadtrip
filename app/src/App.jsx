@@ -4,8 +4,10 @@ import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
 import { StayTabBar, STAY_TABS, tabForView } from './views/StayTabBar'
 import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
-import { isStayTrip } from './lib/tripShape'
+import { isStayTrip, stayPlace } from './lib/tripShape'
 import { useGeolocationWhen } from './hooks/useGeolocation'
+import { usePresence } from './lib/presence'
+import { WhoAround } from './views/WhoAround'
 import { useNowTick } from './hooks/useNowTick'
 import { useLiveEta } from './hooks/useLiveEta'
 import { JonathanView } from './views/JonathanView'
@@ -653,6 +655,32 @@ export default function App() {
       ? { now: ledgeNow, next: ledgeNext }
       : null
 
+  // "Who's around" (slice 8) — live family presence on the Now tab. This device
+  // shares its OWN presence while on a live stay (foreground); the hook also polls
+  // the family's. `myStatus` is the optional manual "what are you up to" note,
+  // seeded once from this device's stored row so a reload doesn't wipe it. Kids'
+  // exact GPS is never sent (lib/presence) and is dropped server-side too (015).
+  const stayPlaceObj = stayLive ? stayPlace(tripForView) : null
+  const stayPosition = stayLive && stayGeo.status === 'granted' ? stayGeo.position : null
+  const [myStatus, setMyStatus] = useState('')
+  const statusTouched = useRef(false)
+  const presence = usePresence(stayLive ? tripForView?.id : null, {
+    enabled: stayLive,
+    traveler,
+    place: stayPlaceObj,
+    position: stayPosition,
+    note: myStatus,
+  })
+  useEffect(() => {
+    if (statusTouched.current) return
+    const mine = presence.people.find((p) => p.traveler === traveler)
+    if (mine && typeof mine.note === 'string' && mine.note) setMyStatus(mine.note)
+  }, [presence.people, traveler])
+  const setMyPresenceStatus = (txt) => {
+    statusTouched.current = true
+    setMyStatus(txt)
+  }
+
   // Family-trips recenter shell: on a STAY the home is the 4-tab "WHAT" bar
   // (We could · Now · Photos · Look back). First cut maps the tabs to the
   // EXISTING surfaces (route trips keep the shipped dock untouched — G5). The
@@ -1021,6 +1049,19 @@ export default function App() {
       bookHasPages,
       surpriseRevealCue,
       nowReadout, // stay-only live "At [place] · next" for the Now band (else null)
+      // "Who's around" (slice 8) — the live presence band, placed by each lens in
+      // its Now section. Null off a live stay (route/after → byte-identical, G5).
+      // Rafa's playful home doesn't render it (his device still SHARES, so parents
+      // see him; his roster view is a deferred follow-up like RafaPad's tabs).
+      whoAround: stayLive ? (
+        <WhoAround
+          people={presence.people}
+          me={traveler}
+          place={stayPlaceObj}
+          now={now.getTime()}
+          onSetStatus={setMyPresenceStatus}
+        />
+      ) : null,
     }
     switch (traveler) {
       case 'helen':

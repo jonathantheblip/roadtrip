@@ -29,7 +29,7 @@ import { todayLocalIso } from '../lib/localDate'
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue }) {
+export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue, whoAround }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -154,6 +154,7 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
         weaveReady={weaveReady}
         surpriseRevealCue={surpriseRevealCue}
         bookHasPages={bookHasPages}
+        whoAround={whoAround}
         onOpenMap={onOpenMap}
         onOpenWeave={onOpenWeave}
         onOpenReplay={onOpenReplay}

@@ -186,6 +186,7 @@ export function JonathanView({
   bookHasPages,
   surpriseRevealCue,
   nowReadout,
+  whoAround,
 }) {
   const [mode, setMode] = useState('ops') // 'ops' | 'record'
   // Default to today if it falls within the trip — Jonathan opens the
@@ -227,6 +228,7 @@ export function JonathanView({
           surpriseRevealCue={surpriseRevealCue}
           bookHasPages={bookHasPages}
           nowReadout={nowReadout}
+          whoAround={whoAround}
           onOpenMap={onOpenMap}
           onOpenWeave={onOpenWeave}
           onOpenReplay={onOpenReplay}

@@ -30,6 +30,7 @@ import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, isTripMask
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
 import { listProposals, createProposal, voteProposal, decideProposal, isNoTable } from './proposals.js'
+import { listPresence, upsertPresence, runPresencePurge } from './presence.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -186,6 +187,17 @@ export default {
         return await postProposalDecide(env, traveler, propDecideMatch[1], request, cors)
       }
 
+      // Who's around (015): live family presence on the Now tab. List + update
+      // ride the existing pull cadence. Identity is the session `traveler`,
+      // never the body — and the KID-COARSE privacy rule (a non-adult's exact
+      // GPS is dropped server-side) is enforced in upsertPresence/sanitizePresence.
+      if (path === '/presence' && request.method === 'GET') {
+        return await getPresence(env, url, cors)
+      }
+      if (path === '/presence' && request.method === 'POST') {
+        return await postPresence(env, traveler, request, cors)
+      }
+
       // Magic-link auth (013): mint enrollment links + revoke sessions. Both
       // are below the gate — the caller is an already-enrolled (session) traveler.
       // /auth/redeem is the only PUBLIC one (how a fresh device bootstraps).
@@ -326,6 +338,14 @@ export default {
       runScheduledStopReveals(env, todayIsoUTC(Date.now())).then(
         (r) => console.log('[stop-surprise-reveals]', JSON.stringify(r)),
         (e) => console.error('[stop-surprise-reveals] failed', e?.stack || e)
+      )
+    )
+    // Who's around (015): purge presence for ended trips + any stale rows, so a
+    // family member's location never lingers past the trip (settled privacy).
+    ctx.waitUntil(
+      runPresencePurge(env.DB, { todayIso: todayIsoUTC(Date.now()), now: Date.now() }).then(
+        (r) => console.log('[presence-purge]', JSON.stringify(r)),
+        (e) => console.error('[presence-purge] failed', e?.stack || e)
       )
     )
   },
@@ -626,6 +646,41 @@ async function postProposalDecide(env, traveler, id, request, cors) {
     return json(res, 200, cors)
   } catch (err) {
     if (isNoTable(err)) return json({ error: 'proposals not yet enabled' }, 503, cors)
+    throw err
+  }
+}
+
+// ─── Who's around (015) ────────────────────────────────────────────────
+// Thin wrappers over presence.js. Identity is always `traveler` (the session),
+// never the body; the kid-coarse privacy rule lives in sanitizePresence. A
+// missing table (pre-migration) degrades: GET → [], writes → 503.
+
+async function getPresence(env, url, cors) {
+  // Family-shared within a trip; no per-viewer masking (a kid's precise coords
+  // were never stored, and adults' precise location is shared by the settled
+  // model). no-store so a pull is always fresh.
+  const out = await listPresence(env.DB, url.searchParams.get('tripId') || '')
+  return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+async function postPresence(env, traveler, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  try {
+    const res = await upsertPresence(env.DB, {
+      traveler, // whose presence = the session traveler, never the body
+      tripId: body?.tripId,
+      body,
+      now: Date.now(),
+    })
+    if (res.error) return json(res, 400, cors)
+    return json(res, 200, cors)
+  } catch (err) {
+    if (isNoTable(err)) return json({ error: 'presence not yet enabled' }, 503, cors)
     throw err
   }
 }

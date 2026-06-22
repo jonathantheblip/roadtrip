@@ -52,7 +52,7 @@ function Card({ onClick, label, children, style, 'data-testid': testId }) {
 }
 
 export function HelenEntries({
-  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages, nowReadout,
+  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages, nowReadout, whoAround,
   onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
@@ -171,6 +171,9 @@ export function HelenEntries({
                 <ReadCta>Open map</ReadCta>
               </div>
             </Card>
+
+            {/* Who's around — live family presence (slice 8), right under the live readout */}
+            {whoAround}
 
             {/* Surprises — her planner card */}
             <Card onClick={onOpenSurprises} label="Plan or manage a surprise">

@@ -50,6 +50,7 @@ export function HelenView({
   bookHasPages,
   surpriseRevealCue,
   nowReadout,
+  whoAround,
 }) {
   // Default the active day to today if today is inside the trip — mid-trip
   // openers expect the current day, and the "+" FAB walks to day.stops[0].
@@ -175,6 +176,7 @@ export function HelenView({
         surpriseRevealCue={surpriseRevealCue}
         bookHasPages={bookHasPages}
         nowReadout={nowReadout}
+        whoAround={whoAround}
         onOpenMap={onOpenMap}
         onOpenWeave={onOpenWeave}
         onOpenReplay={onOpenReplay}

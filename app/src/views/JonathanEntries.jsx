@@ -71,7 +71,7 @@ function ArchiveLine({ onClick, kicker, title, cta, icon }) {
 }
 
 export function JonathanEntries({
-  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages, nowReadout,
+  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages, nowReadout, whoAround,
   onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
@@ -144,6 +144,9 @@ export function JonathanEntries({
                 </div>
               )}
             </Register>
+
+            {/* Who's around — live family presence (slice 8), right under the live readout */}
+            {whoAround}
 
             {/* The Weave */}
             <Register onClick={onOpenWeave} label="Read the Weave">

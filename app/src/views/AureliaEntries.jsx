@@ -25,7 +25,7 @@ function Sprockets({ pos }) {
 }
 
 export function AureliaEntries({
-  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages,
+  trip, phase = 'during', weaveReady, surpriseRevealCue, bookHasPages, whoAround,
   onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose,
 }) {
   const [weave, setWeave] = useState(null)
@@ -46,6 +46,10 @@ export function AureliaEntries({
           <SurpriseReveal traveler="aurelia" />
         </div>
       )}
+
+      {/* Who's around — live family presence (slice 8). A "now" thing, so it leads
+          when present; renders nothing (no reserved space) until someone's sharing. */}
+      {whoAround}
 
       {/* REPLAY — her hero, leads */}
       <button
