@@ -25,7 +25,7 @@ const ST = ['#FFB12E', '#3DA5E0', '#4CC36E', '#FF6B4D', '#C77DFF']
 // --accent-ink — the C1/Stage-2 fill-ink rule applied to the stickers.
 const CANDY_INK = '#1B1108'
 
-export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onOpenWeave, weaveReady }) {
+export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onOpenWeave, weaveReady, whoAround }) {
   // Which day's mission is on screen. Default to today-if-in-trip,
   // else day 1. Lets a 3-day weekend show three different missions
   // instead of one summary card that doesn't change.
@@ -218,6 +218,11 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
           })}
         </div>
       )}
+
+      {/* Who's around — Rafa's storybook diorama (slice 8 follow-up). On a LIVE stay
+          it LEADS (the design's order — the family is the first thing he sees); off a
+          live stay it's null, so his normal home (the big title, the place) leads. */}
+      {whoAround}
 
       {/* Big stacked title — ochre Fredoka */}
       <div style={{ padding: '16px 18px 8px' }}>

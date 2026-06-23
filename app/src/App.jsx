@@ -8,6 +8,7 @@ import { isStayTrip, stayPlace } from './lib/tripShape'
 import { useGeolocationWhen } from './hooks/useGeolocation'
 import { usePresence } from './lib/presence'
 import { WhoAround } from './views/WhoAround'
+import { RafaWhosAround } from './views/RafaWhosAround'
 import { useNowTick } from './hooks/useNowTick'
 import { useLiveEta } from './hooks/useLiveEta'
 import { JonathanView } from './views/JonathanView'
@@ -1051,16 +1052,20 @@ export default function App() {
       nowReadout, // stay-only live "At [place] · next" for the Now band (else null)
       // "Who's around" (slice 8) — the live presence band, placed by each lens in
       // its Now section. Null off a live stay (route/after → byte-identical, G5).
-      // Rafa's playful home doesn't render it (his device still SHARES, so parents
-      // see him; his roster view is a deferred follow-up like RafaPad's tabs).
+      // Rafa gets his OWN kid treatment (the storybook diorama) on the same data;
+      // the other three get the standard band.
       whoAround: stayLive ? (
-        <WhoAround
-          people={presence.people}
-          me={traveler}
-          place={stayPlaceObj}
-          now={now.getTime()}
-          onSetStatus={setMyPresenceStatus}
-        />
+        traveler === 'rafa' ? (
+          <RafaWhosAround people={presence.people} now={now.getTime()} />
+        ) : (
+          <WhoAround
+            people={presence.people}
+            me={traveler}
+            place={stayPlaceObj}
+            now={now.getTime()}
+            onSetStatus={setMyPresenceStatus}
+          />
+        )
       ) : null,
     }
     switch (traveler) {
