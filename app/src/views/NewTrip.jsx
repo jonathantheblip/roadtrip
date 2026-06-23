@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { ChevronLeft, Check, Loader } from 'lucide-react'
 import { newTripId } from '../utils/ids'
 import { geocodeAddress } from '../lib/geocode'
+import { humanDateRange } from '../lib/createTripCard'
 
 // Manual trip entry. Creates a renderer-safe *draft* trip and hands off
 // to the editor so Days/Stops/pitches get filled in incrementally —
@@ -36,7 +37,11 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
 
   const [title, setTitle] = useState('')
   const [subtitle, setSubtitle] = useState('')
-  const [dateRange, setDateRange] = useState('')
+  // Real dates, captured once here so they pre-fill the editor's date pickers
+  // (no entering dates twice) and auto-derive the display label. Optional at
+  // creation — leave them blank and set them once in the editor instead.
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
   // Place-first (the STAY spine). The address is geocoded at SUBMIT (not on blur —
   // an on-blur re-render races the Create tap and eats the first click), so
@@ -96,9 +101,11 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
       title: trimmedTitle,
       subtitle: subtitle.trim(),
       epigraph: '',
-      dateRange: dateRange.trim() || 'TBD',
-      dateRangeStart: null,
-      dateRangeEnd: null,
+      // Structured dates carry straight into the editor (pre-filled, no re-entry);
+      // the human label is derived from them ('TBD' when no start date is given).
+      dateRange: humanDateRange(startDate || null, endDate || null),
+      dateRangeStart: startDate || null,
+      dateRangeEnd: endDate || null,
       // Road-trip fields only when it IS a road trip — a stay must not carry an
       // end city (it feeds the drive-home ETA scaffolding a stay sheds).
       startCity: driving ? startCity.trim() : '',
@@ -196,16 +203,30 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
           />
         </Field>
 
-        <Field label="Date range">
-          <input
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            placeholder="July 3 – 6, 2026"
-            className="memory-textarea"
-            style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
-            disabled={busy || done}
-          />
-        </Field>
+        {/* Dates, entered once. They carry into the editor's date pickers and
+            auto-make the display label — no typing the dates a second time. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Start date">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="memory-textarea"
+              style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+              disabled={busy || done}
+            />
+          </Field>
+          <Field label="End date">
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="memory-textarea"
+              style={{ minHeight: 'auto', padding: 12, fontSize: 16 }}
+              disabled={busy || done}
+            />
+          </Field>
+        </div>
 
         {/* PLACE-FIRST: the stay spine, shown unless this is a road trip. */}
         {!driving && (
