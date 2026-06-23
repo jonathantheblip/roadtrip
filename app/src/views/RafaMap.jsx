@@ -5,6 +5,15 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { flattenPhotoEntries } from '../lib/photoEntries'
 import { RafaSound } from '../lib/rafaSound'
 import { isStayTrip, stayLabel } from '../lib/tripShape'
+import { presenceFamily, Bubble, Reveal } from './RafaWhosAround'
+
+// Stable [0,1) from a traveler id — places an "out & about" family member at a
+// consistent random-ish point along the road so they don't jump on every render.
+function idFrac(id) {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+  return (h % 1000) / 1000
+}
 
 // RafaMap — Rafa's Adventure Map (iPad only). A storybook road winding through
 // the trip's real stops: visited ones lit green with a ⭐, the vehicle on the
@@ -114,7 +123,7 @@ function daysToAnchor(trip, anchorStop) {
   return Math.round((Date.parse(targetIso + 'T00:00:00') - Date.parse(today + 'T00:00:00')) / 86400000)
 }
 
-export function RafaMap({ trip, traveler = 'rafa', onClose }) {
+export function RafaMap({ trip, traveler = 'rafa', people = [], now, onClose }) {
   const c = PAL, ST = c.sticker
   const stops = useMemo(() => {
     const counts = {}
@@ -149,6 +158,10 @@ export function RafaMap({ trip, traveler = 'rafa', onClose }) {
   const [driving, setDriving] = useState(false)
   const [drive, setDrive] = useState(null)
   const [muted, setMuted] = useState(RafaSound.isMuted())
+  // "Who's around" on the map (slice 8 follow-up): the family ride along it — home
+  // people gathered at home base, out people parked at stable points down the road.
+  const [familyPts, setFamilyPts] = useState([])
+  const [familyPick, setFamilyPick] = useState(null)
 
   useLayoutEffect(() => {
     const el = ref.current; if (!el) return
@@ -176,6 +189,31 @@ export function RafaMap({ trip, traveler = 'rafa', onClose }) {
     }
     nodeLensRef.current = best.map((b) => b.l)
   }, [roadFull, size.w, size.h]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lay the family along the map: "special house" people cluster at home base
+  // (nodes[0], the start of the adventure); "out & about" people park at a stable
+  // random point along the road (idFrac → getPointAtLength), placed BELOW the road
+  // so they don't cover a landmark. Recomputed when presence / size / road change.
+  useEffect(() => {
+    const fam = presenceFamily(people, now)
+    const home = nodes[0]
+    if (!home) { setFamilyPts([]); return }
+    const homePpl = fam.filter((f) => f.view.zone === 'cabin')
+    const outPpl = fam.filter((f) => f.view.zone === 'out')
+    const pts = homePpl.map((f, i) => ({
+      ...f, size: f.isMe ? 50 : 58,
+      x: home.x + (i - (homePpl.length - 1) / 2) * 52, y: home.y + 58,
+    }))
+    const p = pathRef.current
+    let L = 0
+    if (p) { try { L = p.getTotalLength() } catch { L = 0 } }
+    outPpl.forEach((f) => {
+      const frac = 0.32 + 0.5 * idFrac(f.id) // [0.32, 0.82] — past home, before the finale
+      const pt = L ? p.getPointAtLength(frac * L) : home
+      pts.push({ ...f, size: 54, x: pt.x, y: pt.y + 46 })
+    })
+    setFamilyPts(pts)
+  }, [people, now, nodes, roadFull, size.w, size.h]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); RafaSound.engineStop() }, [])
 
@@ -294,6 +332,14 @@ export function RafaMap({ trip, traveler = 'rafa', onClose }) {
         )
       })}
 
+      {/* FAMILY — "who's around" riding the map: home people at home base, out
+          people down the road. Hidden during the drive so the animation stays clean. */}
+      {!driving && familyPts.map((f) => (
+        <div key={f.id} style={{ position: 'absolute', left: f.x, top: f.y, transform: 'translate(-50%,-50%)', zIndex: 5 }}>
+          <Bubble id={f.id} live={f.view.live} size={f.size} onClick={() => setFamilyPick(f)} />
+        </div>
+      ))}
+
       {/* TOP BAR — back + mute + journey ribbon + days-to-go (absorbs the countdown) */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: 'calc(env(safe-area-inset-top) + 18px) 28px 18px', zIndex: 3 }}>
@@ -359,6 +405,9 @@ export function RafaMap({ trip, traveler = 'rafa', onClose }) {
           </div>
         )
       })()}
+
+      {/* tapping a family bubble → the same warm reveal as the phone diorama */}
+      {familyPick && <Reveal person={familyPick} onClose={() => setFamilyPick(null)} />}
     </div>
   )
 }

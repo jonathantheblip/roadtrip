@@ -52,8 +52,19 @@ function nameFor(id, isMe) {
   return n || TRAVELERS[id]?.name || id
 }
 
+// Real presence rows → the family the kid surfaces draw: [{ id, view:{zone,live},
+// isMe }], only those with a KNOWN coarse bucket. Shared by the phone diorama AND
+// the iPad map so both tell the same story from one source.
+export function presenceFamily(people = [], nowMs = Date.now()) {
+  return TRAVELER_ORDER.map((id) => {
+    const row = (people || []).find((p) => p.traveler === id)
+    const view = viewFor(row, nowMs)
+    return view ? { id, view, isMe: id === 'rafa' } : null
+  }).filter(Boolean)
+}
+
 // ── one family character bubble — the heart of the whole thing ──
-function Bubble({ id, live, size = 62, badge = true, onClick, delay = 0 }) {
+export function Bubble({ id, live, size = 62, badge = true, onClick, delay = 0 }) {
   const col = TRAVELER_DOT[id] || '#777'
   const initial = (TRAVELERS[id]?.name || '?').slice(0, 1)
   return (
@@ -135,7 +146,7 @@ function Scene({ family, onPick }) {
 }
 
 // ── the giant warm reveal when Rafa taps a face ──
-function Reveal({ person, onClose }) {
+export function Reveal({ person, onClose }) {
   const [waved, setWaved] = useState(false)
   const { id, view, isMe } = person
   const placeWord = view.zone === 'cabin' ? 'at the special house' : 'out & about'
@@ -185,15 +196,7 @@ function Reveal({ person, onClose }) {
 // ── the feature: heading + scene + tap-reveal, on real presence data ──
 export function RafaWhosAround({ people = [], now = Date.now() }) {
   const [pickId, setPickId] = useState(null)
-
-  // Map real presence rows → the family the scene draws (only those with a known
-  // zone). rafa himself is "me".
-  const family = TRAVELER_ORDER.map((id) => {
-    const row = people.find((p) => p.traveler === id)
-    const view = viewFor(row, now)
-    return view ? { id, view, isMe: id === 'rafa' } : null
-  }).filter(Boolean)
-
+  const family = presenceFamily(people, now)
   if (family.length === 0) return null // nobody located yet → don't draw an empty scene
 
   const liveOthers = family.filter((p) => p.view.live && !p.isMe).length

@@ -1067,6 +1067,9 @@ export default function App() {
           />
         )
       ) : null,
+      // Raw presence for Rafa's iPad Adventure Map (the family bubbles ride it).
+      presencePeople: stayLive ? presence.people : [],
+      nowMs: now.getTime(),
     }
     switch (traveler) {
       case 'helen':

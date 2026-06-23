@@ -26,7 +26,7 @@ const CANDY_INK = '#1B1108'
 export function RafaPad({
   trip, traveler = 'rafa', onOpenStop, onOpenSettings, onOpenPhotos, onShowMe,
   onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises,
-  weaveReady, bookHasPages, surpriseRevealCue,
+  weaveReady, bookHasPages, surpriseRevealCue, presencePeople = [], nowMs,
 }) {
   const [gamesOpen, setGamesOpen] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
@@ -118,7 +118,7 @@ export function RafaPad({
         </div>
       </div>
 
-      {mapOpen && <RafaMap trip={trip} traveler={traveler} onClose={() => setMapOpen(false)} />}
+      {mapOpen && <RafaMap trip={trip} traveler={traveler} people={presencePeople} now={nowMs} onClose={() => setMapOpen(false)} />}
       {gamesOpen && <RafaGames onClose={() => setGamesOpen(false)} />}
     </div>
   )
