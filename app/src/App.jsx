@@ -18,6 +18,8 @@ import { HelenView } from './views/HelenView'
 import { AureliaView } from './views/AureliaView'
 import { RafaView } from './views/RafaView'
 import { RafaPad } from './views/RafaPad'
+import { PartsTripView } from './views/PartsTripView'
+import { hasExplicitParts } from './lib/tripParts'
 import { TripIndex } from './views/TripIndex'
 import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
@@ -1113,6 +1115,21 @@ export default function App() {
       // Raw presence for Rafa's iPad Adventure Map (the family bubbles ride it).
       presencePeople: stayLive ? presence.people : [],
       nowMs: now.getTime(),
+    }
+    // A COMPOSITE trip (explicit parts — a city break, a multi-leg odyssey) renders
+    // the shared, parts-aware view in the three "read the itinerary" lenses, skinned
+    // by each person's CSS vars. The day-centric lens IA (day tabs, DRIVE/ETA ticker)
+    // is wrong for a city trip. Every LEGACY trip (no explicit parts) falls through to
+    // its bespoke lens, byte-identical (G5). Rafa keeps his storybook views by design.
+    if (hasExplicitParts(tripForView) && traveler !== 'rafa') {
+      return (
+        <PartsTripView
+          trip={tripForView}
+          onOpenStop={openStop}
+          onOpenPhotos={openPhotos}
+          onOpenClaude={openClaude}
+        />
+      )
     }
     switch (traveler) {
       case 'helen':

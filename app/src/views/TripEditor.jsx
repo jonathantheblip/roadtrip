@@ -15,6 +15,8 @@ import { VoiceRecorder } from '../components/VoiceRecorder'
 import { newTripId } from '../utils/ids'
 import { tripCompleteness } from '../lib/tripComplete'
 import { isStayTrip } from '../lib/tripShape'
+import { hasExplicitParts, getParts } from '../lib/tripParts'
+import { humanDateRange } from '../lib/createTripCard'
 
 // Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
 // pulled in when a trip actually has a located lodging (Phase 2).
@@ -327,6 +329,34 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
         <CoverPhoto url={trip.coverPhotoUrl} onPick={onCover} />
         <Text label="Shared album URL" value={trip.sharedAlbumURL} onChange={(v) => patch({ sharedAlbumURL: v })} placeholder="https://www.icloud.com/sharedalbum/…" />
       </Section>
+
+      {/* ── The parts (composite trip) — read-only shape ───────────────
+          A trip created by the concierge with distinct legs carries explicit
+          parts[]. Show them here so the editor reflects the trip's real shape;
+          the day-by-day below stays the editable source of truth (days live
+          flat in trip.days, parts are a high-level view — see tripParts.js).
+          Legacy trips have no explicit parts → this section never renders. */}
+      {hasExplicitParts(trip) && (
+        <Section title={`The parts · ${getParts(trip).length}`}>
+          <p className="f-news-i text-sm opacity-70" style={{ marginBottom: 8 }}>
+            The high-level shape of this trip. Edit the day-by-day below.
+          </p>
+          {getParts(trip).map((p, pi) => {
+            const when = humanDateRange(p.dateStart, p.dateEnd)
+            return (
+              <div key={p.id || pi} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '5px 0', borderTop: pi ? '1px solid var(--border)' : 'none' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', minWidth: 46 }}>
+                  {p.type || 'stay'}
+                </span>
+                <span style={{ flex: 1, color: 'var(--text)' }}>{p.title || p.place || 'A part'}</span>
+                {when && when !== 'TBD' && (
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{when}</span>
+                )}
+              </div>
+            )
+          })}
+        </Section>
+      )}
 
       {/* ── Lodging (trip-level, drives StopDetail LodgingPanel) ────── */}
       <Section title="Lodging">
