@@ -3086,6 +3086,36 @@ export function chatModel(env) {
   return override || DEFAULT_CHAT_MODEL
 }
 
+// ─── Screenshot intake (vision) ───────────────────────────────────────
+// "Feed it a booking screenshot": the chat user-turn may carry image(s)
+// (a flight confirmation, an Airbnb, a forwarded itinerary). The chat model
+// (Sonnet 4.6) reads them and lays out the trip via the same create_trip card.
+// Images are used for THIS turn only — never persisted in conversation history
+// (we store the text, not base64). Bounded so a payload can't blow up.
+const MAX_CHAT_IMAGES = 4
+const MAX_IMAGE_B64_LEN = 7 * 1024 * 1024 // ~5MB decoded — Anthropic's per-image ceiling
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+
+// Build the final user-turn content for Anthropic. With no valid images it's the
+// plain text string (the existing contract — unchanged). With images it's a
+// content array of image blocks + the text, so Claude can read a screenshot.
+// Garbage images are dropped, never errored, so a bad attachment degrades to text.
+export function buildChatUserContent(message, images) {
+  const text = typeof message === 'string' ? message : ''
+  const blocks = []
+  if (Array.isArray(images)) {
+    for (const img of images.slice(0, MAX_CHAT_IMAGES)) {
+      const mt = img && typeof img.media_type === 'string' ? img.media_type : ''
+      const data = img && typeof img.data === 'string' ? img.data : ''
+      if (!ALLOWED_IMAGE_TYPES.has(mt)) continue
+      if (!data || data.length > MAX_IMAGE_B64_LEN) continue
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: mt, data } })
+    }
+  }
+  if (blocks.length === 0) return text
+  return [...blocks, { type: 'text', text: text || 'Build a trip from this screenshot.' }]
+}
+
 // ─── Chat tools (READ/COMPUTE path) ───────────────────────────────────
 //
 // The planning chat's WRITE path is the fenced `card` protocol (the
@@ -3421,7 +3451,12 @@ async function postClaudeChat(env, traveler, request, cors) {
   const apiMessages = history
     .filter((m) => !(m.role === 'user' && m.content === message && m.position === history.length - 1))
     .map((m) => ({ role: m.role, content: m.content }))
-  apiMessages.push({ role: 'user', content: message })
+  // The new user turn may carry screenshot(s) for vision — buildChatUserContent
+  // returns the plain text string when there are none (the unchanged contract).
+  // Images ride only on this Anthropic call; the stored history (insertMessage
+  // above) keeps the text only, never base64.
+  const images = Array.isArray(body?.images) ? body.images : null
+  apiMessages.push({ role: 'user', content: buildChatUserContent(message, images) })
 
   // Build the system prompt from family + active trip + reader identity.
   const systemPrompt = await buildClaudeSystemPrompt(env, { readerUserId: userId, tripId })

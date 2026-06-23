@@ -64,6 +64,7 @@ export async function streamClaudeChat({
   userId,
   tripId = null,
   message,
+  images = null,
   onDelta = () => {},
   signal = null,
 } = {}) {
@@ -80,6 +81,9 @@ export async function streamClaudeChat({
       user_id: userId,
       trip_id: tripId,
       message,
+      // Screenshot intake (vision): [{ media_type, data(base64) }]. Omitted when
+      // there are none — the worker treats absence as a plain text turn.
+      ...(Array.isArray(images) && images.length ? { images } : {}),
     }),
     signal,
   })

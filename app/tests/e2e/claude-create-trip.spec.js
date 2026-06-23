@@ -22,7 +22,7 @@ function sseFrames(...frames) {
 // `replies` is an array of reply strings; the Nth send returns
 // replies[N-1], with the last entry repeating for any extra sends.
 function mockIndexChat(page, replies) {
-  const state = { chats: 0 }
+  const state = { chats: 0, bodies: [] }
   page.route(
     /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/claude\/conversations(\?|$)/,
     async (route) => {
@@ -46,6 +46,7 @@ function mockIndexChat(page, replies) {
     }
   )
   page.route(/roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/claude\/chat$/, async (route) => {
+    try { state.bodies.push(JSON.parse(route.request().postData() || '{}')) } catch { state.bodies.push(null) }
     const text = replies[Math.min(state.chats, replies.length - 1)]
     state.chats += 1
     const chunks = []
@@ -311,5 +312,45 @@ test.describe('Claude-in-App — create_trip', () => {
       return (t.parts || []).map((p) => p.type)
     })
     expect(types).toEqual(['flight', 'city', 'stay', 'drive'])
+  })
+
+  test('screenshot intake: an attached image is sent to the planner (vision) and a card comes back', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    const mock = mockIndexChat(page, [
+      replyWithCard(italyCard('ct-italy-shot'), 'Read your screenshot — here it is.'),
+    ])
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+
+    const dialog = await openIndexChat(page)
+
+    // A tiny valid PNG attached via the composer's (hidden) file input.
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64'
+    )
+    await dialog
+      .getByTestId('chat-image-input')
+      .setInputFiles({ name: 'flight-confirmation.png', mimeType: 'image/png', buffer: png })
+    await expect(dialog.getByTestId('chat-image-chips')).toContainText(/flight-confirmation/)
+
+    // Send with no typed text (screenshot-only) — a default message rides along.
+    await dialog.getByRole('button', { name: /Send message/i }).click()
+
+    // The request carried the image to the worker as a base64 vision attachment.
+    await expect
+      .poll(
+        () => {
+          const b = mock.bodies.find((x) => Array.isArray(x?.images) && x.images.length)
+          return b ? b.images[0].media_type : null
+        },
+        { timeout: 5000 }
+      )
+      .toBe('image/png')
+    const withImg = mock.bodies.find((x) => Array.isArray(x?.images) && x.images.length)
+    expect(withImg.images[0].data.length).toBeGreaterThan(10) // base64 payload present
+    expect((withImg.message || '').length).toBeGreaterThan(0) // non-empty default message
+
+    // The planner's reply still renders the trip card.
+    await expect(dialog.getByTestId('confirm-card-create_trip')).toBeVisible({ timeout: 5000 })
   })
 })

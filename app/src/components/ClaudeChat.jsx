@@ -546,19 +546,46 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
 // ─── Composer ─────────────────────────────────────────────────────────
 function ChatComposer({ disabled, onSend, placeholder = 'ask claude…', initialText = '' }) {
   const [text, setText] = useState(initialText)
+  const [images, setImages] = useState([]) // [{ media_type, data(base64), name }] — screenshot intake
   const ref = useRef(null)
+  const fileRef = useRef(null)
+
+  const canSend = !disabled && (text.trim().length > 0 || images.length > 0)
 
   function submit() {
+    if (!canSend) return
     const value = text.trim()
-    if (!value || disabled) return
+    const imgs = images
     setText('')
-    onSend(value)
+    setImages([])
+    // The worker requires a non-empty message; a screenshot-only drop gets a default.
+    onSend(value || 'Build a trip from this screenshot.', imgs.length ? imgs : null)
   }
   function onKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       submit()
     }
+  }
+  async function onFiles(e) {
+    const picked = [...(e.target.files || [])].filter((f) => /^image\//.test(f.type)).slice(0, 4)
+    const encoded = await Promise.all(
+      picked.map(
+        (f) =>
+          new Promise((resolve) => {
+            const r = new FileReader()
+            r.onload = () => {
+              const s = String(r.result || '')
+              const comma = s.indexOf(',') // strip the "data:<type>;base64," prefix
+              resolve(comma >= 0 ? { media_type: f.type, data: s.slice(comma + 1), name: f.name } : null)
+            }
+            r.onerror = () => resolve(null)
+            r.readAsDataURL(f)
+          })
+      )
+    )
+    setImages((prev) => [...prev, ...encoded.filter(Boolean)].slice(0, 4))
+    if (fileRef.current) fileRef.current.value = '' // allow re-selecting the same file
   }
   useEffect(() => {
     // Auto-resize within bounds. Keeps the composer feeling like a
@@ -575,57 +602,109 @@ function ChatComposer({ disabled, onSend, placeholder = 'ask claude…', initial
         borderTop: `1px solid var(--border)`,
         background: 'var(--bg)',
         padding: '10px 12px calc(12px + env(safe-area-inset-bottom))',
-        display: 'flex',
-        gap: 8,
-        alignItems: 'flex-end',
       }}
     >
-      <textarea
-        ref={ref}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        rows={1}
-        disabled={disabled}
-        aria-label="Message Claude"
-        style={{
-          flex: 1,
-          minHeight: 38,
-          maxHeight: 140,
-          resize: 'none',
-          border: `1px solid var(--border)`,
-          borderRadius: 18,
-          padding: '8px 14px',
-          fontFamily: FONT.sans,
-          fontSize: 15,
-          lineHeight: 1.45,
-          background: 'var(--card)',
-          color: 'var(--text)',
-          outline: 'none',
-        }}
-      />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={disabled || !text.trim()}
-        aria-label="Send message"
-        style={{
-          width: 38,
-          height: 38,
-          borderRadius: 19,
-          border: 'none',
-          background: disabled || !text.trim() ? 'var(--border)' : 'var(--accent)',
-          color: '#fff',
-          cursor: disabled || !text.trim() ? 'default' : 'pointer',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <SendIcon />
-      </button>
+      {images.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }} data-testid="chat-image-chips">
+          {images.map((img, i) => (
+            <span
+              key={i}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 11, fontFamily: FONT.sans, color: 'var(--text)',
+                background: 'var(--card)', border: `1px solid var(--border)`,
+                borderRadius: 12, padding: '3px 6px 3px 10px',
+              }}
+            >
+              {img.name ? img.name.slice(0, 22) : 'screenshot'}
+              <button
+                type="button"
+                onClick={() => setImages((p) => p.filter((_, j) => j !== i))}
+                aria-label="Remove screenshot"
+                style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={onFiles}
+          style={{ display: 'none' }}
+          data-testid="chat-image-input"
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={disabled}
+          aria-label="Add a screenshot"
+          title="Add a screenshot — a booking, an itinerary"
+          style={{
+            width: 38, height: 38, borderRadius: 19, flexShrink: 0,
+            border: `1px solid var(--border)`, background: 'var(--card)',
+            color: 'var(--muted)', cursor: disabled ? 'default' : 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        </button>
+        <textarea
+          ref={ref}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          rows={1}
+          disabled={disabled}
+          aria-label="Message Claude"
+          style={{
+            flex: 1,
+            minHeight: 38,
+            maxHeight: 140,
+            resize: 'none',
+            border: `1px solid var(--border)`,
+            borderRadius: 18,
+            padding: '8px 14px',
+            fontFamily: FONT.sans,
+            fontSize: 15,
+            lineHeight: 1.45,
+            background: 'var(--card)',
+            color: 'var(--text)',
+            outline: 'none',
+          }}
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!canSend}
+          aria-label="Send message"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            border: 'none',
+            background: !canSend ? 'var(--border)' : 'var(--accent)',
+            color: '#fff',
+            cursor: !canSend ? 'default' : 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <SendIcon />
+        </button>
+      </div>
     </div>
   )
 }
@@ -946,9 +1025,11 @@ export function ClaudeChatPanel({
     setPhase('chat')
   }
 
-  async function handleSend(text) {
+  async function handleSend(text, images = null) {
     if (!conversationId) return
-    const userMsg = { role: 'user', content: text, created_at: new Date().toISOString() }
+    const n = Array.isArray(images) ? images.length : 0
+    const note = n ? `  ·  ${n} screenshot${n > 1 ? 's' : ''} attached` : ''
+    const userMsg = { role: 'user', content: text + note, created_at: new Date().toISOString() }
     setMessages((prev) => [...prev, userMsg])
     setStreamingText('')
     setSending(true)
@@ -959,6 +1040,7 @@ export function ClaudeChatPanel({
         userId,
         tripId,
         message: text,
+        images,
         onDelta: (chunk) => {
           setStreamingText((prev) => prev + chunk)
         },
