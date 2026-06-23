@@ -103,10 +103,18 @@ export function useTrips() {
         // the local version for any unsynced id until resync pushes it; the
         // resync (below) then makes the Worker canonical again.
         const unsynced = pendingIds()
-        if (unsynced.length) {
-          const localCache = readCache() || []
+        const localCache = readCache() || []
+        // DRAFT PRESERVATION: the worker never serves a draft (getTrips filters
+        // `draft:true`), so a pull's `merged` array never contains the author's own
+        // drafts. Without this, `setTrips(merged)` would silently drop every local
+        // draft on the next pull — the second half of the "draft vanished" bug. Keep
+        // every local draft that the remote didn't return, so a draft is only ever
+        // removed by an explicit delete, never by a routine sync.
+        const localDraftIds = localCache.filter((t) => t.draft).map((t) => t.id)
+        const carryIds = [...new Set([...unsynced, ...localDraftIds])]
+        if (carryIds.length) {
           const byId = new Map(merged.map((t) => [t.id, t]))
-          for (const id of unsynced) {
+          for (const id of carryIds) {
             const localT = localCache.find((t) => t.id === id)
             if (localT) byId.set(id, localT)
           }
@@ -157,19 +165,25 @@ export function useTrips() {
     if (!isWorkerConfigured()) {
       return { ok: true, synced: false, reason: 'unconfigured' }
     }
-    // DRAFT GATE: a manual-add draft is the author's private work-in-progress —
-    // it must NOT reach the shared worker (and the rest of the family) until it
-    // is published. It lives in the local cache (written above) so the author
-    // still has it; publishing flips draft:false and re-saves through this same
-    // path, which then pushes. Also clear any stale unsynced flag so a trip that
-    // was un-published back to draft stops being retried by the resync loop.
+    // DRAFT GATE: a draft is the author's private work-in-progress — the rest of
+    // the family must NOT see it until it's published. But "set aside as a draft"
+    // must NEVER destroy the trip (the bug that ate the Vermont trip: this branch
+    // used to call deleteTrip, a SOFT-DELETE on the server, and the trip vanished
+    // with no way back). Instead we PUSH the draft: it carries `draft:true` in its
+    // data_json, so the worker's getTrips read-filter (`t.draft !== true`) keeps it
+    // out of every other device's pull and away from Claude — yet the row survives,
+    // recoverable on any device (publish re-pushes draft:false, the same row). The
+    // local cache (written above) keeps it instant; the push is best-effort so an
+    // offline draft still saves locally and the resync loop is told to leave it be.
     if (trip.draft) {
+      // Optimistically clear the queue (a draft isn't "owed to the family"), but
+      // if the push fails — offline, e.g. creating a trip at a cabin with no
+      // signal — queue it so resync re-pushes the recovery row when signal
+      // returns. The worker hides draft:true from every pull and from Claude, so
+      // re-pushing never leaks it; losing the trip is the failure we're fixing,
+      // and the local copy is never dropped (clobber guard).
       markSynced(trip.id)
-      // A trip flipped back to draft (un-published) must be PULLED BACK from the
-      // worker, or the family keeps seeing the stale published copy. Best-effort,
-      // worker-only (the local cache above keeps the draft); idempotent for a
-      // never-published draft (the row simply isn't there to delete).
-      deleteTrip(trip.id).catch(() => {})
+      pushTrip(trip).catch(() => markUnsynced(trip.id, getActiveTraveler()))
       return { ok: true, synced: false, reason: 'draft' }
     }
     try {
@@ -199,14 +213,16 @@ export function useTrips() {
     let resynced = 0
     for (const { id, author } of entries) {
       const t = cache.find((x) => x.id === id)
-      if (!t || t.masked || t.draft) {
-        // Trip gone locally, a masked projection that must never be pushed, or
-        // a draft that's the author's private work-in-progress (don't leak it to
-        // the family until it's published) — either way it's not ours to sync.
-        // Drop it from the queue.
+      if (!t || t.masked) {
+        // Trip gone locally, or a masked projection that must never be pushed —
+        // either way it's not ours to sync. Drop it from the queue.
         markSynced(id)
         continue
       }
+      // A draft re-pushes fine: it carries draft:true, which the worker's getTrips
+      // read-filter hides from every other device and from Claude, so syncing the
+      // recovery row never leaks the author's private work-in-progress. This is the
+      // recovery net for a draft created offline (a cabin with no signal).
       try {
         // Push AS the editor who made the change (captured at mark time), not
         // whoever is active now — so the worker's per-writer masking/clobber

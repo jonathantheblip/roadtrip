@@ -330,12 +330,16 @@ export default function App() {
   // active-trip pick / themed views. Author + non-targeted + revealed see the
   // real trip. The worker enforces the same on the sync read (the boundary).
   const visibleTrips = maskTripsForViewer(allTrips.filter((t) => !t.draft), traveler)
-  // The author's own unpublished drafts. Drafts are local-only (never synced —
-  // see the draft gate in useTrips), so every draft on this device belongs to
-  // the person at the keyboard; there is nothing to mask. We surface these on
-  // the index (in a clearly-labelled "Drafts" section) so a freshly-created
-  // draft doesn't vanish with no way back — the author can reopen, finish, or
-  // delete it without first reaching Settings (which the cold-start index made
+  // The author's own unpublished drafts. A draft IS pushed to the worker now (so
+  // "set aside as a draft" can never destroy it — the bug that ate Vermont), but
+  // the worker's getTrips read-filter hides every `draft:true` trip from the
+  // family's pull, so a draft never reaches another person's device or Claude. In
+  // practice that means drafts are still per-author here (only the device that
+  // created one sees it, kept alive by the refresh draft-preservation guard), with
+  // the row surviving server-side for recovery — nothing to mask. We surface these
+  // on the index (in a clearly-labelled "Drafts" section) so a freshly-created
+  // draft doesn't vanish with no way back — the author can reopen, finish, restore,
+  // or delete it without first reaching Settings (which the cold-start index made
   // unreachable). This is deliberately NOT folded into visibleTrips: drafts stay
   // out of the trip switcher, the cold-start active-trip pick, and the themed
   // views, exactly as before.
@@ -519,8 +523,20 @@ export default function App() {
   // list; cold-start default only ever picks from the visible (non-draft)
   // set so a draft can never become the landing trip.
   const activeTrip = pickActiveTrip(visibleTrips)
+  // SILENT-AUTO-SWITCH GUARD: `trip` is recomputed on EVERY render, and the
+  // active-trip fallback fires whenever `tripId` is null. During the New-trip
+  // flow `tripId` IS null (NewTrip holds the new id locally until submit), so a
+  // background re-render — the foreground-return sync after switching to another
+  // app, a clock tick — would silently re-point the surface at the auto-picked
+  // active trip, yanking the user off their in-progress new trip (this is exactly
+  // the bug: compose a trip → check Airbnb → return → "it switched me to Vermont").
+  // The `new` view is self-contained (it never needs `trip`), so suppress the
+  // fallback there. `edit` always has `tripId` set by its opener, so it's
+  // unaffected; every passive landing view keeps the fallback unchanged.
   const trip =
-    (tripId && allTrips.find((t) => t.id === tripId)) || activeTrip
+    view.name === 'new'
+      ? null
+      : (tripId && allTrips.find((t) => t.id === tripId)) || activeTrip
 
   // Cold-load override: when the URL ?trip= param points at a trip whose
   // window doesn't contain today (typical case: PWA was installed when
@@ -544,6 +560,12 @@ export default function App() {
     // Magic-link setup (013) is a boot-routed, trip-independent action — the
     // active-trip cold-load must not yank it to the trip list.
     if (view.name === 'enroll') return
+    // Composing/editing a trip is a deliberate view the user navigated to — the
+    // active-trip override must never bounce them off it (the silent-auto-switch
+    // guard's twin: that one covers re-renders, this covers a cold launch that
+    // lands directly in create/edit, e.g. a saved ?view= or a draft deep link).
+    if (view.name === 'new') return
+    if (view.name === 'edit') return
 
     const today = todayIso()
     const active = pickActiveTrip(visibleTrips, today)
@@ -955,9 +977,10 @@ export default function App() {
   // the local cache synchronously (the trip is saved on this device the moment
   // it returns) and only then best-effort mirrors to the worker; a failed
   // mirror is queued and auto-retried (lib/tripSyncQueue). A new trip is always
-  // a draft (NewTrip sets draft:true), so it never even attempts the worker
-  // push — but even for a non-draft, a sync blip must NOT strand the author on
-  // the form: the trip is saved locally, so we go straight into the editor and
+  // a draft (NewTrip sets draft:true); a draft IS pushed now — carrying
+  // draft:true, which the worker hides from the family and Claude — so "set
+  // aside as a draft" can never destroy it, but the push is best-effort. A sync
+  // blip must NOT strand the author on the form: the trip is saved locally, so we go straight into the editor and
   // let the sync queue catch up. We only stay put (returning a non-ok result so
   // NewTrip shows its inline error) if upsertTrip itself rejected — i.e. the
   // LOCAL write failed, which is the one case where there's nothing to open.
@@ -1446,6 +1469,15 @@ export default function App() {
             onNewTrip={openNewTrip}
             onEditDraft={openEditor}
             onDeleteDraft={(id) => tripsApi.removeTrip(id)}
+            onRestoreDraft={(id) => {
+              // Bring a complete draft back into the trip list: flip draft:false and
+              // re-save (pushes to the family). Only offered for publishable drafts
+              // (the index gates the button on isTripPublishable), so this never
+              // ships a sparse trip. The Vermont-style "I accidentally drafted a
+              // finished trip" recovery, one tap.
+              const d = ownDrafts.find((t) => t.id === id)
+              if (d) tripsApi.upsertTrip({ ...d, draft: false })
+            }}
             onResurfaceReplay={(tripId, dayN) => openReplay({ tripId, dayN })}
             onOpenSettings={openSettings}
           />
@@ -1459,6 +1491,7 @@ export default function App() {
             tripsApi={tripsApi}
             onBack={openIndex}
             onOpenTrip={openTrip}
+            onDiscard={(id) => tripsApi.removeTrip(id)}
           />
         )}
         {view.name === 'trip' && trip && !trip.draft && renderTripView()}

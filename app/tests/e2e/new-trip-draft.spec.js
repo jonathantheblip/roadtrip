@@ -2,11 +2,17 @@ import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { resolvePersona } from './_fixtures/persona.js'
 
-// Manual-add (NewTrip) draft flow — the B-create-sync-nav audit fixes:
-//   • DRAFT GATE: a manual-add draft is NOT pushed to the shared worker
-//     (POST /trips) until it's published — it stays local-only.
+// Manual-add (NewTrip) draft flow — the B-create-sync-nav audit fixes, plus the
+// 2026-06-23 draft-durability repair:
+//   • DRAFT GATE (REPAIRED): a draft IS pushed to the worker now (carrying
+//     draft:true), so "set aside as a draft" can NEVER destroy it — the bug that
+//     ate the Vermont trip (the gate used to soft-DELETE on the server). The
+//     worker's getTrips read-filter (`t.draft !== true`) keeps every draft out of
+//     the family's pull, so a pushed draft still never reaches another device or
+//     Claude. (Previously the gate skipped the push entirely AND deleted; both
+//     were wrong.)
 //   • REACHABILITY: a freshly-created draft surfaces in the index "Drafts"
-//     section, where the author can reopen (Edit) or delete it.
+//     section, where the author can reopen (Edit), restore, or delete it.
 //   • STRAND-ON-FAILURE: navigation into the editor happens on the local
 //     write, so a sync blip can't strand the author on the form.
 //   • COLD-START NAV: the persona Switcher + a Settings affordance render
@@ -14,16 +20,19 @@ import { resolvePersona } from './_fixtures/persona.js'
 
 const PERSONA = resolvePersona('jonathan')
 
-// Count POST /trips calls so we can assert a draft never reaches the worker.
-// Installed BEFORE seedTripIntoCache's catch-all so this more-specific route
-// wins (the catch-all 200s GET /trips for the cold-load pull).
+// Capture POST /trips calls so we can assert WHAT reaches the worker. A draft is
+// now pushed (carrying draft:true) so it can't be lost — we assert that, and that
+// the worker would hide it (the read-filter is unit-tested worker-side). Installed
+// BEFORE seedTripIntoCache's catch-all so this more-specific route wins (the
+// catch-all 200s GET /trips for the cold-load pull).
 async function countTripPosts(page) {
-  const state = { posts: 0 }
+  const state = { posts: 0, bodies: [] }
   await page.route(
     /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/trips$/,
     async (route) => {
       if (route.request().method() === 'POST') {
         state.posts += 1
+        try { state.bodies.push(JSON.parse(route.request().postData() || '{}')) } catch { /* ignore */ }
         await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' })
         return
       }
@@ -70,9 +79,12 @@ function readCache(page) {
 }
 
 test.describe('NewTrip — manual-add draft', () => {
-  test('a draft is saved locally but NOT pushed to the worker; lands in the editor', async ({ page }) => {
-    const posts = await countTripPosts(page)
+  test('a draft is saved locally AND pushed (carrying draft:true) so it can never be lost; lands in the editor', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
+    // Register the POST-capturing route AFTER the catch-all so it wins for POST
+    // /trips (Playwright matches most-recently-added first). The catch-all still
+    // serves GET /trips for the cold-load pull via this route's GET branch.
+    const posts = await countTripPosts(page)
     await page.goto(`/?person=${PERSONA}&nosw=1`)
 
     await gotoIndex(page)
@@ -91,10 +103,14 @@ test.describe('NewTrip — manual-add draft', () => {
     expect(draft.shape).toBe('stay')
     expect(draft.endCity).toBe('')
 
-    // ...and was NEVER POSTed to the shared worker (the draft gate). Give the
-    // best-effort sync a beat to (not) fire.
-    await page.waitForTimeout(300)
-    expect(posts.posts).toBe(0)
+    // ...and WAS pushed to the worker, carrying draft:true (the durability repair:
+    // a draft must survive on the server so it can never be destroyed — the worker
+    // hides it from the family via its getTrips read-filter). Give the best-effort
+    // push a beat to fire.
+    await expect.poll(() => posts.posts, { timeout: 4000 }).toBeGreaterThan(0)
+    const pushedDraft = posts.bodies.find((b) => b?.title === 'Maine Cabin Weekend')
+    expect(pushedDraft, 'the draft was POSTed').toBeTruthy()
+    expect(pushedDraft.draft, 'the pushed draft carries draft:true so the worker hides it').toBe(true)
   })
 
   test('place-first: a stay carries its place + geocoded coords and reads as a stay', async ({ page }) => {

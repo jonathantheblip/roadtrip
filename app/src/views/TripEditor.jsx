@@ -13,6 +13,8 @@ import { saveAsset, makeAssetKey } from '../lib/memAssets'
 import { saveMemory, listMemoriesForStop } from '../lib/memoryStore'
 import { VoiceRecorder } from '../components/VoiceRecorder'
 import { newTripId } from '../utils/ids'
+import { tripCompleteness } from '../lib/tripComplete'
+import { isStayTrip } from '../lib/tripShape'
 
 // Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
 // pulled in when a trip actually has a located lodging (Phase 2).
@@ -51,41 +53,11 @@ function humanDate(iso) {
   })
 }
 
-// What the themed views need before a trip can be published.
-//
-// Deliberately NOT road-trip-shaped: most trips aren't road trips. A
-// trip does NOT need stops on every day (or any stops at all) or an
-// "end city" — a cabin weekend with no itemized plan is a valid,
-// publishable trip. The bar is "renders at parity, not sparse/broken,"
-// not "looks like an itemized drive." We only gate on what the renderer
-// genuinely needs, plus the change order's explicit anti-sparse trio
-// for stops that DO exist (no empty pitch, no missing person tags, must
-// be named). Optional logistics (time, address) never block publish —
-// the renderer already guards their absence.
-function completeness(trip) {
-  const missing = []
-  if (!trip.title?.trim()) missing.push('Title')
-  if (!trip.dateRangeStart || !trip.dateRangeEnd) missing.push('Start & end dates')
-  if (!trip.overview?.trim()) missing.push('Summary')
-  const days = trip.days || []
-  if (days.length === 0) missing.push('At least one day')
-  days.forEach((d, i) => {
-    const n = i + 1
-    if (!d.isoDate) missing.push(`Day ${n}: date`)
-    if (!d.title?.trim()) missing.push(`Day ${n}: label`)
-    // No "at least one stop" — a day with nothing itemized is fine.
-    // Only stops that exist must not be sparse.
-    ;(d.stops || []).forEach((s, j) => {
-      const sn = `Day ${n} · stop ${j + 1}`
-      if (!s.name?.trim()) missing.push(`${sn}: name`)
-      if (!s.note?.trim()) missing.push(`${sn}: the pitch`)
-      if (!s.for || s.for.length === 0) missing.push(`${sn}: who it's for`)
-    })
-  })
-  return { ok: missing.length === 0, missing }
-}
+// The publish gate now lives in lib/tripComplete (tripCompleteness) so the
+// Drafts list's one-tap "Restore" and this editor agree on "ready to publish".
+const completeness = tripCompleteness
 
-export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, onOpenTrip }) {
+export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, onOpenTrip, onDiscard }) {
   const [trip, setTrip] = useState(() => clone(incoming))
   const tripRef = useRef(trip)
   tripRef.current = trip
@@ -93,8 +65,12 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   const [saveState, setSaveState] = useState('idle') // idle|saving|saved|error
   const [saveErr, setSaveErr] = useState('')
   const [conflict, setConflict] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const lastPushedJson = useRef(JSON.stringify(incoming))
   const timerRef = useRef(null)
+  // When the user discards a draft, the unmount autosave below MUST NOT fire — it
+  // would re-insert the very trip we just removed. This flag short-circuits it.
+  const discardedRef = useRef(false)
 
   // Reload working copy if the editor is pointed at a different trip.
   useEffect(() => {
@@ -142,9 +118,11 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   }, [flush])
 
   // Flush any pending edit on unmount so leaving the editor never drops
-  // the last keystroke.
+  // the last keystroke. Skipped entirely after a discard — re-saving there
+  // would resurrect the trip the user just deleted.
   useEffect(() => {
     return () => {
+      if (discardedRef.current) return
       if (timerRef.current) {
         clearTimeout(timerRef.current)
         const snap = clone(tripRef.current)
@@ -167,6 +145,12 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   }, [scheduleSave])
 
   const comp = useMemo(() => completeness(trip), [trip])
+  // SHAPE-AWARE EDITOR (FAMILY_TRIPS_VISION): a stay sheds the road-trip fields —
+  // start/end city and the per-day drive plan — so the editor stops asking a cabin
+  // weekend road-trip questions. The author can still flip the shape (the toggle in
+  // the header) to bring them back for a real road trip. inferTripShape honors an
+  // explicit trip.shape first, so the toggle is authoritative.
+  const stay = useMemo(() => isStayTrip(trip), [trip])
 
   // ── Day / stop mutations ────────────────────────────────────────────
   function addDay() {
@@ -242,6 +226,19 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   function unpublish() {
     patch({ draft: true })
   }
+  // Discard a draft outright (only offered for drafts — a published trip is the
+  // family's, deleted from the index, not here). Order matters: set the discard
+  // flag and clear the debounce BEFORE removing, so the unmount autosave can't
+  // resurrect it; then remove and leave the editor.
+  async function discardDraft() {
+    discardedRef.current = true
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    if (onDiscard) await onDiscard(trip.id)
+    onBack?.()
+  }
 
   async function onCover(file) {
     if (!file) return
@@ -313,10 +310,19 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
           <DateField label="Start date" required value={trip.dateRangeStart} onChange={(v) => patch({ dateRangeStart: v })} />
           <DateField label="End date" required value={trip.dateRangeEnd} onChange={(v) => patch({ dateRangeEnd: v })} />
         </Row>
-        <Row>
-          <Text label="Start city" value={trip.startCity} onChange={(v) => patch({ startCity: v })} placeholder="Belmont, MA" />
-          <Text label="End city" required value={trip.endCity} onChange={(v) => patch({ endCity: v })} placeholder="Southern Vermont" />
-        </Row>
+        <ShapeToggle
+          stay={stay}
+          onChange={(isStay) => patch({ shape: isStay ? 'stay' : 'route' })}
+        />
+        {/* Road-trip-only: a stay has no start→end cities (they feed the drive-home
+            scaffolding a stay sheds). Shown only for a route — and never with a
+            false required marker (the publish gate doesn't check either city). */}
+        {!stay && (
+          <Row>
+            <Text label="Start city" value={trip.startCity} onChange={(v) => patch({ startCity: v })} placeholder="Belmont, MA" />
+            <Text label="End city" value={trip.endCity} onChange={(v) => patch({ endCity: v })} placeholder="Southern Vermont" />
+          </Row>
+        )}
         <Travelers value={trip.travelers || []} onChange={(v) => patch({ travelers: v })} />
         <CoverPhoto url={trip.coverPhotoUrl} onPick={onCover} />
         <Text label="Shared album URL" value={trip.sharedAlbumURL} onChange={(v) => patch({ sharedAlbumURL: v })} placeholder="https://www.icloud.com/sharedalbum/…" />
@@ -343,6 +349,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
             count={trip.days.length}
             traveler={traveler}
             tripId={trip.id}
+            stay={stay}
             travelers={trip.travelers || TRAVELER_ORDER}
             onUpdate={(p) => updateDay(di, p)}
             onMove={(dir) => moveDay(di, dir)}
@@ -388,6 +395,35 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
                 makes this trip appear alongside the others.
               </p>
             )}
+            {/* Discard — back out of a draft for good. Two-tap confirm so a
+                stray press can't lose work. Only ever shown for a draft. */}
+            <div className="mt-6">
+              {confirmDiscard ? (
+                <div className="flex items-center" style={{ gap: 10, flexWrap: 'wrap' }}>
+                  <span className="f-dm text-xs opacity-70">Discard this draft for good?</span>
+                  <button
+                    type="button"
+                    className="btn-pill"
+                    onClick={discardDraft}
+                    style={{ borderColor: '#C9342A', color: '#C9342A', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Trash2 size={13} /> Discard draft
+                  </button>
+                  <button type="button" className="btn-pill" onClick={() => setConfirmDiscard(false)}>
+                    Keep it
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="link-quiet f-dm text-xs"
+                  onClick={() => setConfirmDiscard(true)}
+                  style={{ background: 'transparent', border: 0, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--muted)' }}
+                >
+                  <Trash2 size={12} /> Discard this draft
+                </button>
+              )}
+            </div>
           </>
         ) : (
           <div className="flex items-center" style={{ gap: 12, flexWrap: 'wrap' }}>
@@ -423,7 +459,7 @@ function SaveBadge({ state, err }) {
 // ── Day block ─────────────────────────────────────────────────────────
 function DayBlock(props) {
   const {
-    day, index, count, traveler, tripId, travelers,
+    day, index, count, traveler, tripId, travelers, stay,
     onUpdate, onMove, onRemove, onAddStop, onUpdateStop, onMoveStop, onRemoveStop,
   } = props
   return (
@@ -443,14 +479,26 @@ function DayBlock(props) {
         />
         <Text label="Label" required value={day.title} onChange={(v) => onUpdate({ title: v })} placeholder="Drive up" />
       </Row>
-      <Row>
-        <Text label="Drive from" value={day.drive?.from} onChange={(v) => onUpdate({ drive: { ...day.drive, from: v } })} placeholder="Belmont, MA" />
-        <Text label="Drive to" value={day.drive?.to} onChange={(v) => onUpdate({ drive: { ...day.drive, to: v } })} placeholder="Southern Vermont" />
-      </Row>
-      <Row>
-        <Text label="Drive time" value={day.drive?.hours} onChange={(v) => onUpdate({ drive: { ...day.drive, hours: v } })} placeholder="3h 30m" />
-        <Text label="Lodging (this day)" value={day.lodging} onChange={(v) => onUpdate({ lodging: v })} placeholder="Cabin name" />
-      </Row>
+      {/* The per-day drive plan is road-trip-only — a stay returns to the same
+          place each night, so it sheds "Drive from / to / time". For a stay, the
+          one still-useful field (where you slept that night) stands alone. */}
+      {stay ? (
+        <Row>
+          <Text label="Staying (this night)" value={day.lodging} onChange={(v) => onUpdate({ lodging: v })} placeholder="The cabin" />
+          <div />
+        </Row>
+      ) : (
+        <>
+          <Row>
+            <Text label="Drive from" value={day.drive?.from} onChange={(v) => onUpdate({ drive: { ...day.drive, from: v } })} placeholder="Belmont, MA" />
+            <Text label="Drive to" value={day.drive?.to} onChange={(v) => onUpdate({ drive: { ...day.drive, to: v } })} placeholder="Southern Vermont" />
+          </Row>
+          <Row>
+            <Text label="Drive time" value={day.drive?.hours} onChange={(v) => onUpdate({ drive: { ...day.drive, hours: v } })} placeholder="3h 30m" />
+            <Text label="Lodging (this day)" value={day.lodging} onChange={(v) => onUpdate({ lodging: v })} placeholder="Cabin name" />
+          </Row>
+        </>
+      )}
 
       <div style={{ marginTop: 12, borderTop: '1px dashed var(--border)', paddingTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
@@ -554,7 +602,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
       </div>
       <Row>
         <Text label="Name" required value={stop.name} onChange={(v) => onUpdate({ name: v })} placeholder="Eric Carle Museum" />
-        <Text label="Time / window" required value={stop.time} onChange={(v) => onUpdate({ time: v })} placeholder="11:00 AM" />
+        <Text label="Time / window" value={stop.time} onChange={(v) => onUpdate({ time: v })} placeholder="11:00 AM" />
       </Row>
       <Row>
         <Select label="Kind" value={stop.kind} options={STOP_KINDS} onChange={(v) => onUpdate({ kind: v })} />
@@ -566,7 +614,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
       </Row>
       <Travelers compact label="Who it's for" value={stop.for || []} onChange={(v) => onUpdate({ for: v })} pool={travelers} />
       <div>
-        <Text label="Address" required value={stop.address} onChange={(v) => onUpdate({ address: v })} onBlur={onAddressBlur} placeholder="125 W Bay Rd, Amherst, MA" />
+        <Text label="Address" value={stop.address} onChange={(v) => onUpdate({ address: v })} onBlur={onAddressBlur} placeholder="125 W Bay Rd, Amherst, MA" />
         {geoNote && (
           <p className="f-dm text-[11px] mt-1" style={{ opacity: 0.6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <MapPin size={11} /> {geoNote}
@@ -637,6 +685,32 @@ function Section({ title, action, children }) {
 }
 function Row({ children }) {
   return <div className="grid grid-cols-2 gap-3" style={{ alignItems: 'start' }}>{children}</div>
+}
+// The trip-shape control. A stay (one place you return to) hides the road-trip
+// fields; flipping "we're driving between places" on brings them back. Mirrors the
+// NewTrip toggle so create and edit ask the same question. Writes trip.shape, the
+// top-priority signal inferTripShape reads, so the choice is authoritative.
+function ShapeToggle({ stay, onChange }) {
+  return (
+    <label
+      className="flex items-center justify-between"
+      style={{ gap: 12, cursor: 'pointer' }}
+    >
+      <span className="flex flex-col" style={{ gap: 2 }}>
+        <span className="smallcaps f-dm text-[11px] opacity-70">We’re driving between places</span>
+        {/* full-opacity --muted: a faint/low-opacity caption fails AA on the light
+            persona (axe-gated via photos-base) — see surprises/skin-redesign memory. */}
+        <span className="f-dm text-[11px]" style={{ color: 'var(--muted)' }}>On for a road trip — start/end cities and a per-day drive plan. Off for a stay.</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={!stay}
+        onChange={(e) => onChange(!e.target.checked)}
+        style={{ width: 20, height: 20, flexShrink: 0, accentColor: 'var(--accent, var(--text))' }}
+        aria-label="We’re driving between places (a road trip)"
+      />
+    </label>
+  )
 }
 function Lbl({ label, required }) {
   return (

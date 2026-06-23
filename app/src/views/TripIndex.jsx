@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Plus, Clock, Settings as SettingsIcon, Pencil, Trash2, FileText } from 'lucide-react'
+import { Plus, Clock, Settings as SettingsIcon, Pencil, Trash2, FileText, Eye } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { isTripPublishable } from '../lib/tripComplete'
 import { effectiveStatus } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { thumbUrl } from '../lib/thumbUrl'
@@ -22,7 +23,7 @@ import { AvatarStack } from '../components/Avatar'
 //   • AvatarStack of travelers + "<start> → <end>" route
 //   • live memory count read from listMemoriesForTrip
 
-export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenTrip, onNewTrip, onEditDraft, onDeleteDraft, onResurfaceReplay, onOpenSettings }) {
+export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenTrip, onNewTrip, onEditDraft, onDeleteDraft, onRestoreDraft, onResurfaceReplay, onOpenSettings }) {
   // Which draft is mid-delete (two-tap confirm, mirrors Settings → Drafts).
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   // "Looking back": one resurfaced past moment (a completed-trip day with
@@ -228,6 +229,31 @@ export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenT
                   </Eyebrow>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {isTripPublishable(d) && (
+                    <button
+                      type="button"
+                      onClick={() => onRestoreDraft?.(d.id)}
+                      aria-label={`Restore draft ${d.title || d.id} to the trip list`}
+                      title="Bring this back into the trip list"
+                      style={{
+                        minHeight: 36,
+                        padding: '4px 12px',
+                        borderRadius: 18,
+                        border: '1px solid var(--text)',
+                        background: 'var(--text)',
+                        color: 'var(--bg)',
+                        fontSize: 12,
+                        fontFamily: 'Inter Tight, system-ui, sans-serif',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Eye size={12} /> Restore
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onEditDraft?.(d.id)}
