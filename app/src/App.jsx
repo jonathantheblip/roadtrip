@@ -294,8 +294,16 @@ export default function App() {
   // points scattered across views all open the same surface, and the
   // panel's per-trip context falls out of the existing `trip` resolve.
   const [claudeOpen, setClaudeOpen] = useState(false)
-  function openClaude() { setClaudeOpen(true) }
-  function closeClaude() { setClaudeOpen(false) }
+  // A one-shot seed for the planner: the shape-first front door's "Tell me about
+  // the trip" passes the typed text so it prefills the composer. Every other
+  // opener calls openClaude() with no string (onClick passes an event, hence the
+  // typeof guard) → no seed → the normal chat opens unchanged.
+  const [claudeSeed, setClaudeSeed] = useState(null)
+  function openClaude(seed) {
+    setClaudeSeed(typeof seed === 'string' && seed.trim() ? seed.trim() : null)
+    setClaudeOpen(true)
+  }
+  function closeClaude() { setClaudeOpen(false); setClaudeSeed(null) }
   const tripsApi = useTrips()
   const isIpad = useIsIpad()
   const allTrips = tripsApi.trips
@@ -1707,6 +1715,7 @@ export default function App() {
         // handler); add/move/cancel/multi still require an active trip
         // and the worker only emits those in-trip.
         onCardSave={handleClaudeCardSave}
+        seedMessage={claudeSeed}
       />
 
       {/* Bulk-import file picker — lives in the shell so the ⋯ menu's "Add

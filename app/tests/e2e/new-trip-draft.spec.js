@@ -208,4 +208,23 @@ test.describe('NewTrip — manual-add draft', () => {
     // Settings affordance in the index header.
     await expect(page.getByRole('button', { name: /^Settings$/i })).toBeVisible()
   })
+
+  test('the front-door concierge seeds the planner: typed text prefills the chat composer', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    await gotoIndex(page)
+
+    await page.getByRole('button', { name: /New trip/i }).click()
+    await expect(page.getByRole('heading', { name: /What kind of trip/i })).toBeVisible()
+
+    const desc = 'A long weekend at the cabin, all of us'
+    await page.getByLabel(/Describe the trip and Claude will build it/i).fill(desc)
+    await page.getByRole('button', { name: /Plan with Claude/i }).click()
+
+    // The existing create_trip planner opens straight into a fresh chat with the
+    // composer PREFILLED with the typed text (seedMessage), so the words carry
+    // over instead of opening an empty box. (No worker needed: the seed branch
+    // skips the conversation fetch.)
+    await expect(page.getByLabel(/Message Claude/i)).toHaveValue(desc, { timeout: 7000 })
+  })
 })

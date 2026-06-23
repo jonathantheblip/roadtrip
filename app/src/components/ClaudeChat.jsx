@@ -544,8 +544,8 @@ function ClaudeBubble({ children, streaming = false, cardContext = null }) {
 }
 
 // ─── Composer ─────────────────────────────────────────────────────────
-function ChatComposer({ disabled, onSend, placeholder = 'ask claude…' }) {
-  const [text, setText] = useState('')
+function ChatComposer({ disabled, onSend, placeholder = 'ask claude…', initialText = '' }) {
+  const [text, setText] = useState(initialText)
   const ref = useRef(null)
 
   function submit() {
@@ -786,6 +786,7 @@ export function ClaudeChatPanel({
   tripTitle = null,
   trip = null,
   onCardSave = null,
+  seedMessage = null,
 }) {
   const [phase, setPhase] = useState('loading') // loading | list | chat
   const [pastList, setPastList] = useState([])
@@ -865,6 +866,21 @@ export function ClaudeChatPanel({
       setErrorMsg(null)
       return
     }
+    // Seeded creation (the shape-first front door's "Tell me about the trip"):
+    // skip straight to a fresh chat with the composer prefilled, so the words
+    // carry into the planner instead of opening an empty box / the past list.
+    // Only the front door passes a seed; every other opener passes none, so the
+    // normal load (resume past conversation / fresh) is unchanged.
+    if (seedMessage) {
+      setPastList([])
+      setConversationId(newConversationId())
+      setMessages([])
+      setStreamingText('')
+      setSending(false)
+      setErrorMsg(null)
+      setPhase('chat')
+      return
+    }
     let cancelled = false
     async function init() {
       if (!isClaudeChatConfigured()) {
@@ -900,7 +916,7 @@ export function ClaudeChatPanel({
     return () => {
       cancelled = true
     }
-  }, [open, userId, tripId])
+  }, [open, userId, tripId, seedMessage])
 
   // Auto-scroll the messages container as content lands.
   useEffect(() => {
@@ -1130,6 +1146,8 @@ export function ClaudeChatPanel({
               {errorMsg && <ErrorBubble message={errorMsg} />}
             </div>
             <ChatComposer
+              key={seedMessage || 'blank'}
+              initialText={seedMessage || ''}
               disabled={sending}
               onSend={handleSend}
               placeholder={tripTitle ? `ask about ${tripTitle.toLowerCase()}…` : 'ask claude…'}

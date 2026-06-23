@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Home, Building2, Car, Sun, Globe, Sparkles, ChevronLeft } from 'lucide-react'
 
 // The shape-first front door (new-trip redesign, Phase 1 · increment 2).
@@ -22,6 +23,7 @@ const SHAPES = [
 ]
 
 export function NewTripStart({ onBack, onPickShape, onPlanWithClaude, dark = false }) {
+  const [text, setText] = useState('')
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
       <header
@@ -44,26 +46,35 @@ export function NewTripStart({ onBack, onPickShape, onPlanWithClaude, dark = fal
       </header>
 
       <div className="px-6 py-8" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        {/* LEAD: the concierge — describe it (or drop a booking) and Claude builds it. */}
-        <button
-          type="button"
-          onClick={onPlanWithClaude}
-          aria-label="Plan the trip with Claude — describe it and it builds the trip"
+        {/* LEAD: the concierge — describe the trip and Claude builds it (reuses the
+            existing create_trip planner; the typed text seeds the composer). */}
+        <div
           style={{
-            display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', cursor: 'pointer',
-            padding: '18px 16px', borderRadius: 'var(--radius, 14px)',
-            border: '1px solid var(--accent, var(--text))',
-            background: 'transparent', color: 'inherit', width: '100%',
+            display: 'flex', flexDirection: 'column', gap: 12,
+            padding: 16, borderRadius: 'var(--radius, 14px)', border: '1px solid var(--accent, var(--text))',
           }}
         >
-          <Sparkles size={22} style={{ color: 'var(--accent-text, var(--text))', flexShrink: 0 }} />
-          <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={18} style={{ color: 'var(--accent-text, var(--text))' }} />
             <span className="f-dm" style={{ fontSize: 15, fontWeight: 600 }}>Tell me about the trip</span>
-            <span className="f-dm" style={{ fontSize: 12.5, color: 'var(--muted)' }}>
-              Describe it in a sentence (or paste a booking) and I’ll build it for you.
-            </span>
           </span>
-        </button>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="e.g. “The cabin this weekend, all of us”"
+            className="memory-textarea"
+            style={{ minHeight: 70, padding: 12, fontSize: 15 }}
+            aria-label="Describe the trip and Claude will build it"
+          />
+          <button
+            type="button"
+            onClick={() => onPlanWithClaude?.(text.trim() || undefined)}
+            className="btn-solid"
+            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+          >
+            <Sparkles size={14} /> Plan with Claude
+          </button>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
