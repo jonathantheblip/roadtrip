@@ -56,6 +56,11 @@ async function gotoIndex(page) {
 
 async function fillAndCreateDraft(page, title, opts = {}) {
   await page.getByRole('button', { name: /New trip/i }).click()
+  // Shape-first front door (redesign increment 2): pick the kind of trip, which
+  // opens the manual form preset to that shape. A road trip → driving on + cities;
+  // anything else → a place-first stay.
+  await expect(page.getByRole('heading', { name: /What kind of trip/i })).toBeVisible({ timeout: 7000 })
+  await page.getByRole('button', { name: opts.driving ? /A road trip/i : /A stay/i }).click()
   await expect(page.getByRole('heading', { name: /New Trip/i })).toBeVisible()
   await page.getByPlaceholder('A weekend at the cabin').fill(title)
   // Place-first (the stay spine), shown by default.

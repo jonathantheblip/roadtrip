@@ -30,7 +30,7 @@ import { humanDateRange } from '../lib/createTripCard'
 //  - Success → brief confirmation → straight into the editor.
 //  - Failure → inline error, no navigation, retry is safe (same id).
 //  - Missing required field → inline error, nothing written.
-export function NewTrip({ onBack, onCreate, dark = false }) {
+export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
   // Minted once. Stable for the lifetime of this form — the linchpin of
   // idempotency. Do NOT move this into handleSubmit.
   const idRef = useRef(newTripId())
@@ -49,8 +49,10 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
   const [placeName, setPlaceName] = useState('')
   const [placeAddress, setPlaceAddress] = useState('')
 
-  // Off = a STAY (the frequent case). On = a road trip (start→end city).
-  const [driving, setDriving] = useState(false)
+  // Off = a STAY (the frequent case). On = a road trip (start→end city). The
+  // shape-first front door (NewTripStart) presets this — 'road' opens driving on;
+  // every other shape (stay / city / together) is a place you settle into.
+  const [driving, setDriving] = useState(presetShape === 'road')
   const [startCity, setStartCity] = useState('')
   const [endCity, setEndCity] = useState('')
 
@@ -120,6 +122,21 @@ export function NewTrip({ onBack, onCreate, dark = false }) {
         ? { name: placeName.trim(), address: addr, ...(stayCoords || {}) }
         : {},
       days: [],
+      // The parts model (new-trip redesign). A simple trip is one part; its type
+      // carries the finer shape the picker chose (a city vs a lazy stay) while the
+      // legacy `shape`/`lodging`/`days` above keep every existing surface rendering
+      // unchanged. A bigger composite trip (many parts) comes from the concierge.
+      parts: [
+        {
+          id: `${idRef.current}__p1`,
+          type: presetShape === 'city' ? 'city' : driving ? 'drive' : 'stay',
+          title: trimmedTitle,
+          place: !driving ? { name: placeName.trim(), address: addr, ...(stayCoords || {}) } : null,
+          dateStart: startDate || null,
+          dateEnd: endDate || null,
+          days: [],
+        },
+      ],
     }
 
     let res

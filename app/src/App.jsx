@@ -22,6 +22,7 @@ import { TripIndex } from './views/TripIndex'
 import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
+import { NewTripStart } from './views/NewTripStart'
 import { TripEditor } from './views/TripEditor'
 import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
@@ -534,7 +535,7 @@ export default function App() {
   // fallback there. `edit` always has `tripId` set by its opener, so it's
   // unaffected; every passive landing view keeps the fallback unchanged.
   const trip =
-    view.name === 'new'
+    view.name === 'new' || view.name === 'newform'
       ? null
       : (tripId && allTrips.find((t) => t.id === tripId)) || activeTrip
 
@@ -565,6 +566,7 @@ export default function App() {
     // guard's twin: that one covers re-renders, this covers a cold launch that
     // lands directly in create/edit, e.g. a saved ?view= or a draft deep link).
     if (view.name === 'new') return
+    if (view.name === 'newform') return
     if (view.name === 'edit') return
 
     const today = todayIso()
@@ -1186,7 +1188,7 @@ export default function App() {
       )}
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && view.name !== 'surprises' && !(traveler === 'rafa' && isIpad) && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'newform' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && view.name !== 'surprises' && !(traveler === 'rafa' && isIpad) && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -1482,7 +1484,17 @@ export default function App() {
             onOpenSettings={openSettings}
           />
         )}
-        {view.name === 'new' && <NewTrip onBack={openIndex} onCreate={handleCreateTrip} dark={darkSurface} />}
+        {view.name === 'new' && (
+          <NewTripStart
+            onBack={openIndex}
+            onPickShape={(shape) => setView({ name: 'newform', shape })}
+            onPlanWithClaude={openClaude}
+            dark={darkSurface}
+          />
+        )}
+        {view.name === 'newform' && (
+          <NewTrip onBack={openNewTrip} onCreate={handleCreateTrip} presetShape={view.shape} dark={darkSurface} />
+        )}
         {view.name === 'edit' && trip && (
           <TripEditor
             trip={trip}
@@ -1624,7 +1636,7 @@ export default function App() {
           there's no active trip, so the dock is just the plain pills (ledge
           'none'), never the live ledge. Still hidden on new/edit (the author is
           mid-create) and the immersive replay/map/identity surfaces. */}
-      {view.name !== 'new' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && !showStayTabs && (
+      {view.name !== 'new' && view.name !== 'newform' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && !showStayTabs && (
         <Switcher
           active={traveler}
           onSwitch={handleTravelerSwitch}
