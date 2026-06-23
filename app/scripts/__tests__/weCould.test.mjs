@@ -12,6 +12,7 @@ const {
   applyCuration,
   togglePinned,
   toggleHidden,
+  rankByConditions,
 } = await import('../../src/lib/weCould.js')
 
 const MEAL = WE_COULD_CATEGORIES[0]
@@ -153,4 +154,46 @@ test('toggleHidden un-hides on a second toggle', () => {
   assert.deepEqual(c.hidden, ['x'])
   c = toggleHidden(c, 'x')
   assert.deepEqual(c.hidden, [])
+})
+
+// ── rankByConditions (slice 7) ──────────────────────────────────────────
+const TRAY = [
+  { id: 'e1', cat: 'energy' },
+  { id: 'm1', cat: 'meal' },
+  { id: 'l1', cat: 'look' },
+  { id: 't1', cat: 'treat' },
+]
+
+test('rankByConditions: rain floats sheltered up, outdoor down, with a reason', () => {
+  const { tray, reason } = rankByConditions(TRAY, { weather: { kind: 'rain', tempF: 55, precipProbPct: 80 } })
+  const order = tray.map((c) => c.cat)
+  // sheltered (meal/treat) before exposed (energy/look)
+  assert.ok(order.indexOf('treat') < order.indexOf('energy'))
+  assert.ok(order.indexOf('meal') < order.indexOf('look'))
+  assert.match(reason, /rain/i)
+})
+
+test('rankByConditions: a mild clear day does NOT reorder and shows no banner', () => {
+  const { tray, reason } = rankByConditions(TRAY, { weather: { kind: 'clear', tempF: 70, precipProbPct: 10 } })
+  assert.deepEqual(tray.map((c) => c.id), ['e1', 'm1', 'l1', 't1'])
+  assert.equal(reason, null)
+})
+
+test('rankByConditions: heat floats the cool treat to the top', () => {
+  const { tray, reason } = rankByConditions(TRAY, { weather: { kind: 'clear', tempF: 92 } })
+  assert.equal(tray[0].cat, 'treat')
+  assert.match(reason, /hot/i)
+})
+
+test('rankByConditions: snow reads as cozy-indoor', () => {
+  const { reason } = rankByConditions(TRAY, { weather: { kind: 'snow', tempF: 28 } })
+  assert.match(reason, /snow|cozy|indoor/i)
+})
+
+test('rankByConditions: no weather (null) leaves the tray + no banner', () => {
+  const a = rankByConditions(TRAY, null)
+  assert.deepEqual(a.tray.map((c) => c.id), ['e1', 'm1', 'l1', 't1'])
+  assert.equal(a.reason, null)
+  const b = rankByConditions(TRAY, { weather: null, tide: { state: 'rising' } })
+  assert.equal(b.reason, null)
 })

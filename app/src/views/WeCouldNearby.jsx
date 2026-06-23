@@ -13,7 +13,9 @@ import {
   saveCuration,
   togglePinned,
   toggleHidden,
+  rankByConditions,
 } from '../lib/weCould'
+import { useConditions, tideLine } from '../lib/conditions'
 
 // WeCouldNearby — the never-empty "We could…" tray for a STAY home.
 //
@@ -109,10 +111,15 @@ export function WeCouldNearby({ trip, traveler, onPropose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, trip?.id, coords?.lat, coords?.lng])
 
+  // Real conditions (slice 7): fetch weather/tide for the place, re-rank the tray
+  // by them, and show an honest one-line reason when the order actually changed.
+  const conditions = useConditions(enabled ? coords : null)
+
   if (!enabled) return null
 
   const placeName = stayLabel(trip)
-  const view = applyCuration(tray, curation) // all (curation applied)
+  const { tray: rankedTray, reason: conditionReason } = rankByConditions(tray, conditions)
+  const view = applyCuration(rankedTray, curation) // condition order → pins/hides applied
   const shown = view.filter((c) => !catFilter || c.cat === catFilter) // + category filter
 
   // Compute next from the current state, then set + persist — keeping the
@@ -131,7 +138,9 @@ export function WeCouldNearby({ trip, traveler, onPropose }) {
 
   return (
     <section data-testid="wecould-nearby" style={{ padding: '4px 14px 4px' }}>
-      <ConditionsStrip placeName={placeName} coords={coords} />
+      <ConditionsStrip placeName={placeName} coords={coords} conditions={conditions} />
+
+      {status === 'ready' && !catFilter && conditionReason && <ConditionReason text={conditionReason} />}
 
       {status === 'ready' && view.length > 0 && (
         <CategoryChips value={catFilter} onChange={setCatFilter} />
@@ -182,16 +191,26 @@ export function WeCouldNearby({ trip, traveler, onPropose }) {
   )
 }
 
-// The conditions strip — the place, a live clock, and the day's light
-// (golden hour + sunset, a free on-device astronomy calc; no weather API).
-// Per the design, this leads the "We could…" tab. Honest: it shows only what
-// it can actually compute — no fabricated temperature/weather.
-function ConditionsStrip({ placeName, coords }) {
+// The conditions strip — the place, a live clock, the day's light (golden hour +
+// sunset, a free on-device calc), and — when the worker has it — REAL weather and
+// tide (slice 7). Honest: weather/tide show only when actually present; on a
+// landlocked or offline place they simply aren't there (no fabricated values).
+function ConditionsStrip({ placeName, coords, conditions }) {
   const sun = useMemo(
     () => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null),
     [coords?.lat, coords?.lng],
   )
   const fmt = (d) => (d ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null)
+  const w = conditions?.weather
+  const tide = tideLine(conditions?.tide)
+  const META = {
+    fontFamily: 'JetBrains Mono, monospace',
+    fontSize: 9,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: 'var(--text)',
+    marginTop: 5,
+  }
   return (
     <div
       data-testid="wecould-conditions"
@@ -201,22 +220,45 @@ function ConditionsStrip({ placeName, coords }) {
         <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 13, fontStyle: 'italic', color: 'var(--text)' }}>
           {placeName ? `Ideas near ${placeName}` : 'Ideas nearby'}
         </div>
+        {w && (
+          <div data-testid="wecould-weather" style={{ ...META, marginTop: 6, fontSize: 11, letterSpacing: '0.04em', textTransform: 'none' }}>
+            <span aria-hidden="true">{w.icon}</span> {w.tempF}°F · {w.label}
+            {Number.isFinite(w.precipProbPct) && w.precipProbPct >= 30 ? ` · ${w.precipProbPct}% rain` : ''}
+          </div>
+        )}
+        {tide && (
+          <div style={{ ...META, marginTop: 3, fontSize: 11, letterSpacing: '0.04em', textTransform: 'none', color: 'var(--muted)' }}>
+            🌊 {tide}
+          </div>
+        )}
         {sun?.sunset && (
-          <div
-            style={{
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 9,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--text)',
-              marginTop: 5,
-            }}
-          >
+          <div style={META}>
             {sun.goldenHour ? `Golden ${fmt(sun.goldenHour)} · ` : ''}Sunset {fmt(sun.sunset)}
           </div>
         )}
       </div>
       <LiveClock />
+    </div>
+  )
+}
+
+// A one-line, plain-language banner explaining a conditions re-rank ("Rain
+// around — indoor ideas moved up"). Only rendered when the order actually moved.
+function ConditionReason({ text }) {
+  return (
+    <div
+      data-testid="wecould-condition-reason"
+      style={{
+        fontSize: 11.5,
+        color: 'var(--muted)',
+        background: 'var(--card, rgba(0,0,0,0.03))',
+        border: '1px solid var(--line, rgba(0,0,0,0.08))',
+        borderRadius: 8,
+        padding: '7px 10px',
+        margin: '0 0 10px',
+      }}
+    >
+      {text}
     </div>
   )
 }

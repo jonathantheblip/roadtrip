@@ -31,6 +31,7 @@ import { isShareable, newShareToken, shareViewFromMemory, findStopName } from '.
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
 import { listProposals, createProposal, voteProposal, decideProposal, isNoTable } from './proposals.js'
 import { listPresence, upsertPresence, runPresencePurge } from './presence.js'
+import { forecastUrl, marineUrl, buildConditions } from './conditions.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -229,6 +230,11 @@ export default {
       }
       if (path === '/places/nearby' && request.method === 'POST') {
         return await postPlacesNearby(env, request, cors)
+      }
+      // Real conditions (slice 7): proxy Open-Meteo (no key) for weather + tide so
+      // the "We could…" tray can re-rank. Cached + degrades to nulls, never 500s.
+      if (path === '/conditions' && request.method === 'POST') {
+        return await postConditions(env, request, ctx, cors)
       }
       if (path === '/resolve' && request.method === 'GET') {
         return await getResolve(env, url, cors)
@@ -1845,6 +1851,48 @@ async function postRouteDistance(env, request, ctx, cors) {
   })
   ctx?.waitUntil?.(cache.put(cacheKey, cacheable).catch((err) => console.error('route cache put failed', err?.stack || err)))
   return json({ ...payload, cached: false }, 200, cors)
+}
+
+// POST /conditions { lat, lng } → { weather, tide, cached }. Proxies Open-Meteo
+// (forecast + marine) so the "We could…" tray re-ranks by real conditions. No API
+// key needed. Weather/tide each degrade to null independently (a failed or inland
+// fetch never 500s — the client just doesn't re-rank / shows no tide). Cached ~30
+// min by ~1km-rounded coords so a tab open isn't a fresh upstream pair each time.
+async function postConditions(env, request, ctx, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON' }, 400, cors)
+  }
+  const lat = Number(body?.lat)
+  const lng = Number(body?.lng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return json({ error: 'lat/lng required' }, 400, cors)
+  }
+  const FRESH = { ...cors, 'Cache-Control': 'public, max-age=1800' }
+  const key = `${Math.round(lat * 100) / 100},${Math.round(lng * 100) / 100}`
+  const cacheKey = new Request(`https://conditions-cache.internal/v1/${key}`)
+  const cache = caches.default
+  const hit = await cache.match(cacheKey).catch(() => null)
+  if (hit) {
+    const data = await hit.json().catch(() => null)
+    if (data) return json({ ...data, cached: true }, 200, FRESH)
+  }
+
+  const grab = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+  const [fc, mar] = await Promise.all([grab(forecastUrl(lat, lng)), grab(marineUrl(lat, lng))])
+  const payload = buildConditions(fc, mar, Date.now())
+
+  // Only memoize a payload that actually carries weather — don't cache a transient
+  // upstream outage for 30 min.
+  if (payload.weather) {
+    const cacheable = new Response(JSON.stringify(payload), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=1800' },
+    })
+    ctx?.waitUntil?.(cache.put(cacheKey, cacheable).catch((e) => console.error('conditions cache put failed', e?.stack || e)))
+  }
+  return json({ ...payload, cached: false }, 200, FRESH)
 }
 
 // POST /drive-eta { origin:{lat,lng}, destination:{lat,lng} } →

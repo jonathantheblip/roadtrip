@@ -85,6 +85,52 @@ export function buildTray(categoryResults) {
   return out
 }
 
+// ── Real-conditions re-rank (slice 7) ────────────────────────────────────
+// Each pantry category has an EXPOSURE — how much being outdoors/uncovered
+// matters. energy (parks/playgrounds) is most exposed; look (scenic spots) is
+// exposed; meal/treat (restaurants/cafes) are shelters (negative). Conditions
+// nudge each card's score and a STABLE sort gently reorders the tray — equal
+// nudges keep their interleave order, so this is a nudge, never a shuffle.
+export const CATEGORY_EXPOSURE = { energy: 1, look: 0.6, meal: -0.4, treat: -0.6 }
+
+// rankByConditions(tray, conditions) → { tray, reason }
+// `reason` is a one-line plain-language banner, or null when nothing moved (a
+// mild day, or a re-rank that didn't actually change the order — no false banner).
+export function rankByConditions(tray, conditions) {
+  const list = Array.isArray(tray) ? tray : []
+  const w = conditions?.weather
+  if (list.length === 0 || !w) return { tray: list, reason: null }
+
+  const wet = w.kind === 'rain' || w.kind === 'storm' || w.kind === 'snow'
+    || (Number.isFinite(w.precipProbPct) && w.precipProbPct >= 60)
+  const cold = Number.isFinite(w.tempF) && w.tempF <= 40
+  const hot = Number.isFinite(w.tempF) && w.tempF >= 85
+
+  const delta = (card) => {
+    const exp = CATEGORY_EXPOSURE[card?.cat] ?? 0
+    let d = 0
+    if (wet) d -= exp            // exposed down, sheltered up
+    if (cold) d -= exp * 0.8
+    if (hot && card?.cat === 'treat') d += 0.8  // a cool treat floats up in the heat
+    if (hot && card?.cat === 'energy') d -= 0.4 // strenuous outdoor down midday
+    return d
+  }
+
+  const indexed = list.map((card, i) => ({ card, i, d: delta(card) }))
+  indexed.sort((a, b) => b.d - a.d || a.i - b.i) // stable: ties keep original order
+  const reordered = indexed.map((x) => x.card)
+  const moved = reordered.some((c, i) => c.id !== list[i].id)
+
+  let reason = null
+  if (moved) {
+    if (w.kind === 'snow') reason = 'Snow around — cozy indoor ideas first.'
+    else if (wet) reason = 'Rain around — indoor ideas moved up.'
+    else if (cold) reason = 'Chilly out — warm, indoor ideas first.'
+    else if (hot) reason = 'Hot out — cool treats & shade up top.'
+  }
+  return { tray: reordered, reason }
+}
+
 // A rough, honestly-labelled travel estimate from the straight-line
 // distance. NOT a routed ETA — under ~1.2km we call it a short walk
 // (~80 m/min), otherwise a local drive (~600 m/min ≈ 36 km/h with stops).
