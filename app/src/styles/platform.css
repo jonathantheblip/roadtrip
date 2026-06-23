@@ -549,3 +549,9 @@ body[data-theme='rafa'][data-stay-tabs] { padding-bottom: calc(58px + max(10px, 
 @media (prefers-reduced-motion: reduce) {
   [data-testid='rafa-whos-around'] * { animation: none !important; }
 }
+
+/* "Wave hi!" receive cue (016) — a gentle pop-in for the toast. */
+@keyframes wavePop { from { transform: translateX(-50%) scale(0.7); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-testid='wave-cue'], [data-testid='wave-cue'] * { animation: none !important; }
+}

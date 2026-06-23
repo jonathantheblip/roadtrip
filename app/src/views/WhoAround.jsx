@@ -21,7 +21,7 @@ function whereLabel(bucket, place) {
   return null
 }
 
-export function WhoAround({ people = [], me, place, now = Date.now(), onSetStatus }) {
+export function WhoAround({ people = [], me, place, now = Date.now(), onSetStatus, onWave }) {
   const myRow = people.find((p) => p.traveler === me)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -116,6 +116,7 @@ export function WhoAround({ people = [], me, place, now = Date.now(), onSetStatu
                 {myRow?.note ? 'Edit' : 'Set status'}
               </button>
             )}
+            {!isMe && onWave && <WaveBtn name={t.name} onWave={() => onWave(id)} />}
           </div>
         )
       })}
@@ -178,4 +179,21 @@ const PILL_BTN = {
   cursor: 'pointer',
   padding: '7px 12px',
   flexShrink: 0,
+}
+
+// A small per-row 👋 — wave at this family member (bidirectional). Local "sent"
+// ack (👋 → 💛); the worker delivers it to their device (lib/waves).
+function WaveBtn({ name, onWave }) {
+  const [sent, setSent] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={() => { setSent(true); onWave() }}
+      disabled={sent}
+      aria-label={sent ? `Waved at ${name}` : `Wave at ${name}`}
+      style={{ background: 'none', border: 'none', cursor: sent ? 'default' : 'pointer', fontSize: 18, padding: '2px 6px', flexShrink: 0, opacity: sent ? 0.75 : 1 }}
+    >
+      {sent ? '💛' : '👋'}
+    </button>
+  )
 }

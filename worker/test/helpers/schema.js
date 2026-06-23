@@ -25,6 +25,7 @@ import shareLayoutMigration from '../../migrations/012_share_layout.sql?raw'
 import authMigration from '../../migrations/013_auth.sql?raw'
 import proposalsMigration from '../../migrations/014_proposals.sql?raw'
 import presenceMigration from '../../migrations/015_presence.sql?raw'
+import wavesMigration from '../../migrations/016_waves.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -89,6 +90,8 @@ const STATEMENTS = [
   ...splitStatements(proposalsMigration),
   // 015 (presence) — CREATE TABLE IF NOT EXISTS, idempotent.
   ...splitStatements(presenceMigration),
+  // 016 (waves) — CREATE TABLE/INDEX IF NOT EXISTS, idempotent.
+  ...splitStatements(wavesMigration),
 ]
 
 export async function applySchema(db) {

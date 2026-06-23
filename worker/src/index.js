@@ -32,6 +32,7 @@ import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSwee
 import { listProposals, createProposal, voteProposal, decideProposal, isNoTable } from './proposals.js'
 import { listPresence, upsertPresence, runPresencePurge } from './presence.js'
 import { forecastUrl, marineUrl, buildConditions } from './conditions.js'
+import { createWave, listUnseenWaves, markWavesSeen, runWavePurge } from './waves.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -199,6 +200,19 @@ export default {
         return await postPresence(env, traveler, request, cors)
       }
 
+      // Cross-device "Wave hi!" (016): send a wave (sender = the session, never the
+      // body), list the unseen waves addressed to ME, mark them seen. Family-internal,
+      // no location/content — never enters Claude/weave.
+      if (path === '/waves' && request.method === 'GET') {
+        return await getWaves(env, traveler, url, cors)
+      }
+      if (path === '/waves' && request.method === 'POST') {
+        return await postWave(env, traveler, request, cors)
+      }
+      if (path === '/waves/seen' && request.method === 'POST') {
+        return await postWavesSeen(env, traveler, request, cors)
+      }
+
       // Magic-link auth (013): mint enrollment links + revoke sessions. Both
       // are below the gate — the caller is an already-enrolled (session) traveler.
       // /auth/redeem is the only PUBLIC one (how a fresh device bootstraps).
@@ -352,6 +366,13 @@ export default {
       runPresencePurge(env.DB, { todayIso: todayIsoUTC(Date.now()), now: Date.now() }).then(
         (r) => console.log('[presence-purge]', JSON.stringify(r)),
         (e) => console.error('[presence-purge] failed', e?.stack || e)
+      )
+    )
+    // Wave hi! (016): drop seen waves + stale unseen so the table stays small.
+    ctx.waitUntil(
+      runWavePurge(env.DB, { now: Date.now() }).then(
+        (r) => console.log('[wave-purge]', JSON.stringify(r)),
+        (e) => console.error('[wave-purge] failed', e?.stack || e)
       )
     )
   },
@@ -687,6 +708,49 @@ async function postPresence(env, traveler, request, cors) {
     return json(res, 200, cors)
   } catch (err) {
     if (isNoTable(err)) return json({ error: 'presence not yet enabled' }, 503, cors)
+    throw err
+  }
+}
+
+// ─── Cross-device "Wave hi!" (016) ──────────────────────────────────────
+// Thin wrappers over waves.js. Sender is always `traveler` (the session), never
+// the body; a viewer only ever lists / dismisses waves addressed to THEM. A
+// missing table (pre-migration) degrades: GET → [], writes → 503.
+
+async function getWaves(env, traveler, url, cors) {
+  const out = await listUnseenWaves(env.DB, url.searchParams.get('tripId') || '', traveler)
+  return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+async function postWave(env, traveler, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  try {
+    const res = await createWave(env.DB, { id: body?.id, traveler, tripId: body?.tripId, to: body?.to, now: Date.now() })
+    if (res.error) return json(res, 400, cors)
+    return json(res, 200, cors)
+  } catch (err) {
+    if (isNoTable(err)) return json({ error: 'waves not yet enabled' }, 503, cors)
+    throw err
+  }
+}
+
+async function postWavesSeen(env, traveler, request, cors) {
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400, cors)
+  }
+  try {
+    const res = await markWavesSeen(env.DB, { traveler, ids: body?.ids, now: Date.now() })
+    return json(res, 200, cors)
+  } catch (err) {
+    if (isNoTable(err)) return json({ error: 'waves not yet enabled' }, 503, cors)
     throw err
   }
 }

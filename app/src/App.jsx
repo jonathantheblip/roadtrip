@@ -7,8 +7,10 @@ import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
 import { isStayTrip, stayPlace } from './lib/tripShape'
 import { useGeolocationWhen } from './hooks/useGeolocation'
 import { usePresence } from './lib/presence'
+import { useWaves, sendWave } from './lib/waves'
 import { WhoAround } from './views/WhoAround'
 import { RafaWhosAround } from './views/RafaWhosAround'
+import { WaveCue } from './components/WaveCue'
 import { useNowTick } from './hooks/useNowTick'
 import { useLiveEta } from './hooks/useLiveEta'
 import { JonathanView } from './views/JonathanView'
@@ -682,6 +684,13 @@ export default function App() {
     setMyStatus(txt)
   }
 
+  // Cross-device "Wave hi!" (016): receive waves addressed to me (a friendly pop,
+  // shown once), and a sender used by both the band's per-person 👋 and Rafa's
+  // reveal. Only on a live stay (where presence + the family surfaces live).
+  const waveTripId = stayLive ? tripForView?.id : null
+  const { waves: incomingWaves, markSeen: markWavesSeen } = useWaves(waveTripId, { enabled: stayLive })
+  const onWave = (to) => sendWave(waveTripId, to)
+
   // Family-trips recenter shell: on a STAY the home is the 4-tab "WHAT" bar
   // (We could · Now · Photos · Look back). First cut maps the tabs to the
   // EXISTING surfaces (route trips keep the shipped dock untouched — G5). The
@@ -1056,7 +1065,7 @@ export default function App() {
       // the other three get the standard band.
       whoAround: stayLive ? (
         traveler === 'rafa' ? (
-          <RafaWhosAround people={presence.people} now={now.getTime()} />
+          <RafaWhosAround people={presence.people} now={now.getTime()} onWave={onWave} />
         ) : (
           <WhoAround
             people={presence.people}
@@ -1064,6 +1073,7 @@ export default function App() {
             place={stayPlaceObj}
             now={now.getTime()}
             onSetStatus={setMyPresenceStatus}
+            onWave={onWave}
           />
         )
       ) : null,
@@ -1613,6 +1623,10 @@ export default function App() {
           nowCue={surpriseRevealCue > 0}
         />
       )}
+
+      {/* Cross-device "Wave hi!" (016): a friendly pop when someone waves at me —
+          shown once, any tab, any lens. Only on a live stay. */}
+      {stayLive && <WaveCue waves={incomingWaves} viewer={traveler} onSeen={markWavesSeen} />}
 
       {/* Claude-in-App M1 — floating entry on the trips index.
           Bottom-right, lifted ABOVE the persona dock now that the dock also

@@ -146,7 +146,7 @@ function Scene({ family, onPick }) {
 }
 
 // ── the giant warm reveal when Rafa taps a face ──
-export function Reveal({ person, onClose }) {
+export function Reveal({ person, onClose, onWave }) {
   const [waved, setWaved] = useState(false)
   const { id, view, isMe } = person
   const placeWord = view.zone === 'cabin' ? 'at the special house' : 'out & about'
@@ -179,7 +179,7 @@ export function Reveal({ person, onClose }) {
         {!isMe && (
           <button
             type="button"
-            onClick={() => setWaved(true)}
+            onClick={() => { setWaved(true); onWave?.(id) }}
             disabled={waved}
             style={{ marginTop: 22, width: '100%', border: 'none', cursor: waved ? 'default' : 'pointer', borderRadius: 26, background: waved ? GOOD : ST[1], padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, boxShadow: `0 7px 0 ${shade(waved ? GOOD : ST[1], -45)}`, transition: 'background .2s' }}
           >
@@ -194,7 +194,7 @@ export function Reveal({ person, onClose }) {
 }
 
 // ── the feature: heading + scene + tap-reveal, on real presence data ──
-export function RafaWhosAround({ people = [], now = Date.now() }) {
+export function RafaWhosAround({ people = [], now = Date.now(), onWave }) {
   const [pickId, setPickId] = useState(null)
   const family = presenceFamily(people, now)
   if (family.length === 0) return null // nobody located yet → don't draw an empty scene
@@ -214,7 +214,7 @@ export function RafaWhosAround({ people = [], now = Date.now() }) {
         </div>
       </div>
       <Scene family={family} onPick={setPickId} />
-      {picked && <Reveal person={picked} onClose={() => setPickId(null)} />}
+      {picked && <Reveal person={picked} onClose={() => setPickId(null)} onWave={onWave} />}
     </section>
   )
 }

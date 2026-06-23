@@ -6,6 +6,7 @@ import { flattenPhotoEntries } from '../lib/photoEntries'
 import { RafaSound } from '../lib/rafaSound'
 import { isStayTrip, stayLabel } from '../lib/tripShape'
 import { presenceFamily, Bubble, Reveal } from './RafaWhosAround'
+import { sendWave } from '../lib/waves'
 
 // Stable [0,1) from a traveler id — places an "out & about" family member at a
 // consistent random-ish point along the road so they don't jump on every render.
@@ -407,7 +408,7 @@ export function RafaMap({ trip, traveler = 'rafa', people = [], now, onClose }) 
       })()}
 
       {/* tapping a family bubble → the same warm reveal as the phone diorama */}
-      {familyPick && <Reveal person={familyPick} onClose={() => setFamilyPick(null)} />}
+      {familyPick && <Reveal person={familyPick} onClose={() => setFamilyPick(null)} onWave={(to) => sendWave(trip.id, to)} />}
     </div>
   )
 }
