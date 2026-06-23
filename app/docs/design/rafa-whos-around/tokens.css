@@ -1,0 +1,66 @@
+/* tokens.css — "Where's my family?" (Rafa lens)
+   Exact design tokens lifted from src/ft2/system.jsx (TRAVELERS.rafa.pal).
+   These are the canonical values. Do NOT eyeball from screenshots. */
+
+:root {
+  /* ── Rafa lens palette (warm, dark, candy) ── */
+  --rafa-bg:          #1B1108; /* app background (deep cocoa) */
+  --rafa-bg2:         #28190C; /* recessed / chip background */
+  --rafa-surface:     #33200F; /* cards, the reveal sheet */
+  --rafa-raise:       #41290F; /* raised surface */
+  --rafa-ink:         #FFF3DF; /* primary text (warm cream) */
+  --rafa-muted:       rgba(255,243,223,0.74); /* secondary text */
+  --rafa-faint:       rgba(255,243,223,0.42);
+  --rafa-line:        rgba(255,243,223,0.16); /* hairline / nav top border */
+  --rafa-line-bold:   rgba(255,243,223,0.30);
+  --rafa-accent:      #FFB12E; /* candy amber — primary accent */
+  --rafa-accent-text: #FFC247; /* accent text on dark */
+  --rafa-accent-ink:  #1B1108; /* text/icon ON the accent */
+  --rafa-live:        #FF6B4D; /* "live/now" warm */
+  --rafa-good:        #4CC36E; /* the green "here right now" heartbeat */
+
+  /* sticker palette — playful spot colors (pal.sticker[]) */
+  --rafa-sticker-0:   #FFB12E; /* amber  */
+  --rafa-sticker-1:   #3DA5E0; /* sticker-blue (the wave button) */
+  --rafa-sticker-2:   #4CC36E; /* green  */
+  --rafa-sticker-3:   #FF6B4D; /* coral  */
+  --rafa-sticker-4:   #C77DFF; /* purple */
+
+  /* ── per-person IDENTITY colors (TRAVELERS[id].dot) ──
+     Constant across every lens. Each family bubble = a gradient
+     built from this color: radial(120% 120% at 50% 28%, shade(+30), shade(-22)),
+     drop shadow = shade(-48). See `shade()` note below. */
+  --id-helen:    #2E7D52; /* Mama  — green   (buddy 🌿) */
+  --id-jonathan: #2E6BB8; /* Papa  — blue    (buddy 🧭) */
+  --id-aurelia:  #E8478C; /* Sissy — pink    (buddy 🎞️) */
+  --id-rafa:     #E8552E; /* Rafa  — orange  (buddy 🚛) */
+
+  /* ── type ── */
+  --font-rafa:  "Fredoka", "Inter Tight", system-ui, sans-serif; /* weights 400/500/600/700 */
+  --font-mono:  "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; /* labels only */
+
+  /* ── radii (generous, candy) ── */
+  --r-bubble: 50%;   /* all character bubbles are circles */
+  --r-scene:  30px;  /* the diorama frame */
+  --r-card:   26px;  /* context cards */
+  --r-sheet:  36px;  /* the tap-reveal sheet */
+  --r-chip:   999px; /* zone label + pills */
+
+  /* ── elevation: candy "stacked" shadows (solid offset, no blur) ──
+     bubble:  0 {size*0.1}px 0 shade(idColor,-48)
+     scene:   0 9px 0 shade(accent,-55), inset 0 0 0 4px rgba(255,255,255,0.5)
+     sheet:   0 16px 0 var(--rafa-bg2)
+     button:  0 7px 0 shade(buttonColor,-45)   (the "pressable" candy look) */
+
+  /* ── touch targets ── */
+  --hit-min:        44px;  /* never smaller */
+  --bubble-phone:   62px;  /* scene bubble */
+  --bubble-reveal: 120px;  /* hero bubble in the sheet */
+}
+
+/* shade(hex, pct): add `pct` (can be negative) to each RGB channel, clamp 0–255.
+   Used everywhere to derive bubble gradients + candy shadows from one base color.
+   JS reference in system.jsx:
+     function shade(hex, pct){ const n=parseInt(hex.slice(1),16);
+       let r=(n>>16)+pct, g=((n>>8)&255)+pct, b=(n&255)+pct;
+       r=Math.max(0,Math.min(255,r)); ... return '#'+(...).toString(16); } */
