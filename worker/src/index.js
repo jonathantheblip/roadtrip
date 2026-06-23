@@ -4023,6 +4023,10 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push('- TRANSIT: driving segments worth naming (scenic routes, rest stops)')
     lines.push('')
     lines.push(
+      'BIGGER trips — when the trip has 2+ DISTINCT legs (e.g. a flight, then a few nights in a city, then a week at a stay, then a drive): ALSO add an optional `parts` array on `trip`, one entry per leg, in chronological order. Each part: { "type": "stay" | "city" | "drive" | "flight" | "event" | "train" | "ferry" | "cruise", "title": "Three nights in Rome", "place": "Rome" (the city/place; omit for a pure drive or flight leg), "dateStart": "YYYY-MM-DD", "dateEnd": "YYYY-MM-DD" }. The `days[]` above remain the full day-by-day detail; `parts` is the high-level shape of the journey. OMIT `parts` entirely for a simple single-place trip (one stay, one city, or one road trip) — only emit it when there are genuinely 2+ distinct legs.'
+    )
+    lines.push('')
+    lines.push(
       'One card per turn. If the reader refines the draft before saving ("swap the hike for a winery"), emit a fresh `create_trip` card with the updated trip — it replaces the previous one, same one-card-per-turn pattern as the in-trip cards. After the reader saves, the trip is real and editable via the normal in-trip surface (move, add, cancel, multi).'
     )
   }

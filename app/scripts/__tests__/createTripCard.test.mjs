@@ -279,3 +279,30 @@ test('cardToTrip refinement (existingId) is NOT uniquified even if the id is "ta
   assert.equal(trip.id, 'asheville-long-weekend-2026-10')
 })
 
+
+// ─── composite parts (the "bigger trip") ────────────────────────────
+test('cardToTrip carries an emitted parts[] (composite trip), validated + id-stamped', () => {
+  const card = {
+    type: 'create_trip',
+    trip: {
+      ...SAMPLE_CARD.trip,
+      title: 'Italy, summer',
+      parts: [
+        { type: 'flight', title: 'Fly Boston → Rome', dateStart: '2026-07-01' },
+        { type: 'city', title: '3 nights in Rome', place: 'Rome', dateStart: '2026-07-01', dateEnd: '2026-07-04' },
+        { type: 'bogus', title: 'A villa' }, // unknown type → defaults to 'stay'
+      ],
+    },
+  }
+  const trip = cardToTrip(card)
+  assert.equal(trip.parts.length, 3)
+  assert.equal(trip.parts[0].type, 'flight')
+  assert.equal(trip.parts[1].type, 'city')
+  assert.equal(trip.parts[2].type, 'stay') // unknown 'bogus' validated down to 'stay'
+  assert.ok(trip.parts[0].id, 'each part gets a stable id')
+})
+
+test('cardToTrip omits parts for a simple trip (no parts field at all)', () => {
+  const trip = cardToTrip(SAMPLE_CARD)
+  assert.equal('parts' in trip, false) // a one-place trip stays parts-less; getParts derives one
+})

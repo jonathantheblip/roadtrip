@@ -929,6 +929,38 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
         </span>
       </div>
 
+      {/* The parts — the high-level shape of a BIGGER trip (a flight, a city, a
+          stay, a drive). Only rendered when Claude laid out distinct legs, so a
+          simple trip's card (and its visual baseline) is unchanged. */}
+      {Array.isArray(trip.parts) && trip.parts.length > 0 && (
+        <div style={{ marginTop: 10, borderTop: `1px solid var(--border)`, paddingTop: 8 }} data-testid="create-trip-parts">
+          <div
+            style={{
+              fontFamily: FONT.mono, fontSize: 9, letterSpacing: 1.4,
+              textTransform: 'uppercase', fontWeight: 600, color: T.draftEyebrow, marginBottom: 6,
+            }}
+          >
+            The parts · {trip.parts.length}
+          </div>
+          {trip.parts.map((p, pi) => {
+            const when = humanDateRange(p.dateStart, p.dateEnd)
+            return (
+              <div key={pi} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '3px 0' }}>
+                <span style={{ fontFamily: FONT.mono, fontSize: 8.5, letterSpacing: 0.6, textTransform: 'uppercase', color: T.inkFaint, minWidth: 42 }}>
+                  {p.type || 'stay'}
+                </span>
+                <span style={{ fontFamily: FONT.serif, fontSize: 13, color: T.ink, flex: 1, lineHeight: 1.25 }}>
+                  {p.title || p.place || 'A part'}
+                </span>
+                {when && when !== 'TBD' && (
+                  <span style={{ fontFamily: FONT.mono, fontSize: 8.5, color: T.inkFaint, whiteSpace: 'nowrap' }}>{when}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Scrollable day sections */}
       <div
         style={{

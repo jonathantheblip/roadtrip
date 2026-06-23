@@ -9,6 +9,7 @@
 // date). Skipped stops (flagged by the renderer) are dropped here.
 
 import { TRAVELER_ORDER } from '../data/travelers.js'
+import { PART_TYPES } from './tripParts.js'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -154,6 +155,22 @@ export function cardToTrip(card, { existingId = null, existingIds = null } = {})
     })
     .filter((d) => d.stops.length > 0)
 
+  // The composite "bigger trip": when Claude lays out distinct legs it emits an
+  // optional `parts` array (a flight, a city, a stay, a drive). Carry it onto the
+  // trip (additive — a simple trip has none, so getParts derives one part and
+  // nothing changes). The legacy `days` above still render every existing surface.
+  const parts =
+    Array.isArray(t.parts) && t.parts.length
+      ? t.parts.map((p, pi) => ({
+          id: p.id || `${id}-part-${pi + 1}`,
+          type: PART_TYPES.includes(p.type) ? p.type : 'stay',
+          title: p.title || '',
+          place: p.place || null,
+          dateStart: p.dateStart || null,
+          dateEnd: p.dateEnd || null,
+        }))
+      : null
+
   return {
     id,
     draft: false,
@@ -171,6 +188,7 @@ export function cardToTrip(card, { existingId = null, existingIds = null } = {})
     overview: t.subtitle || '',
     sharedAlbumURL: '',
     days,
+    ...(parts ? { parts } : {}),
     source: 'claude',
   }
 }

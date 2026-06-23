@@ -103,6 +103,39 @@ function ashevilleCard(id, secondStopName) {
   }
 }
 
+// A BIGGER trip: Claude lays out distinct legs via the optional `parts` array.
+function italyCard(id) {
+  return {
+    type: 'create_trip',
+    id,
+    trip: {
+      title: 'Italy, summer',
+      subtitle: 'Rome, a villa, the coast',
+      startCity: 'Boston, MA',
+      endCity: 'Boston, MA',
+      dateRangeStart: '2026-07-01',
+      dateRangeEnd: '2026-07-13',
+      travelers: ['Jonathan', 'Helen', 'Aurelia', 'Rafa'],
+      parts: [
+        { type: 'flight', title: 'Fly Boston → Rome', dateStart: '2026-07-01' },
+        { type: 'city', title: 'Three nights in Rome', place: 'Rome', dateStart: '2026-07-01', dateEnd: '2026-07-04' },
+        { type: 'stay', title: 'A week at a Tuscan villa', place: 'Val d’Orcia', dateStart: '2026-07-04', dateEnd: '2026-07-11' },
+        { type: 'drive', title: 'Drive the Amalfi coast', dateStart: '2026-07-11', dateEnd: '2026-07-13' },
+      ],
+      days: [
+        {
+          dayNumber: 1,
+          title: 'Arrive in Rome',
+          date: '2026-07-01',
+          stops: [
+            { id: 'it-1-1', time: '9:00 AM', name: 'Land at Fiumicino', address: 'Rome, Italy', category: 'LOGISTICS', description: 'Arrival and transfer.', who: ['Jonathan', 'Helen', 'Aurelia', 'Rafa'], driveFromPrevious: null },
+          ],
+        },
+      ],
+    },
+  }
+}
+
 // Cold-load auto-opens whichever trip is active on the stubbed clock
 // (the fixture trip is active on 2026-05-23), so a fresh load can land
 // inside a trip rather than the index. Step back to the index, where
@@ -236,5 +269,47 @@ test.describe('Claude-in-App — create_trip', () => {
     await expect(dialog.getByTestId('confirm-card-superseded')).toBeVisible({ timeout: 5000 })
     await expect(dialog.getByText('Burntshirt Vineyards')).toBeVisible()
     await expect(dialog.getByTestId('confirm-card-create_trip')).toHaveCount(1)
+  })
+
+  test('a BIGGER trip: the card shows the parts timeline and the saved trip carries parts', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [
+      replyWithCard(italyCard('ct-italy-1'), 'Here’s the shape of it.'),
+    ])
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'Italy in July: fly to Rome, 3 nights, then a Tuscan villa a week, then drive the Amalfi coast')
+
+    const card = dialog.getByTestId('confirm-card-create_trip')
+    await expect(card).toBeVisible({ timeout: 5000 })
+
+    // The composite "here's the shape of it" timeline renders the legs in order.
+    const parts = card.getByTestId('create-trip-parts')
+    await expect(parts).toBeVisible()
+    await expect(parts).toContainText('The parts · 4')
+    await expect(parts.getByText('Three nights in Rome')).toBeVisible()
+    await expect(parts.getByText('Drive the Amalfi coast')).toBeVisible()
+
+    // Save → the saved trip carries the parts (the model), in order.
+    await card.getByTestId('confirm-card-save').click()
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+            const t = all.find((x) => x.title === 'Italy, summer')
+            return t && Array.isArray(t.parts) ? t.parts.length : -1
+          }),
+        { timeout: 5000 }
+      )
+      .toBe(4)
+
+    const types = await page.evaluate(() => {
+      const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+      const t = all.find((x) => x.title === 'Italy, summer')
+      return (t.parts || []).map((p) => p.type)
+    })
+    expect(types).toEqual(['flight', 'city', 'stay', 'drive'])
   })
 })
