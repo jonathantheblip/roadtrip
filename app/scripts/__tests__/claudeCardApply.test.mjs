@@ -340,6 +340,51 @@ test('applyCardToTrip — trip-settings is a precise patch: untouched fields sur
   assert.equal(next.endCity, 'Old City', 'unrelated field untouched')
 })
 
+// ─── trip-settings can flip the trip KIND (shape) — "ask Claude to change the type" ──
+test('applyCardToTrip — trip-settings flips the trip shape (stay/route), stops untouched', () => {
+  const trip = fixtureTrip()
+  const next = applyCardToTrip(trip, {
+    action: 'trip-settings',
+    id: 'c-shape-stay',
+    target: { tripId: 'volleyball-2026' },
+    fields: [{ name: 'shape', value: 'stay' }],
+  })
+  assert.equal(next.shape, 'stay') // "make this a hangout/chill stay" → the stay home shell
+  assert.equal(next.days, trip.days, 'stops untouched — days passed through by reference')
+  assert.equal(
+    applyCardToTrip(fixtureTrip(), {
+      action: 'trip-settings', id: 'c-shape-route', target: { tripId: 'volleyball-2026' },
+      fields: [{ name: 'shape', value: 'route' }],
+    }).shape,
+    'route'
+  )
+})
+
+test('applyCardToTrip — trip-settings IGNORES an unrecognized shape value (loose word leaked as the value)', () => {
+  const trip = fixtureTrip()
+  trip.shape = 'route'
+  const next = applyCardToTrip(trip, {
+    action: 'trip-settings',
+    id: 'c-shape-bad',
+    target: { tripId: 'volleyball-2026' },
+    fields: [{ name: 'shape', value: 'lazy' }],
+  })
+  assert.equal(next.shape, 'route', 'a bad value is dropped — existing shape stands (heuristic stays safe)')
+})
+
+test('applyCardToTrip — a shape-only card mis-tagged "add" is caught as a trip-settings edit, not a junk stop', () => {
+  assert.throws(
+    () =>
+      applyCardToTrip(fixtureTrip(), {
+        action: 'add',
+        id: 'c-shape-stray',
+        target: { tripId: 'volleyball-2026', dayN: 1 },
+        fields: [{ name: 'shape', value: 'stay' }],
+      }),
+    /trip-level field/
+  )
+})
+
 test('applyCardToTrip — trip-settings writes to .data level on the D1 row shape, stops untouched', () => {
   const trip = { id: 'volleyball-2026', data: fixtureTrip() }
   const next = applyCardToTrip(trip, {

@@ -3959,7 +3959,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   lines.push('')
   lines.push('## Trip settings (action "trip-settings")')
   lines.push(
-    'A `trip-settings` card edits the TRIP RECORD itself — not a stop. Use it, and NEVER `add`/`move`, when the reader wants to change a trip-level property: rename the trip, set or change the destination, shift the dates, change the start city, or edit the subtitle or location label. A trip-level edit emitted as `add` would corrupt the trip with a junk stop, so it MUST route here.'
+    'A `trip-settings` card edits the TRIP RECORD itself — not a stop. Use it, and NEVER `add`/`move`, when the reader wants to change a trip-level property: rename the trip, set or change the destination, shift the dates, change the start city, edit the subtitle or location label, or change the KIND of trip (a stay vs a road trip). A trip-level edit emitted as `add` would corrupt the trip with a junk stop, so it MUST route here.'
   )
   lines.push('Editable trip-level fields — use these exact `name`s, and include ONLY the ones actually changing:')
   lines.push("  - `title` — the trip's name")
@@ -3968,6 +3968,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   lines.push('  - `startCity` — where the trip departs from')
   lines.push('  - `dateRangeStart` / `dateRangeEnd` — ISO dates, YYYY-MM-DD')
   lines.push('  - `locationLabel` — the short place label shown on the trip card (optional override)')
+  lines.push('  - `shape` — the KIND of trip: `"stay"` (anchored at ONE place they settle into — a cabin, beach house, Grandma\'s, a city base — INCLUDING low-key "just be there" trips however loosely phrased: "chill", "lazy weekend", "hangout", "relax", "nothing planned", "take it easy") or `"route"` (a ROAD TRIP through 2+ overnight places with driving between them). Categorize the reader\'s intent PRECISELY even from vague words. Emit this whenever they ask to change the trip TYPE / KIND / vibe — e.g. "make this a hangout", "this is just a chill stay", "it\'s actually a road trip", "change the trip type to a lazy weekend". Only ever the value `"stay"` or `"route"` (never the reader\'s loose word as the value).')
   lines.push(
     'The `target` carries only `tripId`. Each field uses the normal field shape with `"editable": true`. Worked example: "rename this trip to Shore Weekend and push it to the first weekend of June" → ONE `trip-settings` card with fields [{ "name": "title", "label": "Title", "value": "Shore Weekend", "editable": true }, { "name": "dateRangeStart", "label": "Start", "value": "2026-06-05", "editable": true }, { "name": "dateRangeEnd", "label": "End", "value": "2026-06-07", "editable": true }] and target { "tripId": "<id>" }.'
   )

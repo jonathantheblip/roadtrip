@@ -56,11 +56,21 @@ describe('claude system prompt — trip-settings taxonomy', () => {
       '`dateRangeStart`',
       '`dateRangeEnd`',
       '`locationLabel`',
+      '`shape`', // change the KIND of trip (stay/route) on an EXISTING trip
     ]) {
       expect(prompt).toContain(name)
     }
     // The `destination` alias the applier accepts is mentioned.
     expect(prompt).toContain('destination')
+  })
+
+  it('lets the model change an existing trip\'s KIND via trip-settings (stay/route), from loose language', async () => {
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
+    // The trip-settings intro now includes changing the trip KIND...
+    expect(prompt).toContain('change the KIND of trip')
+    // ...and the `shape` field documents the two values + that loose wording is in scope.
+    expect(prompt).toMatch(/`shape`[\s\S]*"stay"[\s\S]*"route"/)
+    expect(prompt).toMatch(/`shape`[\s\S]*(chill|lazy|hangout)/i)
   })
 
   // Regression guard for the "Helen's notes vanish on Save" bug: durable stop

@@ -41,6 +41,7 @@ const TRIP_LEVEL_FIELDS = new Set([
   'dateRange',
   'dateRangeStart',
   'dateRangeEnd',
+  'shape', // the KIND of trip (stay | route) — so "make this a hangout" routes to settings, not a junk stop
 ])
 
 // Return the trip-level field names present on a card (empty when none).
@@ -274,6 +275,13 @@ function applySettings(trip, card) {
   if ('destination' in fields) patch.endCity = fields.destination || ''
   if ('startCity' in fields) patch.startCity = fields.startCity || ''
   if ('locationLabel' in fields) patch.locationLabel = fields.locationLabel || ''
+  // The trip KIND. Only the two valid values are written (an explicit trip.shape
+  // wins in inferTripShape, flipping the home shell stay↔route); a loose word that
+  // leaked through as the value is IGNORED so the heuristic still decides — and so a
+  // real road trip can't be flipped to a stay by a bad value (G5). Mirrors cardToTrip.
+  if ('shape' in fields && (fields.shape === 'stay' || fields.shape === 'route')) {
+    patch.shape = fields.shape
+  }
 
   // Dates: ISO yyyy-mm-dd start/end. When either changes, recompute the
   // human-readable dateRange string the themed views render — exactly as
