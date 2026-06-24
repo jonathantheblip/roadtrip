@@ -30,6 +30,8 @@
 // app's established truth: Aurelia calls them Mom/Dad, Rafa calls them
 // Mama/Papa/Sissy). Used for "hidden from …" labels + the reveal celebration.
 const NAMES = { jonathan: 'Jonathan', helen: 'Helen', aurelia: 'Aurelia', rafa: 'Rafa' }
+import { partsWithDays, hasExplicitParts } from './tripParts.js'
+
 const REL = {
   rafa: { helen: 'Mama', jonathan: 'Papa', aurelia: 'Sissy' },
   aurelia: { helen: 'Mom', jonathan: 'Dad', rafa: 'Rafa' },
@@ -453,7 +455,73 @@ export function tripStandIn(trip) {
 // BOTH the index (maskTripsForViewer below) AND the open-trip view (App.jsx).
 export function maskTripForViewer(trip, viewer) {
   if (isTripMaskedFrom(trip, viewer)) return tripStandIn(trip)
-  return maskTripStops(trip, viewer)
+  // Per-stop masking first, then per-part (stubs hidden parts + strips their days).
+  // This client transform is defense-in-depth; the worker mirror is the boundary.
+  return maskTripParts(maskTripStops(trip, viewer), viewer)
+}
+
+// ── Per-PART masking ("surprises by sentence") — mirrors worker/src/surprises.js ─
+// A composite trip's parts[] can carry the same masking layer as a stop. The part's
+// day-by-day detail lives in the flat trip.days[], so a hidden part must strip BOTH
+// the part AND its days. Day OWNERSHIP comes from partsWithDays — the SAME derivation
+// PartsTripView renders with — so the mask can never diverge from what's shown.
+export function isPartSurprise(part) {
+  return !!(part && part.surprise && Array.isArray(part.surprise.hideFrom) && part.surprise.hideFrom.length)
+}
+
+export function isPartMaskedFrom(part, viewer) {
+  if (!isPartSurprise(part)) return false
+  const s = part.surprise
+  if (s.author === viewer) return false
+  if (s.revealed) return false
+  return s.hideFrom.includes('everyone') || s.hideFrom.includes(viewer)
+}
+
+export function partCoverStandIn(part) {
+  const cov = part.surprise?.cover || {}
+  return {
+    id: part.id, type: part.type || 'stay',
+    title: cov.title || 'A part of the trip', place: cov.loc || null,
+    dateStart: part.dateStart || null, dateEnd: part.dateEnd || null,
+    masked: true, _cover: true,
+  }
+}
+
+export function partTeaserStub(part) {
+  const rv = part.surprise?.reveal || {}
+  const reveal = rv.type === 'date' ? { type: 'date', at: rv.at } : rv.type === 'arrival' ? { type: 'arrival' } : { type: 'manual' }
+  return {
+    id: part.id, type: part.type || 'stay',
+    title: "🎁 Something's coming", place: null,
+    dateStart: part.dateStart || null, dateEnd: part.dateEnd || null,
+    note: `reveals ${revealLabel(reveal)}`,
+    masked: true, _teaser: true,
+  }
+}
+
+export function maskPartForViewer(part, viewer) {
+  if (!isPartMaskedFrom(part, viewer)) return part
+  return part.surprise?.conceal === 'cover' ? partCoverStandIn(part) : partTeaserStub(part)
+}
+
+export function maskTripParts(trip, viewer) {
+  if (!trip || !hasExplicitParts(trip)) return trip
+  // Collect the real day-objects owned by a hidden part (partsWithDays returns each
+  // part's days as the SAME refs the renderer uses; synthetic loose days aren't in
+  // trip.days, so they're harmless to collect).
+  const withDays = partsWithDays(trip)
+  const hiddenDays = new Set()
+  let changed = false
+  withDays.forEach((p, i) => {
+    if (isPartMaskedFrom(trip.parts[i], viewer)) {
+      changed = true
+      ;(p.days || []).forEach((d) => hiddenDays.add(d))
+    }
+  })
+  if (!changed) return trip
+  const parts = trip.parts.map((p) => maskPartForViewer(p, viewer))
+  const days = Array.isArray(trip.days) ? trip.days.filter((d) => !hiddenDays.has(d)) : trip.days
+  return { ...trip, parts, days }
 }
 
 // The per-viewer transform over the trip LIST (the index / switcher).

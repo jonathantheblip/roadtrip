@@ -26,7 +26,7 @@ import {
   straightLineMinutes,
 } from './leaveWhen.js'
 import { runNightlyWeave, beatSignature, regenerateStoredWeaves } from './weaveGen.js'
-import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, isTripMaskedFrom } from './surprises.js'
+import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, preserveHiddenParts, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
 import { listProposals, createProposal, voteProposal, decideProposal, isNoTable } from './proposals.js'
@@ -434,18 +434,29 @@ export async function runScheduledStopReveals(env, todayIso) {
     let trip
     try { trip = JSON.parse(row.data_json) } catch { continue }
     let changed = false
+    const dueDateReveal = (sp) => {
+      const r = sp?.reveal
+      return !!(
+        sp && Array.isArray(sp.hideFrom) && sp.hideFrom.length &&
+        !sp.revealed && r?.type === 'date' && r.at && r.at <= todayIso
+      )
+    }
     for (const d of trip.days || []) {
       for (const s of d.stops || []) {
-        const sp = s?.surprise
-        const r = sp?.reveal
-        if (
-          sp && Array.isArray(sp.hideFrom) && sp.hideFrom.length &&
-          !sp.revealed && r?.type === 'date' && r.at && r.at <= todayIso
-        ) {
-          sp.revealed = new Date(now).toISOString()
+        if (dueDateReveal(s?.surprise)) {
+          s.surprise.revealed = new Date(now).toISOString()
           changed = true
           revealed++
         }
+      }
+    }
+    // Per-PART date reveals ("surprises by sentence"): a surprise part flips to
+    // revealed on its date, same as a stop, and re-joins everyone's view.
+    for (const p of trip.parts || []) {
+      if (dueDateReveal(p?.surprise)) {
+        p.surprise.revealed = new Date(now).toISOString()
+        changed = true
+        revealed++
       }
     }
     if (changed) {
@@ -1483,8 +1494,17 @@ async function postTrip(env, request, cors, traveler) {
     try {
       const stored = JSON.parse(storedRow.data_json)
       trip.days = preserveHiddenStops(stored, trip, traveler)
+      // Per-PART clobber guard ("surprises by sentence"): a writer hidden from a
+      // part got neither the part nor its days — restore both from stored so a
+      // save-back can't erase the surprise. Only for trips that carry parts;
+      // a legacy trip (no stored.parts) is byte-identical (stops-only, as before).
+      if (Array.isArray(stored.parts) && stored.parts.length) {
+        const r = preserveHiddenParts(stored, trip, traveler)
+        trip.parts = r.parts
+        trip.days = r.days
+      }
     } catch (e) {
-      console.error('postTrip preserveHiddenStops failed', e?.stack || e)
+      console.error('postTrip preserve hidden surprises failed', e?.stack || e)
     }
   }
   const updatedAt = Date.now()
@@ -4172,7 +4192,9 @@ async function loadTripsSummary(env, readerUserId) {
         dateRangeEnd: end,
         dateRange: masked ? null : data?.dateRange || null,
         status,
-        dayCount: masked ? 0 : Array.isArray(data?.days) ? data.days.length : 0,
+        // dayCount from the MASKED trip (`t`), not raw `data`: a part-masked trip
+        // strips the secret part's days, so its count must not betray them either.
+        dayCount: masked ? 0 : Array.isArray(t.days) ? t.days.length : 0,
         memoryCount: masked ? 0 : countMap.get(row.id) || 0,
         locationLabel: masked ? null : data?.locationLabel || null,
         startCity: masked ? null : data?.startCity || null,

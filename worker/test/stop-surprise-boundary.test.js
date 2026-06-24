@@ -223,3 +223,92 @@ describe('per-stop masking — date auto-reveal cron', () => {
     expect((await tripsAs(TOKENS.rafa)).find((x) => x.id === 'tr-dated').days[0].stops[1].name).toBe("Mo's Candy Emporium")
   })
 })
+
+// ── "Surprises by sentence" Slice 1 — per-PART masking through the REAL worker ──
+// A composite trip with a COVER surprise part hidden from Helen. The part AND the
+// days inside its window must never reach her (GET /trips + the cron + POST merge).
+const COMPOSITE = {
+  id: 'tr-italy', title: 'Italy', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-07', heroResolved: { key: 'x' },
+  parts: [
+    { id: 'p-rome', type: 'city', title: 'Three days in Rome', place: 'Rome', dateStart: '2026-08-01', dateEnd: '2026-08-03' },
+    {
+      id: 'p-villa', type: 'stay', title: 'Secret cliffside villa', place: 'Positano', dateStart: '2026-08-05', dateEnd: '2026-08-06',
+      surprise: { author: 'jonathan', hideFrom: ['helen'], conceal: 'cover', reveal: { type: 'manual' }, cover: { title: 'A few quiet days on the coast', loc: 'the coast' } },
+    },
+  ],
+  days: [
+    { isoDate: '2026-08-01', title: 'Rome', stops: [{ id: 'd1', name: 'Colosseum tour' }] },
+    { isoDate: '2026-08-05', title: 'Villa', stops: [{ id: 'd2', name: 'Villa pool & cliff views' }] }, // SECRET window
+  ],
+}
+
+describe('per-part masking (surprises by sentence) — through the real worker', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await seedSession(env.DB, TOKENS.helen, 'helen')
+    await env.DB.prepare('DELETE FROM trips').run()
+    await seedTrip(COMPOSITE)
+  })
+
+  it('the author sees the real part + its day', async () => {
+    const t = (await tripsAs(TOKENS.jonathan)).find((x) => x.id === 'tr-italy')
+    expect(t.parts.find((p) => p.id === 'p-villa').title).toBe('Secret cliffside villa')
+    expect(t.days.find((d) => d.isoDate === '2026-08-05')).toBeTruthy()
+  })
+
+  it('a recipient gets the cover part — the secret part AND its day NEVER leak', async () => {
+    const all = await tripsAs(TOKENS.helen)
+    const t = all.find((x) => x.id === 'tr-italy')
+    const villa = t.parts.find((p) => p.id === 'p-villa')
+    expect(villa.title).toBe('A few quiet days on the coast') // the cover
+    expect(villa.masked).toBe(true)
+    expect(t.days).toHaveLength(1) // the secret-window day is stripped
+    expect(t.days[0].isoDate).toBe('2026-08-01')
+    const s = JSON.stringify(all)
+    expect(s).not.toContain('Secret cliffside villa')
+    expect(s).not.toContain('Villa pool') // the day's stop name is gone too
+    expect(s).toContain('Three days in Rome') // visible part intact
+  })
+
+  it("Claude's context (trip open) never spoils the secret part for the recipient", async () => {
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: 'tr-italy' })
+    expect(prompt).not.toContain('Secret cliffside villa')
+    expect(prompt).not.toContain('Villa pool')
+    expect(prompt).toContain('Colosseum tour') // the visible day's stop is still there
+    const forAuthor = await buildClaudeSystemPrompt(env, { readerUserId: 'jonathan', tripId: 'tr-italy' })
+    expect(forAuthor).toContain('Villa pool') // author sees the real secret day
+  })
+
+  it("Claude's cross-trip SUMMARY never leaks the secret part or its day count (Finding 2)", async () => {
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen' }) // no tripId → summary mode
+    expect(prompt).not.toContain('Secret cliffside villa')
+    expect(prompt).not.toContain('Villa pool')
+  })
+
+  it('runScheduledStopReveals unwraps a date-reveal PART on its day', async () => {
+    const dated = JSON.parse(JSON.stringify(COMPOSITE))
+    dated.id = 'tr-italy-dated'
+    dated.parts[1].surprise.reveal = { type: 'date', at: '2026-08-05' }
+    await env.DB.prepare('DELETE FROM trips').run()
+    await seedTrip(dated)
+    // Before → masked + day stripped.
+    expect((await tripsAs(TOKENS.helen)).find((x) => x.id === 'tr-italy-dated').days).toHaveLength(1)
+    const onDay = await runScheduledStopReveals(env, '2026-08-05')
+    expect(onDay.revealed).toBe(1)
+    const t = (await tripsAs(TOKENS.helen)).find((x) => x.id === 'tr-italy-dated')
+    expect(t.parts.find((p) => p.id === 'p-villa').title).toBe('Secret cliffside villa')
+    expect(t.days).toHaveLength(2) // the day returns once revealed
+  })
+
+  it("a recipient's save does NOT erase the hidden part or its day", async () => {
+    const helenCopy = (await tripsAs(TOKENS.helen)).find((x) => x.id === 'tr-italy')
+    helenCopy.days[0].stops[0].name = 'Colosseum + Forum' // a legit edit to her visible day
+    const res = await postTripAs(TOKENS.helen, helenCopy)
+    expect(res.status).toBe(200)
+    const t = (await tripsAs(TOKENS.jonathan)).find((x) => x.id === 'tr-italy')
+    expect(t.parts.find((p) => p.id === 'p-villa').title).toBe('Secret cliffside villa') // NOT clobbered
+    expect(t.days.find((d) => d.isoDate === '2026-08-05')?.stops[0].name).toBe('Villa pool & cliff views') // day restored
+    expect(t.days.find((d) => d.isoDate === '2026-08-01')?.stops[0].name).toBe('Colosseum + Forum') // her edit kept
+  })
+})

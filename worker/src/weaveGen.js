@@ -14,6 +14,7 @@
 // keep the two in step. Differences are deliberate and noted inline:
 //   - SHARED memories only (the weave is the shared family page).
 //   - NO random discovery mode (the cron only pre-makes an ACTIVE trip).
+import { partDayOwner } from './surprises.js'
 
 // ── Day selection (server, shared-family) ────────────────────────────────
 // Mirrors selectWeaveDay's ACTIVE-TRIP branch: a trip is "active" within its
@@ -37,8 +38,22 @@ export function selectWeaveDayServer(trips, dayHasSharedMemory, todayIso) {
   })
   if (!activeTrip) return null
 
+  // Per-PART surprise ("surprises by sentence"): the weave is the SHARED family
+  // page, so a day OWNED BY an unrevealed surprise part must not be woven — narrating
+  // it would spoil the secret. Ownership comes from the SAME partDayOwner the mask
+  // uses (clamped windows, no-dateEnd run, all-undated fallback), so the weave can't
+  // under-exclude. (Whole-trip + memory surprises are excluded upstream in
+  // runNightlyWeave.) Once the part reveals, its days weave normally.
+  const parts = activeTrip.parts || []
+  const owner = partDayOwner(parts)
+  const unrevealedSurprise = (p) => p?.surprise && Array.isArray(p.surprise.hideFrom) && p.surprise.hideFrom.length && !p.surprise.revealed
+  const inHiddenPart = (iso) => {
+    const i = owner(iso)
+    return i >= 0 && unrevealedSurprise(parts[i])
+  }
+
   const pastDays = (activeTrip.days || [])
-    .filter((d) => d.isoDate && d.isoDate <= todayIso)
+    .filter((d) => d.isoDate && d.isoDate <= todayIso && !inHiddenPart(d.isoDate))
     .sort((a, b) => b.isoDate.localeCompare(a.isoDate))
   for (const day of pastDays) {
     if (dayHasSharedMemory(activeTrip, day)) return { trip: activeTrip, day }

@@ -116,6 +116,30 @@ describe('weaveGen — pure logic', () => {
     expect(selectWeaveDayServer([TRIP], hasMem, '2026-01-01')).toBe(null)
   })
 
+  // "Surprises by sentence" Slice 1 — the shared weave must not narrate a day
+  // inside an UNREVEALED surprise part's window (it would spoil the secret).
+  const COMP = (revealed = false) => ({
+    id: 'c', dateRangeStart: '2026-05-20', dateRangeEnd: '2026-05-24',
+    parts: [
+      { id: 'p1', type: 'city', dateStart: '2026-05-20', dateEnd: '2026-05-20' },
+      {
+        id: 'p2', type: 'stay', dateStart: '2026-05-21', dateEnd: '2026-05-22',
+        surprise: { author: 'jonathan', hideFrom: ['helen'], conceal: 'cover', reveal: { type: 'manual' }, ...(revealed ? { revealed: 'x' } : {}) },
+      },
+    ],
+    days: [{ isoDate: '2026-05-20', stops: [{ id: 'a' }] }, { isoDate: '2026-05-21', stops: [{ id: 'b' }] }],
+  })
+
+  it('selectWeaveDayServer skips a day inside an unrevealed surprise PART window', () => {
+    // Freshest past day (05-21) is inside the secret window → excluded → falls back
+    // to the visible 05-20. (hasMemAll so memory presence isn't the reason it's skipped.)
+    expect(selectWeaveDayServer([COMP(false)], () => true, '2026-05-22')?.day?.isoDate).toBe('2026-05-20')
+  })
+
+  it('a REVEALED surprise part no longer hides its day from the weave', () => {
+    expect(selectWeaveDayServer([COMP(true)], () => true, '2026-05-22')?.day?.isoDate).toBe('2026-05-21')
+  })
+
   it('buildBeatsServer keeps one beat per author, preferring voice > photo > text', () => {
     const day = TRIP.days[1]
     const mems = [

@@ -213,9 +213,154 @@ export function maskTripStops(trip, viewer) {
   return changed ? { ...trip, days } : trip
 }
 
+// ── Per-PART masking ("surprises by sentence", new-trip redesign) ─────────────
+// A composite trip's parts[] (a flight, a city, a stay) ride in data_json and can
+// carry the SAME masking layer as a stop:
+//   part.surprise = { author, hideFrom, reveal, conceal, cover, revealed }
+// THE LOAD-BEARING DIFFERENCE FROM A STOP: a part spans DATES, and the day-by-day
+// detail for those dates lives in the flat trip.days[]. So masking the part is NOT
+// enough — the days inside the part's [dateStart,dateEnd] window must be stripped
+// too, or the secret leaks through the day list (and PartsTripView, which derives
+// a part's days by date). The part and its days are ONE secret. Mirrors the client.
+export function isPartSurprise(part) {
+  return !!(part && part.surprise && Array.isArray(part.surprise.hideFrom) && part.surprise.hideFrom.length)
+}
+
+export function isPartMaskedFrom(part, viewer) {
+  if (!isPartSurprise(part)) return false
+  const s = part.surprise
+  if (s.author === viewer) return false
+  if (s.revealed) return false
+  return s.hideFrom.includes('everyone') || s.hideFrom.includes(viewer)
+}
+
+function partCoverStandIn(part) {
+  const cov = part.surprise?.cover || {}
+  return {
+    id: part.id,
+    type: part.type || 'stay',
+    title: cov.title || 'A part of the trip',
+    place: cov.loc || null,
+    dateStart: part.dateStart || null,
+    dateEnd: part.dateEnd || null,
+    masked: true,
+    _cover: true,
+  }
+}
+
+function partTeaserStub(part) {
+  return {
+    id: part.id,
+    type: part.type || 'stay',
+    title: "🎁 Something's coming",
+    place: null,
+    dateStart: part.dateStart || null,
+    dateEnd: part.dateEnd || null,
+    note: revealHint(part.surprise?.reveal),
+    masked: true,
+    _teaser: true,
+  }
+}
+
+function maskPartForViewer(part, viewer) {
+  if (!isPartMaskedFrom(part, viewer)) return part
+  return part.surprise?.conceal === 'cover' ? partCoverStandIn(part) : partTeaserStub(part)
+}
+
+// Does an ISO date fall within a part's [dateStart, dateEnd] window (inclusive)?
+// A part with a start but no end is a single-day point. (Primitive — the trip-level
+// strip below uses CLAMPED windows so it can't diverge from the client.)
+export function isoInPartWindow(iso, part) {
+  if (!iso || !part?.dateStart) return false
+  const d = iso.slice(0, 10)
+  const start = part.dateStart.slice(0, 10)
+  const end = (part.dateEnd || part.dateStart).slice(0, 10)
+  return d >= start && d <= end
+}
+
+function isoDayBefore(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '')
+  if (!m) return null
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) - 86400000).toISOString().slice(0, 10)
+}
+
+// Day → owning part INDEX, EXACTLY as app/src/lib/tripParts.js `partsWithDays`
+// claims it. THE single source of part-day ownership on the server (the mask AND
+// the weave both use it — no second copy to drift). A dated part's window runs from
+// its dateStart to the day BEFORE the next dated part begins (clamped — so a part
+// with NO dateEnd still owns every day up to the next leg). A day matching no window
+// (DATELESS or out-of-window) belongs to the first dated part, or — when NO part is
+// dated — to part 0 (mirrors partsWithDays' `dated.length ? dated[0].i : parts.length
+// ? 0 : -1`; an earlier `-1` here under-stripped an all-undated composite = a leak).
+// Returns a predicate (iso) => owning part index (or -1 when there are no parts).
+export function partDayOwner(parts) {
+  const list = Array.isArray(parts) ? parts : []
+  const order = list
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => {
+      const ka = a.p.dateStart || '9999-99-99'
+      const kb = b.p.dateStart || '9999-99-99'
+      return ka === kb ? a.i - b.i : ka < kb ? -1 : 1
+    })
+  const dated = order.filter((o) => o.p.dateStart)
+  const win = new Map() // original index -> { start, end } | null
+  dated.forEach((o, k) => {
+    const start = o.p.dateStart.slice(0, 10)
+    let end = (o.p.dateEnd && o.p.dateEnd.slice(0, 10)) || start
+    const next = dated[k + 1]
+    if (next) {
+      const cap = isoDayBefore(next.p.dateStart.slice(0, 10))
+      if (cap && cap < end) end = cap
+    }
+    win.set(o.i, end >= start ? { start, end } : null)
+  })
+  const firstDatedIdx = dated.length ? dated[0].i : list.length ? 0 : -1
+  return (iso) => {
+    const d = typeof iso === 'string' ? iso.slice(0, 10) : null
+    if (d) {
+      for (const o of dated) {
+        const w = win.get(o.i)
+        if (w && d >= w.start && d <= w.end) return o.i
+      }
+    }
+    return firstDatedIdx
+  }
+}
+
+// Predicate: does this day belong to a part HIDDEN FROM the viewer? (Built on the
+// shared ownership above, so it can never diverge from the client render.)
+function hiddenDayOwnership(trip, viewer) {
+  const parts = trip.parts || []
+  const owner = partDayOwner(parts)
+  return (iso) => {
+    const i = owner(iso)
+    return i >= 0 && isPartMaskedFrom(parts[i], viewer)
+  }
+}
+
+// Apply per-part masking across a composite trip: each part hidden from the viewer
+// is swapped for a stub/cover AND the trip.days OWNED BY a hidden part are STRIPPED
+// (the part + its days are one secret). Day ownership matches the client exactly
+// (hiddenDayOwnership). Referential stability when nothing applies.
+export function maskTripParts(trip, viewer) {
+  if (!trip || !Array.isArray(trip.parts) || !trip.parts.length) return trip
+  let changed = false
+  const parts = trip.parts.map((p) => {
+    const m = maskPartForViewer(p, viewer)
+    if (m !== p) changed = true
+    return m
+  })
+  if (!changed) return trip
+  const isHiddenDay = hiddenDayOwnership(trip, viewer)
+  const days = Array.isArray(trip.days) ? trip.days.filter((d) => !isHiddenDay(d?.isoDate)) : trip.days
+  return { ...trip, parts, days }
+}
+
 export function maskTripForViewer(trip, viewer) {
   if (isTripMaskedFrom(trip, viewer)) return tripStandIn(trip)
-  return maskTripStops(trip, viewer)
+  // Per-stop masking first (hides individual stops in visible days), then per-part
+  // (stubs hidden parts + strips their whole day window). Both fold into every read.
+  return maskTripParts(maskTripStops(trip, viewer), viewer)
 }
 
 // ── The save-back clobber guard (the NEW per-stop danger) ─────────────────────
@@ -264,4 +409,43 @@ export function preserveHiddenStops(storedTrip, incomingTrip, writer) {
     dest.stops.splice(Math.min(p.si, dest.stops.length), 0, p.stop)
   }
   return days
+}
+
+// ── The save-back clobber guard for PARTS (mirrors preserveHiddenStops) ───────
+// A part-masked trip is otherwise a REAL, editable trip (a recipient can co-plan
+// the parts they CAN see). The danger: a writer hidden from a part received neither
+// the real part (they got a stub/cover) NOR its days (stripped) — so their saved
+// copy is missing both. Writing it back would erase the surprise for everyone. So
+// before persisting, restore from the STORED trip every part hidden from the writer
+// AND the stored days inside its window. Returns { parts, days }. Pure — index.js
+// does the D1 read/write. Author / non-targeted / revealed → fast path (nothing to
+// protect). Only called for trips that actually carry parts (legacy stays untouched).
+export function preserveHiddenParts(storedTrip, incomingTrip, writer) {
+  const storedParts = Array.isArray(storedTrip?.parts) ? storedTrip.parts : []
+  const incomingParts = Array.isArray(incomingTrip?.parts) ? incomingTrip.parts : []
+  const incomingDays = Array.isArray(incomingTrip?.days) ? incomingTrip.days : []
+  const storedDays = Array.isArray(storedTrip?.days) ? storedTrip.days : []
+
+  const protectedParts = []
+  storedParts.forEach((part, pi) => {
+    if (isPartMaskedFrom(part, writer)) protectedParts.push({ part, pi })
+  })
+  if (!protectedParts.length) return { parts: incomingParts, days: incomingDays } // fast path
+
+  // Restore the parts: drop the writer's echo (a stub/cover carries the same id),
+  // then re-insert each stored real part at its stored index.
+  const protectedIds = new Set(protectedParts.map((p) => p.part.id))
+  const parts = incomingParts.filter((p) => !protectedIds.has(p?.id))
+  for (const { part, pi } of protectedParts) parts.splice(Math.min(pi, parts.length), 0, part)
+
+  // Restore the days OWNED BY a protected part — using the SAME clamped ownership
+  // the mask used to strip them (hiddenDayOwnership), so restore covers exactly what
+  // was hidden (incl. a no-dateEnd part's full run + a dateless day on the first
+  // part). Drop the writer's days there (a gap / echoes), re-insert the stored days.
+  const isProtectedDay = hiddenDayOwnership(storedTrip, writer)
+  const days = incomingDays.filter((d) => !isProtectedDay(d?.isoDate))
+  storedDays.forEach((day, di) => {
+    if (isProtectedDay(day?.isoDate)) days.splice(Math.min(di, days.length), 0, day)
+  })
+  return { parts, days }
 }
