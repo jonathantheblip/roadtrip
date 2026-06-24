@@ -121,7 +121,15 @@ test('a shared TEXT memory shares from the thread; a private one cannot', async 
   await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
   // Open day-2's stop → its memory thread (the dock ledge also shows the stop
   // name, but it renders last in the DOM, so .first() is the stop button).
-  await page.getByRole('button', { name: /vs BEV 13 Empire/i }).first().click()
+  // SETTLE BEFORE THE TAP: the stop button's label gains a memory-derived
+  // "N ENTRIES" badge only after the memory store hydrates the seeded notes.
+  // Tapping in that hydration frame is the transient that flaked this once on
+  // webkit-mobile (it cleared on CI retry). Wait for the settled button — the
+  // "ENTRIES" badge IS the "memories are loaded" signal this test depends on
+  // anyway — so the tap can't blow past the re-render.
+  const stopBtn = page.getByRole('button', { name: /vs BEV 13 Empire/i }).first()
+  await expect(stopBtn).toContainText(/ENTR(Y|IES)/i)
+  await stopBtn.click()
   await expect(page.getByText('a shared note')).toBeVisible()
   await expect(page.getByText('a private note')).toBeVisible()
   // Only the shared note carries a Share affordance.
