@@ -349,3 +349,19 @@ test('cardToTrip: a suggested part surprise rides on the saved part, author-stam
   assert.deepEqual(trip.parts[1].surprise.hideFrom, ['helen'])
   assert.equal(trip.parts[1].surprise.conceal, 'teaser')
 })
+
+// ─── trip SHAPE stamped by the concierge (from loose language) ───────
+test('cardToTrip carries an explicit shape="stay" stamped by Claude', () => {
+  const trip = cardToTrip({ type: 'create_trip', trip: { title: 'Cabin chill', shape: 'stay', days: [] } })
+  assert.equal(trip.shape, 'stay') // a "chill/hangout/lazy" trip → stay → gets the stay home shell
+})
+test('cardToTrip carries an explicit shape="route"', () => {
+  const trip = cardToTrip({ type: 'create_trip', trip: { title: 'Coast drive', shape: 'route', days: [] } })
+  assert.equal(trip.shape, 'route')
+})
+test('cardToTrip drops an unknown OR missing shape (→ no field → inferTripShape heuristic decides)', () => {
+  // A loose word leaking through as the shape value instead of being categorized down to stay/route.
+  assert.equal('shape' in cardToTrip({ type: 'create_trip', trip: { title: 'Loose', shape: 'lazy', days: [] } }), false)
+  // Claude couldn't tell → omitted entirely → the heuristic (G5-safe, defaults to route) decides.
+  assert.equal('shape' in cardToTrip({ type: 'create_trip', trip: { title: 'None', days: [] } }), false)
+})

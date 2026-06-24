@@ -33,6 +33,19 @@ describe('claude system prompt — trip-settings taxonomy', () => {
     expect(prompt).toMatch(/NEVER `add`\/`move`/)
   })
 
+  it('teaches create_trip to stamp trip.shape, categorizing loose language (chill/lazy → stay)', async () => {
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
+    expect(prompt).toContain('TRIP SHAPE')
+    expect(prompt).toContain('`trip.shape`')
+    // The two actionable categories + the safe fallback are spelled out.
+    expect(prompt).toMatch(/"stay"/)
+    expect(prompt).toMatch(/"route"/)
+    expect(prompt).toMatch(/OMIT `shape`/)
+    // Loose wording is explicitly in scope (the whole point of the fix).
+    expect(prompt).toMatch(/chill/i)
+    expect(prompt).toMatch(/lazy/i)
+  })
+
   it('documents the exact editable trip-level field names the applier reads', async () => {
     const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
     for (const name of [

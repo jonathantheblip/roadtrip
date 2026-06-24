@@ -4069,6 +4069,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push('  "trip": {')
     lines.push('    "title": "Asheville Long Weekend",')
     lines.push('    "subtitle": "Art, mountains, and good food",')
+    lines.push('    "shape": "stay",')
     lines.push('    "startCity": "Belmont, MA",')
     lines.push('    "endCity": "Belmont, MA",')
     lines.push('    "dateRangeStart": "2026-10-09",')
@@ -4107,6 +4108,10 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     lines.push('- FOOD: restaurants, cafes, markets')
     lines.push('- LOGISTICS: car rental, check-in, flights')
     lines.push('- TRANSIT: driving segments worth naming (scenic routes, rest stops)')
+    lines.push('')
+    lines.push(
+      'TRIP SHAPE — set `trip.shape` to the kind of trip this is, reading the user\'s intent even from loose, casual wording: `"stay"` for a trip anchored at ONE place they settle into (a cabin, a beach house, Grandma\'s, a city they base in) — INCLUDING low-key "just be there" trips however vaguely they phrase it ("chill", "lazy weekend", "hang out", "hangout", "relax", "nothing planned", "take it easy", "low-key", "just want to relax"); `"route"` for a ROAD TRIP that moves through 2+ overnight places with driving between them. The reader\'s words do NOT need to be precise — YOU categorize precisely. OMIT `shape` only when you genuinely cannot tell; a real road trip must never be labeled a stay. (A stay sheds road-trip scaffolding — the drive ticker, the "nearest gas/food" queue; a route keeps it.)'
+    )
     lines.push('')
     lines.push(
       'BIGGER trips — when the trip has 2+ DISTINCT legs (e.g. a flight, then a few nights in a city, then a week at a stay, then a drive): ALSO add an optional `parts` array on `trip`, one entry per leg, in chronological order. Each part: { "type": "stay" | "city" | "drive" | "flight" | "event" | "train" | "ferry" | "cruise", "title": "Three nights in Rome", "place": "Rome" (the city/place; omit for a pure drive or flight leg), "dateStart": "YYYY-MM-DD", "dateEnd": "YYYY-MM-DD" }. The `days[]` above remain the full day-by-day detail; `parts` is the high-level shape of the journey. OMIT `parts` entirely for a simple single-place trip (one stay, one city, or one road trip) — only emit it when there are genuinely 2+ distinct legs.'

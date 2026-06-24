@@ -207,6 +207,13 @@ export function cardToTrip(card, { existingId = null, existingIds = null, author
         })
       : null
 
+  // Trip SHAPE stamped by the concierge (it reads loose intent — "chill", "lazy
+  // weekend", "hangout" → a stay — and categorizes precisely). Only the two known
+  // values are honored; anything else (or omitted, when Claude can't tell) is dropped
+  // so inferTripShape's heuristic decides — keeping a real road trip from ever being
+  // mislabeled a stay and losing its drive scaffolding (G5).
+  const shape = t.shape === 'stay' || t.shape === 'route' ? t.shape : null
+
   return {
     id,
     draft: false,
@@ -224,6 +231,7 @@ export function cardToTrip(card, { existingId = null, existingIds = null, author
     overview: t.subtitle || '',
     sharedAlbumURL: '',
     days,
+    ...(shape ? { shape } : {}),
     ...(parts ? { parts } : {}),
     source: 'claude',
   }
