@@ -283,8 +283,8 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
             role="alert"
             className="f-dm text-xs mt-4"
             style={{
-              background: 'rgba(139,43,31,0.08)', border: '1px solid #C9342A',
-              color: '#C9342A', padding: '8px 10px', borderRadius: 8,
+              background: 'rgba(139,43,31,0.08)', border: '1px solid var(--accent-text, var(--text))',
+              color: 'var(--accent-text, var(--text))', padding: '8px 10px', borderRadius: 8,
               display: 'flex', gap: 8, alignItems: 'center',
             }}
           >
@@ -410,7 +410,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
             </button>
             {!comp.ok && (
               <div className="f-dm text-xs opacity-70 mt-4">
-                <p className="smallcaps mb-2" style={{ color: '#C9342A' }}>
+                <p className="smallcaps mb-2" style={{ color: 'var(--accent-text, var(--text))' }}>
                   Still needed before publishing
                 </p>
                 <ul style={{ listStyle: 'disc', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -435,7 +435,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
                     type="button"
                     className="btn-pill"
                     onClick={discardDraft}
-                    style={{ borderColor: '#C9342A', color: '#C9342A', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    style={{ borderColor: 'var(--accent-text, var(--text))', color: 'var(--accent-text, var(--text))', display: 'inline-flex', alignItems: 'center', gap: 6 }}
                   >
                     <Trash2 size={13} /> Discard draft
                   </button>
@@ -476,7 +476,7 @@ function SaveBadge({ state, err }) {
     idle: { t: 'No unsaved changes', c: 'inherit', i: null },
     saving: { t: 'Saving…', c: 'inherit', i: <Loader size={12} className="rt-spin" /> },
     saved: { t: 'Saved · synced', c: '#2E5D3A', i: <Check size={12} /> },
-    error: { t: err || 'Saved locally · sync failed', c: '#C9342A', i: <AlertTriangle size={12} /> },
+    error: { t: err || 'Saved locally · sync failed', c: 'var(--accent-text, var(--text))', i: <AlertTriangle size={12} /> },
   }
   const m = map[state] || map.idle
   return (
@@ -654,7 +654,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
 
       <div style={{ marginTop: 8 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span className="smallcaps f-dm text-[11px] opacity-70">The pitch <span style={{ color: '#C9342A' }}>*</span></span>
+          <span className="smallcaps f-dm text-[11px] opacity-70">The pitch <span style={{ color: 'var(--accent-text, var(--text))' }}>*</span></span>
           <div className="flex" style={{ gap: 6 }}>
             {isWhisperConfigured() && (
               <IconBtn onClick={() => setRecording(true)} label="Dictate the pitch"><Mic size={12} /></IconBtn>
@@ -673,7 +673,7 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
           style={{ width: '100%', padding: 10, fontSize: 14, minHeight: 80 }}
           placeholder="A sentence or two in the family's voice. Tap “Help me write” for a draft."
         />
-        {aiErr && <p className="f-dm text-[11px] mt-1" style={{ color: '#C9342A' }}>{aiErr}</p>}
+        {aiErr && <p className="f-dm text-[11px] mt-1" style={{ color: 'var(--accent-text, var(--text))' }}>{aiErr}</p>}
       </div>
 
       <Area label="Helen's note (optional override)" value={stop.helenNote} onChange={(v) => onUpdate({ helenNote: v })} placeholder="Shown only in Helen's view, in place of the pitch." />
@@ -745,7 +745,7 @@ function ShapeToggle({ stay, onChange }) {
 function Lbl({ label, required }) {
   return (
     <span className="smallcaps f-dm text-[11px] opacity-70">
-      {label}{required && <span style={{ color: '#C9342A', marginLeft: 4 }}>*</span>}
+      {label}{required && <span style={{ color: 'var(--accent-text, var(--text))', marginLeft: 4 }}>*</span>}
     </span>
   )
 }
@@ -952,7 +952,7 @@ function IconBtn({ children, onClick, label, danger, disabled }) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
         padding: '5px 10px',
-        color: danger ? '#C9342A' : 'inherit',
+        color: danger ? 'var(--accent-text, var(--text))' : 'inherit',
         opacity: disabled ? 0.4 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}

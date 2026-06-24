@@ -837,7 +837,9 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
 function PartSurpriseReview({ surprise, partLabel, T, onChange }) {
   const [drafting, setDrafting] = useState(false)
   const cap = (id) => (id === 'everyone' ? 'everyone' : id.charAt(0).toUpperCase() + id.slice(1))
-  const names = (surprise.hideFrom || []).map(cap).join(' & ') || 'someone'
+  const hidden = surprise.hideFrom || []
+  const names = hidden.map(cap).join(' & ')
+  const unmapped = surprise._unmapped || []
   const cover = surprise.cover
   async function doDraftCover() {
     if (drafting) return
@@ -855,16 +857,25 @@ function PartSurpriseReview({ surprise, partLabel, T, onChange }) {
   return (
     <div data-testid="part-surprise-review" style={{ margin: '5px 0 7px 50px', padding: '8px 10px', borderRadius: 8, border: `1px solid var(--border)`, background: 'rgba(138,111,45,0.07)' }}>
       <div style={{ fontFamily: FONT.mono, fontSize: 9, letterSpacing: 0.6, fontWeight: 600, color: T.draftEyebrow, textTransform: 'uppercase' }}>
-        🎁 Surprise · hidden from {names}
+        {hidden.length ? `🎁 Surprise · hidden from ${names}` : '🎁 Surprise · no one to hide it from yet'}
       </div>
-      <div style={{ fontFamily: FONT.serif, fontSize: 12, color: T.ink, marginTop: 4, lineHeight: 1.35 }}>
-        {cover ? `They'll see: ${cover.title}${cover.loc ? ` · ${cover.loc}` : ''}` : 'They’ll see a teaser — “🎁 Something’s coming.”'}
-      </div>
+      {unmapped.length > 0 && (
+        <div data-testid="part-surprise-unmapped" style={{ fontFamily: FONT.mono, fontSize: 9, color: T.oxblood || T.ink, marginTop: 4, lineHeight: 1.3 }}>
+          ⚠ Couldn’t find {unmapped.join(', ')} in the family — {hidden.length ? 'not hidden from them.' : 'so this won’t be hidden from anyone. Remove it, or it stays visible.'}
+        </div>
+      )}
+      {hidden.length > 0 && (
+        <div style={{ fontFamily: FONT.serif, fontSize: 12, color: T.ink, marginTop: 4, lineHeight: 1.35 }}>
+          {cover ? `They'll see: ${cover.title}${cover.loc ? ` · ${cover.loc}` : ''}` : 'They’ll see a teaser — “🎁 Something’s coming.”'}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
-        <button type="button" onClick={doDraftCover} disabled={drafting} style={{ ...btn, opacity: drafting ? 0.6 : 1 }} data-testid="part-surprise-cover">
-          {drafting ? 'Drafting…' : cover ? 'Redraft cover' : 'Draft a cover'}
-        </button>
-        {cover && (
+        {hidden.length > 0 && (
+          <button type="button" onClick={doDraftCover} disabled={drafting} style={{ ...btn, opacity: drafting ? 0.6 : 1 }} data-testid="part-surprise-cover">
+            {drafting ? 'Drafting…' : cover ? 'Redraft cover' : 'Draft a cover'}
+          </button>
+        )}
+        {hidden.length > 0 && cover && (
           <button type="button" onClick={() => onChange({ ...surprise, conceal: 'teaser', cover: undefined })} style={btn}>
             Teaser instead
           </button>
@@ -1486,11 +1497,24 @@ function seedDraft(card) {
     const tripParts = (card.trip?.parts || []).map((p) => {
       let surprise
       if (p.surprise && typeof p.surprise === 'object') {
-        const ids = (Array.isArray(p.surprise.hideFrom) ? p.surprise.hideFrom : [])
-          .map((n) => (typeof n === 'string' && n.trim().toLowerCase() === 'everyone' ? 'everyone' : travelerNameToId(n)))
-          .filter(Boolean)
+        const raw = Array.isArray(p.surprise.hideFrom) ? p.surprise.hideFrom : []
+        const ids = []
+        const unmapped = []
+        for (const n of raw) {
+          if (typeof n === 'string' && n.trim().toLowerCase() === 'everyone') { ids.push('everyone'); continue }
+          const id = travelerNameToId(n)
+          if (id) ids.push(id)
+          else if (typeof n === 'string' && n.trim()) unmapped.push(n.trim())
+        }
         const hideFrom = [...new Set(ids)]
-        if (hideFrom.length) surprise = { ...p.surprise, hideFrom }
+        // Keep the surprise if Claude ATTEMPTED one (mapped OR not), so the author is
+        // never left unaware that a requested surprise couldn't be scoped — the review
+        // surfaces `_unmapped` as a warning. `_unmapped` is UI-only: sanitizePartSurprise
+        // rebuilds the saved surprise from scratch, so it never persists.
+        if (hideFrom.length || unmapped.length) {
+          surprise = { ...p.surprise, hideFrom }
+          if (unmapped.length) surprise._unmapped = [...new Set(unmapped)]
+        }
       }
       return { ...p, surprise }
     })

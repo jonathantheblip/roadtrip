@@ -346,7 +346,7 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
           <p
             role="alert"
             className="f-dm text-sm"
-            style={{ color: '#8B2B1F', lineHeight: 1.4 }}
+            style={{ color: 'var(--accent-text, var(--text))', lineHeight: 1.4 }}
           >
             {error}
           </p>
@@ -396,11 +396,11 @@ function Field({ label, required, error, children }) {
     <label className="flex flex-col" style={{ gap: 6 }}>
       <span className="smallcaps f-dm text-[11px] opacity-70">
         {label}
-        {required && <span style={{ color: '#8B2B1F', marginLeft: 4 }}>*</span>}
+        {required && <span style={{ color: 'var(--accent-text, var(--text))', marginLeft: 4 }}>*</span>}
       </span>
       {children}
       {error && (
-        <span role="alert" className="f-dm text-xs" style={{ color: '#8B2B1F' }}>
+        <span role="alert" className="f-dm text-xs" style={{ color: 'var(--accent-text, var(--text))' }}>
           {error}
         </span>
       )}

@@ -116,6 +116,17 @@ function surpriseCard(id) {
   return c
 }
 
+// Claude suggests a surprise but names someone NOT in the family (a misheard name).
+function surpriseUnmappedCard(id) {
+  const c = italyCard(id)
+  c.trip.parts = c.trip.parts.map((p) =>
+    p.title.includes('villa')
+      ? { ...p, surprise: { hideFrom: ['Rafa', 'Grandma'], conceal: 'teaser' } }
+      : p
+  )
+  return c
+}
+
 // A BIGGER trip: Claude lays out distinct legs via the optional `parts` array.
 function italyCard(id) {
   return {
@@ -366,6 +377,34 @@ test.describe('Claude-in-App — create_trip', () => {
         { timeout: 5000 }
       )
       .toBe('helen|rafa,aurelia|cover')
+  })
+
+  test('a surprise with an unmappable name WARNS the author; only the recognized people are hidden', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [replyWithCard(surpriseUnmappedCard('ct-surp-3'), 'Here’s the shape of it.')])
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'Italy in July, hide the villa from Rafa and Grandma')
+    const card = dialog.getByTestId('confirm-card-create_trip')
+    const review = card.getByTestId('part-surprise-review')
+    await expect(review).toBeVisible({ timeout: 5000 })
+    // Rafa is hidden; the author is warned Grandma couldn't be found.
+    await expect(review).toContainText('Rafa')
+    await expect(review.getByTestId('part-surprise-unmapped')).toContainText('Grandma')
+    // Save → only the recognized person (rafa) is hidden; Grandma is dropped.
+    await card.getByTestId('confirm-card-save').click()
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+            const t = all.find((x) => x.title === 'Italy, summer')
+            const villa = (t?.parts || []).find((p) => (p.title || '').includes('villa'))
+            return villa?.surprise ? villa.surprise.hideFrom.join(',') : 'none'
+          }),
+        { timeout: 5000 }
+      )
+      .toBe('rafa')
   })
 
   test('a SURPRISE part can be REMOVED in the review — the saved part is then a normal, visible part', async ({ page }) => {
