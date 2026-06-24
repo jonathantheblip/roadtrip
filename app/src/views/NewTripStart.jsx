@@ -8,8 +8,8 @@ import { Home, Building2, Car, Sun, Globe, Sparkles, ChevronLeft } from 'lucide-
 // It LEADS with the AI concierge (Plan with Claude — the existing create_trip
 // flow, which already turns a sentence into a real trip) and offers the five
 // shapes as the deliberate escape. Simple shapes route to the manual form with
-// the shape preset; the bigger/composite trip is best described to Claude for now
-// (the bespoke parts-builder is a later increment).
+// the shape preset; the bigger/composite trip opens the manual parts-builder
+// (NewTripComposite) — describing it to Claude stays available via the lead box.
 //
 // Theme-aware like NewTrip (surface-light/dark + CSS vars) so it wears the
 // creator's lens. Only the title is ever required downstream — nothing here asks
@@ -22,7 +22,7 @@ const SHAPES = [
   { key: 'bigger', label: 'A bigger trip', desc: 'Several parts in one', Icon: Globe, composite: true },
 ]
 
-export function NewTripStart({ onBack, onPickShape, onPlanWithClaude, dark = false }) {
+export function NewTripStart({ onBack, onPickShape, onPlanWithClaude, onBuildComposite, dark = false }) {
   const [text, setText] = useState('')
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
@@ -88,7 +88,7 @@ export function NewTripStart({ onBack, onPickShape, onPlanWithClaude, dark = fal
               key={key}
               type="button"
               data-shape={key}
-              onClick={() => (composite ? onPlanWithClaude?.() : onPickShape?.(key))}
+              onClick={() => (composite ? onBuildComposite?.() : onPickShape?.(key))}
               aria-label={`${label} — ${desc}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', cursor: 'pointer',
@@ -103,7 +103,7 @@ export function NewTripStart({ onBack, onPickShape, onPlanWithClaude, dark = fal
               </span>
               {composite && (
                 <span className="f-dm" style={{ fontSize: 11, color: 'var(--accent-text, var(--muted))', whiteSpace: 'nowrap' }}>
-                  with Claude
+                  build it
                 </span>
               )}
             </button>

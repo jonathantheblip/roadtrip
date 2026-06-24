@@ -875,6 +875,9 @@ export function ClaudeChatPanel({
   const [sending, setSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState(null)
   const messagesRef = useRef(null)
+  // Auto-send guard: a seeded front-door message fires itself exactly once per
+  // open (see the auto-send effect). Reset when the panel closes.
+  const autoSentRef = useRef(false)
 
   // Session-scoped record of cardIds whose change has been committed
   // through this panel instance. Combined with claudeMeta.cardId stamps
@@ -943,6 +946,7 @@ export function ClaudeChatPanel({
       setStreamingText('')
       setSending(false)
       setErrorMsg(null)
+      autoSentRef.current = false
       return
     }
     // Seeded creation (the shape-first front door's "Tell me about the trip"):
@@ -1057,6 +1061,24 @@ export function ClaudeChatPanel({
       setSending(false)
     }
   }
+
+  // Auto-send the front-door seed: once the seeded fresh chat is ready (conversation
+  // minted, on the chat screen), fire the typed sentence automatically so "Plan with
+  // Claude" goes straight to a draft — one less tap. Fires exactly once per open
+  // (autoSentRef). Only when Claude is configured: with no worker it falls back to a
+  // PREFILLED composer (the ChatComposer initialText below) so dev/offline never
+  // auto-errors. A blank seed never reaches here (the front door passes undefined).
+  useEffect(() => {
+    if (!open || !seedMessage) return
+    if (!isClaudeChatConfigured()) return
+    if (phase !== 'chat' || !conversationId) return
+    if (autoSentRef.current || sending) return
+    autoSentRef.current = true
+    handleSend(seedMessage)
+    // handleSend is a fresh closure each render carrying the current conversationId;
+    // the effect runs after it's set, so the send targets the right conversation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, seedMessage, phase, conversationId])
 
   if (!open) return null
 
@@ -1229,7 +1251,9 @@ export function ClaudeChatPanel({
             </div>
             <ChatComposer
               key={seedMessage || 'blank'}
-              initialText={seedMessage || ''}
+              // Auto-send (configured) carries the seed via handleSend, so the box
+              // starts empty. Unconfigured fallback: PREFILL it so the words aren't lost.
+              initialText={seedMessage && !isClaudeChatConfigured() ? seedMessage : ''}
               disabled={sending}
               onSend={handleSend}
               placeholder={tripTitle ? `ask about ${tripTitle.toLowerCase()}…` : 'ask claude…'}

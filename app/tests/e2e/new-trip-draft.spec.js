@@ -209,8 +209,24 @@ test.describe('NewTrip — manual-add draft', () => {
     await expect(page.getByRole('button', { name: /^Settings$/i })).toBeVisible()
   })
 
-  test('the front-door concierge seeds the planner: typed text prefills the chat composer', async ({ page }) => {
+  test('the front-door concierge AUTO-SENDS the seed: typed text fires straight to a draft', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
+    // Stream a short Claude reply so the auto-sent seed gets a response. Registered
+    // AFTER seedTripIntoCache so this specific /claude/chat route wins the catch-all.
+    await page.route(
+      /roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/claude\/chat$/,
+      async (route) => {
+        const text = 'A cabin weekend it is — here is a first draft.'
+        const frames = []
+        for (let i = 0; i < text.length; i += 24) frames.push({ type: 'text_delta', text: text.slice(i, i + 24) })
+        frames.push({ type: 'done', usage: { input_tokens: 10, output_tokens: 20 } })
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+          body: frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join(''),
+        })
+      }
+    )
     await page.goto(`/?person=${PERSONA}&nosw=1`)
     await gotoIndex(page)
 
@@ -221,10 +237,10 @@ test.describe('NewTrip — manual-add draft', () => {
     await page.getByLabel(/Describe the trip and Claude will build it/i).fill(desc)
     await page.getByRole('button', { name: /Plan with Claude/i }).click()
 
-    // The existing create_trip planner opens straight into a fresh chat with the
-    // composer PREFILLED with the typed text (seedMessage), so the words carry
-    // over instead of opening an empty box. (No worker needed: the seed branch
-    // skips the conversation fetch.)
-    await expect(page.getByLabel(/Message Claude/i)).toHaveValue(desc, { timeout: 7000 })
+    // Auto-sent (no manual send tap): the typed sentence lands as a user message,
+    // Claude's reply streams in, and the composer is left EMPTY for a follow-up.
+    await expect(page.getByText(desc, { exact: false }).first()).toBeVisible({ timeout: 7000 })
+    await expect(page.getByText(/here is a first draft/i)).toBeVisible({ timeout: 7000 })
+    await expect(page.getByLabel(/Message Claude/i)).toHaveValue('')
   })
 })

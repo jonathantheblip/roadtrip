@@ -25,6 +25,7 @@ import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
 import { NewTrip } from './views/NewTrip'
 import { NewTripStart } from './views/NewTripStart'
+import { NewTripComposite } from './views/NewTripComposite'
 import { TripEditor } from './views/TripEditor'
 import { ActivitiesView } from './views/ActivitiesView'
 import { PhotosView } from './views/PhotosView'
@@ -291,7 +292,7 @@ function pickActiveTrip(trips, today = todayIso()) {
 export default function App() {
   const [traveler, setTraveler] = useState(readTraveler)
   const [tripId, setTripId] = useState(readRequestedTripId)
-  const [view, setView] = useState(() => initialViewFromUrl()) // 'index' | 'trip' | 'stop' | 'settings' | 'new' | 'edit' | 'activities' | 'photos' | 'import' | 'replay' | 'map'
+  const [view, setView] = useState(() => initialViewFromUrl()) // 'index' | 'trip' | 'stop' | 'settings' | 'new' | 'newform' | 'newcomposite' | 'edit' | 'activities' | 'photos' | 'import' | 'replay' | 'map'
   // Claude-in-App M1: panel state lives at App level so the entry
   // points scattered across views all open the same surface, and the
   // panel's per-trip context falls out of the existing `trip` resolve.
@@ -545,7 +546,7 @@ export default function App() {
   // fallback there. `edit` always has `tripId` set by its opener, so it's
   // unaffected; every passive landing view keeps the fallback unchanged.
   const trip =
-    view.name === 'new' || view.name === 'newform'
+    view.name === 'new' || view.name === 'newform' || view.name === 'newcomposite'
       ? null
       : (tripId && allTrips.find((t) => t.id === tripId)) || activeTrip
 
@@ -577,6 +578,7 @@ export default function App() {
     // lands directly in create/edit, e.g. a saved ?view= or a draft deep link).
     if (view.name === 'new') return
     if (view.name === 'newform') return
+    if (view.name === 'newcomposite') return
     if (view.name === 'edit') return
 
     const today = todayIso()
@@ -1213,7 +1215,7 @@ export default function App() {
       )}
       {/* Top-of-screen trip / index switch — small and editorial, never the focus.
           Hidden in replay / map / weave: those surfaces own their own chrome. */}
-      {view.name !== 'index' && view.name !== 'new' && view.name !== 'newform' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && view.name !== 'surprises' && !(traveler === 'rafa' && isIpad) && (
+      {view.name !== 'index' && view.name !== 'new' && view.name !== 'newform' && view.name !== 'newcomposite' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'weave' && view.name !== 'book' && view.name !== 'showme' && view.name !== 'surprises' && !(traveler === 'rafa' && isIpad) && (
         <div
           className="px-6"
           data-testid="trip-topbar"
@@ -1514,11 +1516,15 @@ export default function App() {
             onBack={openIndex}
             onPickShape={(shape) => setView({ name: 'newform', shape })}
             onPlanWithClaude={openClaude}
+            onBuildComposite={() => setView({ name: 'newcomposite' })}
             dark={darkSurface}
           />
         )}
         {view.name === 'newform' && (
           <NewTrip onBack={openNewTrip} onCreate={handleCreateTrip} presetShape={view.shape} dark={darkSurface} />
+        )}
+        {view.name === 'newcomposite' && (
+          <NewTripComposite onBack={openNewTrip} onCreate={handleCreateTrip} dark={darkSurface} />
         )}
         {view.name === 'edit' && trip && (
           <TripEditor
@@ -1661,7 +1667,7 @@ export default function App() {
           there's no active trip, so the dock is just the plain pills (ledge
           'none'), never the live ledge. Still hidden on new/edit (the author is
           mid-create) and the immersive replay/map/identity surfaces. */}
-      {view.name !== 'new' && view.name !== 'newform' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && !showStayTabs && (
+      {view.name !== 'new' && view.name !== 'newform' && view.name !== 'newcomposite' && view.name !== 'edit' && view.name !== 'replay' && view.name !== 'map' && view.name !== 'identity' && !showStayTabs && (
         <Switcher
           active={traveler}
           onSwitch={handleTravelerSwitch}
