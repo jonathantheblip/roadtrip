@@ -25,7 +25,7 @@ import {
   callRoutesDistance,
   straightLineMinutes,
 } from './leaveWhen.js'
-import { runNightlyWeave, beatSignature, regenerateStoredWeaves } from './weaveGen.js'
+import { runNightlyWeave, beatSignature, regenerateStoredWeaves, secretWeaveDaySet } from './weaveGen.js'
 import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, preserveHiddenParts, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
@@ -2914,18 +2914,31 @@ async function getStoredWeave(env, url, cors) {
   if (!tripId) return json({ error: 'trip_id required' }, 400, cors)
   const dayIso = url.searchParams.get('day')
 
-  let row
+  // SERVE-TIME surprise guard (Surprises masking): never hand out a stored weave
+  // for a day that's currently under an unrevealed surprise — the saved narrative
+  // can name a secret if it was woven/kept before the surprise was set. FAILS
+  // CLOSED: if secrecy can't be determined we return 204 (the client then builds
+  // the weave on demand from its OWN masked data), never the raw stored row.
+  let secret
+  try {
+    secret = await secretWeaveDaySet(env, tripId)
+  } catch {
+    return new Response(null, { status: 204, headers: cors })
+  }
+  if (secret.allHidden) return new Response(null, { status: 204, headers: cors })
+
+  let rows
   try {
     if (dayIso) {
       const { results } = await env.DB.prepare(
         `SELECT * FROM weaves WHERE id = ?`
       ).bind(`${tripId}::${dayIso}`).all()
-      row = results?.[0]
+      rows = results || []
     } else {
       const { results } = await env.DB.prepare(
-        `SELECT * FROM weaves WHERE trip_id = ? ORDER BY day_iso DESC LIMIT 1`
+        `SELECT * FROM weaves WHERE trip_id = ? ORDER BY day_iso DESC`
       ).bind(tripId).all()
-      row = results?.[0]
+      rows = results || []
     }
   } catch (e) {
     // Before migration 008 is applied the `weaves` table is absent. Treat
@@ -2937,6 +2950,9 @@ async function getStoredWeave(env, url, cors) {
     }
     throw e
   }
+  // The single-day request has at most one row; the latest-day request scans down
+  // to the freshest day whose weave isn't being withheld for a surprise.
+  const row = rows.find((r) => !secret.isSecretDay(r.day_iso))
   if (!row) return new Response(null, { status: 204, headers: cors })
 
   return json(
@@ -3014,6 +3030,19 @@ async function getWeaveBook(env, url, cors) {
   const tripId = url.searchParams.get('trip_id')
   if (!tripId) return json({ error: 'trip_id required' }, 400, cors)
 
+  // SERVE-TIME surprise guard (see getStoredWeave): drop any kept page whose day is
+  // currently under an unrevealed surprise. FAILS CLOSED — an empty book over a leaked
+  // secret page — if secrecy can't be determined.
+  let secret
+  try {
+    secret = await secretWeaveDaySet(env, tripId)
+  } catch {
+    return json({ tripId, pages: [] }, 200, { ...cors, 'Cache-Control': 'no-store' })
+  }
+  if (secret.allHidden) {
+    return json({ tripId, pages: [] }, 200, { ...cors, 'Cache-Control': 'no-store' })
+  }
+
   let results
   try {
     ;({ results } = await env.DB.prepare(
@@ -3030,7 +3059,9 @@ async function getWeaveBook(env, url, cors) {
     throw e
   }
 
-  const pages = (results || []).map((row) => ({
+  const pages = (results || [])
+    .filter((row) => !secret.isSecretDay(row.day_iso))
+    .map((row) => ({
     tripId: row.trip_id,
     dayIso: row.day_iso,
     title: row.title,

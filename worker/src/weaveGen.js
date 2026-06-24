@@ -61,6 +61,118 @@ export function selectWeaveDayServer(trips, dayHasSharedMemory, todayIso) {
   return null
 }
 
+// ── Serve-time surprise guard for STORED weaves ──────────────────────────────
+// The SERVE-time counterpart to selectWeaveDayServer (which guards GENERATION).
+// A `weaves` row is the family's SHARED day narrative. If it was woven/kept BEFORE
+// a day's content became a surprise, the stored prose can still name the secret —
+// and a generated narrative can't be redacted sentence-by-sentence, nor is any row
+// ever deleted. So the safe move is to WITHHOLD a day's stored weave while that day
+// is under an unrevealed surprise, then serve it again once revealed (self-healing;
+// nothing is destroyed).
+//
+// GLOBAL, exactly like the generator: a day hidden from ANYONE is withheld from
+// EVERYONE (selectWeaveDayServer / runNightlyWeave won't (re)weave a secret day for
+// anyone either, so withholding the stored one is consistent, not stricter). Covers
+// every surprise type, reusing the SAME predicates the mask + generator use so the
+// three can't drift:
+//   - whole-trip → allHidden (every day withheld)            [mirrors runNightlyWeave L165]
+//   - per-part   → the days the part's DATE window owns       [mirrors selectWeaveDayServer]
+//   - per-stop   → the day the hidden stop sits on            [mirrors weaveStatLine's test]
+//   - per-memory → the day the hidden memory's stop sits on   [mirrors runNightlyWeave L176;
+//                  the generator already drops hidden memories from FRESH beats, so this
+//                  only catches a row woven before the memory was hidden]
+//
+// ⚠ A `weaves` row is keyed by its OWN day_iso and is NEVER deleted, so it can OUTLIVE
+// the trip.days that produced it (an edit removes/restructures the day; the row stays).
+// Secrecy is therefore decided against the surprise LAYERS DIRECTLY — partDayOwner is a
+// pure date→index fn that works for a day_iso absent from trip.days — NOT against
+// trip.days membership, or such a row would escape the guard. Returns
+// { allHidden:boolean, isSecretDay:(iso)=>boolean }; the CALLER applies isSecretDay to
+// each STORED row's day_iso. FAILS CLOSED: a present-but-unparseable trip, or a hidden
+// memory whose stop can no longer be located in trip.days, withholds the WHOLE trip.
+// Schema-absence (pre-migration table/column) is swallowed narrowly → no masking from
+// that source; any OTHER D1 error propagates so the caller fails closed.
+const weaveSurpriseHidden = (o) => {
+  const s = o?.surprise
+  return !!(s && Array.isArray(s.hideFrom) && s.hideFrom.length && !s.revealed)
+}
+
+const ALL_SECRET = { allHidden: true, isSecretDay: () => true }
+
+export async function secretWeaveDaySet(env, tripId) {
+  const day10 = (iso) => (typeof iso === 'string' ? iso.slice(0, 10) : null)
+
+  // Load the trip (carries the trip/part/stop surprise layers, inside data_json).
+  let trip = null
+  let tripPresentButBroken = false
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL`
+    ).bind(tripId).all()
+    if (results?.[0]?.data_json) {
+      try { trip = JSON.parse(results[0].data_json) }
+      catch { tripPresentButBroken = true } // present but unreadable → fail closed
+    }
+  } catch (e) {
+    if (!/no such (table|column)/i.test(String(e?.message || e))) throw e
+  }
+
+  // Whole-trip surprise, OR a present trip we can't read (it may hide a live surprise we
+  // can't see) → withhold everything. A genuinely-absent trip is a legit orphan weave →
+  // no structural masking (the memory pass below still runs).
+  if (tripPresentButBroken || (trip && weaveSurpriseHidden(trip))) return ALL_SECRET
+
+  const parts = trip && Array.isArray(trip.parts) ? trip.parts : []
+  const partOwner = parts.length ? partDayOwner(parts) : null
+  const hiddenPart = new Set() // indices of hidden parts (windows are date ranges)
+  parts.forEach((p, i) => { if (weaveSurpriseHidden(p)) hiddenPart.add(i) })
+
+  // per-stop lives IN trip.days (a stop surprise can't exist for a day not in trip.days),
+  // so iterating trip.days is the correct domain. Also build stop → day for the memory pass.
+  const hiddenStopDays = new Set()
+  const stopDay = new Map()
+  if (trip) {
+    for (const d of trip.days || []) {
+      const iso = day10(d?.isoDate)
+      for (const s of d?.stops || []) {
+        if (s?.id && iso) stopDay.set(s.id, iso)
+        if (iso && weaveSurpriseHidden(s)) hiddenStopDays.add(iso)
+      }
+    }
+  }
+
+  // Hidden unrevealed SHARED memories. A memory carries a stop_id but no day of its own
+  // → map it via trip.days. If its stop is GONE from trip.days (restructured after the
+  // row was woven) we can't locate the day → withhold the WHOLE trip's weaves (rare,
+  // conservative, safe). A NULL stop_id never enters a day's beats → never leaks → skip.
+  const hiddenMemoryDays = new Set()
+  let unmappableHiddenMemory = false
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT stop_id FROM memories
+        WHERE trip_id = ? AND deleted_at IS NULL AND visibility = 'shared'
+          AND hide_from_json IS NOT NULL AND revealed_at IS NULL`
+    ).bind(tripId).all()
+    for (const r of results || []) {
+      if (!r?.stop_id) continue
+      const iso = stopDay.get(r.stop_id)
+      if (iso) hiddenMemoryDays.add(iso)
+      else unmappableHiddenMemory = true
+    }
+  } catch (e) {
+    if (!/no such (table|column)/i.test(String(e?.message || e))) throw e
+  }
+  if (unmappableHiddenMemory) return ALL_SECRET
+
+  const isSecretDay = (iso) => {
+    const d = day10(iso)
+    if (!d) return false
+    if (partOwner) { const i = partOwner(d); if (i >= 0 && hiddenPart.has(i)) return true }
+    return hiddenStopDays.has(d) || hiddenMemoryDays.has(d)
+  }
+  return { allHidden: false, isSecretDay }
+}
+
 // ── Beat building (server) ───────────────────────────────────────────────
 // Port of buildBeats: group a day's shared memories by author, keep one beat
 // per person (preference voice > photo > text — most distinctive first).
