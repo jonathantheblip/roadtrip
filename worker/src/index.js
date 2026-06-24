@@ -4082,6 +4082,10 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
     )
     lines.push('')
     lines.push(
+      'SURPRISES — if the user says a part is a SURPRISE for someone ("don\'t let Helen see the last two days", "the villa is a surprise for the kids"), add to THAT part only: `"surprise": { "hideFrom": ["Helen"], "conceal": "teaser" }`. `hideFrom` = the people who must NOT see it (their names, or "everyone"); never include people it is NOT hidden from. Use `"conceal": "cover"` ONLY if they describe a believable cover story to show instead; otherwise `"teaser"`. This is a SUGGESTION — the author confirms who is hidden and sets the cover before it publishes; do NOT invent an author or a cover.'
+    )
+    lines.push('')
+    lines.push(
       'One card per turn. If the reader refines the draft before saving ("swap the hike for a winery"), emit a fresh `create_trip` card with the updated trip — it replaces the previous one, same one-card-per-turn pattern as the in-trip cards. After the reader saves, the trip is real and editable via the normal in-trip surface (move, add, cancel, multi).'
     )
   }

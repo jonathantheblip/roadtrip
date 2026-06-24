@@ -13,6 +13,7 @@ const {
   categoryToKind,
   humanDayLabel,
   humanDateRange,
+  sanitizePartSurprise,
   cardToTrip,
 } = await import('../../src/lib/createTripCard.js')
 
@@ -305,4 +306,46 @@ test('cardToTrip carries an emitted parts[] (composite trip), validated + id-sta
 test('cardToTrip omits parts for a simple trip (no parts field at all)', () => {
   const trip = cardToTrip(SAMPLE_CARD)
   assert.equal('parts' in trip, false) // a one-place trip stays parts-less; getParts derives one
+})
+
+// ── "Surprises by sentence" Slice 2 — cardToTrip carries a SAFE, author-stamped surprise ──
+test('sanitizePartSurprise: author from session (never Claude), hideFrom validated, teaser default', () => {
+  const s = sanitizePartSurprise({ hideFrom: ['Helen'], conceal: 'cover', cover: { title: 'Quiet coast', loc: 'Amalfi' } }, 'jonathan')
+  assert.equal(s.author, 'jonathan') // stamped from the session arg, not the payload
+  assert.deepEqual(s.hideFrom, ['helen'])
+  assert.equal(s.conceal, 'cover')
+  assert.equal(s.cover.title, 'Quiet coast')
+})
+test('sanitizePartSurprise: no trustworthy author ⇒ NO surprise (fail-safe)', () => {
+  assert.equal(sanitizePartSurprise({ hideFrom: ['Helen'] }, null), null)
+  assert.equal(sanitizePartSurprise({ hideFrom: ['Helen'] }, 'nobody'), null)
+})
+test('sanitizePartSurprise: an author can never be hidden from their own surprise', () => {
+  assert.equal(sanitizePartSurprise({ hideFrom: ['Jonathan'] }, 'jonathan'), null) // self-only → no audience
+  const s = sanitizePartSurprise({ hideFrom: ['Jonathan', 'Helen'] }, 'jonathan')
+  assert.deepEqual(s.hideFrom, ['helen']) // self dropped
+})
+test('sanitizePartSurprise: unknown names dropped; "everyone" kept; empty audience ⇒ null', () => {
+  assert.deepEqual(sanitizePartSurprise({ hideFrom: ['everyone'] }, 'jonathan').hideFrom, ['everyone'])
+  assert.equal(sanitizePartSurprise({ hideFrom: ['Nobody', 'ghost'] }, 'jonathan'), null)
+  assert.equal(sanitizePartSurprise({ conceal: 'cover' }, 'jonathan'), null) // no hideFrom
+})
+test('cardToTrip: a suggested part surprise rides on the saved part, author-stamped from the session', () => {
+  const card = {
+    type: 'create_trip',
+    trip: {
+      title: 'Italy', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-07', travelers: ['Jonathan', 'Helen'],
+      days: [],
+      parts: [
+        { type: 'city', title: 'Rome', dateStart: '2026-08-01', dateEnd: '2026-08-03' },
+        { type: 'stay', title: 'Secret villa', place: 'Positano', dateStart: '2026-08-04', dateEnd: '2026-08-06', surprise: { hideFrom: ['Helen'], conceal: 'teaser', author: 'helen' /* spoof attempt */ } },
+      ],
+    },
+  }
+  const trip = cardToTrip(card, { authorTraveler: 'jonathan' })
+  assert.equal(trip.parts.length, 2)
+  assert.equal(trip.parts[0].surprise, undefined) // Rome isn't a surprise
+  assert.equal(trip.parts[1].surprise.author, 'jonathan') // session wins over the spoofed payload author
+  assert.deepEqual(trip.parts[1].surprise.hideFrom, ['helen'])
+  assert.equal(trip.parts[1].surprise.conceal, 'teaser')
 })

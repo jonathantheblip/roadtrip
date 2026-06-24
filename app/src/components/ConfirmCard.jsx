@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react'
 import { TRAVELER_DOT } from '../data/travelers'
 import { travelerNameToId, humanDateRange } from '../lib/createTripCard'
+import { draftCover } from '../lib/workerSync'
 import { userFacingApplyError } from '../lib/claudeCardApply'
 import { logUploadEvent } from '../lib/uploadLog'
 import { isUnsynced, subscribe as subscribeUnsynced } from '../lib/tripSyncQueue'
@@ -826,6 +827,56 @@ function StopRow({ stop, dayIdx, stopIdx, open, onToggleOpen, onToggleSkip }) {
   )
 }
 
+// "Surprises by sentence" Slice 2 — the per-part surprise review in the create card.
+// The author SEES who's hidden (confirms the audience by reading it), can attach a
+// believable COVER (via the live /cover seam) so the recipient sees a stand-in rather
+// than a teaser, or REMOVE the surprise if Claude misread. Audience = Claude's
+// suggestion; per-person re-targeting is a follow-up. The worker+client boundary
+// already hides it; an un-covered surprise ships as a SAFE teaser. The card uses a
+// fixed light palette (dark T.ink), so no per-lens contrast risk here.
+function PartSurpriseReview({ surprise, partLabel, T, onChange }) {
+  const [drafting, setDrafting] = useState(false)
+  const cap = (id) => (id === 'everyone' ? 'everyone' : id.charAt(0).toUpperCase() + id.slice(1))
+  const names = (surprise.hideFrom || []).map(cap).join(' & ') || 'someone'
+  const cover = surprise.cover
+  async function doDraftCover() {
+    if (drafting) return
+    setDrafting(true)
+    const c = await draftCover(
+      `A believable, ordinary-sounding cover for a surprise part of a family trip ("${partLabel}"), shown to family who must NOT know about it yet. Keep it plausible and low-key.`
+    )
+    setDrafting(false)
+    if (c) onChange({ ...surprise, conceal: 'cover', cover: c })
+  }
+  const btn = {
+    fontFamily: FONT.mono, fontSize: 9, letterSpacing: 0.4, padding: '4px 8px', borderRadius: 6,
+    border: `1px solid var(--border)`, background: 'transparent', color: T.ink, cursor: 'pointer', textTransform: 'uppercase',
+  }
+  return (
+    <div data-testid="part-surprise-review" style={{ margin: '5px 0 7px 50px', padding: '8px 10px', borderRadius: 8, border: `1px solid var(--border)`, background: 'rgba(138,111,45,0.07)' }}>
+      <div style={{ fontFamily: FONT.mono, fontSize: 9, letterSpacing: 0.6, fontWeight: 600, color: T.draftEyebrow, textTransform: 'uppercase' }}>
+        🎁 Surprise · hidden from {names}
+      </div>
+      <div style={{ fontFamily: FONT.serif, fontSize: 12, color: T.ink, marginTop: 4, lineHeight: 1.35 }}>
+        {cover ? `They'll see: ${cover.title}${cover.loc ? ` · ${cover.loc}` : ''}` : 'They’ll see a teaser — “🎁 Something’s coming.”'}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+        <button type="button" onClick={doDraftCover} disabled={drafting} style={{ ...btn, opacity: drafting ? 0.6 : 1 }} data-testid="part-surprise-cover">
+          {drafting ? 'Drafting…' : cover ? 'Redraft cover' : 'Draft a cover'}
+        </button>
+        {cover && (
+          <button type="button" onClick={() => onChange({ ...surprise, conceal: 'teaser', cover: undefined })} style={btn}>
+            Teaser instead
+          </button>
+        )}
+        <button type="button" onClick={() => onChange(null)} style={btn} data-testid="part-surprise-remove">
+          Remove
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }) {
   const trip = card.trip || {}
   const days = Array.isArray(draft.tripDays) ? draft.tripDays : []
@@ -944,16 +995,32 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
           </div>
           {trip.parts.map((p, pi) => {
             const when = humanDateRange(p.dateStart, p.dateEnd)
+            const surprise = draft.tripParts?.[pi]?.surprise
             return (
-              <div key={pi} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '3px 0' }}>
-                <span style={{ fontFamily: FONT.mono, fontSize: 8.5, letterSpacing: 0.6, textTransform: 'uppercase', color: T.inkFaint, minWidth: 42 }}>
-                  {p.type || 'stay'}
-                </span>
-                <span style={{ fontFamily: FONT.serif, fontSize: 13, color: T.ink, flex: 1, lineHeight: 1.25 }}>
-                  {p.title || p.place || 'A part'}
-                </span>
-                {when && when !== 'TBD' && (
-                  <span style={{ fontFamily: FONT.mono, fontSize: 8.5, color: T.inkFaint, whiteSpace: 'nowrap' }}>{when}</span>
+              <div key={pi} style={{ padding: '3px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontFamily: FONT.mono, fontSize: 8.5, letterSpacing: 0.6, textTransform: 'uppercase', color: T.inkFaint, minWidth: 42 }}>
+                    {p.type || 'stay'}
+                  </span>
+                  <span style={{ fontFamily: FONT.serif, fontSize: 13, color: T.ink, flex: 1, lineHeight: 1.25 }}>
+                    {p.title || p.place || 'A part'}
+                  </span>
+                  {when && when !== 'TBD' && (
+                    <span style={{ fontFamily: FONT.mono, fontSize: 8.5, color: T.inkFaint, whiteSpace: 'nowrap' }}>{when}</span>
+                  )}
+                </div>
+                {surprise && (
+                  <PartSurpriseReview
+                    surprise={surprise}
+                    partLabel={p.title || p.place || 'this part'}
+                    T={T}
+                    onChange={(next) =>
+                      setDraft((d) => ({
+                        ...d,
+                        tripParts: (d.tripParts || []).map((tp, i) => (i === pi ? { ...tp, surprise: next } : tp)),
+                      }))
+                    }
+                  />
                 )}
               </div>
             )
@@ -1411,7 +1478,23 @@ function seedDraft(card) {
       ...d,
       stops: (d.stops || []).map((s) => ({ ...s, skipped: false })),
     }))
-    return { fields: [], edits: [], tripDays }
+    // tripParts = the editable copy of the high-level parts — the author reviews a
+    // surprise's audience + cover here before publish (Slice 2). NORMALIZE the
+    // suggested audience to known-traveler ids (drop unknowns; keep "everyone") so
+    // the review badge shows EXACTLY who will be hidden once saved (no over-promise);
+    // drop the surprise entirely if nothing maps (Claude couldn't scope it).
+    const tripParts = (card.trip?.parts || []).map((p) => {
+      let surprise
+      if (p.surprise && typeof p.surprise === 'object') {
+        const ids = (Array.isArray(p.surprise.hideFrom) ? p.surprise.hideFrom : [])
+          .map((n) => (typeof n === 'string' && n.trim().toLowerCase() === 'everyone' ? 'everyone' : travelerNameToId(n)))
+          .filter(Boolean)
+        const hideFrom = [...new Set(ids)]
+        if (hideFrom.length) surprise = { ...p.surprise, hideFrom }
+      }
+      return { ...p, surprise }
+    })
+    return { fields: [], edits: [], tripDays, tripParts }
   }
   const fields = Array.isArray(card.fields)
     ? card.fields.map((f) => ({
@@ -1435,7 +1518,7 @@ function applyDraft(card, draft) {
   if (card.type === 'create_trip') {
     return {
       ...card,
-      trip: { ...card.trip, days: draft.tripDays },
+      trip: { ...card.trip, days: draft.tripDays, ...(draft.tripParts ? { parts: draft.tripParts } : {}) },
     }
   }
   // Merge user edits back into the card payload that gets handed to the

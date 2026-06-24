@@ -908,7 +908,9 @@ export default function App() {
     // instead of silently overwriting it. (A Claude "refine" re-save keeps its
     // own id via the worker's create→edit routing, so this only uniquifies a
     // genuinely new trip.)
-    const newTrip = cardToTrip(card, { existingIds: allTrips.map((t) => t.id) })
+    // authorTraveler = the session — a surprise's author is ALWAYS who's creating
+    // it (never Claude's output), so the boundary masks it from the right people.
+    const newTrip = cardToTrip(card, { existingIds: allTrips.map((t) => t.id), authorTraveler: traveler })
     // upsertTrip writes the local cache synchronously, then best-effort
     // mirrors to the Worker. A failed Worker push returns { ok: false }
     // but the trip is already in local state — same non-escalation

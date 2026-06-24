@@ -104,6 +104,18 @@ function ashevilleCard(id, secondStopName) {
   }
 }
 
+// A BIGGER trip where Claude SUGGESTS a surprise on one part (the villa is a
+// surprise for the kids). The author (the session) confirms in the review.
+function surpriseCard(id) {
+  const c = italyCard(id)
+  c.trip.parts = c.trip.parts.map((p) =>
+    p.title.includes('villa')
+      ? { ...p, surprise: { hideFrom: ['Rafa', 'Aurelia'], conceal: 'teaser' } }
+      : p
+  )
+  return c
+}
+
 // A BIGGER trip: Claude lays out distinct legs via the optional `parts` array.
 function italyCard(id) {
   return {
@@ -312,6 +324,73 @@ test.describe('Claude-in-App — create_trip', () => {
       return (t.parts || []).map((p) => p.type)
     })
     expect(types).toEqual(['flight', 'city', 'stay', 'drive'])
+  })
+
+  test('a SURPRISE part: the review shows who is hidden + can draft a cover; the saved part is masked, author from the session', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [replyWithCard(surpriseCard('ct-surp-1'), 'Here’s the shape of it.')])
+    // The /cover seam (Claude drafts a believable stand-in).
+    await page.route(/roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/cover$/, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ icon: '🌅', title: 'A quiet few days', loc: 'the coast' }) })
+    })
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'Italy in July, and the villa is a surprise for the kids')
+    const card = dialog.getByTestId('confirm-card-create_trip')
+    await expect(card).toBeVisible({ timeout: 5000 })
+
+    // The author SEES who's hidden (confirm-by-reading) and what they'll see.
+    const review = card.getByTestId('part-surprise-review')
+    await expect(review).toBeVisible()
+    await expect(review).toContainText(/hidden from/i)
+    await expect(review).toContainText('Rafa')
+    await expect(review).toContainText('Aurelia')
+
+    // Draft a cover → conceal flips to a believable stand-in.
+    await review.getByTestId('part-surprise-cover').click()
+    await expect(review).toContainText('A quiet few days', { timeout: 5000 })
+
+    // Save → the villa part carries the surprise, author = the SESSION (helen, not the
+    // payload), audience = the kids, conceal = cover. (The boundary masks it.)
+    await card.getByTestId('confirm-card-save').click()
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+            const t = all.find((x) => x.title === 'Italy, summer')
+            const villa = (t?.parts || []).find((p) => (p.title || '').includes('villa'))
+            return villa?.surprise ? `${villa.surprise.author}|${villa.surprise.hideFrom.join(',')}|${villa.surprise.conceal}` : 'none'
+          }),
+        { timeout: 5000 }
+      )
+      .toBe('helen|rafa,aurelia|cover')
+  })
+
+  test('a SURPRISE part can be REMOVED in the review — the saved part is then a normal, visible part', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [replyWithCard(surpriseCard('ct-surp-2'), 'Here’s the shape of it.')])
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'Italy in July, and the villa is a surprise for the kids')
+    const card = dialog.getByTestId('confirm-card-create_trip')
+    await expect(card.getByTestId('part-surprise-review')).toBeVisible({ timeout: 5000 })
+    await card.getByTestId('part-surprise-remove').click()
+    await expect(card.getByTestId('part-surprise-review')).toHaveCount(0)
+    await card.getByTestId('confirm-card-save').click()
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+            const t = all.find((x) => x.title === 'Italy, summer')
+            const villa = (t?.parts || []).find((p) => (p.title || '').includes('villa'))
+            return villa ? !!villa.surprise : null
+          }),
+        { timeout: 5000 }
+      )
+      .toBe(false)
   })
 
   test('screenshot intake: an attached image is sent to the planner (vision) and a card comes back', async ({ page }) => {

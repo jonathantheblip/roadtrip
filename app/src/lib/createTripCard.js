@@ -109,6 +109,34 @@ export function humanDateRange(start, end) {
   return `${MONTHS_FULL[s.getUTCMonth()]} ${s.getUTCDate()} – ${MONTHS_FULL[e.getUTCMonth()]} ${e.getUTCDate()}, ${e.getUTCFullYear()}`
 }
 
+// Validate + author-stamp a part's surprise ("surprises by sentence"). SECURITY:
+// the author is ALWAYS the session traveler passed in (never Claude's output) — no
+// trustworthy author ⇒ NO surprise (fail-safe). hideFrom is mapped to known
+// travelers (+ "everyone") and the author can never be hidden from their own
+// surprise. conceal defaults to "teaser" so an un-covered surprise still ships
+// safely HIDDEN. Returns null when there's no valid audience (a normal visible part).
+export function sanitizePartSurprise(raw, authorTraveler) {
+  if (!raw || typeof raw !== 'object') return null
+  const author = travelerNameToId(authorTraveler)
+  if (!author) return null
+  const ids = (Array.isArray(raw.hideFrom) ? raw.hideFrom : [])
+    .map((n) => (typeof n === 'string' && n.trim().toLowerCase() === 'everyone' ? 'everyone' : travelerNameToId(n)))
+    .filter(Boolean)
+  const hideFrom = [...new Set(ids)].filter((x) => x !== author)
+  if (!hideFrom.length) return null
+  const conceal = raw.conceal === 'cover' ? 'cover' : 'teaser'
+  const reveal = raw.reveal && typeof raw.reveal === 'object' && raw.reveal.type ? raw.reveal : { type: 'manual' }
+  const out = { author, hideFrom, conceal, reveal }
+  if (raw.revealed) out.revealed = raw.revealed
+  const cov = raw.cover
+  if (cov && typeof cov === 'object') {
+    const s = (v) => (typeof v === 'string' ? v.trim() : '')
+    const cover = { title: s(cov.title), loc: s(cov.loc), icon: s(cov.icon).slice(0, 4) }
+    if (cover.title || cover.loc) out.cover = cover
+  }
+  return out
+}
+
 // Map a create_trip card to the canonical trip record. `existingId`
 // reuses a prior id (refinement re-save); otherwise the id is derived
 // from title + date. `existingIds` (the ids already in the store) lets a
@@ -117,7 +145,7 @@ export function humanDateRange(start, end) {
 // against it. A refinement (`existingId` set) is exempt so re-saving the
 // same trip stays idempotent. Skipped stops are excluded; days that end up
 // empty are dropped so the saved trip has no blank days.
-export function cardToTrip(card, { existingId = null, existingIds = null } = {}) {
+export function cardToTrip(card, { existingId = null, existingIds = null, authorTraveler = null } = {}) {
   const t = (card && card.trip) || {}
   const baseId = existingId || tripIdFromTitle(t.title, t.dateRangeStart)
   // Only a fresh create (no existingId) is uniquified; a refinement keeps its id.
@@ -161,14 +189,22 @@ export function cardToTrip(card, { existingId = null, existingIds = null } = {})
   // nothing changes). The legacy `days` above still render every existing surface.
   const parts =
     Array.isArray(t.parts) && t.parts.length
-      ? t.parts.map((p, pi) => ({
-          id: p.id || `${id}-part-${pi + 1}`,
-          type: PART_TYPES.includes(p.type) ? p.type : 'stay',
-          title: p.title || '',
-          place: p.place || null,
-          dateStart: p.dateStart || null,
-          dateEnd: p.dateEnd || null,
-        }))
+      ? t.parts.map((p, pi) => {
+          const surprise = sanitizePartSurprise(p.surprise, authorTraveler)
+          return {
+            id: p.id || `${id}-part-${pi + 1}`,
+            type: PART_TYPES.includes(p.type) ? p.type : 'stay',
+            title: p.title || '',
+            place: p.place || null,
+            dateStart: p.dateStart || null,
+            dateEnd: p.dateEnd || null,
+            // "Surprises by sentence": a Claude-suggested (or author-edited) surprise
+            // rides on the part, AUTHOR-STAMPED FROM THE SESSION (never from Claude),
+            // hideFrom validated to known travelers. The worker boundary masks it; a
+            // teaser default means an un-covered surprise still ships safely hidden.
+            ...(surprise ? { surprise } : {}),
+          }
+        })
       : null
 
   return {
