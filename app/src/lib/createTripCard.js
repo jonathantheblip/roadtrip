@@ -53,6 +53,35 @@ export function tripIdFromTitle(title, dateRangeStart) {
   return [base || 'untitled-trip', ym].filter(Boolean).join('-')
 }
 
+// The trip a Claude CONVERSATION already CREATED — so a follow-up in that same
+// chat ("actually make it a stay", "add a beach day") EDITS that trip instead of
+// spawning a duplicate. Scans the assistant turns for create_trip cards, derives
+// each one's deterministic id (the SAME tripIdFromTitle cardToTrip stamps), and
+// returns the LATEST id that still exists in `trips` — so a renamed / deleted /
+// (rarely) suffix-uniquified trip can't mis-adopt. Returns null when the chat made
+// no surviving trip. Pure + DOM-free (unit-tested). The caller sends this as the
+// chat's tripId so the worker switches to in-trip EDIT mode.
+export function createdTripIdFromMessages(messages, trips) {
+  if (!Array.isArray(messages)) return null
+  const live = new Set((trips || []).map((t) => t && t.id).filter(Boolean))
+  const re = /```card\s*([\s\S]*?)```/g
+  let found = null
+  for (const m of messages) {
+    if (!m || m.role !== 'assistant' || typeof m.content !== 'string') continue
+    if (!m.content.includes('create_trip')) continue
+    re.lastIndex = 0
+    let match
+    while ((match = re.exec(m.content))) {
+      let card
+      try { card = JSON.parse(match[1].trim()) } catch { continue }
+      if (card?.type !== 'create_trip' || !card.trip?.title) continue
+      const id = tripIdFromTitle(card.trip.title, card.trip.dateRangeStart)
+      if (live.has(id)) found = id // chronological scan → the latest surviving wins
+    }
+  }
+  return found
+}
+
 // Make `baseId` unique against a set of ids already in use. The id from
 // tripIdFromTitle is a deterministic slug+YYYY-MM, so two different trips with
 // the same title in the same month collide — and an unchecked create would

@@ -887,12 +887,19 @@ export default function App() {
     if (card?.type === 'create_trip') {
       return handleClaudeCreateTrip(card)
     }
-    if (!trip || !card) throw new Error('No active trip to apply this change to.')
+    // Apply the edit to the trip the CARD TARGETS, not just the on-screen active
+    // trip. A chat that created a trip "owns" it and can edit it from the general
+    // (trips-list) surface, where there is no active `trip` — without this, that
+    // edit would throw "No active trip" even though the worker correctly emitted
+    // an in-trip card for the owned trip. Falls back to the active trip.
+    const targetId = card?.target?.tripId
+    const targetTrip = (targetId && allTrips.find((t) => t.id === targetId)) || trip
+    if (!targetTrip || !card) throw new Error('No active trip to apply this change to.')
     // applyCardToTrip throws on a structural mismatch (unknown day,
     // unsupported action). Worker push failures are NOT escalated — the
     // change lives in local state + cache, and the global sync indicator
     // owns "your change hasn't reached the family yet."
-    const next = applyCardToTrip(trip, card)
+    const next = applyCardToTrip(targetTrip, card)
     return tripsApi.upsertTrip(next)
   }
   // Trip creation via Claude (create_trip card). Maps the card to a
@@ -1735,6 +1742,10 @@ export default function App() {
         tripId={view.name === 'index' ? null : (trip?.id || null)}
         tripTitle={view.name === 'index' ? null : (trip?.title || null)}
         trip={view.name === 'index' ? null : (trip || null)}
+        // The full trip list lets the chat (a) recognize the trip IT created so a
+        // follow-up edits it instead of duplicating, and (b) apply that edit to the
+        // owned trip even from the trips-list surface.
+        allTrips={allTrips}
         // Always wired now: on the index the only savable card is
         // create_trip (handleClaudeCardSave routes it to the create
         // handler); add/move/cancel/multi still require an active trip

@@ -15,6 +15,7 @@ const {
   humanDateRange,
   sanitizePartSurprise,
   cardToTrip,
+  createdTripIdFromMessages,
 } = await import('../../src/lib/createTripCard.js')
 
 // ─── travelerNameToId / travelerIdsFrom ───────────────────────────
@@ -364,4 +365,37 @@ test('cardToTrip drops an unknown OR missing shape (→ no field → inferTripSh
   assert.equal('shape' in cardToTrip({ type: 'create_trip', trip: { title: 'Loose', shape: 'lazy', days: [] } }), false)
   // Claude couldn't tell → omitted entirely → the heuristic (G5-safe, defaults to route) decides.
   assert.equal('shape' in cardToTrip({ type: 'create_trip', trip: { title: 'None', days: [] } }), false)
+})
+
+// ─── createdTripIdFromMessages — the chat ADOPTS the trip it created ──
+// (so "actually make it a stay" in the SAME chat edits that trip, not a duplicate)
+function asstCard(title, dateRangeStart) {
+  const card = { type: 'create_trip', id: 'ct-x', trip: { title, dateRangeStart, days: [] } }
+  return { role: 'assistant', content: 'Here you go.\n```card\n' + JSON.stringify(card) + '\n```' }
+}
+test('createdTripIdFromMessages returns the created trip id when it still exists', () => {
+  const id = tripIdFromTitle('Cabin Weekend', '2026-07-01')
+  const msgs = [{ role: 'user', content: 'plan a cabin weekend' }, asstCard('Cabin Weekend', '2026-07-01')]
+  assert.equal(createdTripIdFromMessages(msgs, [{ id }]), id)
+})
+test('createdTripIdFromMessages returns null with no create_trip card', () => {
+  assert.equal(createdTripIdFromMessages([{ role: 'assistant', content: 'just chatting' }], [{ id: 'x' }]), null)
+})
+test('createdTripIdFromMessages returns null when the created trip was deleted (not in trips)', () => {
+  assert.equal(createdTripIdFromMessages([asstCard('Gone Trip', '2026-08-01')], [{ id: 'other' }]), null)
+})
+test('createdTripIdFromMessages: the LATEST surviving create_trip wins (a refinement)', () => {
+  const first = tripIdFromTitle('Beach Days', '2026-06-01')
+  const second = tripIdFromTitle('Beach Week', '2026-06-01')
+  const msgs = [asstCard('Beach Days', '2026-06-01'), { role: 'user', content: 'rename it' }, asstCard('Beach Week', '2026-06-01')]
+  assert.equal(createdTripIdFromMessages(msgs, [{ id: first }, { id: second }]), second)
+})
+test('createdTripIdFromMessages ignores USER turns + malformed card blocks', () => {
+  const id = tripIdFromTitle('Real Trip', '2026-09-01')
+  const msgs = [
+    { role: 'user', content: '```card\n{"type":"create_trip","trip":{"title":"Spoofed"}}\n```' }, // a user turn is not authoritative
+    { role: 'assistant', content: '```card\n{not json\n```' }, // half-streamed / malformed → skipped
+    asstCard('Real Trip', '2026-09-01'),
+  ]
+  assert.equal(createdTripIdFromMessages(msgs, [{ id }]), id)
 })

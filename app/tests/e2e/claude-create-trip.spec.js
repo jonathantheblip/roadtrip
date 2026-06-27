@@ -471,4 +471,72 @@ test.describe('Claude-in-App — create_trip', () => {
     // The planner's reply still renders the trip card.
     await expect(dialog.getByTestId('confirm-card-create_trip')).toBeVisible({ timeout: 5000 })
   })
+
+  // D — the chat that CREATED a trip OWNS it: a follow-up edits that trip instead of
+  // spawning a duplicate. Reopen the past create-conversation; its messages carry the
+  // create_trip card, so the chat adopts the trip and routes the next turn to it (the
+  // /claude/chat request carries the owned trip's id → the worker edits, not creates).
+  test('D: a follow-up in the chat that created a trip targets that trip (no duplicate)', async ({ page }) => {
+    const CREATED = {
+      id: 'asheville-long-weekend-2026-10',
+      title: 'Asheville Long Weekend',
+      subtitle: 'Art, mountains, and good food',
+      draft: false,
+      status: 'planning',
+      dateRangeStart: '2026-10-09',
+      dateRangeEnd: '2026-10-12',
+      travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+      days: [{ n: 1, isoDate: '2026-10-09', title: 'Friday', stops: [{ id: 'ash-1-1', name: 'The Foundry Hotel', kind: 'lodging' }] }],
+    }
+    await seedTripIntoCache(page, CREATED) // the trip the conversation made, already saved
+
+    const state = { bodies: [] }
+    // A past conversation exists (the one that created the trip).
+    await page.route(/roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/claude\/conversations(\?|$)/, async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+          { id: 'c-ash', user_id: 'helen', trip_id: null, preview: 'Plan a long weekend in Asheville', updated_at: '2026-05-23T12:00:00.000Z' },
+        ]) })
+        return
+      }
+      const b = JSON.parse(route.request().postData() || '{}')
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: b.id || 'c-ash', user_id: b.user_id, trip_id: b.trip_id || null }) })
+    })
+    // Its history carries the create_trip card → the conversation OWNS the Asheville trip.
+    await page.route(/roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/claude\/conversations\/[^/]+\/messages$/, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+        { role: 'user', content: 'Plan a long weekend in Asheville', created_at: '2026-05-23T12:00:00.000Z' },
+        { role: 'assistant', content: replyWithCard(ashevilleCard('ct-ash-1', 'River Arts District')), created_at: '2026-05-23T12:01:00.000Z' },
+      ]) })
+    })
+    // Capture each /claude/chat request so we can assert the follow-up's tripId.
+    await page.route(/roadtrip-sync\.jonathan-d-jackson\.workers\.dev\/claude\/chat$/, async (route) => {
+      try { state.bodies.push(JSON.parse(route.request().postData() || '{}')) } catch { state.bodies.push(null) }
+      const text = 'Done — made it a chill stay.'
+      const chunks = []
+      for (let i = 0; i < text.length; i += 24) chunks.push({ type: 'text_delta', text: text.slice(i, i + 24) })
+      chunks.push({ type: 'done', usage: { input_tokens: 10, output_tokens: 10 } })
+      await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: sseFrames(...chunks) })
+    })
+
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    await page.getByRole('button', { name: /Plan with Claude/i }).click()
+    const dialog = page.getByRole('dialog', { name: /Chat with Claude/i })
+    await expect(dialog).toBeVisible()
+    // Open the PAST conversation (not a fresh one).
+    await dialog.getByText(/Plan a long weekend in Asheville/i).click()
+    // Its create card renders → the conversation's trip is in context.
+    await expect(dialog.getByTestId('confirm-card-create_trip')).toBeVisible({ timeout: 5000 })
+
+    await sendMessage(dialog, 'actually this is just a chill hangout — make it a stay')
+
+    // THE PROOF: the follow-up went out targeting the OWNED trip (edit mode) — not as
+    // a tripId-less create — so the worker edits it and no duplicate is born.
+    await expect
+      .poll(() => {
+        const b = state.bodies[state.bodies.length - 1]
+        return b ? b.trip_id : null
+      }, { timeout: 5000 })
+      .toBe('asheville-long-weekend-2026-10')
+  })
 })

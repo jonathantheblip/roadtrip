@@ -29,6 +29,7 @@ import {
 } from '../lib/claudeChat'
 import { ConfirmCard } from './ConfirmCard'
 import { ClaudeGlyph } from './Glyphs'
+import { createdTripIdFromMessages } from '../lib/createTripCard'
 
 // Markdown pipeline: remark-gfm gives us tables, strikethrough,
 // task lists, autolinks; remark-breaks preserves the single-newline
@@ -864,6 +865,7 @@ export function ClaudeChatPanel({
   tripId = null,
   tripTitle = null,
   trip = null,
+  allTrips = [],
   onCardSave = null,
   seedMessage = null,
 }) {
@@ -911,6 +913,17 @@ export function ClaudeChatPanel({
     }
     return new Set(ids.slice(0, -1))
   }, [messages])
+
+  // The trip THIS conversation created (live after a save, and on reopen by
+  // matching its create card to an existing trip). Once a chat owns a trip, the
+  // worker should treat further turns as EDITS of that trip — so "actually make it
+  // a stay" updates it instead of spawning a duplicate. Falls back to the surface's
+  // tripId (in-trip chat) or null (a fresh create chat, where create_trip is right).
+  const ownedTripId = useMemo(
+    () => createdTripIdFromMessages(messages, allTrips),
+    [messages, allTrips]
+  )
+  const effectiveTripId = ownedTripId || tripId
 
   const cardContext = useMemo(() => {
     if (!open || !onCardSave) return null
@@ -1042,7 +1055,9 @@ export function ClaudeChatPanel({
       const { fullText } = await streamClaudeChat({
         conversationId,
         userId,
-        tripId,
+        // Once this chat owns a trip it created, edits route to THAT trip (not a
+        // duplicate); else the surface's tripId (in-trip) or null (a fresh create).
+        tripId: effectiveTripId,
         message: text,
         images,
         onDelta: (chunk) => {
