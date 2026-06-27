@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Plus, Clock, Settings as SettingsIcon, Pencil, Trash2, FileText, Eye } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { isTripPublishable } from '../lib/tripComplete'
@@ -23,7 +23,7 @@ import { AvatarStack } from '../components/Avatar'
 //   • AvatarStack of travelers + "<start> → <end>" route
 //   • live memory count read from listMemoriesForTrip
 
-export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenTrip, onNewTrip, onEditDraft, onDeleteDraft, onRestoreDraft, onResurfaceReplay, onOpenSettings }) {
+export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenTrip, onNewTrip, onEditDraft, onDeleteDraft, onRestoreDraft, onResurfaceReplay, onOpenSettings, onSetHero }) {
   // Which draft is mid-delete (two-tap confirm, mirrors Settings → Drafts).
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   // "Looking back": one resurfaced past moment (a completed-trip day with
@@ -438,6 +438,7 @@ export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenT
                 memoryCount={liveCounts.get(trip.id) || 0}
                 heroPhotoUrl={heroPhotoUrls.get(trip.id) || null}
                 onOpen={() => onOpenTrip(trip.id)}
+                onSetHero={onSetHero}
                 isFirst={isFirst}
                 animDelay={i}
               />
@@ -480,6 +481,7 @@ export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenT
                       memoryCount={liveCounts.get(trip.id) || 0}
                       heroPhotoUrl={heroPhotoUrls.get(trip.id) || null}
                       onOpen={() => onOpenTrip(trip.id)}
+                      onSetHero={onSetHero}
                       isFirst={false}
                       animDelay={current.length + i}
                     />
@@ -674,7 +676,7 @@ function TripCardFloor({ trip }) {
   )
 }
 
-function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay }) {
+function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst, animDelay }) {
   // Date-derived status so a 'planning' trip auto-flips to 'live' on
   // its start date and 'archived' after its end date — no need to
   // edit trips.js when the calendar moves. Single source of truth in
@@ -722,10 +724,50 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
   // good URL (e.g. rotation re-roll) clears the error.
   const [heroErrored, setHeroErrored] = useState(false)
 
+  // Long-press the hero to change it. A held press (or right-click on desktop)
+  // opens a photo picker → onSetHero sets the REAL hero (heroImage). A normal tap
+  // still opens the trip: when a long-press fires we flag it so the trailing click
+  // is swallowed instead of navigating. A transient input (not in the DOM) avoids
+  // nesting an interactive control inside the card button.
+  const longPressRef = useRef(false)
+  const pressTimer = useRef(null)
+  const openHeroPicker = () => {
+    if (!onSetHero) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = () => {
+      const f = input.files && input.files[0]
+      if (f) Promise.resolve(onSetHero(trip.id, f)).catch(() => {})
+    }
+    input.click()
+  }
+  const startHeroPress = () => {
+    if (!onSetHero) return
+    longPressRef.current = false
+    clearTimeout(pressTimer.current)
+    pressTimer.current = setTimeout(() => { longPressRef.current = true; openHeroPicker() }, 500)
+  }
+  const cancelHeroPress = () => clearTimeout(pressTimer.current)
+  const handleCardClick = (e) => {
+    if (longPressRef.current) { e.preventDefault(); e.stopPropagation(); longPressRef.current = false; return }
+    onOpen()
+  }
+  const heroPressProps = onSetHero
+    ? {
+        onPointerDown: startHeroPress,
+        onPointerUp: cancelHeroPress,
+        onPointerLeave: cancelHeroPress,
+        onPointerMove: cancelHeroPress,
+        onContextMenu: (e) => { e.preventDefault(); openHeroPicker() },
+        title: 'Hold to change the cover photo',
+      }
+    : {}
+
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={handleCardClick}
       className={`fade-up d${Math.min(animDelay + 1, 6)}`}
       style={{
         width: '100%',
@@ -796,6 +838,7 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
           A broken URL (onError) falls through to the floor too, never the
           browser's broken-image glyph. The placeholder is gone: there is no
           branch that renders nothing. */}
+      <span style={{ display: 'block' }} data-testid={`trip-hero-${trip.id}`} {...heroPressProps}>
       {heroErrored ? (
         <TripCardFloor trip={trip} />
       ) : rotatedHero ? (
@@ -809,6 +852,7 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, isFirst, animDelay 
       ) : (
         <TripCardFloor trip={trip} />
       )}
+      </span>
 
       <div
         style={{

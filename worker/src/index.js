@@ -1609,6 +1609,51 @@ async function markHeroMiss(env, id, reason, nowMs = Date.now()) {
 // trims the rare concurrent-first-pull double-fetch within one isolate.
 const inFlightHeroResolves = new Set()
 
+// The hero SUBJECT for a trip. A STAY / hangout trip is DEFINED by its LODGING —
+// and on an imported trip the lodging is often the ONLY thing set — so that place
+// (the cabin, the town) is what the hero should depict, NOT the road-trip
+// destination field, which on a stay is frequently the home town. Prefer the
+// lodging place (reduced to its locality for a clean Places search), then fall back
+// to the explicit destination label / endCity. Mirrors the client tripShape lodging
+// + destinationLabel extraction. Exported for unit testing.
+const HERO_HOME_RE = /^[\s—–-]*\(?\s*home\s*\)?[\s—–-]*$/i
+function heroLodgingName(v) {
+  if (v && typeof v === 'object') return String(v.name || v.address || '').trim()
+  if (typeof v === 'string') return v.trim()
+  return ''
+}
+function heroLodgingPlace(trip) {
+  for (const d of trip?.days || []) {
+    const n = heroLodgingName(d?.lodging)
+    if (n && !HERO_HOME_RE.test(n)) return n
+  }
+  for (const d of trip?.days || []) {
+    for (const s of d?.stops || []) {
+      if (s?.kind === 'lodging') {
+        const n = heroLodgingName(s.name || s.title)
+        if (n && !HERO_HOME_RE.test(n)) return n
+      }
+    }
+  }
+  const n = heroLodgingName(trip?.lodging)
+  return n && !HERO_HOME_RE.test(n) ? n : ''
+}
+// Reduce a place string to its locality: drop a leading street/unit segment and a
+// trailing state/country code (mirrors the client's destinationLabel) so "17
+// Commercial St, Provincetown, MA" → "Provincetown" (a scenic town hero, not a house).
+function heroLocality(s) {
+  let segs = String(s || '').split(',').map((x) => x.trim()).filter(Boolean)
+  if (!segs.length) return ''
+  while (segs.length > 1 && /^\d|^(apt|apartment|unit|suite|ste|flat|fl|floor|rm|room|po box|#)\b/i.test(segs[0])) segs = segs.slice(1)
+  while (segs.length > 1 && (/^[a-z]{2}$/i.test(segs[segs.length - 1]) || /^(usa|u\.s\.a\.?|us|uk|u\.k\.)$/i.test(segs[segs.length - 1]))) segs = segs.slice(0, -1)
+  return segs[0] || ''
+}
+export function tripHeroQuery(trip) {
+  const lodging = heroLodgingPlace(trip)
+  const lodgingQ = lodging ? heroLocality(lodging) || lodging : ''
+  return (lodgingQ || trip?.locationLabel || trip?.endCity || '').trim()
+}
+
 // Resolve ONE runtime trip's hero from its destination, store to R2, and
 // write heroResolved back into data_json (bumping updated_at so the next
 // pull upgrades the card off the floor). Fully self-contained and
@@ -1631,7 +1676,7 @@ export async function resolveTripHero(env, trip, origin) {
     console.warn(`trip-hero ${id}: GOOGLE_PLACES_API_KEY missing — staying on floor`)
     return { skip: 'no-key' }
   }
-  const query = (trip.locationLabel || trip.endCity || '').trim()
+  const query = tripHeroQuery(trip)
   if (!query) {
     console.warn(`trip-hero ${id}: no destination (locationLabel/endCity empty) — floor`)
     // Deterministic miss → cache it so this destination-less trip isn't re-tried

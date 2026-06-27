@@ -52,7 +52,7 @@ import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
-import { pullAll, isWorkerConfigured, workerFetch, hasCredential } from './lib/workerSync'
+import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover } from './lib/workerSync'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
@@ -1531,6 +1531,14 @@ export default function App() {
             }}
             onResurfaceReplay={(tripId, dayN) => openReplay({ tripId, dayN })}
             onOpenSettings={openSettings}
+            onSetHero={async (id, file) => {
+              // Long-press a trip's hero → pick a photo → it becomes the REAL hero
+              // (heroImage), shown on the card + every lens, and the auto-resolver
+              // stops overriding it (hasExplicitHero). Uploads to R2 like the cover.
+              const out = await uploadTripCover(id, file)
+              const t = allTrips.find((x) => x.id === id)
+              if (t) await tripsApi.upsertTrip({ ...t, heroImage: out.url, heroImageRef: { storage: 'r2', key: out.key, mime: out.mime } })
+            }}
           />
         )}
         {view.name === 'new' && (

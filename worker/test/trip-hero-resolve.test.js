@@ -19,7 +19,7 @@
 
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
-import worker, { hasExplicitHero, resolveTripHero } from '../src/index.js'
+import worker, { hasExplicitHero, resolveTripHero, tripHeroQuery } from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
 import { seedSession } from './helpers/auth.js'
 
@@ -327,5 +327,37 @@ describe('trip-hero resolution via GET /trips (real D1 + R2, stubbed Places)', (
     await getTrips(testEnv) // second pull — heroResolved.key already set
     const secondSearchCount = calls.filter((u) => u.includes('places:searchText')).length
     expect(secondSearchCount).toBe(1) // unchanged → no re-fetch
+  })
+})
+
+// F2 — the hero SUBJECT (tripHeroQuery): a stay/hangout trip is defined by its
+// LODGING, so the hero should depict that place, not the road-trip destination
+// field (often the home town). Pure function — no D1/network.
+describe('tripHeroQuery — lodging wins for a stay/hangout', () => {
+  it('prefers the lodging place over endCity (the home)', () => {
+    const trip = { endCity: 'Belmont, MA', locationLabel: 'Belmont', lodging: { name: 'Provincetown' } }
+    expect(tripHeroQuery(trip)).toBe('Provincetown')
+  })
+  it('reduces a lodging ADDRESS to its locality (a scenic town, not a house)', () => {
+    const trip = { endCity: 'Belmont, MA', lodging: { address: '17 Commercial St, Provincetown, MA' } }
+    expect(tripHeroQuery(trip)).toBe('Provincetown')
+  })
+  it('reads per-day lodging too (the import case — often the only thing set)', () => {
+    const trip = { days: [{ lodging: 'Truro, MA' }, { lodging: '(home)' }] }
+    expect(tripHeroQuery(trip)).toBe('Truro')
+  })
+  it('ignores a "home" lodging and falls back to the destination (verbatim)', () => {
+    const trip = { endCity: 'Provincetown, MA', lodging: '(home)' }
+    expect(tripHeroQuery(trip)).toBe('Provincetown, MA')
+  })
+  it('a route with no lodging keeps using locationLabel / endCity verbatim (unchanged)', () => {
+    // Locality reduction applies ONLY to the lodging — the destination fallback is
+    // byte-identical to the old behavior so route heroes never shift.
+    expect(tripHeroQuery({ locationLabel: 'Mystic, CT', endCity: 'New London, CT' })).toBe('Mystic, CT')
+    expect(tripHeroQuery({ endCity: 'New London, CT' })).toBe('New London, CT')
+  })
+  it('a kind:lodging stop is used when no day/trip lodging is set', () => {
+    const trip = { days: [{ stops: [{ kind: 'lodging', name: 'The Foundry Hotel, Asheville, NC' }] }] }
+    expect(tripHeroQuery(trip)).toBe('The Foundry Hotel')
   })
 })
