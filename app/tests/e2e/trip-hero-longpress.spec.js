@@ -34,11 +34,14 @@ test('long-press a trip hero → pick a photo → it becomes the explicit hero',
   const hero = page.getByTestId('trip-hero-volleyball-2026').first()
   await expect(hero).toBeVisible()
 
-  // Hold the press: pointerdown starts a 500ms timer that opens the picker. We don't
-  // send pointerup/move (those cancel it), so the long-press fires and the transient
-  // file input is clicked → the chooser opens.
+  // Hold the press, then RELEASE: the picker opens on pointerup of a held press
+  // (≥450ms, no move) — that release is the user gesture iOS requires for a file
+  // dialog (a timer-fired one is blocked). Real Date.now() drives the hold check
+  // (clockStub leaves Date.now untouched), so a real wait between down/up holds.
   const chooserP = page.waitForEvent('filechooser')
   await hero.dispatchEvent('pointerdown')
+  await page.waitForTimeout(600)
+  await hero.dispatchEvent('pointerup')
   const chooser = await chooserP
   await chooser.setFiles({ name: 'ptown.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
 

@@ -615,6 +615,11 @@ const HERO_IMG_STYLE = {
   marginTop: 12,
   objectFit: 'cover',
   display: 'block',
+  // Suppress iOS Safari's native long-press image callout (Save to Photos / Copy)
+  // so a held press reaches our handler instead of the OS menu.
+  WebkitTouchCallout: 'none',
+  WebkitUserSelect: 'none',
+  userSelect: 'none',
 }
 
 // Stable per-trip hash → deterministic floor gradient angle. NOT
@@ -724,13 +729,19 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   // good URL (e.g. rotation re-roll) clears the error.
   const [heroErrored, setHeroErrored] = useState(false)
 
-  // Long-press the hero to change it. A held press (or right-click on desktop)
-  // opens a photo picker → onSetHero sets the REAL hero (heroImage). A normal tap
-  // still opens the trip: when a long-press fires we flag it so the trailing click
-  // is swallowed instead of navigating. A transient input (not in the DOM) avoids
-  // nesting an interactive control inside the card button.
+  // Long-press the hero to change it. iOS constraints shape this:
+  //   • The native image callout (Save to Photos / Copy) must be suppressed
+  //     (-webkit-touch-callout: none, below) or it hijacks the long-press.
+  //   • A file picker can ONLY be opened from a real user gesture — a setTimeout
+  //     loses that activation and iOS blocks it. So we open it on the RELEASE of a
+  //     held press (pointerup carries activation), not from a timer.
+  // A normal tap still opens the trip; a long-press sets a flag so the trailing
+  // click is swallowed. A transient input (not in the DOM) avoids nesting an
+  // interactive control inside the card button.
   const longPressRef = useRef(false)
-  const pressTimer = useRef(null)
+  const pressStart = useRef(0)
+  const pressMoved = useRef(false)
+  const HOLD_MS = 450
   const openHeroPicker = () => {
     if (!onSetHero) return
     const input = document.createElement('input')
@@ -745,10 +756,18 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   const startHeroPress = () => {
     if (!onSetHero) return
     longPressRef.current = false
-    clearTimeout(pressTimer.current)
-    pressTimer.current = setTimeout(() => { longPressRef.current = true; openHeroPicker() }, 500)
+    pressMoved.current = false
+    pressStart.current = Date.now()
   }
-  const cancelHeroPress = () => clearTimeout(pressTimer.current)
+  const endHeroPress = () => {
+    if (!onSetHero) return
+    // A held, stationary press → open the picker IN this pointerup handler so the
+    // browser still sees a user gesture (iOS requirement for a file dialog).
+    if (!pressMoved.current && Date.now() - pressStart.current >= HOLD_MS) {
+      longPressRef.current = true // swallow the click that follows
+      openHeroPicker()
+    }
+  }
   const handleCardClick = (e) => {
     if (longPressRef.current) { e.preventDefault(); e.stopPropagation(); longPressRef.current = false; return }
     onOpen()
@@ -756,10 +775,11 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   const heroPressProps = onSetHero
     ? {
         onPointerDown: startHeroPress,
-        onPointerUp: cancelHeroPress,
-        onPointerLeave: cancelHeroPress,
-        onPointerMove: cancelHeroPress,
-        onContextMenu: (e) => { e.preventDefault(); openHeroPicker() },
+        onPointerMove: () => { pressMoved.current = true },
+        onPointerUp: endHeroPress,
+        onPointerCancel: () => { pressMoved.current = true },
+        // Desktop right-click is a gesture too → open the picker directly.
+        onContextMenu: (e) => { e.preventDefault(); longPressRef.current = true; openHeroPicker() },
         title: 'Hold to change the cover photo',
       }
     : {}
@@ -838,17 +858,21 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
           A broken URL (onError) falls through to the floor too, never the
           browser's broken-image glyph. The placeholder is gone: there is no
           branch that renders nothing. */}
-      <span style={{ display: 'block' }} data-testid={`trip-hero-${trip.id}`} {...heroPressProps}>
+      <span
+        style={{ display: 'block', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+        data-testid={`trip-hero-${trip.id}`}
+        {...heroPressProps}
+      >
       {heroErrored ? (
         <TripCardFloor trip={trip} />
       ) : rotatedHero ? (
-        <img src={rotatedHero} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
+        <img src={rotatedHero} alt={trip.title} loading="lazy" draggable={false} style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : hasExplicitHero(trip) ? (
-        <img src={trip.heroImage} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
+        <img src={trip.heroImage} alt={trip.title} loading="lazy" draggable={false} style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : heroPhotoUrl ? (
-        <img src={heroPhotoUrl} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
+        <img src={heroPhotoUrl} alt={trip.title} loading="lazy" draggable={false} style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : trip.heroResolved?.url ? (
-        <img src={trip.heroResolved.url} alt={trip.title} loading="lazy" style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
+        <img src={trip.heroResolved.url} alt={trip.title} loading="lazy" draggable={false} style={HERO_IMG_STYLE} onError={() => setHeroErrored(true)} />
       ) : (
         <TripCardFloor trip={trip} />
       )}
