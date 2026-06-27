@@ -32,7 +32,7 @@ import {
 // offline + Pull / Push / Seed actions. (Helen's dark-mode toggle was
 // removed 2026-06-05 — dark mode dropped as a per-person axis.)
 
-export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor, onOpenIdentity, onOpenEnroll }) {
+export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTraveler, onOpenEditor, onDeleteTrip, onOpenIdentity, onOpenEnroll }) {
   const enrolledHere = enrolledTravelers()
   // "This device" — enrollment (013): one-tap self-enroll for an adult + minting
   // setup links for the rest of the family. No raw token is ever handled by hand;
@@ -127,6 +127,8 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [archiving, setArchiving] = useState(false)
+  const [confirmDeleteTrip, setConfirmDeleteTrip] = useState(false)
+  const [deletingTrip, setDeletingTrip] = useState(false)
 
   const drafts = (tripsApi?.trips || []).filter((t) => t.draft)
 
@@ -407,6 +409,58 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
           </p>
         )}
       </section>
+
+      {/* Delete — remove a published trip outright (the duplicate-cleanup gap:
+          before this, only DRAFTS could be deleted). Two-tap confirm so a stray
+          press can't lose the family's trip. Soft-delete on the worker, so it's
+          recoverable in D1 if needed — but the app offers no un-delete, hence the
+          honest copy. Drafts keep their own delete (the Drafts section above). */}
+      {onDeleteTrip && !trip.draft && (
+        <section className="px-6 py-8 border-b surface-rule">
+          <div className="flex items-center gap-2 mb-3">
+            <Trash2 size={14} />
+            <p className="smallcaps f-dm text-[11px] opacity-70">Delete</p>
+          </div>
+          <p className="f-news text-base leading-relaxed opacity-80 mb-4 max-w-prose">
+            Permanently remove this trip for the whole family. This can't be undone
+            from the app. To just tuck it away instead, use Archive above.
+          </p>
+          {confirmDeleteTrip ? (
+            <div className="flex items-center" style={{ gap: 10, flexWrap: 'wrap' }}>
+              <span className="f-dm text-sm opacity-80">
+                Delete “{trip.title || 'this trip'}” for everyone?
+              </span>
+              <button
+                type="button"
+                className="btn-pill"
+                disabled={deletingTrip}
+                data-testid="delete-trip-confirm"
+                onClick={async () => {
+                  setDeletingTrip(true)
+                  try { await onDeleteTrip(trip.id) }
+                  finally { setDeletingTrip(false); setConfirmDeleteTrip(false) }
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', background: '#8B2B1F', borderColor: '#8B2B1F', minHeight: 44 }}
+              >
+                <Trash2 size={13} /> {deletingTrip ? 'Deleting…' : 'Delete trip'}
+              </button>
+              <button type="button" className="btn-pill" onClick={() => setConfirmDeleteTrip(false)} style={{ minHeight: 44 }}>
+                Keep it
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn-pill"
+              data-testid="delete-trip"
+              onClick={() => setConfirmDeleteTrip(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#8B2B1F', minHeight: 44 }}
+            >
+              <Trash2 size={14} /> Delete this trip
+            </button>
+          )}
+        </section>
+      )}
 
       {/* The "Shared album" section that lived here predated the
           Cloudflare Worker sync stack — it walked the family through

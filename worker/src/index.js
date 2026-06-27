@@ -3977,6 +3977,15 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId }) {
   )
 
   lines.push('')
+  lines.push('## Delete a trip (card type "delete_trip")')
+  lines.push(
+    'When the reader EXPLICITLY asks to delete / remove / get rid of a WHOLE trip ("delete this trip", "remove the Asheville trip", "get rid of this one"), emit a `delete_trip` card. Shape: { "type": "delete_trip", "id": "<short id>", "target": { "tripId": "<the trip id from context or the summaries>" }, "title": "<the trip\'s exact title, for the confirm card>" }. It carries ONLY type, id, target.tripId, and title — NO fields, NO days, NO stops. The reader taps Delete to confirm; you NEVER delete on your own and you do NOT need to ask a clarifying question first — the confirm card IS the safeguard.'
+  )
+  lines.push(
+    'Use `delete_trip` ONLY for removing an ENTIRE trip on an explicit request — NEVER infer it, and NEVER use it to drop a single stop (that is `cancel`). If you cannot identify exactly which trip from the context/summaries, ask which one rather than guessing. You CAN delete a trip — so never claim you are unable to; emit the card.'
+  )
+
+  lines.push('')
   lines.push('## Who is talking to you right now')
   lines.push(formatReader(reader))
 

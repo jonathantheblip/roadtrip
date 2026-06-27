@@ -887,6 +887,19 @@ export default function App() {
     if (card?.type === 'create_trip') {
       return handleClaudeCreateTrip(card)
     }
+    // delete_trip — Claude proposed a whole-trip delete; the reader tapped Delete to
+    // confirm. Resolve the trip the card targets (works from the trips-list chat too),
+    // soft-delete it (the worker refuses a delete of a trip hidden from this viewer),
+    // then leave the chat for the index since the trip we were on may be gone.
+    if (card?.type === 'delete_trip') {
+      const id = card?.target?.tripId || trip?.id
+      const target = id && allTrips.find((t) => t.id === id)
+      if (!target) throw new Error('That trip is no longer here to delete.')
+      await tripsApi.removeTrip(target.id)
+      closeClaude()
+      setView({ name: 'index' })
+      return { ok: true, deleted: true, tripId: target.id }
+    }
     // Apply the edit to the trip the CARD TARGETS, not just the on-screen active
     // trip. A chat that created a trip "owns" it and can edit it from the general
     // (trips-list) surface, where there is no active `trip` — without this, that
@@ -1657,6 +1670,12 @@ export default function App() {
             onBack={() => setView({ name: trip && !trip.draft ? 'trip' : 'index' })}
             onChangeTraveler={handleTravelerSwitch}
             onOpenEditor={openEditor}
+            onDeleteTrip={async (id) => {
+              // Delete the open trip (soft-delete on the worker — recoverable in D1),
+              // then leave for the index since the trip we were on is gone.
+              await tripsApi.removeTrip(id)
+              setView({ name: 'index' })
+            }}
             onOpenIdentity={() => setView({ name: 'identity' })}
             onOpenEnroll={openEnrollAdd}
           />

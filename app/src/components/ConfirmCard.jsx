@@ -1136,6 +1136,39 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
   )
 }
 
+// ─── delete_trip card ────────────────────────────────────────────────
+// A destructive WHOLE-TRIP delete. Claude proposes it only on an explicit
+// request; the reader taps Delete to confirm — that human tap is the safeguard
+// (Claude never deletes on its own). No editable fields: title + target.tripId
+// are all it carries. Modeled on CancelCard (the destructive-stop pattern).
+function DeleteTripCard({ card, onSave, onDiscard, committing }) {
+  return (
+    <div
+      style={{ background: T.oxbloodBgSoft, border: `1px solid ${T.oxbloodBorderSoft}`, borderRadius: 14, padding: 12, marginBottom: 14 }}
+      data-testid="confirm-card-delete_trip"
+    >
+      <CardHeader tone="destructive" actionLabel="Draft · delete trip" scopeLabel="Not saved" onCream={false} />
+      <div style={{ fontFamily: FONT.serif, fontSize: 17, fontWeight: 600, letterSpacing: -0.2, marginBottom: 8 }}>
+        {card.title || 'Delete this trip'}
+      </div>
+      <div
+        style={{ padding: '6px 8px', borderRadius: 8, marginBottom: 10, background: T.oxbloodBgFill, color: T.oxblood, fontFamily: FONT.serif, fontStyle: 'italic', fontSize: 11.5, lineHeight: 1.35 }}
+      >
+        Deletes this trip for the whole family. This can’t be undone from the app.
+      </div>
+      <CardActions
+        saveLabel={committing ? 'Deleting…' : 'Delete trip'}
+        saveTone="destructive"
+        onCream={false}
+        onSave={onSave}
+        onDiscard={onDiscard}
+        secondary={{ label: 'Keep it', onClick: onDiscard }}
+        disabled={committing}
+      />
+    </div>
+  )
+}
+
 // ─── ConfirmCard (top-level export) ──────────────────────────────────
 //
 // Props:
@@ -1225,6 +1258,9 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
     if (card.type === 'create_trip') {
       return <CardSavedNote action="create_trip" title={card.trip?.title} synced={!tripUnsynced} />
     }
+    if (card.type === 'delete_trip') {
+      return <CardSavedNote action="delete_trip" title={card.title} synced={!tripUnsynced} />
+    }
     return <CardSavedNote action={card.action} title={card.title} synced={!tripUnsynced} />
   }
   if (commit.phase === 'discarded') {
@@ -1255,6 +1291,17 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
           onDiscard={handleDiscard}
           committing={isCommitting}
         />
+        {commit.error && <CardErrorNote message={commit.error} />}
+      </>
+    )
+  }
+
+  // delete_trip — also keyed off `type` (a whole-trip destructive op, not an
+  // action on the open trip). Handled before the action switch, like create_trip.
+  if (card.type === 'delete_trip') {
+    return (
+      <>
+        <DeleteTripCard card={card} onSave={handleSave} onDiscard={handleDiscard} committing={isCommitting} />
         {commit.error && <CardErrorNote message={commit.error} />}
       </>
     )
@@ -1333,6 +1380,8 @@ function CardSavedNote({ action, title, synced = true }) {
       ? 'Created'
       : action === 'trip-settings'
       ? 'Updated'
+      : action === 'delete_trip'
+      ? 'Deleted'
       : 'Added'
 
   // Honest not-yet-synced state. The change IS saved on this device, but the

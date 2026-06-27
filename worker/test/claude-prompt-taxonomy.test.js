@@ -64,6 +64,18 @@ describe('claude system prompt — trip-settings taxonomy', () => {
     expect(prompt).toContain('destination')
   })
 
+  it('teaches a delete_trip card for an explicit whole-trip delete (not for a stop)', async () => {
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
+    expect(prompt).toContain('Delete a trip (card type "delete_trip")')
+    expect(prompt).toContain('`delete_trip`')
+    // It targets a whole trip by id, carries no fields, and confirms via the card.
+    expect(prompt).toMatch(/"type": "delete_trip"/)
+    expect(prompt).toMatch(/taps Delete to confirm/i)
+    // Guardrails: explicit-only, never a single stop (that's cancel), and it CAN delete.
+    expect(prompt).toMatch(/NEVER use it to drop a single stop/i)
+    expect(prompt).toMatch(/never claim you are unable to/i)
+  })
+
   it('lets the model change an existing trip\'s KIND via trip-settings (stay/route), from loose language', async () => {
     const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
     // The trip-settings intro now includes changing the trip KIND...

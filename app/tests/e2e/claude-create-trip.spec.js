@@ -539,4 +539,33 @@ test.describe('Claude-in-App — create_trip', () => {
       }, { timeout: 5000 })
       .toBe('asheville-long-weekend-2026-10')
   })
+
+  // E — Claude PROPOSES a whole-trip delete; the reader taps Delete to confirm (the
+  // human-in-the-loop safeguard); the trip is then removed. (Claude never deletes on
+  // its own — the confirm tap is required.)
+  test('E: a delete_trip card removes the trip on confirm', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [
+      replyWithCard(
+        { type: 'delete_trip', id: 'del-1', target: { tripId: 'volleyball-2026' }, title: 'Fun @ the Sun' },
+        'Here it is to confirm.'
+      ),
+    ])
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'delete this trip')
+
+    const card = dialog.getByTestId('confirm-card-delete_trip')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await expect(card.getByTestId('confirm-card-save')).toContainText(/Delete trip/i) // a destructive label, not "Save"
+    await card.getByTestId('confirm-card-save').click()
+
+    // The trip is gone from the cache (soft-deleted on the worker).
+    await expect
+      .poll(
+        () => page.evaluate(() => JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]').some((t) => t.id === 'volleyball-2026')),
+        { timeout: 5000 }
+      )
+      .toBe(false)
+  })
 })
