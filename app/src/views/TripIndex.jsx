@@ -729,32 +729,23 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   // good URL (e.g. rotation re-roll) clears the error.
   const [heroErrored, setHeroErrored] = useState(false)
 
-  // Long-press the hero to change it. iOS constraints shape this:
+  // Long-press the hero to change the cover photo. iOS shapes this hard:
   //   • The native image callout (Save to Photos / Copy) must be suppressed
-  //     (-webkit-touch-callout: none, below) or it hijacks the long-press.
-  //   • A file picker can ONLY be opened from a real user gesture — a setTimeout
-  //     loses that activation and iOS blocks it. So we open it on the RELEASE of a
-  //     held press (pointerup carries activation), not from a timer.
+  //     (-webkit-touch-callout: none, on HERO_IMG_STYLE) or it hijacks the hold.
+  //   • iOS BLOCKS a file dialog opened from script — input.click() does nothing
+  //     even inside a gesture handler (proven by 3 device failures). The one
+  //     trigger iOS never blocks is a DIRECT tap on a real <input type=file>. So a
+  //     held press only REVEALS a tappable "Change cover photo" control (rendered
+  //     OUTSIDE the card <button>, below) — the user taps THAT to open Photos.
   // A normal tap still opens the trip; a long-press sets a flag so the trailing
-  // click is swallowed. A transient input (not in the DOM) avoids nesting an
-  // interactive control inside the card button.
+  // click is swallowed.
   const longPressRef = useRef(false)
   const pressStart = useRef(0)
   const pressMoved = useRef(false)
   const pressXY = useRef({ x: 0, y: 0 })
+  const [showCoverControl, setShowCoverControl] = useState(false)
   const HOLD_MS = 450
   const MOVE_TOL = 10 // px — a held finger ALWAYS jitters a few px; only a real drag/scroll cancels
-  const openHeroPicker = () => {
-    if (!onSetHero) return
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.onchange = () => {
-      const f = input.files && input.files[0]
-      if (f) Promise.resolve(onSetHero(trip.id, f)).catch(() => {})
-    }
-    input.click()
-  }
   const startHeroPress = (e) => {
     if (!onSetHero) return
     longPressRef.current = false
@@ -769,17 +760,22 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   }
   const endHeroPress = () => {
     if (!onSetHero) return
-    // A held, STILL press → open the picker IN this pointerup handler so the browser
-    // still sees a user gesture (iOS requirement for a file dialog). Finger jitter
-    // under MOVE_TOL does NOT count as a move (the bug: any move cancelled the hold).
+    // A held, STILL press reveals the control. Jitter under MOVE_TOL is NOT a move
+    // (attempt #3's fix: any move used to cancel the hold). We do NOT open the picker
+    // here — iOS ignores a scripted input.click(); the revealed control does it.
     if (!pressMoved.current && Date.now() - pressStart.current >= HOLD_MS) {
-      longPressRef.current = true // swallow the click that follows
-      openHeroPicker()
+      longPressRef.current = true // swallow the click that follows so the trip doesn't open
+      setShowCoverControl(true)
     }
   }
   const handleCardClick = (e) => {
     if (longPressRef.current) { e.preventDefault(); e.stopPropagation(); longPressRef.current = false; return }
     onOpen()
+  }
+  const onCoverFileChange = (e) => {
+    const f = e.target.files && e.target.files[0]
+    if (f) Promise.resolve(onSetHero(trip.id, f)).catch(() => {})
+    setShowCoverControl(false)
   }
   const heroPressProps = onSetHero
     ? {
@@ -787,13 +783,14 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
         onPointerMove: moveHeroPress,
         onPointerUp: endHeroPress,
         onPointerCancel: () => { pressMoved.current = true },
-        // Desktop right-click is a gesture too → open the picker directly.
-        onContextMenu: (e) => { e.preventDefault(); longPressRef.current = true; openHeroPicker() },
+        // Desktop right-click is a gesture too → reveal the control.
+        onContextMenu: (e) => { e.preventDefault(); longPressRef.current = true; setShowCoverControl(true) },
         title: 'Hold to change the cover photo',
       }
     : {}
 
   return (
+    <div style={{ position: 'relative' }}>
     <button
       type="button"
       onClick={handleCardClick}
@@ -915,6 +912,56 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
         </Eyebrow>
       </div>
     </button>
+      {/* Held-press reveal: a DIRECT-tap "Change cover photo" control, rendered
+          OUTSIDE the card <button> (a labelable file input nested in a <button>
+          is invalid + iOS-flaky). A direct tap on a real <input type=file> is the
+          one file trigger iOS never blocks — unlike a scripted input.click(). */}
+      {onSetHero && showCoverControl && (
+        <div
+          data-testid={`trip-cover-control-${trip.id}`}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowCoverControl(false) }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.5)',
+            borderRadius: 10,
+          }}
+        >
+          <label
+            style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '12px 18px',
+              borderRadius: 999,
+              background: 'var(--card)',
+              color: 'var(--text)',
+              fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
+            }}
+          >
+            Change cover photo
+            <input
+              type="file"
+              accept="image/*"
+              onChange={onCoverFileChange}
+              style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', border: 0, clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}
+            />
+          </label>
+        </div>
+      )}
+    </div>
   )
 }
 

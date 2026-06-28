@@ -5,6 +5,7 @@
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 import { resolvePersona } from './_fixtures/persona.js'
+import { expectNoSeriousA11y } from './_fixtures/axe.js'
 
 const PERSONA = resolvePersona('jonathan')
 
@@ -34,17 +35,25 @@ test('long-press a trip hero → pick a photo → it becomes the explicit hero',
   const hero = page.getByTestId('trip-hero-volleyball-2026').first()
   await expect(hero).toBeVisible()
 
-  // Hold the press, then RELEASE: the picker opens on pointerup of a held press
-  // (≥450ms, no move) — that release is the user gesture iOS requires for a file
-  // dialog (a timer-fired one is blocked). Real Date.now() drives the hold check
-  // (clockStub leaves Date.now untouched), so a real wait between down/up holds.
-  const chooserP = page.waitForEvent('filechooser')
+  // Hold the press (≥450ms, no real move). On iOS a scripted input.click() is
+  // BLOCKED, so a held press only REVEALS a direct-tap "Change cover photo"
+  // control — the picker opens from a real tap on THAT (the one file trigger iOS
+  // never blocks). Real Date.now() drives the hold check (clockStub leaves it
+  // untouched), so a real wait between down/up registers as a hold.
   await hero.dispatchEvent('pointerdown', { clientX: 100, clientY: 100 })
-  // A held finger ALWAYS jitters a few px — that must NOT cancel the long-press
-  // (the iOS bug that made a stationary hold fall through to a normal tap).
+  // A held finger ALWAYS jitters a few px — that must NOT cancel the hold (the iOS
+  // bug that made a stationary hold fall through to a normal tap → opened the trip).
   await hero.dispatchEvent('pointermove', { clientX: 104, clientY: 103 })
   await page.waitForTimeout(600)
   await hero.dispatchEvent('pointerup', { clientX: 104, clientY: 103 })
+
+  // The reveal appears in place of opening the trip; gate it for a11y, then the
+  // real file trigger is a DIRECT tap on the control's label.
+  const control = page.getByTestId('trip-cover-control-volleyball-2026')
+  await expect(control).toBeVisible()
+  await expectNoSeriousA11y(page, { label: 'trip cover-photo control' })
+  const chooserP = page.waitForEvent('filechooser')
+  await control.getByText(/change cover photo/i).click()
   const chooser = await chooserP
   await chooser.setFiles({ name: 'ptown.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
 
