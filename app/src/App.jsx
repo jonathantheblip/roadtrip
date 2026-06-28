@@ -4,7 +4,8 @@ import { TRAVELER_ORDER } from './data/travelers'
 import { Switcher } from './views/Switcher'
 import { StayTabBar, STAY_TABS, tabForView } from './views/StayTabBar'
 import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
-import { isStayTrip, stayPlace } from './lib/tripShape'
+import { isStayTrip, stayPlace, stayPlaceCoords, stayGeocodeQuery } from './lib/tripShape'
+import { geocodeAddress } from './lib/geocode'
 import { useGeolocationWhen } from './hooks/useGeolocation'
 import { usePresence } from './lib/presence'
 import { useWaves, sendWave } from './lib/waves'
@@ -922,6 +923,44 @@ export default function App() {
   // surface. Re-throws on a failed upsert so the card flips to its error
   // state. The trip id is a deterministic slug, so a refine-then-save
   // re-uses the same row rather than forking a duplicate.
+  // Geocode a stay's lodging address onto trip.lodging.lat/lng — the one blessed
+  // stay-coord source (stayPlaceCoords; homeBase is intentionally NOT used for a
+  // stay, per tripShape). Best-effort: returns a NEW trip with coords merged, or
+  // the SAME trip unchanged on any miss (no address / geocoder offline / no
+  // match). Never throws.
+  async function locateTripBestEffort(trip) {
+    try {
+      const q = stayGeocodeQuery(trip)
+      if (!q) return trip
+      const hit = await geocodeAddress(q)
+      if (!hit) return trip
+      const lod = trip.lodging && typeof trip.lodging === 'object' ? trip.lodging : {}
+      return { ...trip, lodging: { ...lod, address: lod.address || q, lat: hit.lat, lng: hit.lng, geoFor: q } }
+    } catch {
+      return trip
+    }
+  }
+
+  // The "Locate this stay" button (WeCouldNearby) for an already-saved stay that
+  // has a lodging address but no coords (an older AI/screenshot trip). Geocode +
+  // persist via the same upsert path the hero uses; on success the trip prop
+  // updates and the tray fetches. Returns { ok } so the button can show an error.
+  async function onLocateStay(trip) {
+    if (!trip) return { ok: false }
+    const located = await locateTripBestEffort(trip)
+    if (located === trip || !stayPlaceCoords(located)) return { ok: false }
+    // Merge the new coords onto the FRESHEST store copy (don't clobber a
+    // concurrent edit with the possibly-stale trip the button captured).
+    const current = allTrips.find((t) => t.id === trip.id) || trip
+    const c = current.lodging && typeof current.lodging === 'object' ? current.lodging : {}
+    const next = {
+      ...current,
+      lodging: { ...c, address: c.address || located.lodging.address, lat: located.lodging.lat, lng: located.lodging.lng, geoFor: located.lodging.geoFor },
+    }
+    await tripsApi.upsertTrip(next)
+    return { ok: true }
+  }
+
   async function handleClaudeCreateTrip(card) {
     // Pass the ids already in the store so a brand-new trip whose deterministic
     // slug+month collides with a DIFFERENT existing trip gets a unique suffix
@@ -930,7 +969,16 @@ export default function App() {
     // genuinely new trip.)
     // authorTraveler = the session — a surprise's author is ALWAYS who's creating
     // it (never Claude's output), so the boundary masks it from the right people.
-    const newTrip = cardToTrip(card, { existingIds: allTrips.map((t) => t.id), authorTraveler: traveler })
+    let newTrip = cardToTrip(card, { existingIds: allTrips.map((t) => t.id), authorTraveler: traveler })
+    // Auto-locate a STAY: AI/screenshot trips carry a lodging ADDRESS but no
+    // coords, so the "We could…" tray (which needs stayPlaceCoords) would open
+    // empty. Best-effort geocode the lodging onto trip.lodging.lat/lng (the one
+    // blessed coord source) so the tray fills from the first open. Failure is a
+    // no-op — the trip saves address-only exactly as before, and the "Locate this
+    // stay" button (WeCouldNearby) remains as the manual fallback.
+    if (isStayTrip(newTrip) && !stayPlaceCoords(newTrip)) {
+      newTrip = await locateTripBestEffort(newTrip)
+    }
     // upsertTrip writes the local cache synchronously, then best-effort
     // mirrors to the Worker. A failed Worker push returns { ok: false }
     // but the trip is already in local state — same non-escalation
@@ -1585,6 +1633,7 @@ export default function App() {
             traveler={traveler}
             onBack={() => setView({ name: 'trip' })}
             onOpenImport={openImport}
+            onLocate={onLocateStay}
           />
         )}
         {view.name === 'import' && trip && (

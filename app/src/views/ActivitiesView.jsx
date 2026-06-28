@@ -29,7 +29,7 @@ import { ProposeSheet } from '../components/ProposeSheet'
 // description text renders inside each card; the chip selection
 // decides which cards appear at all. They're independent — switching
 // themed surfaces does not reset filter state within a session.
-export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
+export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate }) {
   const activities = useMemo(
     () => getActivitiesForTrip(trip?.id, trip),
     [trip?.id, trip?.sharedActivities]
@@ -163,6 +163,7 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport }) {
         trip={trip}
         traveler={traveler}
         onPropose={proposalsOn ? setProposeSpot : undefined}
+        onLocate={onLocate ? () => onLocate(trip) : undefined}
       />
 
       {proposeSpot && (

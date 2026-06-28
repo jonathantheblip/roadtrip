@@ -104,6 +104,36 @@ function ashevilleCard(id, secondStopName) {
   }
 }
 
+// A STAY Claude lays out with a lodging ADDRESS but NO coordinates (the real
+// AI/screenshot shape — cardToTrip emits no coords). Exercises auto-locate-on-
+// create: handleClaudeCreateTrip best-effort geocodes the lodging at save time.
+function ptownStayCard(id) {
+  return {
+    type: 'create_trip',
+    id,
+    trip: {
+      title: 'Provincetown Getaway',
+      subtitle: 'Harbor Breeze',
+      shape: 'stay',
+      startCity: 'Belmont, MA',
+      endCity: 'Provincetown, MA',
+      dateRangeStart: '2026-08-07',
+      dateRangeEnd: '2026-08-10',
+      travelers: ['Jonathan', 'Helen', 'Aurelia', 'Rafa'],
+      days: [
+        {
+          dayNumber: 1,
+          title: 'Arrive',
+          date: '2026-08-07',
+          stops: [
+            { id: 'pt-1-1', time: '3:00 PM', name: 'Harbor Breeze', address: '690 Commercial St', category: 'LODGING', description: 'Check in.', who: ['Jonathan', 'Helen', 'Aurelia', 'Rafa'], driveFromPrevious: null },
+          ],
+        },
+      ],
+    },
+  }
+}
+
 // A BIGGER trip where Claude SUGGESTS a surprise on one part (the villa is a
 // surprise for the kids). The author (the session) confirms in the review.
 function surpriseCard(id) {
@@ -335,6 +365,40 @@ test.describe('Claude-in-App — create_trip', () => {
       return (t.parts || []).map((p) => p.type)
     })
     expect(types).toEqual(['flight', 'city', 'stay', 'drive'])
+  })
+
+  // Auto-locate on create: an AI/screenshot STAY carries a lodging ADDRESS but no
+  // coords, so "We could…" (which needs stayPlaceCoords) would open empty. The
+  // create path best-effort geocodes the lodging onto trip.lodging.lat/lng at save
+  // time, so the tray fills from the first open — no manual "Locate this stay" tap.
+  test('a STAY with an address but no coords auto-locates on create (geocode → trip.lodging.lat/lng)', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [replyWithCard(ptownStayCard('ct-ptown-1'), 'A few days in Provincetown.')])
+    // The keyless geocoder the create path calls — mocked so CI never hits OSM.
+    await page.route(/nominatim\.openstreetmap\.org\/search/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ lat: '42.0584', lon: '-70.1787' }]) }),
+    )
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'a long weekend in Provincetown, staying at Harbor Breeze')
+    const card = dialog.getByTestId('confirm-card-create_trip')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.getByTestId('confirm-card-save').click()
+
+    // The saved stay carries geocoded coords on trip.lodging (built from the
+    // lodging stop's address + the trip's town), so stayPlaceCoords resolves.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+            const t = all.find((x) => x.title === 'Provincetown Getaway')
+            return t?.lodging && Number.isFinite(t.lodging.lat) ? `${t.lodging.lat},${t.lodging.lng}` : 'unlocated'
+          }),
+        { timeout: 5000 }
+      )
+      .toBe('42.0584,-70.1787')
   })
 
   test('a SURPRISE part: the review shows who is hidden + can draft a cover; the saved part is masked, author from the session', async ({ page }) => {

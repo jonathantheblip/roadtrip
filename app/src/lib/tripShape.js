@@ -209,6 +209,63 @@ export function stayPlaceCoords(trip) {
   return null
 }
 
+// The lodging ADDRESS a stay carries, wherever it lives: the trip-level lodging
+// object first, else the first kind:'lodging' stop (AI/screenshot trips put the
+// lodging here — cardToTrip emits no trip.lodging). Name is a fallback only when
+// there's no street address. Returns a string or null. Pure.
+function stayLodgingAddress(trip) {
+  const lod = trip?.lodging
+  if (lod && typeof lod === 'object') {
+    const a = String(lod.address || '').trim()
+    if (a) return a
+    const n = String(lod.name || '').trim()
+    if (n && !HOME.test(n)) return n
+  }
+  for (const d of trip?.days || []) {
+    for (const s of d?.stops || []) {
+      if (s?.kind === 'lodging') {
+        const a = String(s.address || '').trim()
+        if (a) return a
+        const n = String(s.name || '').trim()
+        if (n) return n
+      }
+    }
+  }
+  return null
+}
+
+// The richest location string we can geocode for a stay, or null. Powers both
+// auto-locate-on-create and the "Locate this stay" button: AI/screenshot trips
+// store a lodging address but no coords, so "We could…" (which needs
+// stayPlaceCoords) renders empty until the address is geocoded onto
+// trip.lodging.lat/lng. Prefers a candidate that already carries a city/state
+// (more commas → Nominatim resolves it confidently); appends the trip's town
+// hint when the only lodging address lacks one. Pure + best-effort — a loose
+// match is corrected by the editor's draggable pin (coords land on trip.lodging
+// either way, the one blessed source per stayPlaceCoords).
+export function stayGeocodeQuery(trip) {
+  if (!trip) return null
+  const region = String(trip.locationLabel || trip.endCity || trip.startCity || '').trim()
+  const lodgingAddr = stayLodgingAddress(trip)
+  const cands = []
+  if (lodgingAddr) {
+    cands.push(lodgingAddr)
+    const lc = lodgingAddr.toLowerCase()
+    // Append the town hint only when neither string already contains the other
+    // (avoids "690 Commercial St, 690 Commercial St, Provincetown" duplication).
+    if (region && !lc.includes(region.toLowerCase()) && !region.toLowerCase().includes(lc)) {
+      cands.push(`${lodgingAddr}, ${region}`)
+    }
+  }
+  if (region) cands.push(region)
+  const commas = (s) => (s.match(/,/g) || []).length
+  const best = cands
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 4)
+    .sort((a, b) => commas(b) - commas(a) || b.length - a.length)[0]
+  return best || null
+}
+
 // The located place a stay is anchored on — { lat, lng, name } or null. Coords
 // from the shared stayPlaceCoords; name from the lodging label (friendly),
 // falling back to the first address segment.

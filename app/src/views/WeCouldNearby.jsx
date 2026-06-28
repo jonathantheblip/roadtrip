@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, Star, X, Footprints, Car, Send } from 'lucide-react'
-import { isStayTrip, stayPlaceCoords, stayLabel } from '../lib/tripShape'
+import { isStayTrip, stayPlaceCoords, stayLabel, stayGeocodeQuery } from '../lib/tripShape'
 import { searchNearby, formatDistance } from '../lib/placesNearby'
 import { sunTimes } from '../lib/sunTimes'
 import { TRAVELERS, TRAVELER_DOT, TRAVELER_ORDER } from '../data/travelers'
@@ -74,7 +74,7 @@ function toSpotSnapshot(card) {
   }
 }
 
-export function WeCouldNearby({ trip, traveler, onPropose }) {
+export function WeCouldNearby({ trip, traveler, onPropose, onLocate }) {
   const coords = useMemo(() => stayPlaceCoords(trip), [trip])
   const isStay = isStayTrip(trip)
   const enabled = isStay && !!coords
@@ -115,7 +115,17 @@ export function WeCouldNearby({ trip, traveler, onPropose }) {
   // by them, and show an honest one-line reason when the order actually changed.
   const conditions = useConditions(enabled ? coords : null)
 
-  if (!enabled) return null
+  if (!enabled) {
+    // A stay with a lodging ADDRESS but no coords yet (AI/screenshot trips store
+    // an address, not coords) → offer a one-tap "Locate this stay" so the tray can
+    // fill. Route trips and address-less stays still render nothing (G5: byte-
+    // identical to before — the prompt needs isStay + a geocodable address + the
+    // handler).
+    if (isStay && !coords && onLocate && stayGeocodeQuery(trip)) {
+      return <LocatePrompt placeName={stayLabel(trip)} onLocate={onLocate} />
+    }
+    return null
+  }
 
   const placeName = stayLabel(trip)
   const { tray: rankedTray, reason: conditionReason } = rankByConditions(tray, conditions)
@@ -688,6 +698,70 @@ function OpenPill({ open }) {
       />
       {open ? 'Open now' : 'Closed'}
     </span>
+  )
+}
+
+// Shown on a stay that has a lodging address but no coordinates yet (an older
+// AI/screenshot trip). One tap geocodes the lodging (onLocate → App upserts
+// trip.lodging.lat/lng); on success the trip prop gains coords and this unmounts,
+// the real tray taking over. A miss lands back here with a "Try again" + an
+// editor hint. (New trips auto-locate on create, so this is mainly a backfill.)
+function LocatePrompt({ placeName, onLocate }) {
+  const [status, setStatus] = useState('idle') // idle | locating | error
+  async function locate() {
+    setStatus('locating')
+    let ok = false
+    try {
+      ok = !!(await onLocate())?.ok
+    } catch {
+      ok = false
+    }
+    // On success the parent re-renders WITH coords and unmounts this; only a
+    // failure lands back here (still mounted — no setState-after-unmount).
+    if (!ok) setStatus('error')
+  }
+  return (
+    <section data-testid="wecould-nearby" style={{ padding: '8px 14px 4px' }}>
+      <div
+        data-testid="wecould-locate"
+        style={{
+          padding: '16px',
+          borderRadius: 12,
+          border: '1px dashed var(--border)',
+          background: 'var(--card, transparent)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          alignItems: 'flex-start',
+        }}
+      >
+        <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 15, lineHeight: 1.45, color: 'var(--text)' }}>
+          See what you could do near {placeName || 'your stay'} — pin it on the map first.
+        </div>
+        {status === 'error' && (
+          <div style={{ fontSize: 12.5, lineHeight: 1.4, color: 'var(--muted)' }}>
+            Couldn&rsquo;t find this place automatically. Add or refine the address in Edit, then drag the pin.
+          </div>
+        )}
+        <button
+          type="button"
+          data-testid="wecould-locate-btn"
+          onClick={locate}
+          disabled={status === 'locating'}
+          className="btn-pill"
+          style={{
+            cursor: status === 'locating' ? 'default' : 'pointer',
+            background: 'var(--accent)',
+            color: 'var(--accent-ink)',
+            borderColor: 'var(--accent)',
+            opacity: status === 'locating' ? 0.7 : 1,
+          }}
+        >
+          <MapPin size={13} />
+          {status === 'locating' ? 'Locating…' : status === 'error' ? 'Try again' : 'Locate this stay'}
+        </button>
+      </div>
+    </section>
   )
 }
 

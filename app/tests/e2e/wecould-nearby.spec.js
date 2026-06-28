@@ -166,6 +166,46 @@ test.describe('We could… nearby tray (slice 3a)', () => {
     await expect(page.getByText('We could…', { exact: true })).toBeVisible()
   })
 
+  test('an UNLOCATED stay offers "Locate this stay" → tapping it geocodes + fills the tray', async ({ page }) => {
+    // The AI/screenshot shape: a lodging ADDRESS but no coords (no homeBase, no
+    // lodging.lat/lng, no located stop) — so the tray can't search until located.
+    const UNLOCATED = {
+      ...STAY,
+      id: 'wecould-unlocated-2026',
+      shape: 'stay',
+      lodging: { name: 'Harbor Breeze', address: '690 Commercial St #4d' }, // intentionally no lat/lng
+      locationLabel: '690 Commercial St #4d, Provincetown, MA',
+      homeBase: undefined,
+    }
+    await seedTripIntoCache(page, UNLOCATED)
+    await mockNearby(page)
+    // Mock the keyless geocoder (Nominatim) the Locate handler calls. Registered
+    // before navigation so the tap's lookup is deterministic (CI never hits OSM).
+    await page.route(/nominatim\.openstreetmap\.org\/search/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ lat: '42.0584', lon: '-70.1787' }]),
+      }),
+    )
+
+    await page.goto(`/?person=jonathan&trip=${UNLOCATED.id}&nosw=1`)
+    await expect(page.getByTestId('stay-tabbar')).toBeVisible({ timeout: 10000 })
+    await page.locator('.stay-tab', { hasText: 'We could' }).click()
+
+    // No coords yet → the Locate prompt (not the tray, not silent emptiness).
+    await expect(page.getByTestId('wecould-locate')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('wecould-card')).toHaveCount(0)
+    // A new interactive surface — gate it for a11y (accent-fill button + text).
+    await expectNoSeriousA11y(page, { include: '[data-testid="wecould-nearby"]', label: 'we could · locate prompt' })
+
+    // Tap Locate → geocode → coords persist (trip.lodging.lat/lng) → the tray
+    // re-renders WITH coords and fetches the nearby ideas.
+    await page.getByTestId('wecould-locate-btn').click()
+    await expect(page.getByTestId('wecould-card').first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText('Cabin Diner')).toBeVisible()
+  })
+
   // Contrast gate across every lens — the accent-fill ("Kept") + category
   // tints + status dots must pass WCAG AA on each surface (the recurring trap).
   for (const who of ['jonathan', 'helen', 'aurelia', 'rafa']) {

@@ -318,3 +318,42 @@ test('detectCurrentPlace: no position → null (no silent place claim without a 
   const trip = { lodging: { name: 'The Cabin', lat: 43.21, lng: -72.9 }, days: [{ lodging: 'The Cabin' }, { lodging: 'The Cabin' }] }
   assert.equal(detectCurrentPlace(trip, null), null)
 })
+
+// ── stayGeocodeQuery — the best string to geocode for auto-locate + the "Locate
+// this stay" button. AI/screenshot stays store a lodging ADDRESS but no coords,
+// so "We could…" (needs stayPlaceCoords) opens empty until this is geocoded onto
+// trip.lodging.lat/lng. ──
+const { stayGeocodeQuery } = await import('../../src/lib/tripShape.js')
+
+test('stayGeocodeQuery: prefers the candidate already carrying a city/state (most commas), no duplication', () => {
+  // Thin lodging address + a full locationLabel → use the label (geocodes
+  // confidently). The label already contains the address, so nothing is appended.
+  const q = stayGeocodeQuery({ lodging: { address: '690 Commercial St' }, locationLabel: '690 Commercial St, Provincetown, MA' })
+  assert.equal(q, '690 Commercial St, Provincetown, MA')
+})
+
+test('stayGeocodeQuery: appends the trip town when the lodging address lacks a city', () => {
+  const q = stayGeocodeQuery({ lodging: { address: '12 Beach Rd' }, endCity: 'Wellfleet, MA' })
+  assert.equal(q, '12 Beach Rd, Wellfleet, MA')
+})
+
+test('stayGeocodeQuery: reads a kind:lodging STOP when there is no trip.lodging (the AI/screenshot shape)', () => {
+  const q = stayGeocodeQuery({
+    days: [{ stops: [{ kind: 'lodging', name: 'Harbor Breeze', address: '690 Commercial St #4d' }] }],
+    locationLabel: 'Provincetown, MA',
+  })
+  assert.equal(q, '690 Commercial St #4d, Provincetown, MA')
+})
+
+test('stayGeocodeQuery: a region-only stay (no lodging) falls back to the town', () => {
+  assert.equal(stayGeocodeQuery({ endCity: 'Provincetown, MA', days: [] }), 'Provincetown, MA')
+})
+
+test('stayGeocodeQuery: a "home" lodging name is ignored (not a geocodable place)', () => {
+  assert.equal(stayGeocodeQuery({ lodging: { name: 'home' }, endCity: 'Provincetown, MA' }), 'Provincetown, MA')
+})
+
+test('stayGeocodeQuery: nothing geocodable → null', () => {
+  assert.equal(stayGeocodeQuery({ days: [] }), null)
+  assert.equal(stayGeocodeQuery({ lodging: { name: '' }, days: [] }), null)
+})
