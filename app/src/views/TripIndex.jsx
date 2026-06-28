@@ -741,7 +741,9 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   const longPressRef = useRef(false)
   const pressStart = useRef(0)
   const pressMoved = useRef(false)
+  const pressXY = useRef({ x: 0, y: 0 })
   const HOLD_MS = 450
+  const MOVE_TOL = 10 // px — a held finger ALWAYS jitters a few px; only a real drag/scroll cancels
   const openHeroPicker = () => {
     if (!onSetHero) return
     const input = document.createElement('input')
@@ -753,16 +755,23 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
     }
     input.click()
   }
-  const startHeroPress = () => {
+  const startHeroPress = (e) => {
     if (!onSetHero) return
     longPressRef.current = false
     pressMoved.current = false
     pressStart.current = Date.now()
+    pressXY.current = { x: e.clientX || 0, y: e.clientY || 0 }
+  }
+  const moveHeroPress = (e) => {
+    const dx = (e.clientX || 0) - pressXY.current.x
+    const dy = (e.clientY || 0) - pressXY.current.y
+    if (dx * dx + dy * dy > MOVE_TOL * MOVE_TOL) pressMoved.current = true
   }
   const endHeroPress = () => {
     if (!onSetHero) return
-    // A held, stationary press → open the picker IN this pointerup handler so the
-    // browser still sees a user gesture (iOS requirement for a file dialog).
+    // A held, STILL press → open the picker IN this pointerup handler so the browser
+    // still sees a user gesture (iOS requirement for a file dialog). Finger jitter
+    // under MOVE_TOL does NOT count as a move (the bug: any move cancelled the hold).
     if (!pressMoved.current && Date.now() - pressStart.current >= HOLD_MS) {
       longPressRef.current = true // swallow the click that follows
       openHeroPicker()
@@ -775,7 +784,7 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   const heroPressProps = onSetHero
     ? {
         onPointerDown: startHeroPress,
-        onPointerMove: () => { pressMoved.current = true },
+        onPointerMove: moveHeroPress,
         onPointerUp: endHeroPress,
         onPointerCancel: () => { pressMoved.current = true },
         // Desktop right-click is a gesture too → open the picker directly.

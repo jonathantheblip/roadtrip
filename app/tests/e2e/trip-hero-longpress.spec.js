@@ -39,9 +39,12 @@ test('long-press a trip hero → pick a photo → it becomes the explicit hero',
   // dialog (a timer-fired one is blocked). Real Date.now() drives the hold check
   // (clockStub leaves Date.now untouched), so a real wait between down/up holds.
   const chooserP = page.waitForEvent('filechooser')
-  await hero.dispatchEvent('pointerdown')
+  await hero.dispatchEvent('pointerdown', { clientX: 100, clientY: 100 })
+  // A held finger ALWAYS jitters a few px — that must NOT cancel the long-press
+  // (the iOS bug that made a stationary hold fall through to a normal tap).
+  await hero.dispatchEvent('pointermove', { clientX: 104, clientY: 103 })
   await page.waitForTimeout(600)
-  await hero.dispatchEvent('pointerup')
+  await hero.dispatchEvent('pointerup', { clientX: 104, clientY: 103 })
   const chooser = await chooserP
   await chooser.setFiles({ name: 'ptown.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
 
