@@ -133,7 +133,32 @@ Jonathan decides whether scope grows.
 
 ## 5. CARRYOVER REQUIREMENT (this is the chain that survives a memory failure)
 
-Every carryover file produced for this project **MUST open with this block, verbatim or close to it:**
+### 5.0 "CARRY OVER" IS A DEFINED TRIGGER — Jonathan should never have to spell it out
+
+When Jonathan says **"carry over"**, "time to carry over / hand off / wrap up for a new window," or anything
+of that shape, he means **ALL of the following, every time** — do them without being asked for each piece:
+
+1. **Land the in-flight work honestly.** Gate it; if green, commit **and** push (push = deploy here, §3); if
+   not green or mid-stream, leave a clean, explicitly-named state (which files are uncommitted, what's verified
+   vs not). Never hand off broken work as if it's done. State committed vs pushed vs deployed precisely (§6).
+2. **Write/refresh THE carryover with BOTH views (orientation at two altitudes):**
+   - **FOREST** — the big picture: what this app is (family-trips, §2 #7), the current overhaul's goal + *why*,
+     and where we are in it. Enough that a fresh window understands the mission without reading the trees.
+   - **TREES** — the concrete next steps: the exact files, decisions already made, gotchas, and the verifiable
+     "do this next." Specific enough to act on immediately.
+   The carryover MUST open with the §5.1 block below.
+3. **Update ALL standing documents with this window's durable knowledge (anti-drift).** That means
+   `CLAUDE.md`, this `WORKING_AGREEMENT.md`, `FAMILY_TRIPS_VISION.md`, `MASTER_SPEC.md`, and the `memory/`
+   store — fold in any new settled decision, reframe, or hard-won lesson so it loads as *real* context next
+   window instead of being re-discovered. (Drift on this project has come from knowledge living only in a
+   closed chat window; §0.)
+4. **Provide a copy-paste PICKUP PROMPT in a fenced code block** in the final reply, so Jonathan can paste it
+   into a fresh window and resume with full fidelity (it should point at the carryover + the standing docs).
+
+That is the whole protocol; "carry over" invokes all four. (This is the §4 step-7 CARRYOVER, made explicit so
+it can't be half-done.)
+
+### 5.1 Every carryover file produced for this project **MUST open with this block, verbatim or close to it:**
 
 ```
 > ORIENT FIRST: Read /WORKING_AGREEMENT.md and hold to it before acting on anything below.

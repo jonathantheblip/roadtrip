@@ -194,14 +194,40 @@ build plan for the overhaul is scoped separately, against this north star.
 The recenter is being **built**, not just planned. The shape is settled:
 
 - **The home is a four-tab shell — "We could… · Now · Photos · Look back"** (from Jonathan's `/design:user-research`
-  pass — the authority, committed at `app/docs/design/family-trips-hangout/`). On a *stay* this shell becomes the
-  home; **road trips and the between-trips screen keep the old dock, untouched** — the whole reorg is a branch on
-  the stay-vs-route signal, so a route can never lose its drive scaffolding.
+  pass — the authority, committed at `app/docs/design/family-trips-hangout/`) leading with a **"living heart"**
+  (a cinematic place/day hero + the day's woven story + who's-around + a "Lately" photo carousel + an "On the
+  agenda" of the day's events). ⚠ **SUPERSEDED 2026-06-29:** the earlier "stays get the shell; road trips keep
+  the old dock + drive scaffolding" branch is **GONE.** Per §0, the living heart + 4-tab shell is the **ONE home
+  for EVERY trip**; the road-trip dock/drive-rail/masthead are **retired**, not branched-around. (See §11.)
 - **Every device is single-enrolled** — each family member has their *own* device (Rafa's iPad is Rafa's). There
   is no shared device and no multi-person switching in production, so the person-switcher is moot (a quiet
   identity, not a switcher). This *refines* the older "shared iPad" assumption — it doesn't happen.
 - **"Where are we" is still the heart (§4)** — the live "At the cabin" readout + shared-location presence are the
   big remaining pieces, sequenced after the shell stands up.
+
+---
+
+## 11. THE LIVING HEART IS THE ONE HOME FOR EVERY TRIP — SHAPE-AWARE (decided 2026-06-29)
+
+There is **ONE home** — the living heart + the 4-tab shell — and **every trip uses it**, no exceptions, no
+forks. What changes by trip is not *which* home but *what the living heart surfaces*:
+
+- **STAY / HANGOUT / MIXED (the norm):** lead with the place ("At [place]"), the day's story, who's-around, the
+  "Lately" carousel, and a light "On the agenda" of the day's few events. A hangout with little/no plan must
+  still feel alive (place + countdown + "what you could do" + "photos will gather here" — never a sad blank).
+- **The rare ROAD TRIP:** the *same* home, shape-aware — lead with the **day's focus** ("Pool play", "Day 2"),
+  not a single "At [place]" that doesn't fit a moving trip. The agenda carries the stops. **No** drive ticker,
+  ETA rail, or route fork.
+- **COMPLEX / ITINERARY trips (city break, flights, timed things) — Jonathan, 2026-06-29:** *still the living
+  heart*, but it "needs to look a little different… it'll need to surface the right **just-in-time information**
+  — perhaps **screenshots of tickets, routing information, timeliness**, etc." So the agenda/now-surface becomes
+  **time-aware + document-aware**: the next timed thing, its ticket/boarding-pass image, where to be and when,
+  what's imminent. (These trips currently still render `PartsTripView`, a separate parts view — **folding them
+  into the shape-aware living heart is the open work**, not a second home.) Build for this; don't shunt complex
+  trips to their own surface.
+
+The principle for ALL home/nav work: **don't ask "what trip shape is this, which home?" — there is one home;
+ask "what does *this* trip need surfaced *right now*?"**
 
 ---
 
