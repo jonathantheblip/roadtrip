@@ -60,7 +60,9 @@ test.describe('Now-band live readout (stay re-home of the dock ledge)', () => {
     test(`${who}: the Now band shows "At [place]" on a stay, not the generic link`, async ({ page }) => {
       await seedTripIntoCache(page, STAY)
       await page.goto(`/?person=${who}&trip=stay-home-2026&nosw=1`)
-      const band = page.getByTestId(`${who}-entries`)
+      // Jonathan's stay home is the redesigned LivingHeartHome; its hero leads
+      // with "At [place]". Helen still uses her entry band.
+      const band = page.getByTestId(who === 'jonathan' ? 'living-heart-home' : `${who}-entries`)
       await expect(band).toBeVisible({ timeout: 10000 })
       await expect(band.getByText('At Our Cabin')).toBeVisible()
     })
@@ -108,7 +110,8 @@ test.describe('destination auto-recognition (place typed as the trip end)', () =
     await expect(page.getByTestId('stay-tabbar')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('.switcher')).toHaveCount(0)
     // The Now band leads with the place, named from the destination ("Peru").
-    await expect(page.getByTestId('jonathan-entries').getByText('At Peru')).toBeVisible()
+    // Jonathan's stay home is the redesigned LivingHeartHome; the hero says "At Peru".
+    await expect(page.getByTestId('living-heart-home').getByText('At Peru')).toBeVisible()
   })
 })
 

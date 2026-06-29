@@ -45,9 +45,12 @@ const PERSONAS = [
   {
     person: 'jonathan',
     band: 'jonathan-entries',
+    // DURING a stay, Jonathan's home is the redesigned LivingHeartHome (slice 1);
+    // AFTER, it reflows back to the JonathanEntries keepsake.
+    duringBand: 'living-heart-home',
     afterHero: 'entries-replay-hero',
     heroIsAfterOnly: true,
-    duringOnly: 'Open Surprises', // a "Now" register, present only DURING
+    duringOnly: 'Surprises', // the LivingHeartHome quiet action, present only DURING
     afterNote: /stood down when the trip ended/i,
   },
   {
@@ -93,7 +96,7 @@ for (const p of PERSONAS) {
     await seedTripIntoCache(page, CURRENT_TRIP)
     await page.goto(`/?person=${p.person}&trip=${CURRENT_TRIP.id}&nosw=1`)
 
-    const band = page.getByTestId(p.band)
+    const band = page.getByTestId(p.duringBand || p.band)
     await expect(band).toBeVisible()
 
     // The "Now" entry is present.

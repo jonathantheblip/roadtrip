@@ -12,6 +12,7 @@ import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { TRAVELER_DOT } from '../data/travelers'
 import { JonathanEntries } from './JonathanEntries'
+import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
@@ -221,21 +222,43 @@ export function JonathanView({
         <JRecord trip={trip} traveler={traveler} onOpenPhotos={onOpenPhotos} />
       ) : (
         <>
-        <JonathanEntries
-          trip={trip}
-          phase={tripPhase(trip)}
-          weaveReady={weaveReady}
-          surpriseRevealCue={surpriseRevealCue}
-          bookHasPages={bookHasPages}
-          nowReadout={nowReadout}
-          whoAround={whoAround}
-          onOpenMap={onOpenMap}
-          onOpenWeave={onOpenWeave}
-          onOpenReplay={onOpenReplay}
-          onOpenBook={onOpenBook}
-          onOpenSurprises={onOpenSurprises}
-          onCompose={onCompose}
-        />
+        {isStayTrip(trip) && tripPhase(trip) !== 'after' ? (
+          /* The redesigned "living heart" home leads a STAY (during/before). Routes
+             and the after-trip keepsake keep JonathanEntries (slice 1 — see
+             [[recenter-on-family-trips]] / the living-heart build plan). */
+          <LivingHeartHome
+            trip={trip}
+            traveler={traveler}
+            nowReadout={nowReadout}
+            whoAround={whoAround}
+            weaveReady={weaveReady}
+            bookHasPages={bookHasPages}
+            onOpenMap={onOpenMap}
+            onOpenWeave={onOpenWeave}
+            onOpenReplay={onOpenReplay}
+            onOpenBook={onOpenBook}
+            onOpenSurprises={onOpenSurprises}
+            onCompose={onCompose}
+            onOpenAllPhotos={onOpenAllPhotos}
+            onOpenActivities={onOpenActivities}
+          />
+        ) : (
+          <JonathanEntries
+            trip={trip}
+            phase={tripPhase(trip)}
+            weaveReady={weaveReady}
+            surpriseRevealCue={surpriseRevealCue}
+            bookHasPages={bookHasPages}
+            nowReadout={nowReadout}
+            whoAround={whoAround}
+            onOpenMap={onOpenMap}
+            onOpenWeave={onOpenWeave}
+            onOpenReplay={onOpenReplay}
+            onOpenBook={onOpenBook}
+            onOpenSurprises={onOpenSurprises}
+            onCompose={onCompose}
+          />
+        )}
         <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
         <JOps
           trip={trip}

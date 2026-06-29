@@ -67,7 +67,8 @@ test.describe('Look back further — home strip', () => {
     }, { trip: FIXTURE_TRIP })
     await stubWorker(page)
     await page.goto('/?person=jonathan&trip=volleyball-2026&nosw=1')
-    await expect(page.getByTestId('jonathan-entries')).toBeVisible()
+    // Jonathan's stay home is the redesigned LivingHeartHome (slice 1).
+    await expect(page.getByTestId('living-heart-home')).toBeVisible()
     await expect(page.getByTestId('lookback-strip')).toHaveCount(0)
   })
 })

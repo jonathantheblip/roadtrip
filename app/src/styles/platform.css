@@ -555,3 +555,11 @@ body[data-theme='rafa'][data-stay-tabs] { padding-bottom: calc(58px + max(10px, 
 @media (prefers-reduced-motion: reduce) {
   [data-testid='wave-cue'], [data-testid='wave-cue'] * { animation: none !important; }
 }
+
+/* LivingHeartHome hero — a slow Ken Burns drift so the home feels alive on open.
+   Reduced-motion users get a still image. */
+.lh-ken { animation: lhKen 22s ease-in-out infinite alternate; transform-origin: 50% 40%; will-change: transform; }
+@keyframes lhKen { from { transform: scale(1) translate(0, 0); } to { transform: scale(1.13) translate(-3%, -4%); } }
+@media (prefers-reduced-motion: reduce) {
+  .lh-ken { animation: none; transform: none; }
+}
