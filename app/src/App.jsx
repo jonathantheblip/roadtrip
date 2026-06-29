@@ -732,14 +732,14 @@ export default function App() {
   // (We could · Now · Photos · Look back). First cut maps the tabs to the
   // EXISTING surfaces (route trips keep the shipped dock untouched — G5). The
   // bar shows on the non-immersive stay surfaces; "Look back" launches the reel.
-  // A stay (vs a route) sheds road-trip chrome: the four-tab shell IS the
-  // navigation, so the ⋯ overflow menu drops everything the tabs already host
-  // (Replay → Look back; Live map → route-only; Surprises/Share/Book → the
-  // Now-tab home band) and keeps only what has no other home. Route trips keep
-  // the full menu byte-identical (G5). One flag drives both the tab bar and the
-  // slimmed menu so they can never disagree.
-  const tripIsStay = !!(trip && !trip.draft && isStayTrip(trip))
-  const stayTab = tripIsStay ? tabForView(view.name) : null
+  // EVERY real (non-draft) trip uses the ONE family-trips home — the four-tab shell
+  // IS the navigation for all of them (this is NOT a road-trip app; a road trip is a
+  // rare exception, not a different home). So the ⋯ overflow menu drops everything
+  // the tabs/home already host (Replay → Look back; Live map → the Now hero;
+  // Surprises/Share/Book → the Now-tab home) and keeps only what has no other home.
+  // One flag drives both the tab bar and the slimmed menu so they never disagree.
+  const tripIsHome = !!(trip && !trip.draft)
+  const stayTab = tripIsHome ? tabForView(view.name) : null
   // RafaPad (rafa on an iPad) is a self-contained immersive command center with
   // its own tile navigation and NO standard chrome (it also drops the top bar,
   // below) — the flat tab bar would be a redundant, colliding second nav there.
@@ -1446,7 +1446,7 @@ export default function App() {
             {/* On a stay Surprises lives on the Now tab, so its reveal cue
                 rides the Now tab badge (below), not this button. On a route the
                 menu still holds Surprises, so the dot stays here. */}
-            {surpriseRevealCue > 0 && !tripIsStay && (
+            {surpriseRevealCue > 0 && !tripIsHome && (
               <span
                 aria-label="A surprise was revealed"
                 style={{
@@ -1487,16 +1487,15 @@ export default function App() {
                   }}
                 >
                   {[
-                    // On a STAY the four-tab shell is the navigation, so the
-                    // menu sheds what the tabs already host: Replay (→ Look back
-                    // tab), Live map (route-only), Surprises and The book (both
-                    // on the Now-tab home band, every phase). What stays: Share a
-                    // moment (the home band offers it only DURING a trip — the
-                    // ⋯ is its only after-trip path, per the lens comments),
-                    // Add photos (kept top-reachable on purpose), Show me me,
-                    // and Settings. ROUTE keeps the full menu (G5).
+                    // EVERY trip uses the four-tab shell as its navigation, so the
+                    // menu sheds what the tabs/home already host: Replay (→ Look back
+                    // tab), Live map (→ the Now hero), Surprises and The book (the
+                    // Now-tab home, every phase). What stays: Share a moment (the
+                    // home offers it only DURING a trip — the ⋯ is its only
+                    // after-trip path), Add photos (kept top-reachable on purpose),
+                    // Show me me, and Settings.
                     ...(trip
-                      ? tripIsStay
+                      ? tripIsHome
                         ? [
                             { label: 'Share a moment', glyph: '🖼', onClick: openCompose },
                             { label: 'Add photos', glyph: '📷', onClick: openBulkImport },
@@ -1509,7 +1508,7 @@ export default function App() {
                             { label: 'Add photos', glyph: '📷', onClick: openBulkImport },
                           ]
                       : []),
-                    ...(trip && bookHasPages && !tripIsStay
+                    ...(trip && bookHasPages && !tripIsHome
                       ? [{ label: 'The book', glyph: '❏', onClick: openBook }]
                       : []),
                     // "Show me, me" — the on-device face recognizer. Aurelia +

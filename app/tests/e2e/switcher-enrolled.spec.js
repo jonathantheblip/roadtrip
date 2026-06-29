@@ -10,12 +10,14 @@ import { seedTripIntoCache, FIXTURE_ROUTE_TRIP } from './_fixtures/withTrip.js'
 // when a device holds only SOME sessions, is unit-tested in
 // scripts/__tests__/auth.test.mjs).
 
-// Seeds a ROUTE trip: the FamilyDock is hidden on a STAY now (the StayTabBar
-// replaces it), so the dock — and this enrolled-only invariant — lives on a
-// route trip + the between-trips index. The route fixture keeps it on a trip view.
+// EVERY trip now uses the 4-tab StayTabBar (the family-trips home — not a road-trip
+// app), so the FamilyDock + this enrolled-only invariant live on the between-trips
+// INDEX, where the persona pills are the nav. Land on the index to assert it.
 test('all-enrolled: the dock shows all four personas and no "add" pill', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
-  await page.goto('/?person=jonathan&trip=roadtrip-2026&nosw=1')
+  await page.goto('/?person=jonathan&nosw=1')
+  // The seeded trip is active today, so step back to the trips index where the dock shows.
+  await page.getByRole('button', { name: /trips/i }).first().click()
 
   const dock = page.locator('.switcher')
   await expect(dock).toBeVisible()

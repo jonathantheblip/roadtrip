@@ -70,14 +70,14 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
   // which fought the dark ground). Pulled from the design's roll palette.
   const tints = ['#6E5A6A', '#46505E', '#7A6448', '#5C4A52', '#4A5A50']
 
-  // On a STAY (during/before), shed Aurelia's road-trip chrome — the masthead/
-  // title + day picker + day-by-day stop list + the postcard roll + the composer
-  // FAB — so the living heart LEADS (Jonathan's decision #3 / vision §5). Today's
-  // planned events live in the living heart's "On the agenda"; settings is the
-  // global top-bar ⋯ menu. Her "note from Dad" letter (do-not-lose) still leads,
-  // and her photos / show-me entries + Things-to-do are kept reachable below (the
-  // Photos / We-could tabs also host them). Routes + after keep her full roll (G5).
-  if (isStayTrip(trip) && tripPhase(trip) !== 'after') {
+  // EVERY trip (during/before) leads with the living heart — the ONE family-trips
+  // home (NOT a road-trip app; road trips are a rare exception). Aurelia's road-trip
+  // chrome (masthead/title + day picker + day-by-day stop list + the postcard roll +
+  // composer FAB) is retired here for all shapes; the living heart is shape-aware,
+  // today's events live in its "On the agenda", settings is the global ⋯ menu. Her
+  // "note from Dad" letter (do-not-lose) still leads, and her photos / show-me
+  // entries + Things-to-do stay reachable below. Only the after-trip keeps her roll.
+  if (tripPhase(trip) !== 'after') {
     return (
       <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
         {trip.travelerNotes?.aurelia && (

@@ -72,16 +72,19 @@ test.describe('Now-band live readout (stay re-home of the dock ledge)', () => {
     })
   }
 
-  test('jonathan: a ROUTE keeps the generic "Where we are now" (the dock carries the readout)', async ({ page }) => {
+  test('jonathan: a ROUTE leads with the living heart too — shape-aware, no "At [base]"', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
     await page.goto('/?person=jonathan&trip=roadtrip-2026&nosw=1')
-    const band = page.getByTestId('jonathan-entries')
-    await expect(band).toBeVisible({ timeout: 10000 })
-    // The generic title stands (readout is null on a route → not replaced); the
-    // dock carries the live readout instead. The route fixture's base is "Beach
-    // Bungalow", so a leaked readout would read "At Beach Bungalow".
-    await expect(band.getByText('Where we are now')).toBeVisible()
-    await expect(band.getByText('At Beach Bungalow')).toHaveCount(0)
+    // Family-trips: EVERY trip leads with the ONE living-heart home + 4-tab shell
+    // (a road trip is a rare exception, not a different home). The hero is
+    // shape-aware — it leads with the day's focus, NOT a single "At [base]" (which
+    // doesn't fit a 2-base trip) — and the dock is replaced by the StayTabBar.
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('stay-tabbar')).toBeVisible()
+    await expect(page.locator('.switcher')).toHaveCount(0)
+    await expect(home.getByText(/^At /)).toHaveCount(0)
+    await expect(home.getByText('Pool play')).toBeVisible() // the Day-2 focus leads
   })
 })
 

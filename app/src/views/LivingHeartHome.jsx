@@ -20,7 +20,7 @@ import { ChevronRight, Play, BookOpen, Sparkles, Share2, Compass, Plane } from '
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady } from '../components/EntryCues'
 import { listMemoriesForTrip } from '../lib/memoryStore'
-import { stayLabel, stayNights, stayPlaceCoords } from '../lib/tripShape'
+import { isStayTrip, stayLabel, stayNights, stayPlaceCoords } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
 import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
@@ -68,8 +68,19 @@ export function LivingHeartHome({
   }, [trip.id])
 
   const place = stayLabel(trip)
+  const isStay = isStayTrip(trip)
   const phase = tripPhase(trip)
   const di = useMemo(() => dayInfo(trip), [trip])
+  // The common shapes (stay / hangout / mixed) lead with the place. The rare road
+  // trip or place-less itinerary leads with the day's focus instead — a single
+  // "At [place]" doesn't fit a moving or place-less trip (family-trips, never
+  // road-trip logic). The place is still in the small line + the ambient day count.
+  const todayTitle = useMemo(() => {
+    const days = trip?.days || []
+    const d = days.find((x) => x.isoDate === todayLocalIso()) || days[0]
+    return (d?.title || '').trim()
+  }, [trip])
+  const heroBig = isStay ? `At ${place}` : (todayTitle || (di.dayX ? `Day ${di.dayX}` : (trip.title || 'Your trip')))
   const coords = useMemo(() => stayPlaceCoords(trip), [trip])
   const sun = useMemo(() => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null), [coords?.lat, coords?.lng])
   const heroUrl = (!heroErr && (trip.heroImage || trip.heroResolved?.url)) || null
@@ -137,7 +148,7 @@ export function LivingHeartHome({
     <div data-testid="living-heart-home" style={{ color: 'var(--text)' }}>
       {/* HERO — the place, cinematic. Tapping it opens "where we are" (the map). */}
       <button
-        type="button" onClick={onOpenMap} aria-label={`Where we are — ${place}`}
+        type="button" onClick={onOpenMap} aria-label={`Where we are — ${isStay ? place : trip.title}`}
         style={{
           display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer', border: 0, padding: 0,
           position: 'relative', height: 300, overflow: 'hidden', background: 'linear-gradient(135deg, var(--bg2), var(--card))',
@@ -150,7 +161,7 @@ export function LivingHeartHome({
         <span aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 34%, rgba(0,0,0,0.80))' }} />
         <span style={{ position: 'absolute', left: 20, right: 20, bottom: 16, display: 'block' }}>
           <span style={{ ...MONO, fontSize: 11, color: 'rgba(255,255,255,0.82)', display: 'block' }}>{trip.title}</span>
-          <span style={{ ...DISPLAY, fontSize: 32, color: '#fff', lineHeight: 1.04, display: 'block', marginTop: 6 }}>At {place}</span>
+          <span style={{ ...DISPLAY, fontSize: 32, color: '#fff', lineHeight: 1.04, display: 'block', marginTop: 6 }}>{heroBig}</span>
           {ambient && <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.86)', display: 'block', marginTop: 5 }}>{ambient}</span>}
         </span>
       </button>

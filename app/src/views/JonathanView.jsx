@@ -215,14 +215,16 @@ export function JonathanView({
     return sum + (m ? parseInt(m, 10) : 0)
   }, 0)
 
-  // On a STAY (during/before), shed the road-trip broadsheet — the FAMILY OPS
-  // masthead + the day-by-day itinerary (JOps) — so the living heart LEADS the
-  // home (Jonathan's decision #3 / vision §5). The day's few planned events live
-  // in the living heart's "On the agenda"; settings is reached from the global
-  // top-bar ⋯ menu; the photos + things-to-do entries are kept reachable below
-  // (the Photos / We-could tabs also host them). Routes and the after-trip
-  // keepsake keep the full broadsheet, byte-identical (G5).
-  if (isStayTrip(trip) && tripPhase(trip) !== 'after') {
+  // EVERY trip (during/before) leads with the living heart — the ONE family-trips
+  // home. This is NOT a road-trip app: road trips are a rare exception, never the
+  // default, so the road-trip broadsheet (the FAMILY OPS masthead + the JOps
+  // day-by-day drive plan) is retired here for all shapes. The living heart is
+  // shape-aware (place for a stay/hangout/mixed trip; the day's focus for the rare
+  // road trip), the day's planned events live in its "On the agenda", settings is
+  // the global top-bar ⋯ menu, and the photos + things-to-do entries are kept
+  // reachable below. Only the after-trip keepsake keeps JonathanEntries (slice 4
+  // folds that in too).
+  if (tripPhase(trip) !== 'after') {
     return (
       <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120 }}>
         <LivingHeartHome

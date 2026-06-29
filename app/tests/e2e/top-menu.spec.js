@@ -1,11 +1,11 @@
 // Trip top bar — the overflow (⋯) menu.
 //
-// The menu is shape-aware. On a ROUTE trip it holds the full secondary set
-// (Replay / Live map / Surprises / Share a moment / Add photos / Book /
-// Show me, me / Settings). On a STAY the four-tab shell IS the navigation, so
-// the menu sheds everything the tabs already host (Replay → Look back tab;
-// Live map → route-only; Surprises / Share / Book → the Now-tab home band) and
-// keeps only the entries with no tab home: Add photos, Show me me, Settings.
+// EVERY trip uses the four-tab shell as its navigation (the family-trips home —
+// NOT a road-trip app; a road trip is a rare exception, not a different home), so
+// the ⋯ menu always sheds what the tabs/home host (Replay → Look back tab; Live
+// map → the Now hero; Surprises / Share / Book → the Now-tab home) and keeps only
+// the entries with no tab home: Add photos, Show me me, Settings (+ Share a moment,
+// whose only after-trip path is the ⋯).
 
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP, FIXTURE_ROUTE_TRIP } from './_fixtures/withTrip.js'
@@ -36,20 +36,23 @@ test.describe('Top bar — overflow ⋯ menu', () => {
     await expect(page.getByRole('menuitem', { name: /Settings/i })).toHaveCount(0)
   })
 
-  test('ROUTE: ⋯ holds the full secondary set and an item navigates', async ({ page }) => {
+  test('ROUTE: ⋯ slims to the SAME set — a road trip is not a different home', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_ROUTE_TRIP)
     await page.goto('/?person=jonathan&trip=roadtrip-2026&nosw=1')
 
     await expect(page.getByRole('button', { name: /Modify this trip with Claude/i })).toBeVisible()
 
     await page.getByRole('button', { name: 'More' }).click()
-    await expect(page.getByRole('menuitem', { name: /Replay/i })).toBeVisible()
-    await expect(page.getByRole('menuitem', { name: /Live map/i })).toBeVisible()
-    await expect(page.getByRole('menuitem', { name: /Settings/i })).toBeVisible()
-
-    await page.getByRole('menuitem', { name: /Replay/i }).click()
-    await expect(page.locator('.rpl-root')).toBeVisible()
+    // The road trip uses the same 4-tab home, so the menu sheds the same road-trip
+    // secondary set the tabs/home now host — no full-menu fork for routes.
     await expect(page.getByRole('menuitem', { name: /Replay/i })).toHaveCount(0)
+    await expect(page.getByRole('menuitem', { name: /Live map/i })).toHaveCount(0)
+    await expect(page.getByRole('menuitem', { name: /Surprises/i })).toHaveCount(0)
+    // The kept entries (no tab home) still navigate.
+    await expect(page.getByRole('menuitem', { name: /Settings/i })).toBeVisible()
+    await page.getByRole('menuitem', { name: /Settings/i }).click()
+    await expect(page.getByRole('heading', { name: /Trip Settings/i })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: /Settings/i })).toHaveCount(0)
   })
 
   test('tapping the backdrop closes the menu without navigating', async ({ page }) => {

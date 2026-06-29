@@ -113,15 +113,13 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
 // --muted labels — is gated on EVERY CI run. A contrast fix on an ungated surface
 // regresses silently; this is the deliverable that prevents that.
 //
-// Scans BOTH trip shapes full-page, because the recenter splits the bottom nav:
-// a ROUTE keeps the FamilyDock (its active/inactive pill + --muted-label
-// contrast), a STAY swaps in the StayTabBar AND renders stay-only chrome (the
-// place card, the stay home body). Gating only one shape would drop the other's
-// body + bottom-nav from the full-page contrast sweep — and the STAY is the new
-// default, so Rafa's stay home (no entry-band/place-card scoped test of its own)
-// must stay covered. So: loop the four personas × both shapes.
+// Scans BOTH trip fixtures full-page. EVERY trip now uses the living heart + the
+// StayTabBar (the family-trips home — a road trip is a rare exception, not a
+// different home), so both shapes share the bottom nav; the value of looping both
+// is the DIFFERENT bodies the contrast sweep then covers — the stay fixture's
+// "At [place]" hero vs the route fixture's shape-aware day-focus hero — ×4 personas.
 const TRIP_SHAPES = [
-  { name: 'route', fixture: FIXTURE_ROUTE_TRIP, trip: 'roadtrip-2026', bottomNav: '.switcher' },
+  { name: 'route', fixture: FIXTURE_ROUTE_TRIP, trip: 'roadtrip-2026', bottomNav: '.stay-tabbar' },
   { name: 'stay', fixture: FIXTURE_TRIP, trip: 'volleyball-2026', bottomNav: '.stay-tabbar' },
 ]
 test.describe('a11y (axe, serious+critical) — S2 trip-view ×4 personas × shape', () => {

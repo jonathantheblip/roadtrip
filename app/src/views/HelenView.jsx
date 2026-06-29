@@ -71,14 +71,14 @@ export function HelenView({
   const stayName = stayLabel(trip)
   const nights = stayNights(trip)
 
-  // On a STAY (during/before), shed Helen's road-trip chrome — the greeting/cover/
-  // day-chips + day-by-day threaded timeline + place-card + arrival panel + the
-  // capture FAB — so the living heart LEADS (Jonathan's decision #3 / vision §5).
-  // Today's planned events live in the living heart's "On the agenda"; settings is
-  // the global top-bar ⋯ menu. Her co-planner, photos entries, and Things-to-do
-  // are kept reachable below (the Photos / We-could tabs also host them). Routes +
-  // the after-trip keepsake keep her full layout, byte-identical (G5).
-  if (isStayTrip(trip) && tripPhase(trip) !== 'after') {
+  // EVERY trip (during/before) leads with the living heart — the ONE family-trips
+  // home (NOT a road-trip app; road trips are a rare exception). Helen's road-trip
+  // chrome (greeting/cover/day-chips + day-by-day threaded timeline + place-card +
+  // arrival panel + capture FAB) is retired here for all shapes; the living heart
+  // is shape-aware, today's events live in its "On the agenda", settings is the
+  // global ⋯ menu, and her co-planner + photos entries + Things-to-do stay reachable
+  // below. Only the after-trip keepsake keeps her full keepsake layout.
+  if (tripPhase(trip) !== 'after') {
     return (
       <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
         <LivingHeartHome
