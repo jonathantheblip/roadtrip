@@ -9,7 +9,6 @@ import { Avatar, AvatarStack } from '../components/Avatar'
 import { findArrivalStop, FlightStatus } from './FlightStatus'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
-import { HelenEntries } from './HelenEntries'
 import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
@@ -78,291 +77,37 @@ export function HelenView({
   // is shape-aware, today's events live in its "On the agenda", settings is the
   // global ⋯ menu, and her co-planner + photos entries + Things-to-do stay reachable
   // below. Only the after-trip keepsake keeps her full keepsake layout.
-  if (tripPhase(trip) !== 'after') {
-    return (
-      <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
-        <LivingHeartHome
-          trip={trip}
-          traveler={traveler}
-          nowReadout={nowReadout}
-          whoAround={whoAround}
-          weaveReady={weaveReady}
-          bookHasPages={bookHasPages}
-          onOpenMap={onOpenMap}
-          onOpenWeave={onOpenWeave}
-          onOpenReplay={onOpenReplay}
-          onOpenBook={onOpenBook}
-          onOpenSurprises={onOpenSurprises}
-          onCompose={onCompose}
-          onOpenAllPhotos={onOpenAllPhotos}
-          onOpenActivities={onOpenActivities}
-          onOpenStop={onOpenStop}
-        />
-        <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
-        <HelenCoPlanner onOpenClaude={onOpenClaude} />
-        {onOpenPhotos && <HelenPhotosEntry trip={trip} traveler={traveler} onOpen={onOpenPhotos} />}
-        {onOpenAllPhotos && <HelenAllPhotosEntry onOpen={onOpenAllPhotos} />}
-        <HelenThingsToDo trip={trip} onOpenActivities={onOpenActivities} />
-      </div>
-    )
-  }
-
+  // ONE home for EVERY phase (slice 4): the living heart is the after-trip keepsake
+  // too. Helen's threaded-timeline keepsake is retired; her co-planner + photos
+  // entries stay, and Things-to-do drops once the trip is over.
+  const after = tripPhase(trip) === 'after'
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
-      {/* Warm greeting header (→ Settings via the avatar) */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top) + 60px) 20px 4px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: 'Fraunces, "Iowan Old Style", Georgia, serif', fontSize: 22, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text)' }}>
-            {greeting()}, Helen
-          </div>
-          <Eyebrow color="var(--muted)" style={{ marginTop: 5 }}>{(trip.title || '').toUpperCase()}</Eyebrow>
-        </div>
-        <button onClick={onOpenSettings} aria-label="Settings" style={{ background: 'transparent', border: 0, padding: 0, cursor: 'pointer', lineHeight: 0, flexShrink: 0 }}>
-          <Avatar id="helen" size={36} ring />
-        </button>
-      </div>
-
-      {trip.coverPhotoUrl && (
-        <div style={{ padding: '10px 20px 2px' }}>
-          <img
-            src={trip.coverPhotoUrl}
-            alt={trip.title || 'Trip cover'}
-            style={{ width: '100%', height: 168, objectFit: 'cover', borderRadius: 'var(--radius)', display: 'block', boxShadow: 'var(--shadow-card)' }}
-          />
-        </div>
-      )}
-
-      {/* Day chips */}
-      <div style={{ padding: '12px 20px 4px', display: 'flex', gap: 8 }}>
-        {trip.days.map((d) => {
-          const isActive = d.n === activeDay
-          // Weekday + day-of-month (e.g. "Fri 1"), so the chip carries a real
-          // date — not a bare weekday that two same-named days can't be told
-          // apart by. Falls back to just the weekday if the date is malformed.
-          const dParts = (d.date || '').split(' ')
-          const dow = dParts.length >= 3 ? `${dParts[0]} ${dParts[2]}` : dParts[0] || ''
-          return (
-            <button
-              key={d.n}
-              type="button"
-              onClick={() => setActiveDay(d.n)}
-              aria-pressed={isActive}
-              style={{
-                flex: 1,
-                padding: '8px 10px',
-                borderRadius: 'var(--radius)',
-                background: isActive ? 'var(--accent)' : 'var(--card)',
-                color: isActive ? 'var(--accent-ink)' : 'var(--muted)',
-                border: isActive ? 'none' : '1px solid var(--border)',
-                boxShadow: isActive ? 'var(--shadow-card)' : 'none',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: '0.1em' }}>DAY {d.n}</div>
-              <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 14, fontWeight: 600, marginTop: 2 }}>{dow}</div>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Day header */}
-      <div style={{ padding: '12px 20px 0' }}>
-        <Eyebrow color="var(--accent-text)">DAY {day.n} · {(day.date || '').toUpperCase()}</Eyebrow>
-        <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 26, fontWeight: 700, lineHeight: 1.05, marginTop: 5, color: 'var(--text)' }}>
-          {day.title}
-        </div>
-      </div>
-
-      {/* STAY → lead with the place (the rest of the day reads as happening AT it). */}
-      {stay && (
-        <div style={{ padding: '14px 20px 0' }}>
-          <div
-            data-testid="helen-stay-place-card"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-card)', padding: '14px 16px' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
-              <Eyebrow color="var(--accent-text)">AT</Eyebrow>
-            </div>
-            <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 22, fontWeight: 700, marginTop: 5, lineHeight: 1.1, color: 'var(--text)' }}>
-              {stayName}
-            </div>
-            {nights > 0 && (
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, marginTop: 4, color: 'var(--muted)' }}>
-                {nights} {nights === 1 ? 'night' : 'nights'}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Flight status — a road-trip/arrival concern; suppressed on a stay. */}
-      {!stay && arrival?.day?.n === day.n && (
-        <div style={{ padding: '14px 20px 0' }}>
-          <FlightStatus stop={arrival.stop} variant="panel" framing="their" traveler={traveler} />
-        </div>
-      )}
-
-      {/* The redesigned "living heart" home leads a STAY (during/before) — mirrors
-          JonathanView (slice 1). Routes + the after-trip keepsake keep HelenEntries
-          (her Now stack + Keepsake shelf). The co-planner entry + threaded timeline
-          below are preserved in BOTH paths (do-not-lose, reconcile-before-replace). */}
-      {isStayTrip(trip) && tripPhase(trip) !== 'after' ? (
-        <LivingHeartHome
-          trip={trip}
-          traveler={traveler}
-          nowReadout={nowReadout}
-          whoAround={whoAround}
-          weaveReady={weaveReady}
-          bookHasPages={bookHasPages}
-          onOpenMap={onOpenMap}
-          onOpenWeave={onOpenWeave}
-          onOpenReplay={onOpenReplay}
-          onOpenBook={onOpenBook}
-          onOpenSurprises={onOpenSurprises}
-          onCompose={onCompose}
-          onOpenAllPhotos={onOpenAllPhotos}
-          onOpenActivities={onOpenActivities}
-        />
-      ) : (
-        <HelenEntries
-          trip={trip}
-          phase={tripPhase(trip)}
-          weaveReady={weaveReady}
-          surpriseRevealCue={surpriseRevealCue}
-          bookHasPages={bookHasPages}
-          nowReadout={nowReadout}
-          whoAround={whoAround}
-          onOpenMap={onOpenMap}
-          onOpenWeave={onOpenWeave}
-          onOpenReplay={onOpenReplay}
-          onOpenBook={onOpenBook}
-          onOpenSurprises={onOpenSurprises}
-          onCompose={onCompose}
-        />
-      )}
+      <LivingHeartHome
+        trip={trip}
+        traveler={traveler}
+        nowReadout={nowReadout}
+        whoAround={whoAround}
+        weaveReady={weaveReady}
+        bookHasPages={bookHasPages}
+        onOpenMap={onOpenMap}
+        onOpenWeave={onOpenWeave}
+        onOpenReplay={onOpenReplay}
+        onOpenBook={onOpenBook}
+        onOpenSurprises={onOpenSurprises}
+        onCompose={onCompose}
+        onOpenAllPhotos={onOpenAllPhotos}
+        onOpenActivities={onOpenActivities}
+        onOpenStop={onOpenStop}
+      />
       <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
-
-      {/* CO-PLANNER — Helen plans too now. Opens the Claude planning chat
-          she already has access to (the locked "Helen = full co-planner"
-          decision, realized with existing machinery). */}
-      {onOpenClaude && (
-        <div style={{ padding: '16px 20px 0' }}>
-          <button
-            type="button"
-            data-testid="helen-plan-entry"
-            onClick={onOpenClaude}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              cursor: 'pointer',
-              border: 'none',
-              borderRadius: 'var(--radius)',
-              padding: '16px 18px',
-              background: 'linear-gradient(120deg, var(--accent), #245C3E)',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
-              boxShadow: '0 14px 30px -16px rgba(46, 125, 82, 0.7)',
-            }}
-          >
-            <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 28, fontWeight: 300, lineHeight: 1 }}>+</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.85 }}>Plan with Claude</div>
-              <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 19, fontWeight: 600, marginTop: 3, lineHeight: 1.15 }}>Design a trip, start to finish.</div>
-            </div>
-            <span style={{ fontSize: 20 }}>→</span>
-          </button>
-        </div>
-      )}
-
-      {/* Photos entries — deliberately above the timeline so Helen can add
-          or browse from any day without scrolling past it (do-not-lose). */}
+      <HelenCoPlanner onOpenClaude={onOpenClaude} />
       {onOpenPhotos && <HelenPhotosEntry trip={trip} traveler={traveler} onOpen={onOpenPhotos} />}
       {onOpenAllPhotos && <HelenAllPhotosEntry onOpen={onOpenAllPhotos} />}
-
-      {/* The threaded timeline — Helen's signature, PRESERVED + reskinned */}
-      <div style={{ padding: '20px 0 0' }}>
-        {day.stops.map((s, i) => (
-          <StopWithThread
-            key={s.id}
-            stop={s}
-            traveler={traveler}
-            last={i === day.stops.length - 1}
-            onOpen={() => onOpenStop(day.n, s.id)}
-          />
-        ))}
-      </div>
-
-      {hasActivitiesForTrip(trip.id) && onOpenActivities && (
-        <button
-          type="button"
-          onClick={onOpenActivities}
-          style={{
-            margin: '24px 20px 0',
-            padding: '14px 16px',
-            width: 'calc(100% - 40px)',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            boxShadow: 'var(--shadow-card)',
-            cursor: 'pointer',
-            textAlign: 'left',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            color: 'inherit',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Sparkles size={14} style={{ color: 'var(--accent-text)' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-                {getActivitiesForTrip(trip.id).length} options
-              </span>
-              <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 16, fontStyle: 'italic', color: 'var(--text)' }}>
-                Things to do
-              </span>
-            </div>
-          </div>
-          <span style={{ color: 'var(--accent-text)', fontSize: 18 }}>→</span>
-        </button>
-      )}
-
-      {/* Capture FAB → the active day's first stop (where memories attach) */}
-      <button
-        type="button"
-        aria-label="Capture memory"
-        onClick={() => {
-          const target = day.stops?.[0]
-          if (target) onOpenStop(day.n, target.id)
-        }}
-        style={{
-          position: 'fixed',
-          right: 16,
-          bottom: 92,
-          width: 52,
-          height: 52,
-          borderRadius: '50%',
-          border: 'none',
-          background: 'var(--accent)',
-          color: 'var(--accent-ink)',
-          cursor: 'pointer',
-          boxShadow: '0 8px 24px rgba(46, 125, 82, 0.4)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 28,
-          fontWeight: 300,
-          zIndex: 20,
-        }}
-      >
-        +
-      </button>
+      {!after && <HelenThingsToDo trip={trip} onOpenActivities={onOpenActivities} />}
     </div>
   )
+
 }
 
 function StopWithThread({ stop, traveler, last, onOpen }) {

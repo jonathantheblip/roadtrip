@@ -78,6 +78,10 @@ export function LivingHeartHome({
   const place = stayLabel(trip)
   const isStay = isStayTrip(trip)
   const phase = tripPhase(trip)
+  // When a trip is OVER, the living heart IS the keepsake (decided 2026-06-29): full
+  // woven story + a photo wall + a prominent "relive it"; it sheds the upcoming /
+  // agenda / now bits and the per-lens broadsheet/timeline/roll (retired). ONE home.
+  const isAfter = phase === 'after'
   const di = useMemo(() => dayInfo(trip), [trip])
   // A complex/composite trip (a city break, flights + timed things) is still the
   // ONE living-heart home, shape-aware (FAMILY_TRIPS_VISION §11): it leads with the
@@ -112,7 +116,9 @@ export function LivingHeartHome({
     const d = days.find((x) => x.isoDate === todayLocalIso()) || days[0]
     return (d?.title || '').trim()
   }, [trip])
-  const heroBig = isComplex
+  const heroBig = isAfter
+    ? (isStay ? place : (trip.title || place || 'Your trip')) // a keepsake header, not "At [place]"
+    : isComplex
     ? (curPart?.place ? `In ${curPart.place}` : (curPart?.title || trip.title || 'Your trip'))
     : isStay ? `At ${place}` : (todayTitle || (di.dayX ? `Day ${di.dayX}` : (trip.title || 'Your trip')))
   const coords = useMemo(() => stayPlaceCoords(trip), [trip])
@@ -122,14 +128,15 @@ export function LivingHeartHome({
   const mems = useMemo(() => listMemoriesForTrip(trip.id, traveler), [trip.id, traveler])
   const sorted = useMemo(() => [...mems].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [mems])
   const photoUrls = useMemo(() => {
+    const cap = isAfter ? 12 : 6 // an after-trip keepsake shows a fuller wall
     const out = []
     for (const m of sorted) {
       if (Array.isArray(m.photoRefs)) { for (const r of m.photoRefs) if (r?.url) out.push(r.url) }
       else if (m.photoRef?.url) out.push(m.photoRef.url)
-      if (out.length >= 6) break
+      if (out.length >= cap) break
     }
-    return out.slice(0, 6)
-  }, [sorted])
+    return out.slice(0, cap)
+  }, [sorted, isAfter])
   const todayCount = useMemo(() => {
     const start = new Date(); start.setHours(0, 0, 0, 0)
     const s = start.getTime()
@@ -150,7 +157,10 @@ export function LivingHeartHome({
   // Ambient line under the place — phase-aware, all from real dates/astronomy.
   const ambient = useMemo(() => {
     const segs = []
-    if (upcoming) {
+    if (isAfter) {
+      segs.push('Looking back')
+      if (di.nights > 0) segs.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
+    } else if (upcoming) {
       segs.push(di.daysUntil === 0 ? 'Today' : di.daysUntil === 1 ? 'Tomorrow' : `In ${di.daysUntil} days`)
       if (di.nights > 0) segs.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
     } else if (di.dayX) {
@@ -159,9 +169,9 @@ export function LivingHeartHome({
     } else if (di.nights > 0) {
       segs.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
     }
-    if (isComplex && partN > 1 && partIdx >= 0) segs.push(`part ${partIdx + 1} of ${partN}`)
+    if (isComplex && !isAfter && partN > 1 && partIdx >= 0) segs.push(`part ${partIdx + 1} of ${partN}`)
     return segs.join(' · ')
-  }, [upcoming, di.daysUntil, di.dayX, di.nights, sun?.goldenHour, isComplex, partN, partIdx])
+  }, [isAfter, upcoming, di.daysUntil, di.dayX, di.nights, sun?.goldenHour, isComplex, partN, partIdx])
 
   // ON THE AGENDA — a stay sheds the road-trip day-by-day broadsheet, but its few
   // PLANNED events (a dinner out, an activity) + any flight are "the exception"
@@ -212,7 +222,7 @@ export function LivingHeartHome({
             <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 16, lineHeight: 1.5, color: 'var(--text)', display: 'block' }}>{weave.opening}</span>
           ) : (
             <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 15, lineHeight: 1.5, color: 'var(--muted)', display: 'block' }}>
-              {upcoming ? 'Your trip’s story will write itself here.' : 'The day’s story appears here once the day has a little in it.'}
+              {isAfter ? 'Your trip’s story lives here.' : upcoming ? 'Your trip’s story will write itself here.' : 'The day’s story appears here once the day has a little in it.'}
             </span>
           )}
           <span style={{ ...MONO, fontSize: 10, color: 'var(--accent-text)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 9 }}>
@@ -221,13 +231,14 @@ export function LivingHeartHome({
           </span>
         </button>
 
-        {/* THE LIVE PULSE — real "who's around" band (omitted when not present) */}
-        {whoAround && <div style={{ marginTop: 20 }}>{whoAround}</div>}
+        {/* THE LIVE PULSE — real "who's around" band (omitted when not present, or
+            once the trip is over — there's no live presence to show then). */}
+        {!isAfter && whoAround && <div style={{ marginTop: 20 }}>{whoAround}</div>}
 
         {/* NEXT UP — a complex trip's most imminent timed thing, surfaced
             just-in-time with its ticket image (FAMILY_TRIPS_VISION §11). Tap opens
             the stop's full detail (ticket / flight / logistics). */}
-        {nextThing && onOpenStop && (
+        {!isAfter && nextThing && onOpenStop && (
           <button
             type="button" onClick={() => onOpenStop(nextThing.day.n, nextThing.stop.id)}
             data-testid="next-up" aria-label={`Next up — ${nextThing.stop.name}`}
@@ -257,8 +268,9 @@ export function LivingHeartHome({
         )}
 
         {/* WHAT YOU COULD DO — a nudge when the trip's still empty/upcoming (real:
-            it opens the "We could" tray we already populate, incl. pre-trip). */}
-        {!hasPhotos && onOpenActivities && (
+            it opens the "We could" tray we already populate, incl. pre-trip). Gone
+            once the trip is over (nothing left to do then). */}
+        {!isAfter && !hasPhotos && onOpenActivities && (
           <button
             type="button" onClick={onOpenActivities} aria-label="See what you could do"
             style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, marginTop: 18, padding: '12px 14px', cursor: 'pointer', textAlign: 'left', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', color: 'var(--text)' }}
@@ -272,15 +284,15 @@ export function LivingHeartHome({
           </button>
         )}
 
-        {/* LATELY — the family's recent photos, or a gentle "they'll gather here" */}
+        {/* PHOTOS — "Lately" during a trip; a fuller WALL once it's over (keepsake). */}
         <div style={{ marginTop: 22 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>Lately</span>
-            {hasPhotos && todayCount > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{todayCount} today</span>}
+            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{isAfter ? 'The trip in photos' : 'Lately'}</span>
+            {!isAfter && hasPhotos && todayCount > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{todayCount} today</span>}
           </div>
           {hasPhotos ? (
             <>
-              <div style={{ display: 'flex', gap: 9, marginTop: 11, overflowX: 'auto' }}>
+              <div style={{ display: 'flex', flexWrap: isAfter ? 'wrap' : 'nowrap', gap: 9, marginTop: 11, overflowX: isAfter ? 'visible' : 'auto' }}>
                 {photoUrls.map((u, i) => (
                   <button
                     key={i} type="button" onClick={onOpenAllPhotos} aria-label="Open photos"
@@ -290,19 +302,29 @@ export function LivingHeartHome({
                   </button>
                 ))}
               </div>
-              {latestLine && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>{latestLine}</div>}
+              {!isAfter && latestLine && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>{latestLine}</div>}
             </>
           ) : (
             <div style={{ marginTop: 11, padding: '18px 14px', borderRadius: 'min(var(--radius, 12px), 14px)', border: '1px dashed var(--line-bold, var(--border))', textAlign: 'center', fontSize: 12.5, color: 'var(--muted)' }}>
-              Photos will gather here as you go
+              {isAfter ? 'No photos from this trip.' : 'Photos will gather here as you go'}
             </div>
           )}
         </div>
 
+        {/* RELIVE IT — the keepsake's primary action once a trip is over. */}
+        {isAfter && hasPhotos && onOpenReplay && (
+          <button
+            type="button" onClick={onOpenReplay} data-testid="relive-trip" aria-label="Relive the trip"
+            style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, padding: '13px 14px', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink, #fff)', border: 0, borderRadius: 'min(var(--radius, 12px), 14px)', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 600 }}
+          >
+            <Play size={16} /> Relive the trip
+          </button>
+        )}
+
         {/* ON THE AGENDA — a stay's few planned events + flight (the exception,
             vision §5), kept reachable now the road-trip itinerary is shed. Each
             row opens the stop; renders only when there's something planned. */}
-        {!isComplex && (hasAgenda || (arrival && onOpenStop)) && (
+        {!isAfter && !isComplex && (hasAgenda || (arrival && onOpenStop)) && (
           <div style={{ marginTop: 22 }}>
             <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>On the agenda</span>
             <div style={{ marginTop: 11, border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', overflow: 'hidden' }}>
@@ -343,7 +365,7 @@ export function LivingHeartHome({
 
         {/* THE PLAN — a complex trip's full parts → days → stops, folded in below
             the live lead (the old separate PartsTripView is retired). One home. */}
-        {isComplex && (
+        {isComplex && !isAfter && (
           <div style={{ marginTop: 22 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>The plan</span>
@@ -368,7 +390,7 @@ export function LivingHeartHome({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 18, paddingTop: 14, borderTop: nowReadout?.next ? 0 : '1px solid var(--border)' }}>
           {onCompose && <QuietAction onClick={onCompose} icon={<Share2 size={13} />} label="Share a moment" />}
           {onOpenSurprises && <QuietAction onClick={onOpenSurprises} icon={<Sparkles size={13} />} label="Surprises" />}
-          {hasPhotos && onOpenReplay && <QuietAction onClick={onOpenReplay} icon={<Play size={13} />} label="Replay" />}
+          {!isAfter && hasPhotos && onOpenReplay && <QuietAction onClick={onOpenReplay} icon={<Play size={13} />} label="Replay" />}
           {bookHasPages && onOpenBook && <QuietAction onClick={onOpenBook} icon={<BookOpen size={13} />} label="The book" aria="The Book · kept pages" />}
         </div>
       </div>

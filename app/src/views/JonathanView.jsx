@@ -11,7 +11,6 @@ import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { TRAVELER_DOT } from '../data/travelers'
-import { JonathanEntries } from './JonathanEntries'
 import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
@@ -224,72 +223,31 @@ export function JonathanView({
   // the global top-bar ⋯ menu, and the photos + things-to-do entries are kept
   // reachable below. Only the after-trip keepsake keeps JonathanEntries (slice 4
   // folds that in too).
-  if (tripPhase(trip) !== 'after') {
-    return (
-      <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120 }}>
-        <LivingHeartHome
-          trip={trip}
-          traveler={traveler}
-          nowReadout={nowReadout}
-          whoAround={whoAround}
-          weaveReady={weaveReady}
-          bookHasPages={bookHasPages}
-          onOpenMap={onOpenMap}
-          onOpenWeave={onOpenWeave}
-          onOpenReplay={onOpenReplay}
-          onOpenBook={onOpenBook}
-          onOpenSurprises={onOpenSurprises}
-          onCompose={onCompose}
-          onOpenAllPhotos={onOpenAllPhotos}
-          onOpenActivities={onOpenActivities}
-          onOpenStop={onOpenStop}
-        />
-        <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
-        <JStayArchive trip={trip} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onOpenActivities={onOpenActivities} />
-      </div>
-    )
-  }
-
+  // ONE home for EVERY phase (slice 4): the living heart is the after-trip keepsake
+  // too — its after state sheds the upcoming/agenda bits and leads with the woven
+  // story + a photo wall + "relive it". The road-trip broadsheet (JMasthead / JOps /
+  // JRecord / JonathanEntries) is retired.
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120 }}>
-      <JMasthead mode={mode} setMode={setMode} onOpenSettings={onOpenSettings} />
-      {mode === 'record' ? (
-        <JRecord trip={trip} traveler={traveler} onOpenPhotos={onOpenPhotos} />
-      ) : (
-        <>
-        <JonathanEntries
-          trip={trip}
-          phase={tripPhase(trip)}
-          weaveReady={weaveReady}
-          surpriseRevealCue={surpriseRevealCue}
-          bookHasPages={bookHasPages}
-          nowReadout={nowReadout}
-          whoAround={whoAround}
-          onOpenMap={onOpenMap}
-          onOpenWeave={onOpenWeave}
-          onOpenReplay={onOpenReplay}
-          onOpenBook={onOpenBook}
-          onOpenSurprises={onOpenSurprises}
-          onCompose={onCompose}
-        />
-        <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
-        <JOps
-          trip={trip}
-          traveler={traveler}
-          day={day}
-          activeDayN={activeDayN}
-          setActiveDayN={setActiveDayN}
-          arrival={arrival}
-          openLoops={openLoops}
-          memCountByStop={memCountByStop}
-          totalDriveMiles={totalDriveMiles}
-          totalDriveHours={totalDriveHours}
-          onOpenStop={onOpenStop}
-          onOpenActivities={onOpenActivities}
-          onOpenAllPhotos={onOpenAllPhotos}
-        />
-        </>
-      )}
+      <LivingHeartHome
+        trip={trip}
+        traveler={traveler}
+        nowReadout={nowReadout}
+        whoAround={whoAround}
+        weaveReady={weaveReady}
+        bookHasPages={bookHasPages}
+        onOpenMap={onOpenMap}
+        onOpenWeave={onOpenWeave}
+        onOpenReplay={onOpenReplay}
+        onOpenBook={onOpenBook}
+        onOpenSurprises={onOpenSurprises}
+        onCompose={onCompose}
+        onOpenAllPhotos={onOpenAllPhotos}
+        onOpenActivities={onOpenActivities}
+        onOpenStop={onOpenStop}
+      />
+      <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
+      <JStayArchive trip={trip} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onOpenActivities={onOpenActivities} />
     </div>
   )
 }

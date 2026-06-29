@@ -1,18 +1,15 @@
-// after-trip-reflow.spec.js — proves the per-person home bands actually
-// REFLOW into their after-trip keepsake layout once a trip is over, for all
-// three banded personas (Jonathan / Helen / Aurelia; Rafa has no band).
+// after-trip-reflow.spec.js — when a trip is OVER, its home (the living heart)
+// becomes the ONE unified keepsake (decided 2026-06-29): the hero reads "Looking
+// back", the photos become a wall ("The trip in photos"), and a prominent "Relive
+// the trip" leads. The per-lens broadsheet / timeline / film-roll keepsakes are
+// RETIRED — there is one home for every phase. DURING a trip the SAME living heart
+// leads with the "Now" layout instead (G5 — the working path still works).
 //
-// WHY THIS EXISTS: the after-trip layout was read-correct but rendered by
-// nothing — the stubbed e2e clock (2026-05-23, clockStub.js) sits mid-trip,
-// so the standard fixture trip is always 'during', and no test had ever
-// exercised the 'after' branch. This walks the real user path into a FINISHED
-// trip (which the app only lets you reach by tapping it on the index — a cold
-// deep-link to a past trip bounces to the index by design), then asserts the
-// band swapped layouts. It also re-verifies the 'during' layout still renders
-// (G5 — don't break the working path proving the new one).
-//
-// It deliberately does NOT use toHaveScreenshot, so it creates/needs NO visual
-// baselines (nothing to re-bless). The element screenshots it drops under
+// WHY THIS EXISTS: the e2e clock (2026-05-23, clockStub.js) sits mid-trip, so the
+// standard fixture is always 'during'. This walks the real path into a FINISHED
+// trip (reached by tapping its card on the index — a cold deep-link to a past trip
+// bounces to the index by design), then asserts the keepsake. It uses no
+// toHaveScreenshot, so it needs NO visual baselines; the element screenshots under
 // test-results/ (gitignored) are a human-look artifact, not a gate.
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
@@ -20,8 +17,6 @@ import { seedTripIntoCache, FIXTURE_TRIP } from './_fixtures/withTrip.js'
 // Two trips relative to the stubbed clock (2026-05-23):
 //  - FINISHED ends 2026-05-08 → strictly before today → tripPhase === 'after'
 //  - CURRENT  spans 05-22..25 → contains today          → tripPhase === 'during'
-// Both clone the known-good FIXTURE_TRIP shape so the persona views render
-// fully; only the identifying + date fields change.
 const FINISHED_TRIP = {
   ...FIXTURE_TRIP,
   id: 'finished-fixture-2026',
@@ -40,79 +35,44 @@ const CURRENT_TRIP = {
   dateRangeStart: '2026-05-22',
   dateRangeEnd: '2026-05-25',
 }
-
-const PERSONAS = [
-  {
-    person: 'jonathan',
-    band: 'jonathan-entries',
-    // DURING a stay, Jonathan's home is the redesigned LivingHeartHome (slice 1);
-    // AFTER, it reflows back to the JonathanEntries keepsake.
-    duringBand: 'living-heart-home',
-    afterHero: 'entries-replay-hero',
-    heroIsAfterOnly: true,
-    duringOnly: 'Surprises', // the LivingHeartHome quiet action, present only DURING
-    afterNote: /stood down when the trip ended/i,
-  },
-  {
-    person: 'helen',
-    band: 'helen-entries',
-    // DURING a stay, Helen's home is the redesigned LivingHeartHome (slice 2);
-    // AFTER, it reflows back to the HelenEntries keepsake.
-    duringBand: 'living-heart-home',
-    afterHero: 'helen-replay-hero',
-    heroIsAfterOnly: true,
-    duringOnly: 'Surprises', // the LivingHeartHome quiet action, present only DURING
-    afterNote: /rest until your next trip/i,
-  },
-  {
-    person: 'aurelia',
-    band: 'aurelia-entries',
-    // DURING a stay, Aurelia's home is the redesigned LivingHeartHome (slice 2);
-    // AFTER, it reflows back to the AureliaEntries keepsake (Replay-led).
-    duringBand: 'living-heart-home',
-    afterHero: 'aurelia-replay-hero',
-    heroIsAfterOnly: false, // her AureliaEntries Replay hero leads in both ENTRIES phases
-    // She is reveal-only for surprises (no planner), so her living heart's "now"
-    // quiet action is Share a moment — present DURING, gone in the after keepsake.
-    duringOnly: 'Share a moment',
-    afterNote: null, // she has no stand-down note
-  },
-]
-
-for (const p of PERSONAS) {
-  test(`${p.person}: home band reflows to the keepsake AFTER the trip ends`, async ({ page }) => {
+// NOTE: we deliberately seed NO memory here — a shared memory on a PAST trip
+// surfaces a "Looking back" resurfacing card on the index that would intercept the
+// card tap. The keepsake's photo WALL + "Relive the trip" button (both gated on
+// real photos) are verified visually; this spec proves the keepsake SURFACE renders
+// for an after trip across all three lenses, and the per-lens keepsakes are retired.
+for (const person of ['jonathan', 'helen', 'aurelia']) {
+  test(`${person}: a finished trip's home is the unified living-heart keepsake`, async ({ page }) => {
     await seedTripIntoCache(page, FINISHED_TRIP)
-    // No ?trip= — a finished trip isn't "active today", so the app lands on
-    // the trips index; we open it the way a person would: by tapping its card.
-    await page.goto(`/?person=${p.person}&nosw=1`)
+    // No ?trip= — a finished trip isn't "active today", so the app lands on the
+    // index; open it the way a person would: by tapping its card.
+    await page.goto(`/?person=${person}&nosw=1`)
     await page.getByRole('button').filter({ hasText: FINISHED_TRIP.title }).first().click()
 
-    const band = page.getByTestId(p.band)
-    await expect(band).toBeVisible()
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible()
+    // The unified keepsake markers: the "Looking back" hero + the photo WALL section
+    // ("The trip in photos"), the SAME living heart for everyone.
+    await expect(home).toContainText('Looking back')
+    await expect(home).toContainText('The trip in photos')
+    // The per-lens keepsake heroes are RETIRED — gone for everyone.
+    await expect(page.getByTestId('entries-replay-hero')).toHaveCount(0)
+    await expect(page.getByTestId('helen-replay-hero')).toHaveCount(0)
+    await expect(page.getByTestId('aurelia-replay-hero')).toHaveCount(0)
 
-    // The after-trip front door — the Replay hero — is showing.
-    await expect(band.getByTestId(p.afterHero)).toBeVisible()
-    // The "Now" entry is gone (Live features stood down).
-    await expect(band.getByRole('button', { name: p.duringOnly })).toHaveCount(0)
-    // The stand-down note explains why (Jonathan/Helen only).
-    if (p.afterNote) await expect(band.getByText(p.afterNote)).toBeVisible()
-
-    await band.screenshot({ path: `test-results/after-trip-reflow/${p.person}-after.png` })
+    await home.screenshot({ path: `test-results/after-trip-reflow/${person}-after.png` })
   })
 
-  test(`${p.person}: home band stays in the "Now" layout DURING the trip`, async ({ page }) => {
+  test(`${person}: the same living heart leads the "Now" layout DURING the trip`, async ({ page }) => {
     await seedTripIntoCache(page, CURRENT_TRIP)
-    await page.goto(`/?person=${p.person}&trip=${CURRENT_TRIP.id}&nosw=1`)
+    await page.goto(`/?person=${person}&trip=${CURRENT_TRIP.id}&nosw=1`)
 
-    const band = page.getByTestId(p.duringBand || p.band)
-    await expect(band).toBeVisible()
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible()
+    // DURING: the "Lately" layout, not the after keepsake.
+    await expect(home).toContainText('Lately')
+    await expect(home).not.toContainText('Looking back')
+    await expect(home.getByTestId('relive-trip')).toHaveCount(0)
 
-    // The "Now" entry is present.
-    await expect(band.getByRole('button', { name: p.duringOnly })).toBeVisible()
-    // The keepsake hero / stand-down note do NOT lead during the trip.
-    if (p.heroIsAfterOnly) await expect(band.getByTestId(p.afterHero)).toHaveCount(0)
-    if (p.afterNote) await expect(band.getByText(p.afterNote)).toHaveCount(0)
-
-    await band.screenshot({ path: `test-results/after-trip-reflow/${p.person}-during.png` })
+    await home.screenshot({ path: `test-results/after-trip-reflow/${person}-during.png` })
   })
 }
