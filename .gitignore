@@ -46,6 +46,7 @@ worker/.wrangler
 /CARRYOVER_*.md
 /PUNCHLIST_*.md
 /SIDE_ACTIVITIES_PUNCHLIST*.md
+/NIGHT_LOG.md
 
 # Local drop folder for the reconcile-report instrument — REAL family photos
 # go here for validation/threshold-tuning. PRIVATE: never committed. The

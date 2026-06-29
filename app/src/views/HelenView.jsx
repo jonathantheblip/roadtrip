@@ -10,6 +10,7 @@ import { findArrivalStop, FlightStatus } from './FlightStatus'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { HelenEntries } from './HelenEntries'
+import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
@@ -167,23 +168,44 @@ export function HelenView({
         </div>
       )}
 
-      {/* Entry-points home band (Now stack + Keepsake shelf), layered above the
-          co-planner entry + the threaded timeline (both preserved below). */}
-      <HelenEntries
-        trip={trip}
-        phase={tripPhase(trip)}
-        weaveReady={weaveReady}
-        surpriseRevealCue={surpriseRevealCue}
-        bookHasPages={bookHasPages}
-        nowReadout={nowReadout}
-        whoAround={whoAround}
-        onOpenMap={onOpenMap}
-        onOpenWeave={onOpenWeave}
-        onOpenReplay={onOpenReplay}
-        onOpenBook={onOpenBook}
-        onOpenSurprises={onOpenSurprises}
-        onCompose={onCompose}
-      />
+      {/* The redesigned "living heart" home leads a STAY (during/before) — mirrors
+          JonathanView (slice 1). Routes + the after-trip keepsake keep HelenEntries
+          (her Now stack + Keepsake shelf). The co-planner entry + threaded timeline
+          below are preserved in BOTH paths (do-not-lose, reconcile-before-replace). */}
+      {isStayTrip(trip) && tripPhase(trip) !== 'after' ? (
+        <LivingHeartHome
+          trip={trip}
+          traveler={traveler}
+          nowReadout={nowReadout}
+          whoAround={whoAround}
+          weaveReady={weaveReady}
+          bookHasPages={bookHasPages}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onOpenSurprises={onOpenSurprises}
+          onCompose={onCompose}
+          onOpenAllPhotos={onOpenAllPhotos}
+          onOpenActivities={onOpenActivities}
+        />
+      ) : (
+        <HelenEntries
+          trip={trip}
+          phase={tripPhase(trip)}
+          weaveReady={weaveReady}
+          surpriseRevealCue={surpriseRevealCue}
+          bookHasPages={bookHasPages}
+          nowReadout={nowReadout}
+          whoAround={whoAround}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onOpenSurprises={onOpenSurprises}
+          onCompose={onCompose}
+        />
+      )}
       <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
 
       {/* CO-PLANNER — Helen plans too now. Opens the Claude planning chat

@@ -56,17 +56,25 @@ const PERSONAS = [
   {
     person: 'helen',
     band: 'helen-entries',
+    // DURING a stay, Helen's home is the redesigned LivingHeartHome (slice 2);
+    // AFTER, it reflows back to the HelenEntries keepsake.
+    duringBand: 'living-heart-home',
     afterHero: 'helen-replay-hero',
     heroIsAfterOnly: true,
-    duringOnly: 'Plan or manage a surprise', // her "Now" planner card
+    duringOnly: 'Surprises', // the LivingHeartHome quiet action, present only DURING
     afterNote: /rest until your next trip/i,
   },
   {
     person: 'aurelia',
     band: 'aurelia-entries',
+    // DURING a stay, Aurelia's home is the redesigned LivingHeartHome (slice 2);
+    // AFTER, it reflows back to the AureliaEntries keepsake (Replay-led).
+    duringBand: 'living-heart-home',
     afterHero: 'aurelia-replay-hero',
-    heroIsAfterOnly: false, // her Replay hero leads in BOTH phases
-    duringOnly: 'Open the live map', // her single "now" footnote, gone after
+    heroIsAfterOnly: false, // her AureliaEntries Replay hero leads in both ENTRIES phases
+    // She is reveal-only for surprises (no planner), so her living heart's "now"
+    // quiet action is Share a moment — present DURING, gone in the after keepsake.
+    duringOnly: 'Share a moment',
     afterNote: null, // she has no stand-down note
   },
 ]

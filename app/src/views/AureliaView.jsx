@@ -12,6 +12,7 @@ import { allStops } from '../data/trips'
 import { isStayTrip, stayLabel } from '../lib/tripShape'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { AureliaEntries } from './AureliaEntries'
+import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
@@ -29,7 +30,7 @@ import { todayLocalIso } from '../lib/localDate'
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue, whoAround }) {
+export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue, nowReadout, whoAround }) {
   // Re-render after the composer saves so the new postcard pops in.
   const [refreshTick, setRefreshTick] = useState(0)
   const [composing, setComposing] = useState(false)
@@ -146,21 +147,43 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
         </div>
       )}
 
-      {/* Entry-points home band (Replay-led, inverted), layered above her
-          existing photos / lens / timeline (all preserved below). */}
-      <AureliaEntries
-        trip={trip}
-        phase={tripPhase(trip)}
-        weaveReady={weaveReady}
-        surpriseRevealCue={surpriseRevealCue}
-        bookHasPages={bookHasPages}
-        whoAround={whoAround}
-        onOpenMap={onOpenMap}
-        onOpenWeave={onOpenWeave}
-        onOpenReplay={onOpenReplay}
-        onOpenBook={onOpenBook}
-        onCompose={onCompose}
-      />
+      {/* The redesigned "living heart" home leads a STAY (during/before) — mirrors
+          JonathanView (slice 1). Routes + the after-trip keepsake keep AureliaEntries
+          (her Replay-led, inverted band). Her personal letter, photos/lens entries,
+          and the roll below are preserved in BOTH paths (do-not-lose).
+          NOTE: she is reveal-ONLY for surprises (never a planner) — so onOpenSurprises
+          is deliberately NOT passed to her living heart (no Surprises planner action). */}
+      {isStayTrip(trip) && tripPhase(trip) !== 'after' ? (
+        <LivingHeartHome
+          trip={trip}
+          traveler={traveler}
+          nowReadout={nowReadout}
+          whoAround={whoAround}
+          weaveReady={weaveReady}
+          bookHasPages={bookHasPages}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onCompose={onCompose}
+          onOpenAllPhotos={onOpenAllPhotos}
+          onOpenActivities={onOpenActivities}
+        />
+      ) : (
+        <AureliaEntries
+          trip={trip}
+          phase={tripPhase(trip)}
+          weaveReady={weaveReady}
+          surpriseRevealCue={surpriseRevealCue}
+          bookHasPages={bookHasPages}
+          whoAround={whoAround}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onCompose={onCompose}
+        />
+      )}
       <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
 
       {/* Photos entry — the foregrounded verb. Styled as a grained film

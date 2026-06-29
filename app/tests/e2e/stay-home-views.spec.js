@@ -60,9 +60,9 @@ test.describe('Now-band live readout (stay re-home of the dock ledge)', () => {
     test(`${who}: the Now band shows "At [place]" on a stay, not the generic link`, async ({ page }) => {
       await seedTripIntoCache(page, STAY)
       await page.goto(`/?person=${who}&trip=stay-home-2026&nosw=1`)
-      // Jonathan's stay home is the redesigned LivingHeartHome; its hero leads
-      // with "At [place]". Helen still uses her entry band.
-      const band = page.getByTestId(who === 'jonathan' ? 'living-heart-home' : `${who}-entries`)
+      // On a STAY, both personas render the redesigned LivingHeartHome; its hero
+      // leads with "At [place]" (Jonathan slice 1, Helen slice 2).
+      const band = page.getByTestId('living-heart-home')
       await expect(band).toBeVisible({ timeout: 10000 })
       await expect(band.getByText('At Our Cabin')).toBeVisible()
     })

@@ -45,9 +45,9 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
     test(`${who} entry band — no serious/critical violations`, async ({ page }) => {
       await seedTripIntoCache(page, FIXTURE_TRIP)
       await page.goto(`/?person=${who}&trip=volleyball-2026&nosw=1`)
-      // Jonathan's stay home is the redesigned LivingHeartHome (slice 1); the
-      // others still render their per-person entry band.
-      const bandId = who === 'jonathan' ? 'living-heart-home' : `${who}-entries`
+      // On a STAY, all three banded personas render the redesigned LivingHeartHome
+      // (Jonathan slice 1, Helen + Aurelia slice 2). Rafa is not in this loop.
+      const bandId = 'living-heart-home'
       await expect(page.getByTestId(bandId)).toBeVisible()
       await expectNoSeriousA11y(page, {
         include: `[data-testid="${bandId}"]`,

@@ -128,9 +128,10 @@ test('the home-band "Share a moment" entry opens the composer (jonathan/helen/au
   await seedTripIntoCache(page, FIXTURE_TRIP)
   for (const who of ['jonathan', 'helen', 'aurelia']) {
     await page.goto(`/?person=${who}&trip=volleyball-2026&nosw=1`)
-    // Jonathan's stay home is the redesigned LivingHeartHome (its "Share a moment"
-    // quiet action opens the same composer); the others use their entry band.
-    await expect(page.getByTestId(who === 'jonathan' ? 'living-heart-home' : `${who}-entries`)).toBeVisible()
+    // On a STAY, all three personas render the redesigned LivingHeartHome; its
+    // "Share a moment" quiet action opens the same composer (Jonathan slice 1,
+    // Helen + Aurelia slice 2).
+    await expect(page.getByTestId('living-heart-home')).toBeVisible()
     await page.getByRole('button', { name: 'Share a moment' }).click()
     await expect(page.getByTestId('share-composer')).toBeVisible()
   }
