@@ -18,10 +18,18 @@ Status: living document. Code re-reads this at the top of every work window and 
 ═══════════════════════════════════════════════════════════════════════
 ## 0. WHAT THIS IS
 A family travel platform — one PWA across all Jackson family trips. Three jobs:
-  1. PLANNING SURFACE — the itinerary, before and during a trip.
-  2. LIVE COMPANION — where we are, what's next, % of this drive, % of the trip (the live map).
+  1. PLANNING SURFACE — the itinerary (whatever its shape), before and during a trip.
+  2. LIVE COMPANION — where we are right now and what's next (the living heart + the map).
   3. MEMORY ARCHIVE — photos/videos captured on trips, filed to where they were taken,
      replayable as the shape of the trip.
+
+> ⚠ **FAMILY TRIPS, NOT ROAD TRIPS — SETTLED; make it stick.** The trips we mostly take are **hangouts and
+> mixed-style stays at a place**. **A ROAD TRIP IS AN EXTREMELY RARE EXCEPTION** — never the default, never a
+> different home. **NEVER design to road-trip logic** (drive plans, ETAs, "the next stop on the drive," route
+> geometry, "% of this drive," an always-on driving rail) — it is RETIRED, never centered. There is **ONE home
+> for every trip** (the living heart + the 4-tab shell); the rare road trip uses that same home, shape-aware.
+> The repo name "roadtrip" + the road-trip fixtures are a trap, not a signal. Full statement: CLAUDE.md,
+> WORKING_AGREEMENT §2 #7, FAMILY_TRIPS_VISION §0. (This kept getting "re-discovered" — it is baked in here now.)
 Deployed: GitHub Pages (docs/ folder), jonathantheblip.github.io/roadtrip/. Add-to-Home-Screen,
 offline via service worker. Backend: Cloudflare Worker + D1 + R2 (Workers Standard plan).
 Stack: Vite/React. EXIF reader: ExifReader (exifr removed — abandoned, couldn't read HEIC).

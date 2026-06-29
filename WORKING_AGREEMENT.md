@@ -74,10 +74,16 @@ say so (§6).
    made**, not to re-pose the settled question. Re-asking a closed matter spends the one scarce resource (his
    time) and reads as drift — he has flagged this directly. This is the counterpart to #2: surface a genuinely
    *new* decision; never re-litigate a closed one. (The decision *gates* in §3 — commit / push / schema / dep —
-   are about irreversible **actions**, not re-deciding what's already decided.) **The load-bearing example:**
-   that this is a **family-trips app for any trip shape — not a road-trip app or a reskin of one** — is SETTLED
-   (see [FAMILY_TRIPS_VISION.md](FAMILY_TRIPS_VISION.md)); build toward it, never re-derive a thinner
-   road-trip-centric version.
+   are about irreversible **actions**, not re-deciding what's already decided.) **THE load-bearing example —
+   it keeps getting "re-discovered"; make it STICK:** this is a **family-trips app**. The trips we mostly take
+   are **hangouts and mixed-style stays at a place**; **a road trip is an EXTREMELY RARE exception** — never the
+   default, never a second "mode," never a different home. **NEVER design to road-trip logic** (drive plans,
+   ETAs, "the next stop on the drive," route geometry, "% of this drive," an always-on driving rail) — it is
+   RETIRED, never centered, never "carefully preserved for the road-trip case." There is **ONE home for every
+   trip** (the living heart + the 4-tab shell); the rare road trip uses that same home, shape-aware. SETTLED
+   (see [FAMILY_TRIPS_VISION.md](FAMILY_TRIPS_VISION.md) §0 + CLAUDE.md). Build toward it; never re-derive a
+   thinner road-trip-centric version. ⚠ The repo name "roadtrip" + the road-trip fixtures (`volleyball-2026`,
+   `FIXTURE_ROUTE_TRIP`) are a **trap**, not a signal — ignore their pull.
 
 ---
 

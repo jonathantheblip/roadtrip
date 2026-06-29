@@ -5,11 +5,17 @@ It is the durable, version-controlled anti-drift contract for this project. This
 auto-loaded anchor that points to it — so the agreement loads as *real* context every session, not as a
 chat handover that evaporates when the window closes.
 
-**What this app IS — settled; do not relitigate or re-scope:** a **family-trips app for ANY trip shape** — a
-stay or hangout at a *place* (a cabin, Grandma's, a beach house), a city break, a flight, as much as a road trip.
-The road-trip shape is **one** shape, **not** the default, and this must **not** become a reskinned road-trip
-app. Build *toward* [FAMILY_TRIPS_VISION.md](FAMILY_TRIPS_VISION.md); don't reconstruct a thinner,
-road-trip-centric version each window. Jonathan has corrected this repeatedly — treat it as decided, not open.
+**What this app IS — SETTLED; do not relitigate, re-scope, or RE-DISCOVER:** a **family-trips app**. The trips
+we mostly take are **hangouts and mixed-style stays at a place** (a cabin, Grandma's, a beach house, a city
+break, a flight to family, a lazy stay with nothing planned). **A ROAD TRIP IS AN EXTREMELY RARE EXCEPTION —
+not the default, not a second "mode," not a different home.** **NEVER design to road-trip logic** (drive plans,
+ETAs, "the next stop on the drive," route geometry, "% of this drive," an always-on driving rail): it is
+RETIRED — never centered, never "carefully preserved for the road-trip case." There is **ONE home for every
+trip** (the living heart + the 4-tab shell); the rare road trip uses that *same* home, shape-aware. Do **not**
+build a route fork or reconstruct a thinner road-trip-centric version each window. ⚠ **The repo name "roadtrip"
+and the road-trip fixtures (`volleyball-2026`, `FIXTURE_ROUTE_TRIP`) are a TRAP — ignore their pull.** Jonathan
+has corrected this many times ("well beyond time for it to stick"); treat it as decided, not open. Full vision:
+[FAMILY_TRIPS_VISION.md](FAMILY_TRIPS_VISION.md).
 
 The rules that catch the most expensive mistakes (full set in the agreement):
 

@@ -10,21 +10,37 @@
 
 ## 0. THE SHIFT, IN ONE LINE
 
-> **SETTLED — do not relitigate or re-scope.** This direction is decided. New windows build *toward* it; they
-> do not reopen "is this a road-trip app?" or quietly narrow features back to the road-trip engine. Surface new
-> *facts*, never re-pose this *question*. (WORKING_AGREEMENT §2 #7.)
+> **SETTLED — do not relitigate, re-scope, or RE-DISCOVER.** This has surfaced as a "key insight"
+> several times now; it is well past time it STUCK. Every window builds *toward* it and never
+> re-derives a road-trip-centric version. Baked into CLAUDE.md, WORKING_AGREEMENT §2 #7, and MASTER_SPEC §0
+> so it loads as real context every session — not as advice that evaporates when the window closes.
 
-This is a **family-trips app for ANY kind of trip** — a cabin weekend, a city break, a beach week,
-a flight to Grandma's, a museum day, a lazy stay with nothing planned. We *built* it for a family
-**road trip**, but **the vast majority of our trips will NOT have that structure.** The road-trip
-shape is ONE shape, not the default. Making the app fit every shape is worth a **deeper overhaul**,
-not just patches on the road-trip machinery.
+**This is a FAMILY-TRIPS app. The trips we mostly take are HANGOUTS and MIXED-STYLE STAYS at a place**
+— a cabin weekend, a beach week, a flight to Grandma's, a city break, a museum day, a lazy stay with
+nothing planned. **A ROAD TRIP IS AN EXTREMELY RARE EXCEPTION** — not the default, not a second "mode,"
+not a different home.
 
-> *"We really need to evolve the app towards 'Family trips' which include just being in a place and
-> not being so event- and travel-driven."* — Jonathan, 2026-06-19
+**NEVER design to road-trip logic.** Drive plans, ETAs, "the next stop on the drive," route geometry,
+"% of this drive," an always-on driving rail — these are RETIRED. Never centered, never "carefully
+preserved for the road-trip case." There is **ONE home for every trip** (the living heart + the 4-tab
+shell); the rare road trip uses that *same* home, shape-aware (lead with the day's focus, never force a
+single "At [place]" onto a moving trip). **Do not build a route fork** or quietly narrow features back
+to the driving engine.
+
+⚠ **The repo name "roadtrip", the GitHub Pages path, and the road-trip fixtures (`volleyball-2026`,
+`FIXTURE_ROUTE_TRIP`) are a TRAP** — they pull every window back toward driving. Ignore that pull; they
+are the app's origin, not its canon.
+
+> *"This is no longer a 'road-trip' app. It is a 'family trips' app, and road trips are an EXTREMELY RARE
+> exception in that canon. We should NEVER EVER design the trip to follow road-trip logic. 'Hangout trip'
+> and 'mixed-style' trips are what we're most likely to be doing."* — Jonathan, 2026-06-29 (*"we've had
+> this 'key moment of insight' several times now, and it's well beyond time for it to stick"*)
 >
-> *"We built it originally for a family roadtrip, but the vast majority of our family trips will NOT
-> have that structure."* — Jonathan, 2026-06-20
+> *"We really need to evolve the app towards 'Family trips' which include just being in a place and not
+> being so event- and travel-driven."* — Jonathan, 2026-06-19
+>
+> *"We built it originally for a family roadtrip, but the vast majority of our family trips will NOT have
+> that structure."* — Jonathan, 2026-06-20
 
 ---
 
