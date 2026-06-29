@@ -29,18 +29,22 @@ test.describe('stay home views — phone / standard', () => {
     await seedTripIntoCache(page, STAY)
   })
 
-  test('Helen leads with the place card on a stay', async ({ page }) => {
+  test('Helen leads with the place on a stay', async ({ page }) => {
     await page.goto('/?person=helen&trip=stay-home-2026&nosw=1')
-    const card = page.getByTestId('helen-stay-place-card')
-    await expect(card).toBeVisible({ timeout: 10000 })
-    await expect(card).toContainText('Our Cabin')
+    // Slice 3a: Helen's road-trip chrome (the place-card + day-by-day timeline)
+    // is shed on a stay — the living heart leads with the place in its hero.
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible({ timeout: 10000 })
+    await expect(home.getByText('At Our Cabin')).toBeVisible()
   })
 
   test('Aurelia leads the day with the place on a stay', async ({ page }) => {
     await page.goto('/?person=aurelia&trip=stay-home-2026&nosw=1')
-    const line = page.getByTestId('aurelia-stay-place')
-    await expect(line).toBeVisible({ timeout: 10000 })
-    await expect(line).toContainText('Our Cabin')
+    // Slice 3a: Aurelia's roll + day list are shed on a stay — the living heart
+    // leads with the place in its hero.
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible({ timeout: 10000 })
+    await expect(home.getByText('At Our Cabin')).toBeVisible()
   })
 
   test('Rafa leads with the place hero on a stay (no dead zone)', async ({ page }) => {

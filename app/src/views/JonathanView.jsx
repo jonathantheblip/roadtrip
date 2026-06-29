@@ -215,6 +215,39 @@ export function JonathanView({
     return sum + (m ? parseInt(m, 10) : 0)
   }, 0)
 
+  // On a STAY (during/before), shed the road-trip broadsheet — the FAMILY OPS
+  // masthead + the day-by-day itinerary (JOps) — so the living heart LEADS the
+  // home (Jonathan's decision #3 / vision §5). The day's few planned events live
+  // in the living heart's "On the agenda"; settings is reached from the global
+  // top-bar ⋯ menu; the photos + things-to-do entries are kept reachable below
+  // (the Photos / We-could tabs also host them). Routes and the after-trip
+  // keepsake keep the full broadsheet, byte-identical (G5).
+  if (isStayTrip(trip) && tripPhase(trip) !== 'after') {
+    return (
+      <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120 }}>
+        <LivingHeartHome
+          trip={trip}
+          traveler={traveler}
+          nowReadout={nowReadout}
+          whoAround={whoAround}
+          weaveReady={weaveReady}
+          bookHasPages={bookHasPages}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onOpenSurprises={onOpenSurprises}
+          onCompose={onCompose}
+          onOpenAllPhotos={onOpenAllPhotos}
+          onOpenActivities={onOpenActivities}
+          onOpenStop={onOpenStop}
+        />
+        <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
+        <JStayArchive trip={trip} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onOpenActivities={onOpenActivities} />
+      </div>
+    )
+  }
+
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120 }}>
       <JMasthead mode={mode} setMode={setMode} onOpenSettings={onOpenSettings} />
@@ -222,43 +255,21 @@ export function JonathanView({
         <JRecord trip={trip} traveler={traveler} onOpenPhotos={onOpenPhotos} />
       ) : (
         <>
-        {isStayTrip(trip) && tripPhase(trip) !== 'after' ? (
-          /* The redesigned "living heart" home leads a STAY (during/before). Routes
-             and the after-trip keepsake keep JonathanEntries (slice 1 — see
-             [[recenter-on-family-trips]] / the living-heart build plan). */
-          <LivingHeartHome
-            trip={trip}
-            traveler={traveler}
-            nowReadout={nowReadout}
-            whoAround={whoAround}
-            weaveReady={weaveReady}
-            bookHasPages={bookHasPages}
-            onOpenMap={onOpenMap}
-            onOpenWeave={onOpenWeave}
-            onOpenReplay={onOpenReplay}
-            onOpenBook={onOpenBook}
-            onOpenSurprises={onOpenSurprises}
-            onCompose={onCompose}
-            onOpenAllPhotos={onOpenAllPhotos}
-            onOpenActivities={onOpenActivities}
-          />
-        ) : (
-          <JonathanEntries
-            trip={trip}
-            phase={tripPhase(trip)}
-            weaveReady={weaveReady}
-            surpriseRevealCue={surpriseRevealCue}
-            bookHasPages={bookHasPages}
-            nowReadout={nowReadout}
-            whoAround={whoAround}
-            onOpenMap={onOpenMap}
-            onOpenWeave={onOpenWeave}
-            onOpenReplay={onOpenReplay}
-            onOpenBook={onOpenBook}
-            onOpenSurprises={onOpenSurprises}
-            onCompose={onCompose}
-          />
-        )}
+        <JonathanEntries
+          trip={trip}
+          phase={tripPhase(trip)}
+          weaveReady={weaveReady}
+          surpriseRevealCue={surpriseRevealCue}
+          bookHasPages={bookHasPages}
+          nowReadout={nowReadout}
+          whoAround={whoAround}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onOpenSurprises={onOpenSurprises}
+          onCompose={onCompose}
+        />
         <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
         <JOps
           trip={trip}
@@ -277,6 +288,36 @@ export function JonathanView({
         />
         </>
       )}
+    </div>
+  )
+}
+
+// JStayArchive — Jonathan's quiet archive/affordance row on a STAY, where the
+// broadsheet masthead + JOps are shed. Re-homes the photos-desk entry
+// (jonathan-photos-entry — the photo-test harness clicks it), all-photos, and
+// Things to do as mono "register" lines below the living heart. The 4-tab shell
+// (Photos / We-could) also hosts these; this keeps them reachable in-view.
+function JStayArchive({ trip, onOpenPhotos, onOpenAllPhotos, onOpenActivities }) {
+  const showActs = hasActivitiesForTrip(trip.id) && onOpenActivities
+  const Line = ({ testid, onClick, kicker, title }) => (
+    <button
+      type="button"
+      data-testid={testid}
+      onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 11, width: '100%', textAlign: 'left', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', borderLeft: '2px solid var(--accent)', borderRadius: 2, padding: '12px 13px', color: 'var(--text)' }}
+    >
+      <span style={{ minWidth: 0 }}>
+        <JLabel color="var(--muted)" size={8.5}>{kicker}</JLabel>
+        <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 15, marginTop: 3, color: 'var(--text)' }}>{title}</div>
+      </span>
+      <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 18, fontStyle: 'italic', color: 'var(--accent-text)', flexShrink: 0 }}>→</span>
+    </button>
+  )
+  return (
+    <div style={{ padding: '20px 16px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {onOpenPhotos && <Line testid="jonathan-photos-entry" onClick={onOpenPhotos} kicker="The record" title="The family's photos" />}
+      {onOpenAllPhotos && <Line testid="jonathan-all-photos-entry" onClick={onOpenAllPhotos} kicker="The archive" title="All photos — every trip" />}
+      {showActs && <Line onClick={onOpenActivities} kicker={`${getActivitiesForTrip(trip.id, trip).length} options`} title="Things to do" />}
     </div>
   )
 }

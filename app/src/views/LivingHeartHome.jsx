@@ -16,11 +16,12 @@
 // replay; "next" only when the live readout has one; the day count is derived from
 // the real trip dates (no invented "night 2 of 4").
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, Play, BookOpen, Sparkles, Share2, Compass } from 'lucide-react'
+import { ChevronRight, Play, BookOpen, Sparkles, Share2, Compass, Plane } from 'lucide-react'
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady } from '../components/EntryCues'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { stayLabel, stayNights, stayPlaceCoords } from '../lib/tripShape'
+import { findArrivalStop } from './FlightStatus'
 import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
@@ -56,7 +57,7 @@ function dayInfo(trip) {
 
 export function LivingHeartHome({
   trip, traveler, nowReadout, whoAround, weaveReady, bookHasPages,
-  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenAllPhotos, onOpenActivities,
+  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenAllPhotos, onOpenActivities, onOpenStop,
 }) {
   const [weave, setWeave] = useState(null)
   const [heroErr, setHeroErr] = useState(false)
@@ -89,6 +90,13 @@ export function LivingHeartHome({
     const s = start.getTime()
     return mems.filter((m) => (m.createdAt || 0) >= s).length
   }, [mems])
+  // Per-stop memory count, so an agenda row can show "N ENTRIES" (a stop that
+  // already has memories) — the same signal the old broadsheet "plan" carried.
+  const memCountByStop = useMemo(() => {
+    const m = new Map()
+    for (const x of mems) m.set(x.stopId, (m.get(x.stopId) || 0) + 1)
+    return m
+  }, [mems])
   const latest = sorted[0]
   const latestLine = latest ? `${TRAVELERS[latest.authorTraveler]?.name || 'Someone'} added · ${relTime(latest.createdAt)}` : null
   const hasPhotos = photoUrls.length > 0
@@ -108,6 +116,22 @@ export function LivingHeartHome({
     }
     return parts.join(' · ')
   }, [upcoming, di.daysUntil, di.dayX, di.nights, sun?.goldenHour])
+
+  // ON THE AGENDA — a stay sheds the road-trip day-by-day broadsheet, but its few
+  // PLANNED events (a dinner out, an activity) + any flight are "the exception"
+  // (vision §3/§5) that must stay reachable. Surface today's events (or, before
+  // the trip, the first day that has any) so opening a stop survives the shed.
+  // Lodging is the base, not an agenda item; the flight gets its own line.
+  const arrival = useMemo(() => findArrivalStop(trip), [trip])
+  const agenda = useMemo(() => {
+    const days = trip?.days || []
+    const today = todayLocalIso()
+    let day = days.find((d) => d.isoDate === today)
+    if (!day && upcoming) day = days.find((d) => (d.stops || []).some((s) => s.kind !== 'lodging' && !s.flightNumber))
+    const stops = (day?.stops || []).filter((s) => s.kind !== 'lodging' && !s.flightNumber)
+    return { day, stops: stops.slice(0, 4) }
+  }, [trip, upcoming])
+  const hasAgenda = agenda.stops.length > 0 && !!onOpenStop
 
   return (
     <div data-testid="living-heart-home" style={{ color: 'var(--text)' }}>
@@ -196,6 +220,48 @@ export function LivingHeartHome({
             </div>
           )}
         </div>
+
+        {/* ON THE AGENDA — a stay's few planned events + flight (the exception,
+            vision §5), kept reachable now the road-trip itinerary is shed. Each
+            row opens the stop; renders only when there's something planned. */}
+        {(hasAgenda || (arrival && onOpenStop)) && (
+          <div style={{ marginTop: 22 }}>
+            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>On the agenda</span>
+            <div style={{ marginTop: 11, border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', overflow: 'hidden' }}>
+              {arrival && onOpenStop && (
+                <button
+                  type="button" onClick={() => onOpenStop(arrival.day.n, arrival.stop.id)}
+                  aria-label={`Flight ${arrival.stop.flightNumber || ''}`.trim()}
+                  style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', cursor: 'pointer', background: 'var(--card)', border: 0, padding: '11px 13px', color: 'var(--text)' }}
+                >
+                  <Plane size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>Flight</span>
+                    <span style={{ fontSize: 13.5, color: 'var(--text)', display: 'block', marginTop: 2 }}>
+                      {arrival.stop.flightNumber || 'Flight'}{arrival.stop.flightOrigin ? ` · ${arrival.stop.flightOrigin}→${arrival.stop.flightDest || ''}` : ''}
+                    </span>
+                  </span>
+                  <ChevronRight size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                </button>
+              )}
+              {agenda.stops.map((s, i) => {
+                const ec = memCountByStop.get(s.id) || 0
+                return (
+                  <button
+                    key={s.id} type="button" onClick={() => onOpenStop(agenda.day.n, s.id)}
+                    aria-label={s.name}
+                    style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', cursor: 'pointer', background: 'var(--card)', border: 0, borderTop: (i > 0 || (arrival && onOpenStop)) ? '1px solid var(--border)' : 0, padding: '11px 13px', color: 'var(--text)' }}
+                  >
+                    <span style={{ ...MONO, fontSize: 10, color: 'var(--muted)', width: 52, flexShrink: 0 }}>{(s.time || '').replace(' ', '')}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                    {ec > 0 && <span style={{ ...MONO, fontSize: 8.5, color: 'var(--accent-text)', flexShrink: 0 }}>{ec} {ec === 1 ? 'ENTRY' : 'ENTRIES'}</span>}
+                    <ChevronRight size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* NEXT — quiet, present but not dominating (real readout only) */}
         {nowReadout?.next && (

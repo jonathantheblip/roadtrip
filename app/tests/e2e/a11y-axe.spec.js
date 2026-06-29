@@ -61,16 +61,21 @@ test.describe(`a11y (axe, serious+critical) — persona: ${persona}`, () => {
   // with a place card. Render-level coverage for the new conditional surface + its
   // contrast (a brand-new branch + serif/mono labels — the class of bug that only
   // axe/e2e real-renders ever caught on this project).
-  test('jonathan stay home — place card renders + no serious a11y', async ({ page }) => {
+  test('jonathan stay home — leads with the place, sheds the road-trip chrome', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP) // volleyball = a STAY (one base + homeBase)
     await page.goto(`/?person=jonathan&trip=volleyball-2026&nosw=1`)
-    await expect(page.getByTestId('stay-place-card')).toBeVisible()
-    // The "nearest bathroom/fast-food" queue is a driving need — gone on a stay.
+    // Slice 3a: the road-trip broadsheet (FAMILY OPS masthead + the JOps
+    // itinerary, incl. the old stay-place-card) is shed on a stay — the living
+    // heart leads with the place in its hero, and the "nearest bathroom/fast-food"
+    // queue (a driving need) is gone.
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible()
+    await expect(home.getByText(/^At /).first()).toBeVisible()
     await expect(page.getByText("WHERE'S THE NEAREST")).toHaveCount(0)
     await expectNoSeriousA11y(page, {
-      include: '[data-testid="stay-place-card"]',
+      include: '[data-testid="living-heart-home"]',
       only: ['color-contrast'],
-      label: 'jonathan stay place card',
+      label: 'jonathan stay home',
     })
   })
 

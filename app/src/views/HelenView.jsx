@@ -71,6 +71,42 @@ export function HelenView({
   const stayName = stayLabel(trip)
   const nights = stayNights(trip)
 
+  // On a STAY (during/before), shed Helen's road-trip chrome — the greeting/cover/
+  // day-chips + day-by-day threaded timeline + place-card + arrival panel + the
+  // capture FAB — so the living heart LEADS (Jonathan's decision #3 / vision §5).
+  // Today's planned events live in the living heart's "On the agenda"; settings is
+  // the global top-bar ⋯ menu. Her co-planner, photos entries, and Things-to-do
+  // are kept reachable below (the Photos / We-could tabs also host them). Routes +
+  // the after-trip keepsake keep her full layout, byte-identical (G5).
+  if (isStayTrip(trip) && tripPhase(trip) !== 'after') {
+    return (
+      <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
+        <LivingHeartHome
+          trip={trip}
+          traveler={traveler}
+          nowReadout={nowReadout}
+          whoAround={whoAround}
+          weaveReady={weaveReady}
+          bookHasPages={bookHasPages}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onOpenSurprises={onOpenSurprises}
+          onCompose={onCompose}
+          onOpenAllPhotos={onOpenAllPhotos}
+          onOpenActivities={onOpenActivities}
+          onOpenStop={onOpenStop}
+        />
+        <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
+        <HelenCoPlanner onOpenClaude={onOpenClaude} />
+        {onOpenPhotos && <HelenPhotosEntry trip={trip} traveler={traveler} onOpen={onOpenPhotos} />}
+        {onOpenAllPhotos && <HelenAllPhotosEntry onOpen={onOpenAllPhotos} />}
+        <HelenThingsToDo trip={trip} onOpenActivities={onOpenActivities} />
+      </div>
+    )
+  }
+
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
       {/* Warm greeting header (→ Settings via the avatar) */}
@@ -596,6 +632,83 @@ function HelenAllPhotosEntry({ onOpen }) {
         </span>
       </div>
       <span style={{ color: 'var(--muted)', fontSize: 16 }}>→</span>
+    </button>
+  )
+}
+
+// CO-PLANNER — Helen plans too (the locked "Helen = full co-planner" decision).
+// Opens the Claude planning chat. Used on the stay home (the road-trip chrome is
+// shed there); the route/after layout renders the same card inline (do-not-lose).
+function HelenCoPlanner({ onOpenClaude }) {
+  if (!onOpenClaude) return null
+  return (
+    <div style={{ padding: '16px 20px 0' }}>
+      <button
+        type="button"
+        data-testid="helen-plan-entry"
+        onClick={onOpenClaude}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          cursor: 'pointer',
+          border: 'none',
+          borderRadius: 'var(--radius)',
+          padding: '16px 18px',
+          background: 'linear-gradient(120deg, var(--accent), #245C3E)',
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          boxShadow: '0 14px 30px -16px rgba(46, 125, 82, 0.7)',
+        }}
+      >
+        <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 28, fontWeight: 300, lineHeight: 1 }}>+</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.85 }}>Plan with Claude</div>
+          <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 19, fontWeight: 600, marginTop: 3, lineHeight: 1.15 }}>Design a trip, start to finish.</div>
+        </div>
+        <span style={{ fontSize: 20 }}>→</span>
+      </button>
+    </div>
+  )
+}
+
+// THINGS TO DO — the activities entry. On a stay the "We could" tab also hosts
+// this; the entry is kept reachable in-view (the share-in flow opens it here).
+function HelenThingsToDo({ trip, onOpenActivities }) {
+  if (!(hasActivitiesForTrip(trip.id) && onOpenActivities)) return null
+  return (
+    <button
+      type="button"
+      onClick={onOpenActivities}
+      style={{
+        margin: '24px 20px 0',
+        padding: '14px 16px',
+        width: 'calc(100% - 40px)',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        boxShadow: 'var(--shadow-card)',
+        cursor: 'pointer',
+        textAlign: 'left',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: 'inherit',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Sparkles size={14} style={{ color: 'var(--accent-text)' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+            {getActivitiesForTrip(trip.id).length} options
+          </span>
+          <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 16, fontStyle: 'italic', color: 'var(--text)' }}>
+            Things to do
+          </span>
+        </div>
+      </div>
+      <span style={{ color: 'var(--accent-text)', fontSize: 18 }}>→</span>
     </button>
   )
 }

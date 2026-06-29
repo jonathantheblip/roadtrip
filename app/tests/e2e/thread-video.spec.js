@@ -35,20 +35,20 @@ function videoMem({ id, stopId, posterUrl }) {
   }
 }
 
-async function openBeachBungalowThread(page) {
+async function openMatchThread(page) {
   await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
-  // Beach Bungalow (vb1-3) is a Day-1 stop; click DAY 1 so it's in view
-  // regardless of the clock stub, then open its StopDetail thread.
-  await page.getByRole('button', { name: /DAY 1/i }).first().click()
-  await page.getByRole('button', { name: /Beach Bungalow/i }).first().click()
+  // Slice 3a: a stay sheds the road-trip day-by-day stop list; today's events
+  // (clock 2026-05-23 = Day 2) live in the living heart's "On the agenda".
+  // Open vs BEV 13 Empire's (vb2-3) StopDetail thread from there.
+  await page.getByRole('button', { name: /vs BEV 13 Empire/i }).first().click()
 }
 
 test('a synced video WITH a poster shows a play badge in the thread and opens a <video>', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await seedMemoriesIntoCache(page, [
-    videoMem({ id: 'vthread', stopId: 'vb1-3', posterUrl: TINY_RED_PNG_DATA_URL }),
+    videoMem({ id: 'vthread', stopId: 'vb2-3', posterUrl: TINY_RED_PNG_DATA_URL }),
   ])
-  await openBeachBungalowThread(page)
+  await openMatchThread(page)
 
   // The thread tile is a recognizable video — a play badge over the poster,
   // not a blank background.
@@ -67,8 +67,8 @@ test('a synced video WITH a poster shows a play badge in the thread and opens a 
 
 test('a synced video with NO poster shows the icon fallback (not a blank box) and still opens a <video>', async ({ page }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await seedMemoriesIntoCache(page, [videoMem({ id: 'vnoposter', stopId: 'vb1-3' })])
-  await openBeachBungalowThread(page)
+  await seedMemoriesIntoCache(page, [videoMem({ id: 'vnoposter', stopId: 'vb2-3' })])
+  await openMatchThread(page)
 
   // Poster-less video → a Play-glyph fallback, not an invisible/blank tile.
   await expect(page.getByTestId('thread-video-fallback').first()).toBeVisible()
@@ -88,7 +88,7 @@ test('a poster-less video whose poster retry is pending shows a "thumbnail uploa
   // other webkit-idb skips. Skip webkit rather than seed fragile webkit idb.
   test.skip(browserName === 'webkit', 'poster-drain vs fake-marker race on webkit idb')
   await seedTripIntoCache(page, FIXTURE_TRIP)
-  await seedMemoriesIntoCache(page, [videoMem({ id: 'vpending', stopId: 'vb1-3' })])
+  await seedMemoriesIntoCache(page, [videoMem({ id: 'vpending', stopId: 'vb2-3' })])
   await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
   // Set the pending-poster marker AFTER boot: the cold-load drain would
   // otherwise drop a marker whose (fake) blob isn't in idb — a real "vanished
@@ -99,8 +99,8 @@ test('a poster-less video whose poster retry is pending shows a "thumbnail uploa
       JSON.stringify([{ memoryId: 'vpending', posterIdbKey: 'k', asTraveler: 'helen', attempts: 1 }])
     )
   })
-  await page.getByRole('button', { name: /DAY 1/i }).first().click()
-  await page.getByRole('button', { name: /Beach Bungalow/i }).first().click()
+  // Slice 3a: open vs BEV 13 Empire (vb2-3) from the living-heart "On the agenda".
+  await page.getByRole('button', { name: /vs BEV 13 Empire/i }).first().click()
 
   await expect(page.getByTestId('thread-video-fallback').first()).toBeVisible()
   await expect(page.getByTestId('thread-poster-pending').first()).toBeVisible()

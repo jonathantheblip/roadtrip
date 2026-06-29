@@ -70,6 +70,44 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
   // which fought the dark ground). Pulled from the design's roll palette.
   const tints = ['#6E5A6A', '#46505E', '#7A6448', '#5C4A52', '#4A5A50']
 
+  // On a STAY (during/before), shed Aurelia's road-trip chrome — the masthead/
+  // title + day picker + day-by-day stop list + the postcard roll + the composer
+  // FAB — so the living heart LEADS (Jonathan's decision #3 / vision §5). Today's
+  // planned events live in the living heart's "On the agenda"; settings is the
+  // global top-bar ⋯ menu. Her "note from Dad" letter (do-not-lose) still leads,
+  // and her photos / show-me entries + Things-to-do are kept reachable below (the
+  // Photos / We-could tabs also host them). Routes + after keep her full roll (G5).
+  if (isStayTrip(trip) && tripPhase(trip) !== 'after') {
+    return (
+      <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
+        {trip.travelerNotes?.aurelia && (
+          <div style={{ padding: 'calc(env(safe-area-inset-top) + 60px) 14px 6px' }}>
+            <PersonalLetter note={trip.travelerNotes.aurelia} />
+          </div>
+        )}
+        <LivingHeartHome
+          trip={trip}
+          traveler={traveler}
+          nowReadout={nowReadout}
+          whoAround={whoAround}
+          weaveReady={weaveReady}
+          bookHasPages={bookHasPages}
+          onOpenMap={onOpenMap}
+          onOpenWeave={onOpenWeave}
+          onOpenReplay={onOpenReplay}
+          onOpenBook={onOpenBook}
+          onCompose={onCompose}
+          onOpenAllPhotos={onOpenAllPhotos}
+          onOpenActivities={onOpenActivities}
+          onOpenStop={onOpenStop}
+        />
+        <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
+        <AureliaPhotosBlock trip={trip} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onShowMe={onShowMe} />
+        <AureliaThingsToDo trip={trip} onOpenActivities={onOpenActivities} />
+      </div>
+    )
+  }
+
   return (
     <div
       style={{
@@ -1008,4 +1046,69 @@ function formatTime(iso) {
   } catch {
     return ''
   }
+}
+
+// AureliaPhotosBlock — her photos entries (the grained film-frame album CTA,
+// all-trips, and the "Show me, me" face recognizer). Used on the stay home,
+// where the postcard roll + day list are shed; the route/after layout renders
+// the same JSX inline (do-not-lose, kept identical).
+function AureliaPhotosBlock({ onOpenPhotos, onOpenAllPhotos, onShowMe }) {
+  if (!onOpenPhotos) return null
+  return (
+    <div style={{ padding: '12px 18px 0' }}>
+      <button
+        type="button"
+        data-testid="aurelia-photos-entry"
+        onClick={onOpenPhotos}
+        style={{ width: '100%', padding: 0, borderRadius: 'var(--radius)', border: '1px solid var(--line-bold)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', textAlign: 'left', position: 'relative', overflow: 'hidden' }}
+      >
+        <FilmFrame tint="#5C4A52" height={132}>
+          <div style={{ position: 'relative', padding: '0 18px 16px 26px' }}>
+            <Eyebrow color="var(--accent-text)">★ THE PHOTO ALBUM</Eyebrow>
+            <div style={{ fontFamily: SERIF, fontSize: 26, fontStyle: 'italic', color: '#fff', marginTop: 4, lineHeight: 1.05 }}>every frame, this trip →</div>
+          </div>
+        </FilmFrame>
+      </button>
+      {onOpenAllPhotos && (
+        <button
+          type="button"
+          data-testid="aurelia-all-photos-entry"
+          onClick={onOpenAllPhotos}
+          style={{ width: '100%', padding: '9px 14px', marginTop: 8, borderRadius: 'var(--radius)', border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent-text)', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        >
+          <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>✨ Every trip&rsquo;s photos</span>
+          <span style={{ fontSize: 14 }}>→</span>
+        </button>
+      )}
+      {onShowMe && (
+        <button
+          type="button"
+          data-testid="aurelia-showme-entry"
+          onClick={() => onShowMe('aurelia')}
+          style={{ width: '100%', padding: '9px 14px', marginTop: 8, borderRadius: 'var(--radius)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        >
+          <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>📸 Show me, me — by face</span>
+          <span style={{ fontSize: 14 }}>→</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+// AureliaThingsToDo — the activities pill. On a stay the "We could" tab also
+// hosts this; kept reachable in-view.
+function AureliaThingsToDo({ trip, onOpenActivities }) {
+  if (!(hasActivitiesForTrip(trip.id) && onOpenActivities)) return null
+  return (
+    <div style={{ padding: '8px 18px 0' }}>
+      <button
+        type="button"
+        onClick={onOpenActivities}
+        style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent-text)', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
+        <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>✨ {getActivitiesForTrip(trip.id, trip).length} things to do</span>
+        <span style={{ fontSize: 16 }}>→</span>
+      </button>
+    </div>
+  )
 }

@@ -25,24 +25,13 @@ test('photo upload from in-thread composer', async ({ page, browserName }) => {
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await mockSuccessfulUpload(page)
 
-  await step('open Helen trip view, day 1 visible', async () => {
+  await step('open a stop thread from the living-heart agenda', async () => {
     await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
-    // HelenView defaults activeDay to today-if-in-range, so the clock
-    // stub (2026-05-23) lands on Day 2 by default. This journey needs
-    // Day 1's stops in view; click the Day 1 chip explicitly to make
-    // the test independent of clock state. See P2.4.
-    await page
-      .getByRole('button', { name: /DAY 1/i })
-      .first()
-      .click()
-    await expect(page.getByText(/Pickups/i).first()).toBeVisible({ timeout: 10_000 })
-  })
-
-  await step('tap a stop card to open StopDetail', async () => {
-    // The Beach Bungalow lodging card is visible above the fold
-    // on Day 1. Any stop opens StopDetail; we pick a predictable
-    // one to keep the journey deterministic.
-    await page.getByRole('button', { name: /Beach Bungalow/i }).first().click()
+    // Slice 3a: a stay sheds the road-trip day-by-day stop list; today's events
+    // (clock stub 2026-05-23 = Day 2) live in the living heart's "On the agenda".
+    // Any stop opens StopDetail; open vs BEV 13 Empire (vb2-3) — a predictable,
+    // deterministic pick that doesn't depend on the shed day-chip nav.
+    await page.getByRole('button', { name: /vs BEV 13 Empire/i }).first().click()
   })
 
   await step('open in-thread photo picker', async () => {
