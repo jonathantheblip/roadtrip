@@ -1,20 +1,7 @@
-import { useEffect, useState } from 'react'
-import { ImageOff } from 'lucide-react'
-import { listMemoriesForTrip } from '../lib/memoryStore'
-import { loadAsset } from '../lib/memAssets'
-import { refIdbAssetKey } from '../lib/photoEntries'
-import { thumbUrl } from '../lib/thumbUrl'
-import { useInView } from '../lib/useInView'
-import { TRAVELERS } from '../data/travelers'
-import { Avatar, AvatarStack } from '../components/Avatar'
-import { PostcardComposer } from '../components/PostcardComposer'
-import { allStops } from '../data/trips'
-import { isStayTrip, stayLabel } from '../lib/tripShape'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
-import { todayLocalIso } from '../lib/localDate'
 
 // Aurelia — "Her roll." Redesign increment 3 (2026-06-05): the big
 // LIGHT→DARK inversion. Was a rose-paper scrapbook; now a near-black
@@ -30,55 +17,9 @@ import { todayLocalIso } from '../lib/localDate'
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
 export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, weaveReady, bookHasPages, surpriseRevealCue, nowReadout, whoAround }) {
-  // Re-render after the composer saves so the new postcard pops in.
-  const [refreshTick, setRefreshTick] = useState(0)
-  const [composing, setComposing] = useState(false)
-  // Default to today if today falls inside the trip's ISO date range.
-  // Falls back to day 1 for planning + completed trips. Matches
-  // JonathanView + HelenView. See KNOWN_BUGS_HELEN_SURFACE.md P2.4.
-  const [activeDay, setActiveDay] = useState(() => {
-    // Local calendar date (lib/localDate) so "today" matches the trip's
-    // YYYY-MM-DD day labels and the live dock near midnight — not the UTC date.
-    const today = todayLocalIso()
-    const onToday = trip.days.find((d) => d.isoDate === today)
-    return onToday?.n || trip.days[0]?.n
-  })
-  const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
-  // Family-trips shift: a STAY leads with the place, in her film-roll voice.
-  // Aurelia is already photo-centric (postcards), so this is the light touch —
-  // an "At [place]" line, not a remodel.
-  const stay = isStayTrip(trip)
-  const stayName = stayLabel(trip)
-  const mems = listMemoriesForTrip(trip.id, traveler)
-  const stopsById = new Map(
-    allStops(trip).map((s) => [s.id, s])
-  )
-  // Suppress unused-warning while keeping the dep in scope.
-  void refreshTick
-
-  // Tilts give the postcard pile its scrapbook feel. Stable per memory id
-  // so a re-render doesn't shuffle them.
-  function tiltFor(id) {
-    let h = 0
-    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
-    const range = 3.5 // ±3.5 deg
-    return ((h % 1000) / 1000 - 0.5) * 2 * range
-  }
-
-  // Photo-placeholder tints — moody film frames now (was warm pastels,
-  // which fought the dark ground). Pulled from the design's roll palette.
-  const tints = ['#6E5A6A', '#46505E', '#7A6448', '#5C4A52', '#4A5A50']
-
-  // EVERY trip (during/before) leads with the living heart — the ONE family-trips
-  // home (NOT a road-trip app; road trips are a rare exception). Aurelia's road-trip
-  // chrome (masthead/title + day picker + day-by-day stop list + the postcard roll +
-  // composer FAB) is retired here for all shapes; the living heart is shape-aware,
-  // today's events live in its "On the agenda", settings is the global ⋯ menu. Her
-  // "note from Dad" letter (do-not-lose) still leads, and her photos / show-me
-  // entries + Things-to-do stay reachable below. Only the after-trip keeps her roll.
-  // ONE home for EVERY phase (slice 4): the living heart is the after-trip keepsake
-  // too. Aurelia's film-roll keepsake is retired; her "note from Dad" + photos /
-  // show-me entries stay, and Things-to-do drops once the trip is over.
+  // ONE home for EVERY phase (slice 4): the living heart is Aurelia's home during AND
+  // after (its keepsake state) — it reads straight from props. Her film-roll keepsake
+  // is retired; her "note from Dad" + photos/show-me entries stay; Things-to-do drops after.
   const after = tripPhase(trip) === 'after'
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
@@ -273,257 +214,6 @@ function PersonalLetter({ note }) {
   )
 }
 
-function Postcard({ tilt, tint, mem, stop, onClick }) {
-  const author = TRAVELERS[mem.authorTraveler]
-  const time = formatTime(mem.createdAt)
-  const loc = (stop?.address || '').split(',')[0] || ''
-  const taggedBy = stop?.for || []
-  const mood = mem.mood || inferMood(mem)
-  const caption =
-    mem.text || mem.caption || mem.transcript || '(saved without words)'
-  // A 'photo' memory with no R2/IDB ref and no external URL has no
-  // image to paint. Surface a calm "unavailable" frame instead of the
-  // tinted-stripe loader, which falsely promises "loading."
-  // See KNOWN_BUGS_HELEN_SURFACE.md P0.2.
-  const photoRefs = mem.photoRefs?.length
-    ? mem.photoRefs
-    : mem.photoRef
-      ? [mem.photoRef]
-      : []
-  const isPhotoMissing =
-    (mem.kind || 'photo') === 'photo' &&
-    !photoRefs.some((r) => r?.url || r?.key) &&
-    !(mem.photoExternalURLs?.length > 0)
-  const [photoUrl, setPhotoUrl] = useState(null)
-  // Defer photo fetch until tile is near the viewport — Aurelia's
-  // view can render dozens of postcards across a long-trip archive.
-  // See KNOWN_BUGS_HELEN_SURFACE.md P0.4.
-  const { ref: postcardRef, inView } = useInView({ rootMargin: '300px 0px' })
-  useEffect(() => {
-    if (!inView) return
-    let active = true
-    let created = null
-    // An idb/pending ref (offline import or re-attach) loads from idb FIRST —
-    // its own `url` is a session blob: that dies on reload. r2/legacy remote
-    // refs (refIdbAssetKey → null) render their durable url via thumbUrl
-    // (which passes blob:/data:/third-party URLs through untouched).
-    const idbKey = refIdbAssetKey(mem.photoRef)
-    if (idbKey) {
-      loadAsset('photo', idbKey).then((blob) => {
-        if (!active || !blob) return
-        created = URL.createObjectURL(blob)
-        setPhotoUrl(created)
-      })
-    } else if (mem.photoRef?.url) {
-      setPhotoUrl(thumbUrl(mem.photoRef.url, 600))
-    }
-    return () => {
-      active = false
-      if (created) URL.revokeObjectURL(created)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inView, mem.photoRef?.key, mem.photoRef?.url, mem.photoRef?.storage])
-
-  return (
-    <button
-      ref={postcardRef}
-      type="button"
-      onClick={onClick}
-      style={{
-        background: 'var(--card)',
-        borderRadius: 'var(--radius)',
-        padding: 10,
-        boxShadow: 'var(--shadow-card)',
-        transform: `rotate(${tilt}deg)`,
-        position: 'relative',
-        cursor: 'pointer',
-        border: '1px solid var(--border)',
-        textAlign: 'left',
-        color: 'var(--text)',
-      }}
-    >
-      {/* paper tape */}
-      <div
-        style={{
-          position: 'absolute',
-          top: -8,
-          left: 32,
-          width: 54,
-          height: 16,
-          background: 'rgba(243, 238, 233, 0.16)',
-          transform: 'rotate(-6deg)',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.18)',
-        }}
-      />
-      {/* photo */}
-      {isPhotoMissing ? (
-        <div
-          aria-label="Photo unavailable"
-          style={{
-            width: '100%',
-            aspectRatio: '5 / 3',
-            borderRadius: 2,
-            background: 'var(--bg2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--muted)',
-          }}
-        >
-          <ImageOff size={22} strokeWidth={1.5} />
-        </div>
-      ) : (
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            aspectRatio: '5 / 3',
-            borderRadius: 2,
-            overflow: 'hidden',
-            background: photoUrl
-              ? `url(${photoUrl}) center/cover no-repeat`
-              : `linear-gradient(150deg, ${shade(tint, 18)}, ${tint} 50%, ${shade(tint, -18)})`,
-          }}
-        >
-          {/* film sprocket edge — sells the roll */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              left: 0,
-              width: 10,
-              background:
-                'repeating-linear-gradient(180deg, #0a0a0a 0 7px, rgba(255,255,255,0.14) 7px 10px)',
-            }}
-          />
-        </div>
-      )}
-      <div
-        style={{
-          marginTop: 10,
-          padding: '0 6px',
-          fontFamily: SERIF,
-          fontSize: 17,
-          fontStyle: 'italic',
-          lineHeight: 1.3,
-        }}
-      >
-        “{caption}”
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '8px 6px 0',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Avatar id={mem.authorTraveler} size={18} />
-          <span
-            style={{
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 9,
-              color: 'var(--muted)',
-              letterSpacing: '0.06em',
-            }}
-          >
-            {(author?.name || mem.authorTraveler).toLowerCase()} · {time}
-          </span>
-        </div>
-        <span
-          style={{
-            fontFamily: SERIF,
-            fontStyle: 'italic',
-            fontSize: 13,
-            color: 'var(--accent-text)',
-          }}
-        >
-          felt {mood}
-        </span>
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '6px 6px 0',
-          borderTop: '1px dashed var(--border)',
-          marginTop: 6,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span
-            style={{
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 8,
-              color: 'var(--muted)',
-              letterSpacing: '0.1em',
-            }}
-          >
-            WITH
-          </span>
-          <AvatarStack ids={taggedBy} size={14} gap={-3} />
-        </div>
-        <span
-          style={{
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: 8,
-            color: 'var(--muted)',
-            letterSpacing: '0.1em',
-          }}
-        >
-          {loc}
-        </span>
-      </div>
-    </button>
-  )
-}
-
-function EmptyState({ onOpenStop, firstStop, firstDay }) {
-  return (
-    <div
-      style={{
-        padding: 24,
-        background: 'var(--card)',
-        borderRadius: 'var(--radius)',
-        textAlign: 'center',
-        boxShadow: 'var(--shadow-card)',
-        border: '1px solid var(--border)',
-      }}
-    >
-      <div
-        style={{
-          fontFamily: SERIF,
-          fontSize: 20,
-          fontStyle: 'italic',
-          color: 'var(--muted)',
-          marginBottom: 12,
-        }}
-      >
-        no frames yet — tap a stop to make the first one.
-      </div>
-      <button
-        type="button"
-        onClick={() => firstStop && onOpenStop(firstDay, firstStop.id)}
-        style={{
-          padding: '8px 16px',
-          borderRadius: 999,
-          border: 'none',
-          background: 'var(--accent)',
-          color: 'var(--accent-ink)',
-          fontFamily: 'Inter Tight, system-ui, sans-serif',
-          fontWeight: 600,
-          fontSize: 12,
-          cursor: 'pointer',
-        }}
-      >
-        Open Day 1
-      </button>
-    </div>
-  )
-}
 
 function Eyebrow({ children, color, style }) {
   return (
@@ -544,15 +234,6 @@ function Eyebrow({ children, color, style }) {
 
 // Hand-rolled "felt {mood}" classifier from the memory's words. Cheap
 // keyword bucket for v1; easy to swap for a sentiment model later.
-function inferMood(mem) {
-  const t = (mem.text || mem.transcript || mem.caption || '').toLowerCase()
-  if (!t) return 'quiet'
-  if (/lol|haha|loud|wild|chaos|crazy|run/.test(t)) return 'chaos'
-  if (/love|gorgeous|beautiful|stunning|pretty|magic/.test(t)) return 'beautiful'
-  if (/sad|tired|hard|miss|lonely|cold/.test(t)) return 'tender'
-  if (/win|yes|great|nailed|amazing|excellent/.test(t)) return 'triumphant'
-  return 'quiet'
-}
 
 function shade(hex, pct) {
   const n = parseInt(hex.slice(1), 16)
@@ -565,16 +246,6 @@ function shade(hex, pct) {
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
 }
 
-function formatTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString([], {
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  } catch {
-    return ''
-  }
-}
 
 // AureliaPhotosBlock — her photos entries (the grained film-frame album CTA,
 // all-trips, and the "Show me, me" face recognizer). Used on the stay home,

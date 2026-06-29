@@ -1,18 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Mic, Sparkles, Image as ImageIcon, ImageOff } from 'lucide-react'
-import { listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
-import { loadAsset } from '../lib/memAssets'
-import { refIdbAssetKey } from '../lib/photoEntries'
-import { thumbUrl } from '../lib/thumbUrl'
-import { useInView } from '../lib/useInView'
-import { Avatar, AvatarStack } from '../components/Avatar'
-import { findArrivalStop, FlightStatus } from './FlightStatus'
-import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
+import { Sparkles, Image as ImageIcon } from 'lucide-react'
+import { listMemoriesForTrip } from '../lib/memoryStore'
 import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActivities'
 import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
-import { todayLocalIso } from '../lib/localDate'
 
 // Helen — Keeper + Planner. Warm editorial (redesign increment 2, design
 // handoff helen.jsx). Sage on warm paper, soft 18px corners. Light only —
@@ -24,10 +15,6 @@ import { todayLocalIso } from '../lib/localDate'
 // resurfacing, decide-ripple, rich in-lens replay) are deferred to their own
 // increments; today's replay/map entries stay in the shared top bar.
 
-function greeting() {
-  const h = new Date().getHours()
-  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
-}
 
 export function HelenView({
   trip,
@@ -52,34 +39,9 @@ export function HelenView({
   nowReadout,
   whoAround,
 }) {
-  // Default the active day to today if today is inside the trip — mid-trip
-  // openers expect the current day, and the "+" FAB walks to day.stops[0].
-  const [activeDay, setActiveDay] = useState(() => {
-    // Local calendar date (lib/localDate) so "today" matches the trip's
-    // YYYY-MM-DD day labels and the live dock near midnight — not the UTC date.
-    const today = todayLocalIso()
-    const onToday = trip.days.find((d) => d.isoDate === today)
-    return onToday?.n || trip.days[0]?.n
-  })
-  const day = trip.days.find((d) => d.n === activeDay) || trip.days[0]
-  const arrival = findArrivalStop(trip)
-  // Family-trips shift: a STAY leads with the place (mirrors JonathanView), and
-  // sheds road-trip scaffolding that makes no sense at a cabin — here, the
-  // arrival flight panel. Her signature threaded timeline is preserved below.
-  const stay = isStayTrip(trip)
-  const stayName = stayLabel(trip)
-  const nights = stayNights(trip)
-
-  // EVERY trip (during/before) leads with the living heart — the ONE family-trips
-  // home (NOT a road-trip app; road trips are a rare exception). Helen's road-trip
-  // chrome (greeting/cover/day-chips + day-by-day threaded timeline + place-card +
-  // arrival panel + capture FAB) is retired here for all shapes; the living heart
-  // is shape-aware, today's events live in its "On the agenda", settings is the
-  // global ⋯ menu, and her co-planner + photos entries + Things-to-do stay reachable
-  // below. Only the after-trip keepsake keeps her full keepsake layout.
-  // ONE home for EVERY phase (slice 4): the living heart is the after-trip keepsake
-  // too. Helen's threaded-timeline keepsake is retired; her co-planner + photos
-  // entries stay, and Things-to-do drops once the trip is over.
+  // ONE home for EVERY phase (slice 4): the living heart is Helen's home during AND
+  // after (its keepsake state) — it reads straight from props. Her threaded-timeline
+  // keepsake is retired; co-planner + photos entries stay; Things-to-do drops after.
   const after = tripPhase(trip) === 'after'
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
@@ -110,195 +72,6 @@ export function HelenView({
 
 }
 
-function StopWithThread({ stop, traveler, last, onOpen }) {
-  const mems = listMemoriesForStop(stop.id, traveler)
-  const authors = Array.from(new Set(mems.map((m) => m.authorTraveler)))
-  return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', left: 32, top: 8, bottom: last ? 30 : 0, width: 1, background: 'var(--border)' }} />
-      <div style={{ padding: '14px 20px 6px', position: 'relative' }}>
-        <button
-          type="button"
-          onClick={onOpen}
-          style={{ width: '100%', background: 'transparent', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', textAlign: 'left', display: 'flex', gap: 14, alignItems: 'flex-start' }}
-        >
-          <div style={{ width: 24, paddingTop: 2 }}>
-            <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--bg)', border: '2px solid var(--accent)', marginLeft: -1 }} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <Eyebrow color="var(--muted)">{stop.time}</Eyebrow>
-              <Eyebrow color="var(--muted)">{(stop.kind || '').toUpperCase()}</Eyebrow>
-            </div>
-            <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 17, fontWeight: 600, lineHeight: 1.2, marginTop: 4, letterSpacing: '-0.012em' }}>
-              {stop.name}
-            </div>
-            {(stop.helenNote || stop.note) && (
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                {stop.helenNote || stop.note}
-              </div>
-            )}
-          </div>
-        </button>
-
-        {mems.length > 0 ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            style={{
-              marginLeft: 38,
-              marginTop: 12,
-              padding: '12px 14px',
-              background: 'var(--card)',
-              borderRadius: 'var(--radius)',
-              border: '1px solid var(--border)',
-              boxShadow: 'var(--shadow-card)',
-              width: 'calc(100% - 58px)',
-              textAlign: 'left',
-              cursor: 'pointer',
-              color: 'inherit',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Eyebrow color="var(--accent-text)" style={{ fontWeight: 600 }}>
-                {mems.length} {mems.length === 1 ? 'MEMORY' : 'MEMORIES'}
-              </Eyebrow>
-              <AvatarStack ids={authors} size={16} />
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              {mems.slice(0, 3).map((m) => (
-                <ThreadPreviewTile key={m.id} mem={m} />
-              ))}
-            </div>
-            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: 'var(--muted)', letterSpacing: '0.1em', textAlign: 'center', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-              OPEN THREAD →
-            </div>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onOpen}
-            style={{
-              marginLeft: 38,
-              marginTop: 10,
-              padding: '7px 14px',
-              borderRadius: 999,
-              border: '1px dashed var(--border)',
-              background: 'transparent',
-              color: 'var(--muted)',
-              fontSize: 11,
-              fontFamily: 'Inter Tight, system-ui, sans-serif',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              cursor: 'pointer',
-            }}
-          >
-            <span style={{ fontSize: 14 }}>+</span> add a memory
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ThreadPreviewTile({ mem }) {
-  const kind = mem.kind || (mem.text ? 'text' : 'photo')
-  const photoRefs = mem.photoRefs?.length ? mem.photoRefs : mem.photoRef ? [mem.photoRef] : []
-  // A 'photo' memory with no R2/IDB ref and no external URL has no image to
-  // paint — surface a calm "unavailable" tile so the state reads as final,
-  // not a forever-loading promise (KNOWN_BUGS_HELEN_SURFACE.md P0.2).
-  const hasRenderableSource =
-    photoRefs.some((r) => r?.url || r?.key) || (mem.photoExternalURLs?.length || 0) > 0
-  const isPhotoMissing = kind === 'photo' && !hasRenderableSource
-  const [photoUrl, setPhotoUrl] = useState(null)
-  // Defer the fetch (R2 GET / IDB blob) until the tile nears the viewport
-  // (KNOWN_BUGS_HELEN_SURFACE.md P0.4).
-  const { ref: tileRef, inView } = useInView({ rootMargin: '300px 0px' })
-  useEffect(() => {
-    if (!inView) return
-    let cancelled = false
-    let created = null
-    const first = photoRefs[0]
-    // An idb/pending ref (offline import or re-attach) loads from idb FIRST —
-    // its own `url` is a session blob: that dies on reload. r2/external refs
-    // (refIdbAssetKey → null) render their durable url directly.
-    const idbKey = kind === 'photo' ? refIdbAssetKey(first) : null
-    if (idbKey) {
-      loadAsset('photo', idbKey).then((blob) => {
-        if (cancelled || !blob) return
-        created = URL.createObjectURL(blob)
-        setPhotoUrl(created)
-      })
-    } else if (kind === 'photo' && first?.url) {
-      setPhotoUrl(thumbUrl(first.url, 600))
-    }
-    return () => {
-      cancelled = true
-      if (created) URL.revokeObjectURL(created)
-    }
-  }, [inView, kind, photoRefs[0]?.key, photoRefs[0]?.url, photoRefs[0]?.storage])
-  return (
-    <div ref={tileRef} style={{ flex: 1, position: 'relative' }}>
-      {kind === 'photo' && !isPhotoMissing && (
-        <div
-          style={{
-            aspectRatio: 1,
-            background: photoUrl
-              ? `url(${photoUrl}) center/cover no-repeat`
-              : 'repeating-linear-gradient(45deg, #e2d7bf, #e2d7bf 6px, #d6c5a8 6px, #d6c5a8 12px)',
-            borderRadius: 10,
-          }}
-        />
-      )}
-      {isPhotoMissing && (
-        <div
-          aria-label="Photo unavailable"
-          style={{ aspectRatio: 1, background: 'var(--bg2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}
-        >
-          <ImageOff size={18} strokeWidth={1.5} />
-        </div>
-      )}
-      {kind === 'photo' && !isPhotoMissing && photoRefs.length > 1 && (
-        <div style={{ position: 'absolute', top: 3, right: 3, background: 'rgba(0,0,0,0.65)', color: '#fff', fontFamily: 'JetBrains Mono, monospace', fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', padding: '1px 5px', borderRadius: 8 }}>
-          {photoRefs.length}
-        </div>
-      )}
-      {kind === 'voice' && (
-        <div style={{ aspectRatio: 1, background: 'var(--bg2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-text)' }}>
-          <Mic size={18} />
-        </div>
-      )}
-      {kind === 'text' && (
-        <div
-          style={{ aspectRatio: 1, background: 'var(--bg2)', borderRadius: 10, padding: 6, fontFamily: 'Fraunces, Georgia, serif', fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', overflow: 'hidden', lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}
-        >
-          “{(mem.text || mem.transcript || mem.caption || '').slice(0, 80)}”
-        </div>
-      )}
-      <div style={{ position: 'absolute', bottom: 3, left: 3 }}>
-        <Avatar id={mem.authorTraveler} size={14} ring />
-      </div>
-    </div>
-  )
-}
-
-function Eyebrow({ children, color, style }) {
-  return (
-    <div
-      style={{
-        fontFamily: 'JetBrains Mono, monospace',
-        fontSize: 11,
-        letterSpacing: '0.14em',
-        textTransform: 'uppercase',
-        color: color || 'currentColor',
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  )
-}
 
 // Helen's photos entry — soft card, nods at 'this is where the trip's
 // archive lives.' Counts visible photo memories as the secondary number.
