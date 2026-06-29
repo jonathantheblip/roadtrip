@@ -1,21 +1,18 @@
-// PartsTripView — the saved-trip view for a COMPOSITE trip (a city break, a
-// flight + city + stay, a multi-leg odyssey). New-trip redesign: "real timed
-// city days" + "parts show up after you save."
-//
-// Why a separate view: the per-lens views (Jonathan/Helen/Aurelia) are built
-// around a single road-trip day at a time — day tabs, a DRIVE/FLIGHT/ETA ticker,
-// one active day. That IA is wrong for a city/composite trip. So App renders THIS
-// view instead when a trip carries explicit `parts[]`; every LEGACY trip still
-// renders its bespoke lens, byte-identical (the branch lives in App.renderTripView,
-// gated on hasExplicitParts — see tripParts.js). Rafa keeps his storybook views.
+// PartsOutline — the parts → days → stops body of a COMPOSITE trip (a city break,
+// a flight + city + stay, a multi-leg odyssey), embedded INSIDE the living-heart
+// home. There is ONE home for every trip (FAMILY_TRIPS_VISION §11): a complex trip
+// leads with the living heart (place/now + the just-in-time "Next up" ticket) and
+// shows its full plan here, below — never a separate parts-only home.
 //
 // The days are DERIVED, not stored: partsWithDays() lays each saved day under its
 // part by date and enumerates a dated part's window so empty days read as loose
 // "open space" (one anchor + room to fill). Pure, fully unit-tested in tripParts.
 //
 // Skinned via the per-lens CSS vars already on the body (--accent / --text /
-// --muted / --border / --card), so it carries each person's color identity.
-import { partsWithDays, deriveTripShape, partCount } from '../lib/tripParts.js'
+// --muted / --border / --card), so it carries each person's color identity. It
+// sits in the living heart's padded content column, so its cards carry no extra
+// horizontal margin (the column pads them).
+import { partsWithDays } from '../lib/tripParts.js'
 import { humanDateRange } from '../lib/createTripCard.js'
 import { AvatarStack } from '../components/Avatar'
 
@@ -27,22 +24,12 @@ const MONO = 'JetBrains Mono, monospace'
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 function dayLabel(day) {
-  // Prefer the isoDate so real and loose days read in ONE consistent format
-  // ("Mon · Jun 22"); fall back to a stored human label only when there's no date.
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day?.isoDate || '')
   if (m) {
     const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
     return `${WD[d.getUTCDay()]} · ${MO[d.getUTCMonth()]} ${d.getUTCDate()}`
   }
   return day?.date || 'Day'
-}
-
-const SHAPE_EYEBROW = {
-  bigger: 'A bigger trip',
-  city: 'City break',
-  stay: 'A stay',
-  drive: 'Road trip',
-  flight: 'A trip',
 }
 
 function Label({ children, color = 'var(--muted)', size = 9 }) {
@@ -129,7 +116,7 @@ function PartSection({ part, onOpenStop }) {
         borderRadius: 'var(--radius, 14px)',
         boxShadow: 'var(--shadow-card, none)',
         padding: '16px',
-        margin: '0 12px 12px',
+        margin: '0 0 12px',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -157,61 +144,17 @@ function PartSection({ part, onOpenStop }) {
   )
 }
 
-export function PartsTripView({ trip, onOpenStop, onOpenPhotos, onOpenActivities, onOpenClaude }) {
+// The full plan of a composite trip, as a column of part cards. Header + footer
+// live in the living heart around it (hero, quiet actions). `trip` carries explicit
+// parts[]; onOpenStop opens a stop's detail (full ticket / flight / logistics).
+export function PartsOutline({ trip, onOpenStop }) {
   if (!trip) return null
   const parts = partsWithDays(trip)
-  const shape = deriveTripShape(trip)
-  const totalDays = parts.reduce((sum, p) => sum + (p.dayCount || 0), 0)
-  const when = humanDateRange(trip.dateRangeStart, trip.dateRangeEnd)
-  const n = partCount(trip)
-
   return (
-    <div data-testid="parts-trip-view">
-      {/* Trip header — sits on the page bg (not a card), so its text uses the
-          AA-safe tokens (--accent-text / --text), never raw --muted which fails
-          on Helen's paper. Per-lens color identity rides --accent-text. */}
-      <div style={{ padding: '16px 16px 8px' }}>
-        <Label color="var(--accent-text, var(--accent))">{SHAPE_EYEBROW[shape] || 'A trip'}</Label>
-        <h1 style={{ fontFamily: SERIF, fontSize: 34, fontWeight: 600, lineHeight: 0.98, letterSpacing: '-0.02em', color: 'var(--text)', margin: '7px 0 0' }}>
-          {trip.title || 'Untitled trip'}
-        </h1>
-        <div style={{ fontFamily: MONO, fontSize: 11, color: 'var(--text)', marginTop: 9, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {when && when !== 'TBD' && <span>{when}</span>}
-          <span>{n} {n === 1 ? 'part' : 'parts'} · {totalDays} {totalDays === 1 ? 'day' : 'days'}</span>
-        </div>
-        {trip.subtitle && (
-          <div style={{ fontFamily: SERIF, fontSize: 14, fontStyle: 'italic', color: 'var(--text)', marginTop: 10, lineHeight: 1.45 }}>
-            {trip.subtitle}
-          </div>
-        )}
-      </div>
-
-      {/* The parts — each a card, so its muted detail text composites over --card
-          (white on Helen) and clears AA, matching the lenses' card language. */}
+    <div>
       {parts.map((p, i) => (
         <PartSection key={p.id || i} part={p} onOpenStop={onOpenStop} />
       ))}
-
-      {/* Quiet, non-dead-end footer — the trip's other surfaces stay reachable. */}
-      {(onOpenPhotos || onOpenActivities || onOpenClaude) && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '20px 16px 28px', borderTop: '1px solid var(--border)', marginTop: 16 }}>
-          {onOpenClaude && (
-            <button type="button" onClick={() => onOpenClaude()} className="link-quiet" style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 999, padding: '8px 14px', cursor: 'pointer', color: 'var(--text)', fontFamily: MONO, fontSize: 11, letterSpacing: '0.04em' }}>
-              Adjust with Claude
-            </button>
-          )}
-          {onOpenActivities && (
-            <button type="button" onClick={() => onOpenActivities()} className="link-quiet" style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 999, padding: '8px 14px', cursor: 'pointer', color: 'var(--text)', fontFamily: MONO, fontSize: 11, letterSpacing: '0.04em' }}>
-              Things to do
-            </button>
-          )}
-          {onOpenPhotos && (
-            <button type="button" onClick={() => onOpenPhotos()} className="link-quiet" style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 999, padding: '8px 14px', cursor: 'pointer', color: 'var(--text)', fontFamily: MONO, fontSize: 11, letterSpacing: '0.04em' }}>
-              Photos
-            </button>
-          )}
-        </div>
-      )}
     </div>
   )
 }

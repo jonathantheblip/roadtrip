@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES } =
+const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes } =
   await import('../../src/lib/tripParts.js')
 
 function legacyStay() {
@@ -176,4 +176,64 @@ test('partsWithDays: never throws on null / empty', () => {
   assert.equal(wd.length, 1)
   assert.equal(wd[0].derived, true)
   assert.equal(wd[0].dayCount, 0)
+})
+
+// ── currentPart / nextTimedStop / clockMinutes (the living-heart shape helpers) ──
+// These feed a complex trip's living heart: the part it's in NOW (the hero) and
+// the soonest timed thing (the just-in-time "Next up" ticket). Pure + tested.
+
+test('currentPart: the part whose window contains today', () => {
+  const t = composite() // p2 Rome 07-01..07-04, p3 villa 07-04..07-11
+  assert.equal(currentPart(t, '2026-07-02').id, 'p2') // mid-Rome
+  assert.equal(currentPart(t, '2026-07-08').id, 'p3') // mid-villa
+})
+
+test('currentPart: before the trip → soonest upcoming part; after → the last dated part', () => {
+  const t = composite()
+  assert.equal(currentPart(t, '2026-06-01').id, 'p1') // before → first upcoming (flight 07-01)
+  assert.equal(currentPart(t, '2026-12-01').id, 'p3') // after everything → last dated part
+})
+
+test('currentPart: a legacy trip → its one derived wrapper; null → null', () => {
+  assert.equal(currentPart(legacyStay(), '2026-07-04').derived, true)
+  assert.equal(currentPart(null, '2026-07-04'), null)
+})
+
+test('clockMinutes: 12h + 24h + garbage', () => {
+  assert.equal(clockMinutes('9:00 AM'), 540)
+  assert.equal(clockMinutes('3:00 PM'), 900)
+  assert.equal(clockMinutes('12:00 AM'), 0) // midnight
+  assert.equal(clockMinutes('12:30 PM'), 750) // noon-thirty
+  assert.equal(clockMinutes('17:05'), 1025) // 24h
+  assert.equal(clockMinutes(''), null)
+  assert.equal(clockMinutes('soon'), null)
+})
+
+test('nextTimedStop: the soonest non-lodging stop at/after now', () => {
+  const trip = {
+    id: 'n1',
+    days: [
+      { n: 1, isoDate: '2026-07-01', date: 'Wed', stops: [
+        { id: 'a', time: '9:00 AM', name: 'Breakfast' },
+        { id: 'b', time: '7:00 PM', name: 'Dinner' },
+      ] },
+      { n: 2, isoDate: '2026-07-02', date: 'Thu', stops: [
+        { id: 'c', kind: 'lodging', name: 'Hotel' }, // lodging is skipped
+        { id: 'd', time: '10:00 AM', name: 'Museum' },
+      ] },
+    ],
+  }
+  // Mid-day-1 (noon): 9am is past → the 7pm dinner is next.
+  assert.equal(nextTimedStop(trip, { todayIso: '2026-07-01', nowMinutes: 12 * 60 }).stop.name, 'Dinner')
+  // Day 1 fully past → next day's Museum (the lodging row is skipped).
+  assert.equal(nextTimedStop(trip, { todayIso: '2026-07-01', nowMinutes: 23 * 60 }).stop.name, 'Museum')
+  // After everything → null (honest: nothing upcoming).
+  assert.equal(nextTimedStop(trip, { todayIso: '2026-07-09', nowMinutes: 0 }), null)
+  // No today → the trip's very first timed thing.
+  assert.equal(nextTimedStop(trip, {}).stop.name, 'Breakfast')
+})
+
+test('nextTimedStop: never throws on null / empty', () => {
+  assert.equal(nextTimedStop(null), null)
+  assert.equal(nextTimedStop({ id: 'x' }), null)
 })

@@ -177,3 +177,67 @@ export function partsWithDays(trip) {
     return { ...p, days: grid, dayCount: grid.length }
   })
 }
+
+// ── Shape-aware "right now" helpers (for the living-heart home) ──────────────
+// A complex/composite trip leads with WHERE IT IS NOW + WHAT'S NEXT (tickets,
+// times) — never road-trip logic. These pure helpers feed that: the part the trip
+// is in today, and the soonest timed thing to surface its ticket just-in-time.
+
+// The part a composite trip is "in" right now: the part whose date window contains
+// today; else the soonest upcoming part; else the last dated part; else the first.
+// Pure — for the shape-aware hero. Returns a part (from getParts) or null.
+export function currentPart(trip, todayIso) {
+  const parts = getParts(trip)
+  if (!parts.length) return null
+  const today = String(todayIso || '').slice(0, 10)
+  if (today) {
+    const within = parts.find((p) => {
+      const s = String(p.dateStart || '').slice(0, 10)
+      const e = String(p.dateEnd || p.dateStart || '').slice(0, 10)
+      return s && today >= s && today <= e
+    })
+    if (within) return within
+    const upcoming = parts.find((p) => String(p.dateStart || '').slice(0, 10) > today && p.dateStart)
+    if (upcoming) return upcoming
+    const dated = parts.filter((p) => p.dateStart)
+    if (dated.length) return dated[dated.length - 1]
+  }
+  return parts[0]
+}
+
+// "3:00 PM" / "9:00 AM" / "17:00" → minutes since midnight, or null when
+// unparseable (an untimed stop sorts to the front of its day).
+export function clockMinutes(t) {
+  const m = /^(\d{1,2}):(\d{2})\s*([ap]m)?/i.exec(String(t || '').trim())
+  if (!m) return null
+  let h = +m[1]
+  const ap = (m[3] || '').toLowerCase()
+  if (ap === 'pm' && h !== 12) h += 12
+  if (ap === 'am' && h === 12) h = 0
+  return h * 60 + (+m[2])
+}
+
+// The next timed thing on a trip — the soonest non-lodging, non-skipped stop at or
+// after `now` (across all dated days) — so the home can surface its time, name, and
+// ticket image just-in-time. Returns { day, stop, iso, minutes } or null. Pure;
+// `now` = { todayIso, nowMinutes }. With no todayIso it returns the trip's very
+// first timed stop (an upcoming trip's opener).
+export function nextTimedStop(trip, now = {}) {
+  const today = String(now.todayIso || '').slice(0, 10)
+  const nowMin = Number.isFinite(now.nowMinutes) ? now.nowMinutes : 0
+  const cands = []
+  for (const day of trip?.days || []) {
+    const iso = typeof day?.isoDate === 'string' ? day.isoDate.slice(0, 10) : null
+    if (!iso) continue
+    for (const s of day.stops || []) {
+      if (!s || s.skipped || s.kind === 'lodging') continue
+      const mins = clockMinutes(s.time)
+      cands.push({ day, stop: s, iso, minutes: mins == null ? 0 : mins })
+    }
+  }
+  cands.sort((a, b) => (a.iso === b.iso ? a.minutes - b.minutes : a.iso < b.iso ? -1 : 1))
+  for (const c of cands) {
+    if (!today || c.iso > today || (c.iso === today && c.minutes >= nowMin)) return c
+  }
+  return null
+}

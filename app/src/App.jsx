@@ -19,8 +19,6 @@ import { HelenView } from './views/HelenView'
 import { AureliaView } from './views/AureliaView'
 import { RafaView } from './views/RafaView'
 import { RafaPad } from './views/RafaPad'
-import { PartsTripView } from './views/PartsTripView'
-import { hasExplicitParts } from './lib/tripParts'
 import { TripIndex } from './views/TripIndex'
 import { StopDetail } from './views/StopDetail'
 import { Settings } from './views/Settings'
@@ -1188,21 +1186,11 @@ export default function App() {
       presencePeople: stayLive ? presence.people : [],
       nowMs: now.getTime(),
     }
-    // A COMPOSITE trip (explicit parts — a city break, a multi-leg odyssey) renders
-    // the shared, parts-aware view in the three "read the itinerary" lenses, skinned
-    // by each person's CSS vars. The day-centric lens IA (day tabs, DRIVE/ETA ticker)
-    // is wrong for a city trip. Every LEGACY trip (no explicit parts) falls through to
-    // its bespoke lens, byte-identical (G5). Rafa keeps his storybook views by design.
-    if (hasExplicitParts(tripForView) && traveler !== 'rafa') {
-      return (
-        <PartsTripView
-          trip={tripForView}
-          onOpenStop={openStop}
-          onOpenPhotos={openPhotos}
-          onOpenClaude={openClaude}
-        />
-      )
-    }
+    // ONE home for every trip (FAMILY_TRIPS_VISION §11): a COMPOSITE trip (explicit
+    // parts — a city break, flights + timed things) now flows through the SAME per-lens
+    // path into the shape-aware living heart, which leads with the part-it's-in-now +
+    // the just-in-time "Next up" ticket and folds the full plan in below. The separate
+    // PartsTripView is retired. Rafa keeps his bespoke storybook views by design.
     switch (traveler) {
       case 'helen':
         return <HelenView {...props} />

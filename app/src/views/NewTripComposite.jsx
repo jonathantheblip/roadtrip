@@ -10,7 +10,7 @@ import { PART_TYPES } from '../lib/tripParts'
 // the legs out by hand than describe them to Claude. You build a flat, ordered
 // list of PARTS (a flight, a few nights in a city, a stay, a drive); on Create it
 // writes a real draft trip carrying `parts[]` and opens the editor — and the saved
-// trip renders in the parts-aware view (PartsTripView) with each part's timed days.
+// trip renders in the shape-aware living heart ("The plan" / PartsOutline), each part's timed days.
 //
 // Mirrors NewTrip's contract exactly: id minted ONCE (idRef) for upsert idempotency,
 // in-flight guard, onCreate → editor, only Title required. Trip dates AUTO-DERIVE
@@ -111,7 +111,7 @@ export function NewTripComposite({ onBack, onCreate, dark = false }) {
       lodging: {},
       days: [],
       // The composite payload. Two+ parts → hasExplicitParts → the saved trip
-      // renders in PartsTripView. (Zero kept parts is allowed — it just becomes a
+      // renders in the living heart's parts-aware "The plan". (Zero kept parts is allowed — it just becomes a
       // plain draft the editor fills in; we never block Create on the parts.)
       ...(builtParts.length ? { parts: builtParts } : {}),
     }

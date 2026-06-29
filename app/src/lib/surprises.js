@@ -464,7 +464,7 @@ export function maskTripForViewer(trip, viewer) {
 // A composite trip's parts[] can carry the same masking layer as a stop. The part's
 // day-by-day detail lives in the flat trip.days[], so a hidden part must strip BOTH
 // the part AND its days. Day OWNERSHIP comes from partsWithDays — the SAME derivation
-// PartsTripView renders with — so the mask can never diverge from what's shown.
+// the living heart's PartsOutline renders with — so the mask can never diverge from what's shown.
 export function isPartSurprise(part) {
   return !!(part && part.surprise && Array.isArray(part.surprise.hideFrom) && part.surprise.hideFrom.length)
 }

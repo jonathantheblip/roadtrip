@@ -2,9 +2,10 @@ import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache } from './_fixtures/withTrip.js'
 import { expectNoSeriousA11y } from './_fixtures/axe.js'
 
-// PartsTripView — a saved COMPOSITE trip (a city break, a multi-leg odyssey)
-// renders the parts-aware view with real timed days, instead of the day-centric
-// per-lens view. New-trip redesign: "real timed city days" + "parts after save."
+// Composite trips on the living heart — a saved COMPOSITE trip (a city break, a
+// multi-leg odyssey) renders the ONE shape-aware living-heart home: it leads with
+// the part it's in now + a just-in-time "Next up" ticket, and folds the full plan
+// (parts → real timed days) in below. There is no separate parts-only view.
 //
 // A Rome→Florence city break: explicit parts[] + a flat days[] (the worker stores
 // both — days carry the detail, parts the high-level shape). The view DERIVES each
@@ -47,12 +48,12 @@ const COMPOSITE = {
 
 const url = (who) => `/?person=${who}&trip=italy-citybreak&nosw=1`
 
-test.describe('PartsTripView — real timed city days', () => {
+test.describe('Composite trips on the living heart — real timed parts', () => {
   test('a composite trip renders its parts with timed days (real + loose), shedding the day-tab IA', async ({ page }) => {
     await seedTripIntoCache(page, COMPOSITE)
     await page.goto(url('jonathan'))
 
-    const view = page.locator('[data-testid="parts-trip-view"]')
+    const view = page.locator('[data-testid="living-heart-home"]')
     await expect(view).toBeVisible({ timeout: 10_000 })
 
     // The trip title + a "2 parts · N days" summary.
@@ -64,7 +65,7 @@ test.describe('PartsTripView — real timed city days', () => {
     await expect(parts.first()).toContainText('Three days in Rome')
     await expect(parts.nth(1)).toContainText('Two days in Florence')
 
-    // Rome's window (Jul 1–3) is enumerated into 3 day rows; Jul 2 has no plan
+    // Rome's window (May 22–24) is enumerated into 3 day rows; May 23 has no plan
     // → it shows as a loose "open space" day. Real stops render where present.
     await expect(view).toContainText('Colosseum')
     await expect(view).toContainText('Vatican Museums')
@@ -75,6 +76,12 @@ test.describe('PartsTripView — real timed city days', () => {
     // The day-centric road-trip IA is GONE for a city trip — no day-tab chips.
     await expect(page.locator('.jj-day-chip')).toHaveCount(0)
 
+    // The living heart is SHAPE-AWARE for a complex trip: it leads with the part
+    // it's in now ("In Rome" on May 23) and surfaces the next timed thing
+    // just-in-time (the Vatican, May 24) — its detail carries the ticket.
+    await expect(view).toContainText('In Rome')
+    await expect(page.getByTestId('next-up')).toContainText('Vatican Museums')
+
     await expectNoSeriousA11y(page)
   })
 
@@ -82,7 +89,7 @@ test.describe('PartsTripView — real timed city days', () => {
     await seedTripIntoCache(page, COMPOSITE)
     for (const who of ['helen', 'aurelia']) {
       await page.goto(url(who))
-      await expect(page.locator('[data-testid="parts-trip-view"]')).toBeVisible({ timeout: 10_000 })
+      await expect(page.locator('[data-testid="living-heart-home"]')).toBeVisible({ timeout: 10_000 })
       await expect(page.locator('[data-testid="parts-trip-part"]')).toHaveCount(2)
       // Helen's paper lens is the historical contrast trap (muted text on paper);
       // the loose "open" lines must stay AA — guard it where it actually renders.
@@ -105,12 +112,12 @@ test.describe('PartsTripView — real timed city days', () => {
     await expect(page.getByText('Two days in Florence')).toBeVisible()
   })
 
-  test('Rafa keeps his storybook view — no parts view on his phone', async ({ page }) => {
+  test('Rafa keeps his storybook view — not the living heart', async ({ page }) => {
     await seedTripIntoCache(page, COMPOSITE)
     await page.goto(url('rafa'))
     // His RafaView still renders (it reads the flat days), so the page is alive…
     await page.waitForLoadState('networkidle')
-    // …but the parts-aware view is NOT used for him (storybook idiom by design).
-    await expect(page.locator('[data-testid="parts-trip-view"]')).toHaveCount(0)
+    // …but the unified living-heart home is NOT used for him (storybook by design).
+    await expect(page.locator('[data-testid="living-heart-home"]')).toHaveCount(0)
   })
 })

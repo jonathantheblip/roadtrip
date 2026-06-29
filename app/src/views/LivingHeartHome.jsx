@@ -16,7 +16,7 @@
 // replay; "next" only when the live readout has one; the day count is derived from
 // the real trip dates (no invented "night 2 of 4").
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, Play, BookOpen, Sparkles, Share2, Compass, Plane } from 'lucide-react'
+import { ChevronRight, Play, BookOpen, Sparkles, Share2, Compass, Plane, Ticket } from 'lucide-react'
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady } from '../components/EntryCues'
 import { listMemoriesForTrip } from '../lib/memoryStore'
@@ -26,6 +26,8 @@ import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
 import { TRAVELERS } from '../data/travelers'
+import { hasExplicitParts, currentPart, nextTimedStop, partCount, getParts } from '../lib/tripParts'
+import { PartsOutline } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
 const DISPLAY = { fontFamily: 'var(--font-display)', fontWeight: 600, letterSpacing: '-0.01em' }
@@ -54,6 +56,12 @@ function dayInfo(trip) {
   if (end && today > end) return { nights, after: true }
   return { nights, dayX: Math.max(1, days(start, today) + 1) }
 }
+// ISO 'YYYY-MM-DD' + 1 day, in UTC (no local-TZ drift) — for the "Tomorrow" label.
+function isoPlus1(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '')
+  if (!m) return null
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) + 86400000).toISOString().slice(0, 10)
+}
 
 export function LivingHeartHome({
   trip, traveler, nowReadout, whoAround, weaveReady, bookHasPages,
@@ -71,6 +79,30 @@ export function LivingHeartHome({
   const isStay = isStayTrip(trip)
   const phase = tripPhase(trip)
   const di = useMemo(() => dayInfo(trip), [trip])
+  // A complex/composite trip (a city break, flights + timed things) is still the
+  // ONE living-heart home, shape-aware (FAMILY_TRIPS_VISION §11): it leads with the
+  // PART it's in now and surfaces the next timed thing just-in-time (its ticket).
+  // All gated on hasExplicitParts so stays/routes render byte-identical (G5).
+  const isComplex = hasExplicitParts(trip)
+  const curPart = useMemo(() => (isComplex ? currentPart(trip, todayLocalIso()) : null), [isComplex, trip])
+  const partN = isComplex ? partCount(trip) : 0
+  const partIdx = useMemo(
+    () => (curPart ? getParts(trip).findIndex((p) => p.id === curPart.id) : -1),
+    [curPart, trip]
+  )
+  const nextThing = useMemo(() => {
+    if (!isComplex) return null
+    const d = new Date()
+    return nextTimedStop(trip, { todayIso: todayLocalIso(), nowMinutes: d.getHours() * 60 + d.getMinutes() })
+  }, [isComplex, trip])
+  const nextWhen = useMemo(() => {
+    if (!nextThing) return ''
+    const today = todayLocalIso()
+    const dayPart = nextThing.iso === today ? 'Today'
+      : nextThing.iso === isoPlus1(today) ? 'Tomorrow'
+      : (nextThing.day?.date || '')
+    return [dayPart, (nextThing.stop.time || '').trim()].filter(Boolean).join(' · ')
+  }, [nextThing])
   // The common shapes (stay / hangout / mixed) lead with the place. The rare road
   // trip or place-less itinerary leads with the day's focus instead — a single
   // "At [place]" doesn't fit a moving or place-less trip (family-trips, never
@@ -80,7 +112,9 @@ export function LivingHeartHome({
     const d = days.find((x) => x.isoDate === todayLocalIso()) || days[0]
     return (d?.title || '').trim()
   }, [trip])
-  const heroBig = isStay ? `At ${place}` : (todayTitle || (di.dayX ? `Day ${di.dayX}` : (trip.title || 'Your trip')))
+  const heroBig = isComplex
+    ? (curPart?.place ? `In ${curPart.place}` : (curPart?.title || trip.title || 'Your trip'))
+    : isStay ? `At ${place}` : (todayTitle || (di.dayX ? `Day ${di.dayX}` : (trip.title || 'Your trip')))
   const coords = useMemo(() => stayPlaceCoords(trip), [trip])
   const sun = useMemo(() => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null), [coords?.lat, coords?.lng])
   const heroUrl = (!heroErr && (trip.heroImage || trip.heroResolved?.url)) || null
@@ -115,18 +149,19 @@ export function LivingHeartHome({
 
   // Ambient line under the place — phase-aware, all from real dates/astronomy.
   const ambient = useMemo(() => {
-    const parts = []
+    const segs = []
     if (upcoming) {
-      parts.push(di.daysUntil === 0 ? 'Today' : di.daysUntil === 1 ? 'Tomorrow' : `In ${di.daysUntil} days`)
-      if (di.nights > 0) parts.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
+      segs.push(di.daysUntil === 0 ? 'Today' : di.daysUntil === 1 ? 'Tomorrow' : `In ${di.daysUntil} days`)
+      if (di.nights > 0) segs.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
     } else if (di.dayX) {
-      parts.push(`Day ${di.dayX}`)
-      if (sun?.goldenHour) parts.push(`golden ${fmtTime(sun.goldenHour)}`)
+      segs.push(`Day ${di.dayX}`)
+      if (!isComplex && sun?.goldenHour) segs.push(`golden ${fmtTime(sun.goldenHour)}`)
     } else if (di.nights > 0) {
-      parts.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
+      segs.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
     }
-    return parts.join(' · ')
-  }, [upcoming, di.daysUntil, di.dayX, di.nights, sun?.goldenHour])
+    if (isComplex && partN > 1 && partIdx >= 0) segs.push(`part ${partIdx + 1} of ${partN}`)
+    return segs.join(' · ')
+  }, [upcoming, di.daysUntil, di.dayX, di.nights, sun?.goldenHour, isComplex, partN, partIdx])
 
   // ON THE AGENDA — a stay sheds the road-trip day-by-day broadsheet, but its few
   // PLANNED events (a dinner out, an activity) + any flight are "the exception"
@@ -148,7 +183,7 @@ export function LivingHeartHome({
     <div data-testid="living-heart-home" style={{ color: 'var(--text)' }}>
       {/* HERO — the place, cinematic. Tapping it opens "where we are" (the map). */}
       <button
-        type="button" onClick={onOpenMap} aria-label={`Where we are — ${isStay ? place : trip.title}`}
+        type="button" onClick={onOpenMap} aria-label={`Where we are — ${isStay ? place : (curPart?.place || trip.title)}`}
         style={{
           display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer', border: 0, padding: 0,
           position: 'relative', height: 300, overflow: 'hidden', background: 'linear-gradient(135deg, var(--bg2), var(--card))',
@@ -188,6 +223,38 @@ export function LivingHeartHome({
 
         {/* THE LIVE PULSE — real "who's around" band (omitted when not present) */}
         {whoAround && <div style={{ marginTop: 20 }}>{whoAround}</div>}
+
+        {/* NEXT UP — a complex trip's most imminent timed thing, surfaced
+            just-in-time with its ticket image (FAMILY_TRIPS_VISION §11). Tap opens
+            the stop's full detail (ticket / flight / logistics). */}
+        {nextThing && onOpenStop && (
+          <button
+            type="button" onClick={() => onOpenStop(nextThing.day.n, nextThing.stop.id)}
+            data-testid="next-up" aria-label={`Next up — ${nextThing.stop.name}`}
+            style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12, marginTop: 18, padding: '12px 13px', cursor: 'pointer', textAlign: 'left', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', color: 'var(--text)' }}
+          >
+            {nextThing.stop.image ? (
+              <img src={nextThing.stop.image} alt="" loading="lazy"
+                style={{ width: 52, height: 52, borderRadius: 8, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
+            ) : (
+              <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 8, background: 'var(--bg2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {nextThing.stop.flightNumber ? <Plane size={16} style={{ color: 'var(--accent-text)' }} /> : <Ticket size={16} style={{ color: 'var(--accent-text)' }} />}
+              </span>
+            )}
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', display: 'block' }}>{nextWhen ? `Next up · ${nextWhen}` : 'Next up'}</span>
+              <span style={{ fontSize: 14.5, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nextThing.stop.name}</span>
+              {(nextThing.stop.flightNumber || nextThing.stop.note) && (
+                <span style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {nextThing.stop.flightNumber
+                    ? `${nextThing.stop.flightNumber}${nextThing.stop.flightOrigin ? ` · ${nextThing.stop.flightOrigin}→${nextThing.stop.flightDest || ''}` : ''}`
+                    : nextThing.stop.note}
+                </span>
+              )}
+            </span>
+            <ChevronRight size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+          </button>
+        )}
 
         {/* WHAT YOU COULD DO — a nudge when the trip's still empty/upcoming (real:
             it opens the "We could" tray we already populate, incl. pre-trip). */}
@@ -235,7 +302,7 @@ export function LivingHeartHome({
         {/* ON THE AGENDA — a stay's few planned events + flight (the exception,
             vision §5), kept reachable now the road-trip itinerary is shed. Each
             row opens the stop; renders only when there's something planned. */}
-        {(hasAgenda || (arrival && onOpenStop)) && (
+        {!isComplex && (hasAgenda || (arrival && onOpenStop)) && (
           <div style={{ marginTop: 22 }}>
             <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>On the agenda</span>
             <div style={{ marginTop: 11, border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', overflow: 'hidden' }}>
@@ -270,6 +337,20 @@ export function LivingHeartHome({
                   </button>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {/* THE PLAN — a complex trip's full parts → days → stops, folded in below
+            the live lead (the old separate PartsTripView is retired). One home. */}
+        {isComplex && (
+          <div style={{ marginTop: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>The plan</span>
+              {partN > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{partN} {partN === 1 ? 'part' : 'parts'}</span>}
+            </div>
+            <div style={{ marginTop: 11 }}>
+              <PartsOutline trip={trip} onOpenStop={onOpenStop} />
             </div>
           </div>
         )}
