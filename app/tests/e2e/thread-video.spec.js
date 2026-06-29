@@ -89,16 +89,21 @@ test('a poster-less video whose poster retry is pending shows a "thumbnail uploa
   test.skip(browserName === 'webkit', 'poster-drain vs fake-marker race on webkit idb')
   await seedTripIntoCache(page, FIXTURE_TRIP)
   await seedMemoriesIntoCache(page, [videoMem({ id: 'vpending', stopId: 'vb2-3' })])
-  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
-  // Set the pending-poster marker AFTER boot: the cold-load drain would
-  // otherwise drop a marker whose (fake) blob isn't in idb — a real "vanished
-  // blob" cleanup. hasPendingPoster('vpending') is then true on the thread render.
-  await page.evaluate(() => {
+  // Plant the fake pending-poster marker AND force OFFLINE before boot. The
+  // cold-load poster-drain DROPS a marker whose (fake) blob isn't in idb — but
+  // drainPendingPosters no-ops entirely while offline (posterRetry.js: an offline
+  // pass must never touch markers). So offline removes the boot-time drain-vs-
+  // marker race deterministically (it failed on the slower CI runner otherwise).
+  // isWorkerConfigured() is independent of navigator.onLine, and the thread + hint
+  // are local renders — so nothing else this test needs is affected by offline.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
     localStorage.setItem(
       'rt_pending_posters_v1',
       JSON.stringify([{ memoryId: 'vpending', posterIdbKey: 'k', asTraveler: 'helen', attempts: 1 }])
     )
   })
+  await page.goto('/?person=helen&trip=volleyball-2026&nosw=1')
   // Slice 3a: open vs BEV 13 Empire (vb2-3) from the living-heart "On the agenda".
   await page.getByRole('button', { name: /vs BEV 13 Empire/i }).first().click()
 
