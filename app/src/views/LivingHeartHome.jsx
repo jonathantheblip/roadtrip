@@ -1,8 +1,12 @@
-// LivingHeartHome — the redesigned "Now" home for a STAY. One component, themed
-// entirely by the active lens's CSS vars ([data-theme] on <body>), so it renders
-// correctly for Jonathan / Helen / Aurelia without forking. Design approved
-// 2026-06-28: lean bones, living heart — and it must feel alive at EVERY stage,
-// not just when full (Jonathan's empty-state note). So it grows with the trip:
+// LivingHeartHome — the ONE home for EVERY trip AND every phase. One component,
+// themed by the active lens's CSS vars ([data-theme] on <body>) so it renders for
+// Jonathan / Helen / Aurelia without forking, and shape-aware so it fits any trip:
+// a stay/hangout/mixed ("At [place]"), the rare road trip (the day's focus), a
+// complex/composite trip (the current part + a just-in-time "Next up" ticket + the
+// folded plan), and a FINISHED trip (the after keepsake: "Looking back" + a photo
+// wall + "Relive the trip"). Design approved 2026-06-28; complex trips + the after
+// keepsake folded in 2026-06-29. It must feel alive at EVERY stage, not just when
+// full (Jonathan's empty-state note). So it grows with the trip:
 //   • empty/upcoming → the place leads, a countdown, a nudge to "what you could
 //     do," and gentle "fills in as you go" promises (NOT sad blanks).
 //   • a little → first photos + who's-here appear; the story slot promises tonight.
