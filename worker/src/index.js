@@ -2219,6 +2219,10 @@ async function postPlacesNearby(env, request, cors) {
       lng,
       radius: body?.radius,
       limit: body?.limit,
+      // Optional locale hints — the client can pass these for a foreign-destination
+      // trip so the tray's nearby ideas come back in the local language/conventions.
+      languageCode: typeof body?.languageCode === 'string' ? body.languageCode : undefined,
+      regionCode: typeof body?.regionCode === 'string' ? body.regionCode : undefined,
     })
     // Turn each photo resource name into a key-safe proxied URL on THIS worker
     // (the Google key never reaches the client). photoName drops out of the
@@ -2266,7 +2270,7 @@ async function getPlacesPhoto(env, url, cors) {
 // worker. Returns the {results, radiusMeters} shape both callers consume.
 // Throws on a non-2xx Places response (error carries .status) so the
 // caller can map it to its own error surface.
-async function placesTextSearch(env, { query, lat, lng, radius, limit }) {
+async function placesTextSearch(env, { query, lat, lng, radius, limit, languageCode, regionCode }) {
   const hasCenter = Number.isFinite(lat) && Number.isFinite(lng)
   const clampedRadius = Math.max(
     100,
@@ -2275,6 +2279,12 @@ async function placesTextSearch(env, { query, lat, lng, radius, limit }) {
   const cappedLimit = Math.max(1, Math.min(10, Number(limit) || 5))
 
   const reqBody = { textQuery: query, maxResultCount: cappedLimit }
+  // Localize to the DESTINATION, not Cloudflare's edge default (which skews
+  // English/US): languageCode → result names + hours in the local language;
+  // regionCode (a CLDR region like "IT") → local address conventions + ranking.
+  // Both optional — omitted leaves today's behavior byte-for-byte unchanged.
+  if (languageCode) reqBody.languageCode = String(languageCode)
+  if (regionCode) reqBody.regionCode = String(regionCode)
   if (hasCenter) {
     // DISTANCE ranking + a circular bias is what powers the "nearest one
     // right now" ordering. Without a center (tool fallback) we let Places
@@ -3302,6 +3312,8 @@ const CHAT_TOOLS = [
         },
         radius_m: { type: 'number', description: 'Optional search radius in meters (100–50000). Defaults to 1500.' },
         limit: { type: 'number', description: 'Optional max number of results (1–10). Defaults to 5.' },
+        language_code: { type: 'string', description: 'Optional BCP-47 language for the results — set it to the DESTINATION’s language for a non-English place (e.g. "it" for Italy, "fr" for France, "ja" for Japan) so names and hours come back local. Omit for a US/English destination.' },
+        region_code: { type: 'string', description: 'Optional CLDR/ccTLD region (the destination country, e.g. "IT", "FR", "JP") for local address + ranking conventions. Omit for a US destination.' },
       },
       required: ['query', 'near'],
     },
@@ -3397,7 +3409,7 @@ async function toolFindPlaces(env, input) {
   if (!center) {
     // Couldn't pin the anchor — fall back to a text-only search that
     // folds the location into the query, so we still return real venues.
-    const out = await placesTextSearch(env, { query: `${query} near ${near}`, limit: input?.limit })
+    const out = await placesTextSearch(env, { query: `${query} near ${near}`, limit: input?.limit, languageCode: input?.language_code, regionCode: input?.region_code })
     return { center: null, note: `Couldn't geocode "${near}"; searched by text instead.`, ...out }
   }
   const out = await placesTextSearch(env, {
@@ -3406,6 +3418,8 @@ async function toolFindPlaces(env, input) {
     lng: center.lng,
     radius: input?.radius_m,
     limit: input?.limit,
+    languageCode: input?.language_code,
+    regionCode: input?.region_code,
   })
   return { center: { name: center.name, address: center.address }, ...out }
 }
