@@ -14,11 +14,14 @@ import { Home, Building2, Car, Sun, Globe, Sparkles, ChevronLeft } from 'lucide-
 // Theme-aware like NewTrip (surface-light/dark + CSS vars) so it wears the
 // creator's lens. Only the title is ever required downstream — nothing here asks
 // for anything, so there are no false "required" markers.
+// Order = how common the shape is for this family: the stay / hangout is the
+// norm, so it leads; a road trip is the RARE exception and sits near the bottom
+// (never above the everyday shapes). family-trips, not road-trip-first.
 const SHAPES = [
   { key: 'stay', label: 'A stay', desc: 'A cabin, Grandma’s, a beach house', Icon: Home },
   { key: 'city', label: 'A city trip', desc: 'Fly in, see the sights', Icon: Building2 },
-  { key: 'road', label: 'A road trip', desc: 'Drive from place to place', Icon: Car },
   { key: 'together', label: 'Just time together', desc: 'Low-key, nothing planned', Icon: Sun },
+  { key: 'road', label: 'A road trip', desc: 'Drive from place to place', Icon: Car },
   { key: 'bigger', label: 'A bigger trip', desc: 'Several parts in one', Icon: Globe, composite: true },
 ]
 

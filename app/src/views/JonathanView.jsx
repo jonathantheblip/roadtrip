@@ -3,6 +3,7 @@ import { PhotoTile, PhotoLightbox } from '../components/PhotoAlbum'
 import { TRAVELER_DOT } from '../data/travelers'
 import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
+import { tripPhase } from '../lib/tripPhase'
 
 // Jonathan — Ops. Broadsheet mission-control (redesign increment 1,
 // design handoff jonathan.jsx). Two modes off one masthead toggle:
@@ -70,6 +71,9 @@ export function JonathanView({
   // ONE home for EVERY phase (slice 4): the living heart is Jonathan's home during
   // AND after (its keepsake state) — it reads straight from props. The road-trip
   // broadsheet (JMasthead / JOps / JRecord) is retired.
+  // After a trip ends, "Things to do" drops (nothing left to plan) — matching
+  // Helen's and Aurelia's lenses, which already gate it the same way.
+  const after = tripPhase(trip) === 'after'
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120 }}>
       <LivingHeartHome
@@ -90,7 +94,7 @@ export function JonathanView({
         onOpenStop={onOpenStop}
       />
       <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
-      <JStayArchive trip={trip} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onOpenActivities={onOpenActivities} />
+      <JStayArchive trip={trip} after={after} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onOpenActivities={onOpenActivities} />
     </div>
   )
 }
@@ -100,8 +104,8 @@ export function JonathanView({
 // (jonathan-photos-entry — the photo-test harness clicks it), all-photos, and
 // Things to do as mono "register" lines below the living heart. The 4-tab shell
 // (Photos / We-could) also hosts these; this keeps them reachable in-view.
-function JStayArchive({ trip, onOpenPhotos, onOpenAllPhotos, onOpenActivities }) {
-  const showActs = hasActivitiesForTrip(trip.id) && onOpenActivities
+function JStayArchive({ trip, after, onOpenPhotos, onOpenAllPhotos, onOpenActivities }) {
+  const showActs = !after && hasActivitiesForTrip(trip.id) && onOpenActivities
   const Line = ({ testid, onClick, kicker, title }) => (
     <button
       type="button"

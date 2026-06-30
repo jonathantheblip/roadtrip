@@ -204,8 +204,16 @@ export function LivingHeartHome({
         }}
       >
         {heroUrl && (
-          <img src={heroUrl} alt="" className="lh-ken" onError={() => setHeroErr(true)}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={heroUrl} alt="" className="lh-ken" draggable={false} onError={() => setHeroErr(true)}
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+              // Suppress iOS Safari's native long-press image callout (Save to
+              // Photos / Copy) so a held press reaches the app, not the OS menu —
+              // the same guard TripIndex's hero carries (HERO_IMG_STYLE). Without
+              // it, this larger, more prominent hero re-invites the exact callout
+              // bug that was fixed for the trip-card hero.
+              WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none',
+            }} />
         )}
         <span aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 34%, rgba(0,0,0,0.80))' }} />
         <span style={{ position: 'absolute', left: 20, right: 20, bottom: 16, display: 'block' }}>
@@ -299,7 +307,8 @@ export function LivingHeartHome({
               <div style={{ display: 'flex', flexWrap: isAfter ? 'wrap' : 'nowrap', gap: 9, marginTop: 11, overflowX: isAfter ? 'visible' : 'auto' }}>
                 {photoUrls.map((u, i) => (
                   <button
-                    key={i} type="button" onClick={onOpenAllPhotos} aria-label="Open photos"
+                    key={i} type="button" onClick={onOpenAllPhotos}
+                    aria-label={`Open photos — ${i + 1} of ${photoUrls.length}`}
                     style={{ flex: '0 0 auto', width: 104, height: 104, borderRadius: 'min(var(--radius, 12px), 14px)', overflow: 'hidden', border: '1px solid var(--border)', padding: 0, cursor: 'pointer', background: 'var(--bg2)' }}
                   >
                     <img src={u} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -406,7 +415,10 @@ function QuietAction({ onClick, icon, label, aria }) {
   return (
     <button
       type="button" onClick={onClick} aria-label={aria || label}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 0, padding: 0, cursor: 'pointer', color: 'var(--accent-text)', fontSize: 12.5, fontFamily: 'var(--font-body)' }}
+      // minHeight 44 gives a comfortable phone tap target (the text-line box
+      // alone was ~17px — easy to mis-tap); horizontal padding keeps the hit
+      // area generous without making these quiet links look like filled buttons.
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 6px', margin: '0 -6px', background: 'transparent', border: 0, cursor: 'pointer', color: 'var(--accent-text)', fontSize: 12.5, fontFamily: 'var(--font-body)' }}
     >
       {icon}{label}
     </button>

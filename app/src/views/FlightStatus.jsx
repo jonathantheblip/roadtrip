@@ -116,7 +116,12 @@ function PanelBody({
   onRefresh,
   fallbackUrl,
 }) {
-  const heading = framing === 'your' ? 'Your flight' : 'Jonathan’s flight'
+  // "Your flight" when you're the viewer it's framed for; otherwise the honest
+  // neutral "The flight" — NOT a hardcoded "Jonathan's flight" (the flier isn't
+  // modeled per-stop, and on a trip where someone else flies that attribution
+  // was simply wrong). Per-flier naming ("Helen's flight") is a follow-up that
+  // needs the flier carried on the stop.
+  const heading = framing === 'your' ? 'Your flight' : 'The flight'
   return (
     <div className="embed-panel">
       <div className="flex items-center justify-between mb-2">

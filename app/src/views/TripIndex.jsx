@@ -7,6 +7,7 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { thumbUrl } from '../lib/thumbUrl'
 import { pickResurface } from '../lib/resurface'
 import { hasExplicitHero } from '../lib/tripHero'
+import { stayLabel } from '../lib/tripShape'
 import { heroRotationExtras, pickRotatingHero } from '../lib/heroRotation'
 import { AvatarStack } from '../components/Avatar'
 
@@ -699,10 +700,17 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
   // For genuine A→B road trips, render the route. For trips that
   // anchor at one place (a weekend in NYC, a volleyball tournament at
   // Mohegan Sun) the route notation reads as road-trip energy when the
-  // trip isn't really one — so a per-trip locationLabel override wins.
+  // trip isn't really one — so a per-trip locationLabel override wins,
+  // and a plain stay (no start/end cities) falls back to its PLACE name
+  // (the cabin / Grandma's / the city) instead of a bare " → ". A stay
+  // created the normal way carries no startCity/endCity, so without this
+  // the card showed an empty arrow — the most common trip type, broken.
+  const stayPlace = stayLabel(trip)
   const locationLabel = trip.locationLabel
     ? trip.locationLabel.toUpperCase()
-    : `${startCity} → ${endCity}`
+    : startCity || endCity
+      ? `${startCity} → ${endCity}`
+      : (stayPlace ? stayPlace.toUpperCase() : '')
   const dayCount = trip.days?.length || 0
   const titleLines = (trip.title || '').split(/[—:]/).map((s) => s.trim())
 
@@ -902,9 +910,11 @@ function TripCard({ trip, memoryCount, heroPhotoUrl, onOpen, onSetHero, isFirst,
           }}
         >
           <AvatarStack ids={trip.travelers || []} size={isFirst ? 20 : 18} />
-          <Eyebrow color="var(--muted)">
-            {locationLabel}
-          </Eyebrow>
+          {locationLabel && (
+            <Eyebrow color="var(--muted)">
+              {locationLabel}
+            </Eyebrow>
+          )}
         </div>
         <Eyebrow color="var(--accent-text)" weight={600}>
           {memoryCount} {memoryCount === 1 ? 'MEMORY' : 'MEMORIES'}
