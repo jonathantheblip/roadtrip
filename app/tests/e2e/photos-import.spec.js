@@ -102,9 +102,11 @@ test.describe('Importer Stage 2 — ImportFlow (smart-skip + confirm)', () => {
 
     const confirm = page.getByTestId('import-confirm')
     await expect(confirm).toBeVisible({ timeout: 10000 })
-    // Summary reads the real matcher result: photos to stops + one on the road.
+    // Summary reads the real matcher result: photos to stops + one between stops.
+    // (The interstitial bucket is "between stops", not the old driving-coded
+    // "on the road" — a stay/hangout trip never drove.)
     await expect(confirm).toContainText(/filed to stops/i)
-    await expect(confirm).toContainText(/on the road/i)
+    await expect(confirm).toContainText(/between stops/i)
     // Primary action carries the total import count (2 stops + 1 interstitial).
     await expect(page.getByTestId('import-confirm-go')).toContainText(/Import 3/i)
 

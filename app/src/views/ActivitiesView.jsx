@@ -841,7 +841,9 @@ function structuralFallback(activity) {
   // structural fields so the card still says something useful.
   const parts = []
   const m = drivingMinutesFor(activity)
-  if (m != null) parts.push(`${m} min drive`)
+  // "N min away" — mode-neutral. "N min drive" assumed a car on every trip; on a
+  // stay/city trip the family may be walking or on transit, so don't assert a drive.
+  if (m != null) parts.push(`${m} min away`)
   parts.push(CATEGORY_LABEL[activity.category] || activity.category)
   return parts.join(' · ')
 }

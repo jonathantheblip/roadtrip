@@ -460,7 +460,7 @@ const ICONS = {
 // Row catalogue — ORDER defines render order; phrase may be fn(count).
 const IMPORT_ROWS = [
   { key: 'filed', icon: 'Pin', phrase: 'filed to stops', note: 'matched to where you were' },
-  { key: 'road', icon: 'Route', phrase: 'on the road', note: 'between stops · in transit' },
+  { key: 'road', icon: 'Route', phrase: 'between stops', note: 'taken between your planned stops' },
   {
     key: 'newStops',
     icon: 'PinPlus',
