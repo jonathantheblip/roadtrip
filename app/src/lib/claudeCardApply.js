@@ -122,12 +122,18 @@ function applyAdd(trip, card) {
   const stops = Array.isArray(day.stops) ? day.stops.slice() : []
   // Mirror the canonical stop shape used by TripEditor.addStop so the
   // stop renders everywhere the manual composer's stops render.
+  // Tag the new stop for the trip's ACTUAL travel party, not a hardcoded family
+  // of four — a stop Claude adds to a Jonathan+Helen-only trip should be "for"
+  // those two, not silently include the kids who aren't on the trip (which then
+  // shows wrong avatar chips). Falls back to the full family only when a trip
+  // carries no traveler list (renderer-safe; a stop with no `for` reads sparse).
+  const party = (trip.travelers?.length ? trip.travelers : trip.data?.travelers) || ['jonathan', 'helen', 'aurelia', 'rafa']
   const newStop = {
     id: newStopId(dayN),
     time: fields.time || '',
     name: card.title || fields.name || fields.title || 'New stop',
     kind: (fields.kind || 'sights').toString().toLowerCase(),
-    for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+    for: party,
     note: fields.notes || fields.note || fields.description || '',
     address: fields.address || fields.location || '',
     // Honor geocoded coords when a caller supplies them (Calendar Pull

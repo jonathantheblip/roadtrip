@@ -65,6 +65,22 @@ test('applyCardToTrip — add appends a new stop to the named day', () => {
   assert.equal(trip.days.find((d) => d.n === 3).stops.length, 1)
 })
 
+test('applyCardToTrip — add tags the stop for the TRIP’s travelers, not a hardcoded family of four', () => {
+  // A two-person trip (the kids stayed home). A stop Claude adds must be "for"
+  // the two who are actually travelling — not silently include Aurelia + Rafa.
+  const trip = { ...fixtureTrip(), travelers: ['jonathan', 'helen'] }
+  const card = {
+    action: 'add',
+    id: 'c-add-2p',
+    title: 'Wine bar',
+    fields: [{ name: 'time', value: '7:00 PM' }],
+    target: { tripId: 'volleyball-2026', dayN: 3, position: 'end' },
+  }
+  const next = applyCardToTrip(trip, card)
+  const added = next.days.find((d) => d.n === 3).stops.at(-1)
+  assert.deepEqual(added.for, ['jonathan', 'helen'], 'for = the trip party, not all four')
+})
+
 test('applyCardToTrip — add throws when target.dayN is not on the trip', () => {
   const trip = fixtureTrip()
   const card = {

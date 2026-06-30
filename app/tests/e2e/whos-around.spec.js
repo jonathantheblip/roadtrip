@@ -85,6 +85,33 @@ test.describe("Who's around — the presence band", () => {
     await expect.poll(() => posted.some((b) => b.note === 'grilling out back'), { timeout: 10000 }).toBe(true)
   })
 
+  test('a two-person trip shows ONLY the two travelling — not the kids who stayed home', async ({ page }) => {
+    // Roster = jonathan + helen; Aurelia and Rafa are not on this trip and must
+    // not appear (faded "not sharing") implying they're here but quiet.
+    const twoPerson = { ...FIXTURE_TRIP, id: 'two-person-2026', travelers: ['jonathan', 'helen'] }
+    await seedTripIntoCache(page, twoPerson)
+    page.route(/workers\.dev\/presence(\?.*)?$/, async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify([
+            { tripId: 'two-person-2026', traveler: 'jonathan', precise: true, lat: 43, lng: -72.9, accuracy: 12, placeBucket: 'at_place', note: null, updatedAt: STUB - 30_000, createdAt: STUB - 3_600_000 },
+            { tripId: 'two-person-2026', traveler: 'helen', precise: false, lat: null, lng: null, accuracy: null, placeBucket: 'out', note: 'bakery run', updatedAt: STUB - 60_000, createdAt: STUB - 3_600_000 },
+          ]),
+        })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) })
+    })
+    await page.goto('/?person=jonathan&trip=two-person-2026&nosw=1')
+    const band = page.getByTestId('whos-around')
+    await expect(band).toBeVisible({ timeout: 10000 })
+    await expect(band).toContainText('Jonathan')
+    await expect(band).toContainText('Helen')
+    await expect(band).not.toContainText('Aurelia')
+    await expect(band).not.toContainText('Rafa')
+  })
+
   test('helen (light lens): band renders and passes axe', async ({ page }) => {
     await openNow(page, 'helen')
     const band = page.getByTestId('whos-around')

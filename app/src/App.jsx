@@ -1176,6 +1176,7 @@ export default function App() {
             people={presence.people}
             me={traveler}
             place={stayPlaceObj}
+            roster={tripForView?.travelers}
             now={now.getTime()}
             onSetStatus={setMyPresenceStatus}
             onWave={onWave}

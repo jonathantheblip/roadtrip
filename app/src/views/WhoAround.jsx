@@ -21,7 +21,7 @@ function whereLabel(bucket, place) {
   return null
 }
 
-export function WhoAround({ people = [], me, place, now = Date.now(), onSetStatus, onWave }) {
+export function WhoAround({ people = [], me, place, roster, now = Date.now(), onSetStatus, onWave }) {
   const myRow = people.find((p) => p.traveler === me)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -46,6 +46,15 @@ export function WhoAround({ people = [], me, place, now = Date.now(), onSetStatu
   // which is cleaner than a "nobody's sharing" placeholder taking up the home.
   if (people.length === 0) return null
 
+  // Show only the people actually ON this trip (in canonical order), not a fixed
+  // family of four — on a Jonathan+Helen-only trip the kids aren't travelling, so
+  // showing them faded as "not sharing right now" wrongly implies they're here.
+  // No roster passed (back-compat) → the full family, unchanged.
+  const order =
+    Array.isArray(roster) && roster.length
+      ? TRAVELER_ORDER.filter((id) => roster.includes(id))
+      : TRAVELER_ORDER
+
   return (
     <section aria-label="Who's around" data-testid="whos-around" style={{ marginTop: 22 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
@@ -63,7 +72,7 @@ export function WhoAround({ people = [], me, place, now = Date.now(), onSetStatu
         <span style={{ flex: 1, height: 1, background: 'var(--line, rgba(0,0,0,0.08))' }} />
       </div>
 
-      {TRAVELER_ORDER.map((id) => {
+      {order.map((id) => {
         const t = TRAVELERS[id]
         if (!t) return null
         const row = people.find((p) => p.traveler === id)
