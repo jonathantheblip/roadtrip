@@ -131,6 +131,46 @@ export default {
       }
     }
 
+    // Diagnostic (admin) — a READ-ONLY window into the FULL trips table, INCLUDING
+    // soft-deleted rows, so trip inventory can be reconciled against what a device
+    // actually shows (the "make sure you can see what I see" gap). PUBLIC path but
+    // gated by its OWN key (env.ADMIN_DIAGNOSTIC_KEY), separate from the family
+    // session — a reviewer/dev holding the key can list trips WITHOUT enrolling a
+    // device. Returns METADATA ONLY (id, title, dates, draft, deleted_at,
+    // updated_at) — never data_json, memories, notes, or any trip content. If the
+    // key is unset OR wrong → 404: the route is invisible when unconfigured and
+    // never confirms its own existence to an unauthenticated probe.
+    if (path === '/diag/trips' && request.method === 'GET') {
+      const want = env.ADMIN_DIAGNOSTIC_KEY
+      const got = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+      if (!want || !timingSafeEqualStr(got, want)) {
+        return json({ error: 'not found' }, 404, cors)
+      }
+      try {
+        const rows = await env.DB.prepare(
+          `SELECT id, title, date_range_start, date_range_end, data_json, updated_at, deleted_at
+             FROM trips ORDER BY updated_at DESC`
+        ).all()
+        const trips = (rows?.results || []).map((r) => {
+          let draft = false
+          try { draft = !!JSON.parse(r.data_json || '{}').draft } catch { /* metadata only — ignore */ }
+          return {
+            id: r.id,
+            title: r.title,
+            dateRangeStart: r.date_range_start || null,
+            dateRangeEnd: r.date_range_end || null,
+            draft,
+            deletedAt: r.deleted_at ? new Date(r.deleted_at).toISOString() : null,
+            updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : null,
+          }
+        })
+        return json({ count: trips.length, trips }, 200, cors)
+      } catch (err) {
+        console.error('diag trips error', err?.stack || err)
+        return json({ error: 'diag failed' }, 500, cors)
+      }
+    }
+
     try {
       // Auth: every route below requires a valid bearer token — a per-device
       // session (013) OR, during the staged cutover, a bundled family token.
@@ -4402,4 +4442,16 @@ function json(data, status, cors) {
     status,
     headers: { 'Content-Type': 'application/json', ...cors },
   })
+}
+
+// Constant-time string compare for secret checks (the diagnostic admin key) so
+// a match can't be discovered byte-by-byte via response timing. The length
+// short-circuit leaks only the length, which is fine for a fixed-size random key.
+function timingSafeEqualStr(a, b) {
+  a = String(a)
+  b = String(b)
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
 }
