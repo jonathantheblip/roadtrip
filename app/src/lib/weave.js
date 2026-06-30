@@ -64,6 +64,31 @@ export function selectWeaveDay(trips, traveler, todayIso) {
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
+// Trip-SCOPED day selection — for opening the Weave from inside a specific
+// trip's home. Unlike selectWeaveDay's cross-trip "discovery" fallback (which
+// picks a RANDOM day from ANY trip when no trip is active today), this stays
+// inside the one open trip: the day's story you open from a trip is always
+// THAT trip's story, never a random page from a different trip. Deterministic
+// (no random) so re-opening lands on the same day. Returns { trip, day } or
+// null when the open trip has no memory-bearing day yet (→ the honest "story
+// will write itself here" empty state, not someone else's trip).
+export function selectWeaveDayForTrip(trip, traveler, todayIso) {
+  if (!trip?.days?.length) return null
+  const today = todayIso || new Date().toISOString().slice(0, 10)
+  const mems = listMemoriesForTrip(trip.id, traveler)
+  const hasMemory = (day) => {
+    const stopIds = dayStopIds(trip, day)
+    return mems.some((m) => stopIds.has(m.stopId))
+  }
+  const withMemory = (trip.days || []).filter((d) => d.isoDate && hasMemory(d))
+  if (!withMemory.length) return null
+  // Prefer the most recent PAST day (the day has happened); fall back to the
+  // most recent overall if every memory-day is somehow in the future.
+  const sortDesc = (a, b) => b.isoDate.localeCompare(a.isoDate)
+  const past = withMemory.filter((d) => d.isoDate <= today).sort(sortDesc)
+  return { trip, day: (past[0] || withMemory.slice().sort(sortDesc)[0]) }
+}
+
 // ── Beat building ────────────────────────────────────────────────────
 //
 // Groups a day's memories by author and picks one representative beat

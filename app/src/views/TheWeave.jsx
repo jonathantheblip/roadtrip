@@ -7,7 +7,7 @@ import { loadAsset } from '../lib/memAssets'
 import { refIdbAssetKey } from '../lib/photoEntries'
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { thumbUrl } from '../lib/thumbUrl'
-import { selectWeaveDay, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen, keepWeave, isKeepableNarrative } from '../lib/weave'
+import { selectWeaveDay, selectWeaveDayForTrip, buildBeats, fetchWeaveNarrative, fetchStoredWeave, markWeaveSeen, keepWeave, isKeepableNarrative } from '../lib/weave'
 import { encodeWeavePage, shareWeave, isVideoEncodeSupported } from '../lib/weaveEncode'
 
 // Inject keyframes once for the reveal animation.
@@ -168,15 +168,19 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
     let cancelled = false
 
     async function load() {
-      // 1. Pick a day — a specific forced day (a book page) or the
-      //    auto-selection (the ✦ entry's "today's woven page").
-      const allTrips = trips || (trip ? [trip] : [])
+      // 1. Pick a day — a specific forced day (a book page), the open trip's
+      //    own latest woven day, or (only when opened with NO trip context, e.g.
+      //    a future index-level entry) the cross-trip discovery pick. Opening
+      //    the Weave from inside a trip must show THAT trip's story, never a
+      //    random page from another trip (selectWeaveDay's discovery fallback).
       let picked
       if (forceDayIso) {
         const day = (trip?.days || []).find((d) => d.isoDate === forceDayIso)
         picked = day ? { trip, day } : null
+      } else if (trip) {
+        picked = selectWeaveDayForTrip(trip, traveler)
       } else {
-        picked = selectWeaveDay(allTrips, traveler)
+        picked = selectWeaveDay(trips || [], traveler)
       }
       if (!picked) {
         if (!cancelled) setState('empty')
@@ -216,11 +220,20 @@ export function TheWeave({ trip, trips, traveler, onBack, forceDayIso, initialKe
       ])
       if (cancelled) return
 
+      // Road-miles only frame a day the family actually DROVE (a route trip).
+      // On a stay/hangout day, "12 mi" reads as driving the family never did —
+      // so the stat is just the day + its stops, no mileage. (family-trips, not
+      // road-trip logic: a stat must not invent a drive.)
       const route = routeResult.status === 'fulfilled' ? routeResult.value : null
-      const milesStat = route?.miles
+      const drove = (picked.trip?.shape || '') === 'route'
+      // milesStat is the DRIVE-derived stat (null off a route) — kept separate so
+      // a richer stored stat can still win when we have no drive miles. localStat
+      // is the always-safe baseline shown immediately (stops only, no mileage).
+      const milesStat = drove && route?.miles
         ? `Day ${picked.day.n} · ${Math.round(route.miles)} mi · ${stopsLabel}`
         : null
-      if (milesStat) setStat(milesStat)
+      const localStat = milesStat || `Day ${picked.day.n} · ${stopsLabel}`
+      setStat(localStat)
 
       const stored = storedResult.status === 'fulfilled' ? storedResult.value : null
       if (stored?.title) {
