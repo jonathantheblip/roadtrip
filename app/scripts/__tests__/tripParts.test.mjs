@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords, deriveCurrentLeg, legStatus } =
+const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords, deriveCurrentLeg, legStatus, legGeocodeQuery, currentLegStops } =
   await import('../../src/lib/tripParts.js')
 
 function legacyStay() {
@@ -464,4 +464,80 @@ test('legStatus: a dateless leg is never mistaken for done', () => {
 
 test('legStatus: null part → "upcoming" (never throws)', () => {
   assert.equal(legStatus(null, { id: 'p-rome' }, '2026-05-23'), 'upcoming')
+})
+
+// ── legGeocodeQuery (the per-leg geocoding step) ──────────────────────────────
+test('legGeocodeQuery: a plain place name geocodes on its own', () => {
+  assert.equal(legGeocodeQuery({ place: 'Florence' }), 'Florence')
+})
+
+test('legGeocodeQuery: a locale\'s region subtag appends the country for disambiguation', () => {
+  assert.equal(legGeocodeQuery({ place: 'Florence', locale: 'it-IT' }), 'Florence, Italy')
+})
+
+test('legGeocodeQuery: does not double up when the place already names the country', () => {
+  assert.equal(legGeocodeQuery({ place: 'Florence, Italy', locale: 'it-IT' }), 'Florence, Italy')
+})
+
+test('legGeocodeQuery: an object place still resolves via partPlaceLabel (object-safe)', () => {
+  assert.equal(legGeocodeQuery({ place: { name: 'Rome' }, locale: 'it-IT' }), 'Rome, Italy')
+})
+
+test('legGeocodeQuery: no place at all (a pure transit leg) → null', () => {
+  assert.equal(legGeocodeQuery({ type: 'flight' }), null)
+  assert.equal(legGeocodeQuery(null), null)
+})
+
+test('legGeocodeQuery: an invalid locale region degrades to the bare place name, never throws', () => {
+  assert.equal(legGeocodeQuery({ place: 'Nowhere', locale: 'xx-ZZZZZZ' }), 'Nowhere')
+})
+
+// ── currentLegStops (the live map's leg-scoped pins) ──────────────────────────
+test('currentLegStops: only the CURRENT leg\'s stops, not the whole trip\'s', () => {
+  const trip = {
+    id: 'italy', title: 'Italy',
+    parts: [
+      { id: 'p-rome', type: 'city', place: 'Rome', dateStart: '2026-05-20', dateEnd: '2026-05-22' },
+      { id: 'p-flor', type: 'city', place: 'Florence', dateStart: '2026-05-23', dateEnd: '2026-05-24' },
+    ],
+    days: [
+      { n: 1, isoDate: '2026-05-20', stops: [{ id: 's1', name: 'Colosseum' }] },
+      { n: 2, isoDate: '2026-05-23', stops: [{ id: 's2', name: 'Uffizi' }] },
+    ],
+  }
+  const stops = currentLegStops(trip, '2026-05-23') // mid-Florence
+  assert.equal(stops.length, 1)
+  assert.equal(stops[0].name, 'Uffizi')
+  assert.equal(stops[0].day, 2) // day/dayDate/dayTitle carried, same shape as allStops
+})
+
+test('currentLegStops: a SHARED checkout/arrival day shows the ARRIVING leg\'s stop, not the departing leg\'s stale one', () => {
+  // Rome ends 05-22, Florence starts 05-22 — the exact day currentPart (its
+  // own inclusive dateEnd check) still calls "Rome," but partsWithDays has
+  // already clamped Rome's window to end 05-21 and given the shared day to
+  // Florence. currentLegStops must follow the day's REAL owner, not stall on
+  // yesterday's leg.
+  const trip = {
+    id: 'italy', title: 'Italy',
+    parts: [
+      { id: 'p-rome', type: 'city', place: 'Rome', dateStart: '2026-05-20', dateEnd: '2026-05-22' },
+      { id: 'p-flor', type: 'city', place: 'Florence', dateStart: '2026-05-22', dateEnd: '2026-05-24' },
+    ],
+    days: [
+      { n: 1, isoDate: '2026-05-21', stops: [{ id: 's1', name: 'Colosseum' }] },
+      { n: 2, isoDate: '2026-05-22', stops: [{ id: 's2', name: 'Train to Florence' }] },
+    ],
+  }
+  assert.equal(currentPart(trip, '2026-05-22').id, 'p-rome') // confirms the disagreement exists
+  const stops = currentLegStops(trip, '2026-05-22')
+  assert.equal(stops.length, 1)
+  assert.equal(stops[0].name, 'Train to Florence')
+})
+
+test('currentLegStops: a legacy/no-parts trip → empty (callers use allStops instead)', () => {
+  assert.deepEqual(currentLegStops({ id: 'x', days: [{ n: 1, isoDate: '2026-05-01', stops: [{ id: 's1' }] }] }, '2026-05-01'), [])
+})
+
+test('currentLegStops: never throws on null', () => {
+  assert.deepEqual(currentLegStops(null, '2026-05-01'), [])
 })

@@ -78,3 +78,36 @@ test('a composite/multi-city trip also gets the calm face, named for the current
   await expect(page.getByText('This drive')).toHaveCount(0)
   await expect(page.getByTestId('map-road-miles')).toHaveCount(0)
 })
+
+// The map's PINS scope to the CURRENT leg too (per-leg geocoding work) — Rome's
+// stops don't linger on the map once the family's in Florence. Rome carries 2
+// real stops, Florence 1; clock 2026-05-23 sits inside Rome's window (05-22–23)
+// here, so only Rome's 2 pins should render.
+const DURING_COMPOSITE_WITH_STOPS = {
+  ...DURING_COMPOSITE,
+  id: 'mf-composite-stops',
+  days: [
+    { n: 1, isoDate: '2026-05-22', date: 'Fri May 22', title: 'Rome', stops: [
+      { id: 'r1', name: 'Colosseum', lat: 41.8902, lng: 12.4922 },
+    ] },
+    { n: 2, isoDate: '2026-05-23', date: 'Sat May 23', title: 'Rome', stops: [
+      { id: 'r2', name: 'Trevi Fountain', lat: 41.9009, lng: 12.4833 },
+    ] },
+    { n: 3, isoDate: '2026-05-24', date: 'Sun May 24', title: 'Florence', stops: [
+      { id: 'f1', name: 'Uffizi', lat: 43.7678, lng: 11.2553 },
+    ] },
+  ],
+}
+
+test('a composite trip\'s map pins are scoped to the CURRENT leg — Rome\'s 2, not Florence\'s too', async ({ page }) => {
+  await seedTripIntoCache(page, DURING_COMPOSITE_WITH_STOPS)
+  await page.goto('/?person=jonathan&trip=mf-composite-stops&nosw=1')
+  await openMap(page)
+  await expect(page.getByTestId('map-where-we-are')).toBeVisible({ timeout: 7000 })
+
+  // Leaflet renders each in-bounds stop as an interactive CircleMarker (an SVG
+  // path); a composite/stay face draws no route polyline (isDrive is false),
+  // so every `.leaflet-interactive` path here IS a stop pin — 2 (Rome), never 3.
+  const pins = page.locator('.leaflet-interactive')
+  await expect(pins).toHaveCount(2, { timeout: 7000 })
+})

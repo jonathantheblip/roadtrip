@@ -284,6 +284,60 @@ export function currentPartCoords(trip, todayIso) {
   return stayPlaceCoords(trip)
 }
 
+// A geocodable query string for a leg's place, or null for a place-less
+// (transit) leg — the per-leg mirror of stayGeocodeQuery (tripShape.js). The
+// place name alone usually resolves a major city fine; when the leg carries a
+// `locale` (stamped only for a leg crossing a language boundary — the B4
+// populator) its region subtag names the country, appended for disambiguation
+// ("Florence, Italy" beats a bare "Florence" against every namesake on
+// earth). No leg carries lat/lng from any current producer (neither the AI
+// concierge nor the manual composite builder) — this is the query that fills
+// that gap via a keyless geocode (Nominatim), same as a stay's lodging.
+export function legGeocodeQuery(part) {
+  const place = partPlaceLabel(part)
+  if (!place) return null
+  const locale = typeof part?.locale === 'string' ? part.locale.trim() : ''
+  const region = locale.split('-')[1]
+  if (region) {
+    try {
+      const country = new Intl.DisplayNames(['en'], { type: 'region' }).of(region.toUpperCase())
+      if (country && !place.toLowerCase().includes(country.toLowerCase())) return `${place}, ${country}`
+    } catch {
+      // An unsupported region code falls through to the bare place name.
+    }
+  }
+  return place
+}
+
+// The CURRENT leg's own stops (day + stop merged, the same shape
+// data/trips.js's allStops returns) — for scoping the live map's pins to
+// WHERE THE TRIP IS NOW on a composite trip, instead of every city at once.
+// A legacy/stay trip has no parts to scope by; callers keep using allStops for
+// those (byte-identical, G5) and reach for this only when isCompositeTrip.
+export function currentLegStops(trip, todayIso) {
+  // A legacy/stay trip has no REAL leg to scope by (its one derived wrapper
+  // spans the whole trip) — an explicit [] keeps this self-consistent with its
+  // own name rather than silently returning "every stop" to a future caller
+  // that forgets the isCompositeTrip guard.
+  if (!hasExplicitParts(trip)) return []
+  const today = String(todayIso || '').slice(0, 10)
+  const parts = partsWithDays(trip)
+  // A shared checkout/arrival day (Rome's last day = Florence's first) is a
+  // real disagreement between two resolvers: currentPart's own inclusive date
+  // check names the DEPARTING leg (Rome), but partsWithDays already clamped
+  // that leg's window to end the day before, assigning the shared day to the
+  // ARRIVING leg instead (partsWithDays' own doc comment: "a boundary day
+  // belongs to the arriving part only"). Prefer whichever leg's OWN derived
+  // days[] actually contains today — that's the leg whose agenda you'd
+  // actually be reading on that day — and only fall back to currentPart's
+  // leg (a dateless/before/after edge with no day claiming today at all).
+  const owner =
+    parts.find((p) => (p.days || []).some((d) => d.isoDate === today)) ||
+    parts.find((p) => p.id === currentPart(trip, todayIso)?.id)
+  const days = owner?.days || []
+  return days.flatMap((d) => (d.stops || []).map((s) => ({ ...s, day: d.n, dayDate: d.date, dayTitle: d.title })))
+}
+
 // A leg's field, resolved: leg's own value → trip-level default → null.
 function legField(part, trip, k) {
   if (part && part[k] != null) return part[k]

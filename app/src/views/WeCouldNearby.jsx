@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, Star, X, Footprints, Car, Send } from 'lucide-react'
 import { isStayTrip, stayPlaceCoords, stayLabel, stayGeocodeQuery } from '../lib/tripShape'
+import { isCompositeTrip, deriveCurrentLeg, currentPartCoords, partPlaceLabel, legGeocodeQuery } from '../lib/tripParts'
 import { searchNearby, formatDistance } from '../lib/placesNearby'
 import { sunTimes } from '../lib/sunTimes'
 import { TRAVELERS, TRAVELER_DOT, TRAVELER_ORDER } from '../data/travelers'
@@ -17,12 +18,15 @@ import {
 } from '../lib/weCould'
 import { useConditions, tideLine } from '../lib/conditions'
 
-// WeCouldNearby — the never-empty "We could…" tray for a STAY home.
+// WeCouldNearby — the never-empty "We could…" tray for a STAY home, and (per-
+// leg) for a composite/multi-city trip.
 //
 // FAMILY_TRIPS_VISION §2/§3: on a stay the home leads with possibility. When
 // the trip has no curated "things to do" (a brand-new trip), this surfaces a
 // handful of nearby ideas from the place's coordinates so the tab is never
-// blank. Each person curates their own device's tray (keep / hide).
+// blank. Each person curates their own device's tray (keep / hide). On a
+// composite trip the tray re-anchors to the CURRENT leg ("in Florence, not
+// Rome") — hangout-first Design 03 "the live home, scoped to the current leg".
 //
 // The cards follow the design authority (app/docs/design/family-trips-hangout,
 // "We could…" / the Pantry): a category-tinted header, a category kicker, the
@@ -31,8 +35,9 @@ import { useConditions, tideLine } from '../lib/conditions'
 // later slice; here the action is the client-local "Keep". Real place photos
 // need a worker change and are a flagged follow-on — the header band stands in.)
 //
-// G5: renders ONLY on a stay that has coordinates — route trips and
-// coordinate-less stays get nothing (byte-identical to before). All network
+// G5: renders ONLY on a stay OR composite trip that has coordinates for its
+// current place — a plain route trip and a coordinate-less stay still get
+// nothing (byte-identical to before this leg-model work). All network
 // failure modes degrade quietly; the tray never shows a broken state.
 
 const trayCache = new Map() // key -> built tray (session lifetime)
@@ -74,10 +79,19 @@ function toSpotSnapshot(card) {
   }
 }
 
-export function WeCouldNearby({ trip, traveler, onPropose, onLocate }) {
-  const coords = useMemo(() => stayPlaceCoords(trip), [trip])
+export function WeCouldNearby({ trip, traveler, onPropose, onLocate, onLocateLeg }) {
+  // A composite (multi-city) trip anchors to WHERE IT IS NOW — the current
+  // leg's own coords — instead of one whole-trip place; a plain stay is
+  // unaffected (stayPlaceCoords, byte-identical, G5). legCtx also names the
+  // leg for the header + the per-leg "Locate this leg" fallback below.
   const isStay = isStayTrip(trip)
-  const enabled = isStay && !!coords
+  const isComposite = isCompositeTrip(trip)
+  const legCtx = useMemo(() => (isComposite ? deriveCurrentLeg(trip) : null), [isComposite, trip])
+  const coords = useMemo(
+    () => (isComposite ? currentPartCoords(trip, legCtx?.todayIso) : stayPlaceCoords(trip)),
+    [isComposite, trip, legCtx?.todayIso]
+  )
+  const enabled = (isStay || isComposite) && !!coords
   const big = traveler === 'rafa'
 
   const [status, setStatus] = useState('idle') // idle | loading | ready | error
@@ -122,12 +136,25 @@ export function WeCouldNearby({ trip, traveler, onPropose, onLocate }) {
     // identical to before — the prompt needs isStay + a geocodable address + the
     // handler).
     if (isStay && !coords && onLocate && stayGeocodeQuery(trip)) {
-      return <LocatePrompt placeName={stayLabel(trip)} onLocate={onLocate} />
+      return <LocatePrompt placeName={stayLabel(trip)} buttonLabel="Locate this stay" onLocate={onLocate} />
+    }
+    // The composite mirror: the current leg has a place NAME but no coords yet
+    // (no current producer — AI or manual — geocodes a leg at creation time in
+    // every case) → the same one-tap fallback, scoped to just this leg.
+    if (isComposite && !coords && onLocateLeg && legCtx?.part && legGeocodeQuery(legCtx.part)) {
+      const partId = legCtx.part.id
+      return (
+        <LocatePrompt
+          placeName={partPlaceLabel(legCtx.part) || legCtx.part.title || 'here'}
+          buttonLabel="Locate this leg"
+          onLocate={() => onLocateLeg(partId)}
+        />
+      )
     }
     return null
   }
 
-  const placeName = stayLabel(trip)
+  const placeName = isComposite ? (partPlaceLabel(legCtx?.part) || legCtx?.part?.title || 'here') : stayLabel(trip)
   const { tray: rankedTray, reason: conditionReason } = rankByConditions(tray, conditions)
   const view = applyCuration(rankedTray, curation) // condition order → pins/hides applied
   const shown = view.filter((c) => !catFilter || c.cat === catFilter) // + category filter
@@ -706,7 +733,7 @@ function OpenPill({ open }) {
 // trip.lodging.lat/lng); on success the trip prop gains coords and this unmounts,
 // the real tray taking over. A miss lands back here with a "Try again" + an
 // editor hint. (New trips auto-locate on create, so this is mainly a backfill.)
-function LocatePrompt({ placeName, onLocate }) {
+function LocatePrompt({ placeName, onLocate, buttonLabel = 'Locate this stay' }) {
   const [status, setStatus] = useState('idle') // idle | locating | error
   async function locate() {
     setStatus('locating')
@@ -758,7 +785,7 @@ function LocatePrompt({ placeName, onLocate }) {
           }}
         >
           <MapPin size={13} />
-          {status === 'locating' ? 'Locating…' : status === 'error' ? 'Try again' : 'Locate this stay'}
+          {status === 'locating' ? 'Locating…' : status === 'error' ? 'Try again' : buttonLabel}
         </button>
       </div>
     </section>

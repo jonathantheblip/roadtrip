@@ -14,6 +14,7 @@ import {
 import { computeOpenState, openStateColor } from '../lib/openState'
 import { LeaveWhenModal } from '../components/LeaveWhenModal'
 import { isStayTrip, stayPlaceCoords } from '../lib/tripShape'
+import { isCompositeTrip, deriveCurrentLeg, currentPartCoords } from '../lib/tripParts'
 import { WeCouldNearby } from './WeCouldNearby'
 import { useProposals } from '../lib/proposals'
 import { ProposalsBanner } from '../components/ProposalsBanner'
@@ -29,7 +30,7 @@ import { ProposeSheet } from '../components/ProposeSheet'
 // description text renders inside each card; the chip selection
 // decides which cards appear at all. They're independent — switching
 // themed surfaces does not reset filter state within a session.
-export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate }) {
+export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate, onLocateLeg }) {
   const activities = useMemo(
     () => getActivitiesForTrip(trip?.id, trip),
     [trip?.id, trip?.sharedActivities]
@@ -81,8 +82,16 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate 
   // On a STAY with coordinates, the "We could…" nearby tray leads — so a
   // brand-new trip with no curated list never opens to a blank page
   // (FAMILY_TRIPS_VISION §2/§3). When that tray is present, drop the
-  // dead-end "No activities seeded" line; the tray speaks for the page.
-  const nearbyEnabled = isStayTrip(trip) && !!stayPlaceCoords(trip)
+  // dead-end "No activities seeded" line; the tray speaks for the page. A
+  // composite (multi-city) trip gets the same treatment, scoped to whichever
+  // leg it's currently in (Design 03 "the live home, scoped to the current
+  // leg") — WeCouldNearby resolves the leg + its coords itself; this only
+  // needs to know whether a real leg-coord anchor exists, for the header/
+  // subtitle above the tray.
+  const isComposite = isCompositeTrip(trip)
+  const legCtx = useMemo(() => (isComposite ? deriveCurrentLeg(trip) : null), [isComposite, trip])
+  const legCoords = isComposite ? currentPartCoords(trip, legCtx?.todayIso) : null
+  const nearbyEnabled = (isStayTrip(trip) && !!stayPlaceCoords(trip)) || (isComposite && !!legCoords)
   // "Getting there" origin: the stay place on a stay (its lodging coords), else
   // the trip's home base — so the affordance appears on stays too (tripHomeBase
   // deliberately ignores trip.lodging coords, which a stay relies on).
@@ -169,6 +178,7 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate 
         traveler={traveler}
         onPropose={proposalsOn ? setProposeSpot : undefined}
         onLocate={onLocate ? () => onLocate(trip) : undefined}
+        onLocateLeg={onLocateLeg}
       />
 
       {proposeSpot && (

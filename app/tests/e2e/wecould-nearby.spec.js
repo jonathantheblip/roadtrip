@@ -206,6 +206,79 @@ test.describe('We could… nearby tray (slice 3a)', () => {
     await expect(page.getByText('Cabin Diner')).toBeVisible()
   })
 
+  // THE COMPOSITE MIRROR — a multi-city trip anchors "We could…" to WHERE IT IS
+  // NOW (the current leg), not one whole-trip place. Clock is 2026-05-23: Rome's
+  // window (05-20 – 05-22) is over, Florence (05-23 – 05-24) is the current leg.
+  const COMPOSITE_LOCATED = {
+    id: 'wecould-composite-located',
+    status: 'planning',
+    title: 'Italy composite',
+    subtitle: 'fixture',
+    dateRange: 'May 20 – 26, 2026',
+    dateRangeStart: '2026-05-20',
+    dateRangeEnd: '2026-05-26',
+    travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+    parts: [
+      { id: 'p-rome', type: 'city', place: { name: 'Rome', lat: 41.9028, lng: 12.4964 }, dateStart: '2026-05-20', dateEnd: '2026-05-22' },
+      { id: 'p-flor', type: 'city', place: { name: 'Florence', lat: 43.7696, lng: 11.2558 }, dateStart: '2026-05-23', dateEnd: '2026-05-24' },
+    ],
+    days: [],
+  }
+
+  test('a composite trip\'s tray anchors to the CURRENT leg (Florence), not the whole trip', async ({ page }) => {
+    await seedTripIntoCache(page, COMPOSITE_LOCATED)
+    await mockNearby(page)
+    await page.goto(`/?person=jonathan&trip=${COMPOSITE_LOCATED.id}&nosw=1`)
+    await expect(page.getByTestId('stay-tabbar')).toBeVisible({ timeout: 10000 })
+    await page.locator('.stay-tab', { hasText: 'We could' }).click()
+    await expect(page.getByTestId('wecould-nearby')).toBeVisible({ timeout: 10000 })
+
+    await expect(page.getByTestId('wecould-nearby')).toContainText('Ideas near Florence')
+    await expect(page.getByTestId('wecould-card').first()).toBeVisible()
+  })
+
+  // Florence has a place NAME but no coords yet (the real shape today — no
+  // current producer, AI or manual, geocodes a leg at creation time) → the
+  // per-leg mirror of "Locate this stay": "Locate this leg" fills the tray.
+  const COMPOSITE_UNLOCATED = {
+    ...COMPOSITE_LOCATED,
+    id: 'wecould-composite-unlocated',
+    parts: [
+      { id: 'p-rome', type: 'city', place: 'Rome', dateStart: '2026-05-20', dateEnd: '2026-05-22' },
+      { id: 'p-flor', type: 'city', place: 'Florence', locale: 'it-IT', dateStart: '2026-05-23', dateEnd: '2026-05-24' },
+    ],
+  }
+
+  test('an UNLOCATED composite leg offers "Locate this leg" → tapping it geocodes + fills the tray, scoped to Florence only', async ({ page }) => {
+    await seedTripIntoCache(page, COMPOSITE_UNLOCATED)
+    await mockNearby(page)
+    await page.route(/nominatim\.openstreetmap\.org\/search/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ lat: '43.7696', lon: '11.2558' }]) }),
+    )
+    await page.goto(`/?person=jonathan&trip=${COMPOSITE_UNLOCATED.id}&nosw=1`)
+    await expect(page.getByTestId('stay-tabbar')).toBeVisible({ timeout: 10000 })
+    await page.locator('.stay-tab', { hasText: 'We could' }).click()
+
+    await expect(page.getByTestId('wecould-locate')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('wecould-locate')).toContainText('Florence')
+    await expect(page.getByTestId('wecould-card')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Locate this leg/i })).toBeVisible()
+    await expectNoSeriousA11y(page, { include: '[data-testid="wecould-nearby"]', label: 'we could · locate leg prompt' })
+
+    await page.getByTestId('wecould-locate-btn').click()
+    await expect(page.getByTestId('wecould-card').first()).toBeVisible({ timeout: 10000 })
+
+    // Rome — the OTHER leg — never got geocoded (the leg-scoped fallback only
+    // located the CURRENT leg), and never should be: this trip's "today" is
+    // Florence's, not Rome's.
+    const parts = await page.evaluate((id) => {
+      const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+      return all.find((t) => t.id === id)?.parts || []
+    }, COMPOSITE_UNLOCATED.id)
+    expect(parts.find((p) => p.id === 'p-flor')?.coords).toEqual({ lat: 43.7696, lng: 11.2558 })
+    expect(parts.find((p) => p.id === 'p-rome')?.coords).toBeUndefined()
+  })
+
   // Contrast gate across every lens — the accent-fill ("Kept") + category
   // tints + status dots must pass WCAG AA on each surface (the recurring trap).
   for (const who of ['jonathan', 'helen', 'aurelia', 'rafa']) {

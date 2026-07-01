@@ -11,8 +11,7 @@ import {
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { RouteMapLazy } from '../components/RouteMapLazy'
 import { isStayTrip, stayLabel, stayPlaceCoords, atPlace } from '../lib/tripShape'
-import { isCompositeTrip, currentPart, currentPartCoords, partPlaceLabel } from '../lib/tripParts'
-import { todayLocalIso } from '../lib/localDate'
+import { isCompositeTrip, currentPart, currentPartCoords, partPlaceLabel, currentLegStops, deriveCurrentLeg } from '../lib/tripParts'
 import './MapView.css'
 
 // The device must be within ~3 km of the route line to count as "on the trip"
@@ -27,20 +26,33 @@ const OFF_ROUTE_LIMIT_M = 3000
 // drive %/bar/road rail is the exception, shown ONLY when the trip is a genuine
 // road trip (a drive is the live thing). Every stay and every composite/multi-
 // city trip gets the calm "Where we are" place face — no route line, no %, no
-// "up next" drive rail (which answered a question those trips never asked). The
-// full per-leg city/mixed detail (next-leg walk/transit rows, the FLIGHT·TRAIN·
-// ON-FOOT strip) + live presence bubbles wait for the leg data-model + a transit
-// source; this ships the core rule now. Themed via the activePerson tile/accent.
+// "up next" drive rail (which answered a question those trips never asked). A
+// composite trip's pins are leg-scoped (currentLegStops) — the map shows
+// wherever the family is NOW, not every city on the itinerary at once. The
+// next-leg walk/transit rows, the FLIGHT·TRAIN·ON-FOOT strip, + live presence
+// bubbles still wait for a transit source; this ships the place + pin rules
+// now. Themed via the activePerson tile/accent.
 export function MapView({ trip, traveler = 'everyone', onBack }) {
-  const stops = useMemo(() => allStops(trip), [trip])
-  const geometry = useMemo(() => buildRouteGeometry(stops), [stops])
-
   // WHICH FACE. A stay or a composite (multi-city) trip is NOT a drive — its
   // "live thing" is where you are, not a percentage of a road. Only a genuine
   // road trip (neither stay nor composite) earns the drive face + its bar.
   const isStay = useMemo(() => isStayTrip(trip), [trip])
   const isComposite = useMemo(() => isCompositeTrip(trip), [trip])
   const isDrive = !isStay && !isComposite
+
+  // Hoisted above `stops`: a composite trip's map pins scope to the leg it's IN
+  // today (currentLegStops) — Rome's pins don't linger once the family's in
+  // Florence. A stay/drive is unaffected (allStops, byte-identical, G5).
+  // deriveCurrentLeg's todayIso (leg-timezone-aware when the leg carries a tz) —
+  // not the bare device-local date — so the map picks the SAME current leg
+  // "We could…" does; a stay/drive has no leg tz, so this is byte-identical to
+  // todayLocalIso() for them (deriveCurrentLeg falls back to device-local, G5).
+  const today = useMemo(() => deriveCurrentLeg(trip).todayIso, [trip])
+  const stops = useMemo(
+    () => (isComposite ? currentLegStops(trip, today) : allStops(trip)),
+    [isComposite, trip, today]
+  )
+  const geometry = useMemo(() => buildRouteGeometry(stops), [stops])
 
   // Real road route (Google Routes via the worker /route, async + cached).
   // The drawn route + traveled overlay upgrade from straight-line to real
@@ -150,7 +162,7 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
   // WHERE-WE-ARE face data (stay + composite). The place we're anchored at — a
   // stay's lodging, or the composite's current leg (currentPartCoords falls back
   // to the stay place, and is object-safe re: the string-vs-object part.place).
-  const today = todayLocalIso()
+  // `today` is hoisted above (feeds the leg-scoped `stops` too).
   const placeName = useMemo(() => {
     if (isStay) return stayLabel(trip)
     if (isComposite) return partPlaceLabel(currentPart(trip, today)) || trip?.title || 'where we are'

@@ -401,6 +401,40 @@ test.describe('Claude-in-App — create_trip', () => {
       .toBe('42.0584,-70.1787')
   })
 
+  // Auto-locate on create, the per-leg mirror: a BIGGER trip's city/stay legs
+  // carry a place NAME but no coords (no current producer — the AI concierge or
+  // the manual composite builder — emits lat/lng for a leg). Without this,
+  // "We could…" and the live map would open anchored nowhere for that leg. The
+  // create path best-effort geocodes each leg missing coords at save time — a
+  // pure transit leg (the flight, the drive) is skipped, not force-fit.
+  test('a BIGGER trip\'s city/stay legs auto-locate on create (geocode → part.coords); transit legs are skipped', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [replyWithCard(italyCard('ct-italy-2'), 'Here’s the shape of it.')])
+    // The keyless geocoder the create path calls — mocked so CI never hits OSM.
+    await page.route(/nominatim\.openstreetmap\.org\/search/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ lat: '41.9028', lon: '12.4964' }]) }),
+    )
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'Italy in July: fly to Rome, 3 nights, then a Tuscan villa a week, then drive the Amalfi coast')
+    const card = dialog.getByTestId('confirm-card-create_trip')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.getByTestId('confirm-card-save').click()
+
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+            const t = all.find((x) => x.title === 'Italy, summer')
+            return Array.isArray(t?.parts) ? t.parts.map((p) => (p.coords ? `${p.type}:${p.coords.lat},${p.coords.lng}` : `${p.type}:none`)) : null
+          }),
+        { timeout: 5000 }
+      )
+      .toEqual(['flight:none', 'city:41.9028,12.4964', 'stay:41.9028,12.4964', 'drive:none'])
+  })
+
   test('a SURPRISE part: the review shows who is hidden + can draft a cover; the saved part is masked, author from the session', async ({ page }) => {
     await seedTripIntoCache(page, FIXTURE_TRIP)
     mockIndexChat(page, [replyWithCard(surpriseCard('ct-surp-1'), 'Here’s the shape of it.')])

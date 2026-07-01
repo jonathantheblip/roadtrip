@@ -5,6 +5,7 @@ import { Switcher } from './views/Switcher'
 import { StayTabBar, STAY_TABS, tabForView } from './views/StayTabBar'
 import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
 import { isStayTrip, stayPlace, stayPlaceCoords, stayGeocodeQuery } from './lib/tripShape'
+import { isCompositeTrip, getParts, partCoords, legGeocodeQuery } from './lib/tripParts'
 import { geocodeAddress } from './lib/geocode'
 import { useGeolocationWhen } from './hooks/useGeolocation'
 import { usePresence } from './lib/presence'
@@ -959,6 +960,45 @@ export default function App() {
     return { ok: true }
   }
 
+  // Geocode EVERY composite leg missing coords onto trip.parts[i].coords — the
+  // per-leg mirror of locateTripBestEffort, called for a brand-new AI/manual
+  // composite trip so "We could…" and the live map open already anchored per
+  // city instead of empty until someone taps a per-leg "Locate" fallback.
+  // Best-effort + sequential (geocode.js's own throttle already paces
+  // Nominatim); a miss on one leg never blocks the others or the save.
+  async function locatePartsBestEffort(trip) {
+    if (!isCompositeTrip(trip)) return trip
+    let changed = false
+    const nextParts = []
+    for (const p of getParts(trip)) {
+      const q = !partCoords(p) && legGeocodeQuery(p)
+      const hit = q ? await geocodeAddress(q) : null
+      if (hit) { nextParts.push({ ...p, coords: hit }); changed = true }
+      else nextParts.push(p)
+    }
+    return changed ? { ...trip, parts: nextParts } : trip
+  }
+
+  // The "Locate this leg" button (WeCouldNearby) for an already-saved composite
+  // trip whose CURRENT leg has no coords (an older AI trip, or a creation-time
+  // geocode miss). Geocodes just that one leg + persists via the same
+  // concurrency-safe upsert pattern as onLocateStay.
+  async function onLocateLeg(trip, partId) {
+    if (!trip || !partId) return { ok: false }
+    const current = allTrips.find((t) => t.id === trip.id) || trip
+    const parts = getParts(current)
+    const idx = parts.findIndex((p) => p.id === partId)
+    if (idx < 0) return { ok: false }
+    if (partCoords(parts[idx])) return { ok: true } // already located (a race with another device)
+    const q = legGeocodeQuery(parts[idx])
+    if (!q) return { ok: false }
+    const hit = await geocodeAddress(q)
+    if (!hit) return { ok: false }
+    const nextParts = parts.map((p, i) => (i === idx ? { ...p, coords: hit } : p))
+    await tripsApi.upsertTrip({ ...current, parts: nextParts })
+    return { ok: true }
+  }
+
   async function handleClaudeCreateTrip(card) {
     // Pass the ids already in the store so a brand-new trip whose deterministic
     // slug+month collides with a DIFFERENT existing trip gets a unique suffix
@@ -976,6 +1016,13 @@ export default function App() {
     // stay" button (WeCouldNearby) remains as the manual fallback.
     if (isStayTrip(newTrip) && !stayPlaceCoords(newTrip)) {
       newTrip = await locateTripBestEffort(newTrip)
+    }
+    // Auto-locate a COMPOSITE trip's legs the same way — a city-break leg has a
+    // place NAME but no coords from any current producer (AI or the manual
+    // composite builder), so "We could…"/the map would anchor nowhere for that
+    // leg. Best-effort; the per-leg "Locate this leg" fallback covers a miss.
+    if (isCompositeTrip(newTrip)) {
+      newTrip = await locatePartsBestEffort(newTrip)
     }
     // upsertTrip writes the local cache synchronously, then best-effort
     // mirrors to the Worker. A failed Worker push returns { ok: false }
@@ -1067,6 +1114,15 @@ export default function App() {
   // NewTrip shows its inline error) if upsertTrip itself rejected — i.e. the
   // LOCAL write failed, which is the one case where there's nothing to open.
   async function handleCreateTrip(newTrip) {
+    // The shared save path for BOTH manual front doors — a single-place NewTrip
+    // (which already geocodes its own lodging address before calling this) and
+    // the manual composite builder (NewTripComposite), which has no geocode step
+    // of its own. Best-effort locate every composite leg here so "We could…"/the
+    // map open already anchored regardless of which door built the trip — the
+    // same locatePartsBestEffort the Claude-authored path calls.
+    if (isCompositeTrip(newTrip)) {
+      newTrip = await locatePartsBestEffort(newTrip)
+    }
     let res
     try {
       res = await tripsApi.upsertTrip(newTrip)
@@ -1631,6 +1687,7 @@ export default function App() {
             onBack={() => setView({ name: 'trip' })}
             onOpenImport={openImport}
             onLocate={onLocateStay}
+            onLocateLeg={(partId) => onLocateLeg(trip, partId)}
           />
         )}
         {view.name === 'import' && trip && (
