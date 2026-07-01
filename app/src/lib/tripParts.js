@@ -27,6 +27,7 @@
 //     visibility?,              // surprise scoping (set by the intake; enforced by worker/src/surprises.js)
 //   }
 import { inferTripShape, stayPlace, stayLabel, stayPlaceCoords } from './tripShape.js'
+import { localDateIso } from './localDate.js'
 
 // The kinds of part a trip can hold. Stay/city/drive/flight are the core four; event + the
 // transport trio are the "flexible, not complex" long tail (Jonathan's pick).
@@ -281,6 +282,42 @@ export function currentPartCoords(trip, todayIso) {
     if (c) return { lat: c.lat, lng: c.lng, label: partPlaceLabel(part) || part?.title || '' }
   }
   return stayPlaceCoords(trip)
+}
+
+// A leg's field, resolved: leg's own value → trip-level default → null.
+function legField(part, trip, k) {
+  if (part && part[k] != null) return part[k]
+  if (trip && trip[k] != null) return trip[k]
+  return null
+}
+
+// deriveCurrentLeg — the current leg PLUS its resolved orientation context AND
+// the trip's "today" in that leg's zone. TIMEZONE-AWARE and SELF-CONSISTENT: ONE
+// leg drives everything (zone + hero + agenda), so the hero city and the clock's
+// zone can never disagree at a cross-tz boundary (the split-brain a two-variable
+// version had). Resolution:
+//   1. bootstrap a provisional zone from the device-local date,
+//   2. take "today" in that zone and select the leg containing it,
+//   3. read THAT SAME leg's own zone/fields back + its own `todayIso`.
+// `now` is the instant (a Date; default new Date() for the live home — the e2e
+// clock stub freezes it; unit tests pass a fixed instant for determinism).
+// tz/currency/locale resolve leg-field → trip default → null; members is the
+// leg's own roster (or null = everyone). GREENFIELD today (no producer writes
+// these), so legTz is null → todayIso === device today and the home stays
+// byte-identical ("no delta → no module", Design 05). Pure; never throws.
+export function deriveCurrentLeg(trip, now = new Date()) {
+  const provisional = currentPart(trip, localDateIso(now))
+  const provTz = legField(provisional, trip, 'tz')
+  const todayIso = localDateIso(now, provTz)
+  const part = currentPart(trip, todayIso)
+  return {
+    part,
+    todayIso,
+    tz: legField(part, trip, 'tz'),
+    currency: legField(part, trip, 'currency'),
+    locale: legField(part, trip, 'locale'),
+    members: part && Array.isArray(part.members) ? part.members : null,
+  }
 }
 
 // "3:00 PM" / "9:00 AM" / "17:00" → minutes since midnight, or null when

@@ -114,6 +114,17 @@ const TWO_PART_OBJECT_TRIP = {
     { id: 'p-b', type: 'city', place: { name: 'Florence', lat: 43.7696, lng: 11.2558 }, dateStart: '2026-05-24', dateEnd: '2026-05-25' },
   ],
 }
+// A leg carrying an IANA timezone — the signal that engages leg-local time + the
+// honest dual clock. The current leg on 2026-05-23 is Rome (Europe/Rome). Under
+// the UTC clock stub the viewer zone (UTC) differs from Rome, so the clock shows.
+const TZ_LEG_TRIP = {
+  ...DURING_STAY,
+  id: 'lhh-tz',
+  parts: [
+    { id: 'p-a', type: 'city', place: { name: 'Rome', lat: 41.9028, lng: 12.4964 }, tz: 'Europe/Rome', currency: 'EUR', locale: 'it-IT', dateStart: '2026-05-22', dateEnd: '2026-05-23' },
+    { id: 'p-b', type: 'city', place: { name: 'Florence', lat: 43.7696, lng: 11.2558 }, tz: 'Europe/Rome', dateStart: '2026-05-24', dateEnd: '2026-05-25' },
+  ],
+}
 
 test('a ONE-part stay renders the simple "At [place]" home — not the complex frame (4c)', async ({ page }) => {
   await seedTripIntoCache(page, ONE_PART_STAY)
@@ -133,6 +144,22 @@ test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)
   await expect(home).toBeVisible({ timeout: 10000 })
   await expect(home.getByText('The plan')).toBeVisible()
   await expect(home.getByText(/^In (Rome|Florence)/)).toBeVisible()
+  // No leg timezone → no dual clock (the gate: "no delta → no module").
+  await expect(home.getByTestId('dual-clock')).toHaveCount(0)
+})
+
+test('a leg with a timezone shows the honest dual clock — leg time leads, yours faint', async ({ page }) => {
+  await seedTripIntoCache(page, TZ_LEG_TRIP)
+  await page.goto('/?person=jonathan&trip=lhh-tz&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  const clock = home.getByTestId('dual-clock')
+  await expect(clock).toBeVisible()
+  // The current leg (Rome) leads; the viewer's own time is named faintly. (Exact
+  // times are unit-tested against fixed instants; here we prove the surface +
+  // the leg naming, which is locale-robust.)
+  await expect(clock).toContainText('in Rome')
+  await expect(clock).toContainText('where you are')
 })
 
 test('a composite leg with an OBJECT place names the hero "In Rome" — never "[object Object]" (leg-model object-safe)', async ({ page }) => {

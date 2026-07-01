@@ -9,7 +9,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { localDateIso, todayLocalIso } from '../../src/lib/localDate.js'
+import { localDateIso, todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../../src/lib/localDate.js'
 
 // localDateIso reads getFullYear/getMonth/getDate — i.e. the LOCAL calendar
 // fields of the Date. To assert the midnight boundary deterministically on
@@ -67,4 +67,45 @@ test('todayLocalIso: matches localDateIso(new Date())', () => {
   const expected = localDateIso(new Date())
   assert.equal(todayLocalIso(), expected)
   assert.match(todayLocalIso(), /^\d{4}-\d{2}-\d{2}$/)
+})
+
+// ── Per-leg timezone helpers (keyless, Intl-based) ───────────────────────────
+// These use EXPLICIT UTC instants + EXPLICIT IANA zones, so the assertions hold
+// on any host (dev box or the UTC CI runner) — the zone, not the host, decides.
+
+test('localDateIso(d, tz): the calendar date IN THAT ZONE, not the host/UTC date', () => {
+  // 23:30 UTC on May 23. Rome (UTC+2 in May) has already rolled to May 24;
+  // Los Angeles (UTC-7) is still May 23 afternoon. The date follows the ZONE.
+  const inst = new Date('2026-05-23T23:30:00.000Z')
+  assert.equal(localDateIso(inst, 'Europe/Rome'), '2026-05-24')
+  assert.equal(localDateIso(inst, 'America/Los_Angeles'), '2026-05-23')
+  // A zone +14 pushes noon UTC into the next day.
+  assert.equal(localDateIso(new Date('2026-05-23T12:00:00.000Z'), 'Pacific/Kiritimati'), '2026-05-24')
+})
+
+test('localDateIso(d, invalidTz): degrades to device-local, never throws', () => {
+  const d = new Date(2026, 4, 2, 0, 30, 0) // local 2026-05-02 00:30
+  assert.equal(localDateIso(d, 'Not/AZone'), '2026-05-02') // == the no-tz device answer
+})
+
+test('nowMinutesInZone: minutes-since-midnight in the given zone (deterministic 24h)', () => {
+  const noonUtc = new Date('2026-05-23T12:00:00.000Z')
+  assert.equal(nowMinutesInZone('Europe/Rome', noonUtc), 14 * 60) // 14:00 Rome (UTC+2)
+  assert.equal(nowMinutesInZone('America/Los_Angeles', noonUtc), 5 * 60) // 05:00 LA (UTC-7)
+  assert.equal(nowMinutesInZone('UTC', noonUtc), 12 * 60)
+  // Across the UTC midnight: 00:30 UTC is 02:30 in Rome.
+  assert.equal(nowMinutesInZone('Europe/Rome', new Date('2026-05-23T00:30:00.000Z')), 2 * 60 + 30)
+})
+
+test('clockInZone: applies the zone (two zones, same instant → different strings)', () => {
+  const inst = new Date('2026-05-23T12:00:00.000Z')
+  const rome = clockInZone('Europe/Rome', inst)
+  const la = clockInZone('America/Los_Angeles', inst)
+  assert.equal(typeof rome, 'string')
+  assert.ok(rome.length > 0)
+  assert.notEqual(rome, la) // 14:00 vs 05:00 — different regardless of locale/format
+})
+
+test('viewerZone: returns a string (the host IANA zone or "")', () => {
+  assert.equal(typeof viewerZone(), 'string')
 })

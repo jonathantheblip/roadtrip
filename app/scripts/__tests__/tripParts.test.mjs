@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords } =
+const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords, deriveCurrentLeg } =
   await import('../../src/lib/tripParts.js')
 
 function legacyStay() {
@@ -341,6 +341,83 @@ test('partCoords: coords slot, object place, precedence, and null cases', () => 
   // An object place without finite lat/lng → null.
   assert.equal(partCoords({ place: { name: 'Rome' } }), null)
   assert.equal(partCoords(null), null)
+})
+
+// ── deriveCurrentLeg — the current leg + resolved orientation context ─────────
+// tz/currency/locale/members are the leg model's forward slots: leg field →
+// trip-level default → null (members is the leg's own roster or null=everyone).
+// Greenfield today, so a leg/trip without them yields nulls (byte-identical home).
+// Takes an INSTANT (Date) — noon-UTC instants keep the selected day host-agnostic.
+
+test('deriveCurrentLeg: resolves the active leg + its own tz/currency/locale/members', () => {
+  const trip = {
+    id: 'eu',
+    parts: [
+      { id: 'a', type: 'city', place: 'Rome', tz: 'Europe/Rome', currency: 'EUR', locale: 'it-IT', members: ['jonathan'], dateStart: '2026-05-01', dateEnd: '2026-05-03' },
+      { id: 'b', type: 'city', place: 'Paris', dateStart: '2026-05-04', dateEnd: '2026-05-06' },
+    ],
+  }
+  const inRome = deriveCurrentLeg(trip, new Date('2026-05-02T12:00:00.000Z'))
+  assert.equal(inRome.part.id, 'a')
+  assert.equal(inRome.tz, 'Europe/Rome')
+  assert.equal(inRome.currency, 'EUR')
+  assert.equal(inRome.locale, 'it-IT')
+  assert.deepEqual(inRome.members, ['jonathan'])
+  assert.equal(inRome.todayIso, '2026-05-02') // today in the leg's own zone
+  // Leg b carries NONE of the fields → all null (no trip-level default here).
+  const inParis = deriveCurrentLeg(trip, new Date('2026-05-05T12:00:00.000Z'))
+  assert.equal(inParis.part.id, 'b')
+  assert.equal(inParis.tz, null)
+  assert.equal(inParis.currency, null)
+  assert.equal(inParis.members, null) // null = everyone, not an empty roster
+})
+
+test('deriveCurrentLeg: a trip-level default fills a leg that omits the field', () => {
+  const trip = {
+    id: 'us', tz: 'America/New_York',
+    parts: [
+      { id: 'a', type: 'city', place: 'NYC', dateStart: '2026-05-01', dateEnd: '2026-05-03' },
+      { id: 'b', type: 'city', place: 'Boston', dateStart: '2026-05-04', dateEnd: '2026-05-06' },
+    ],
+  }
+  assert.equal(deriveCurrentLeg(trip, new Date('2026-05-02T12:00:00.000Z')).tz, 'America/New_York') // leg has none → trip default
+})
+
+test('deriveCurrentLeg: a legacy stay (no leg tz) yields nulls — the home stays device-local', () => {
+  const ctx = deriveCurrentLeg(legacyStay(), new Date('2026-07-04T12:00:00.000Z'))
+  assert.equal(ctx.part.derived, true) // the one wrapper
+  assert.equal(ctx.tz, null)
+  assert.equal(ctx.currency, null)
+  assert.equal(ctx.locale, null)
+  assert.equal(ctx.members, null)
+})
+
+test('deriveCurrentLeg: at a cross-tz leg boundary, part + tz + todayIso all speak for ONE leg', () => {
+  // The split-brain bug: a two-variable version read the zone from the
+  // device-today leg but the hero/agenda from the leg-today leg, so at a cross-tz
+  // handoff the clock named one city while the screen showed another (~12h wide,
+  // on ordinary multi-day legs). This pins that ONE leg drives everything.
+  const trip = {
+    id: 'rm',
+    parts: [
+      { id: 'rome', type: 'city', place: 'Rome', tz: 'Europe/Rome', dateStart: '2026-05-20', dateEnd: '2026-05-23' },
+      { id: 'maui', type: 'city', place: 'Maui', tz: 'Pacific/Honolulu', dateStart: '2026-05-24', dateEnd: '2026-05-28' },
+    ],
+  }
+  // 2026-05-24T08:00Z: 10:00 in Rome on the 24th, 22:00 in Honolulu on the 23rd.
+  const ctx = deriveCurrentLeg(trip, new Date('2026-05-24T08:00:00.000Z'))
+  assert.ok(ctx.part)
+  // The zone reported is the CHOSEN part's own zone — never a different leg's.
+  assert.equal(ctx.tz, ctx.part.tz)
+  // todayIso selects that SAME part — part and "today" are one leg, not two.
+  assert.equal(currentPart(trip, ctx.todayIso).id, ctx.part.id)
+})
+
+test('deriveCurrentLeg: never throws on null', () => {
+  const ctx = deriveCurrentLeg(null, new Date('2026-05-02T12:00:00.000Z'))
+  assert.equal(ctx.part, null)
+  assert.equal(ctx.tz, null)
+  assert.equal(ctx.members, null)
 })
 
 test('currentPartCoords: a STRING-place leg with a coords slot anchors to those coords', () => {

@@ -28,9 +28,9 @@ import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
 import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
-import { todayLocalIso } from '../lib/localDate'
+import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
 import { TRAVELERS } from '../data/travelers'
-import { isCompositeTrip, currentPart, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel } from '../lib/tripParts'
+import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg } from '../lib/tripParts'
 import { PartsOutline } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -48,13 +48,13 @@ function relTime(ms) {
   if (hr < 24) return `${hr}h ago`
   return `${Math.round(hr / 24)}d ago`
 }
-// Day count / countdown from the real trip dates (local). No faking.
-function dayInfo(trip) {
+// Day count / countdown from the real trip dates. `today` is the trip's today —
+// leg-local when the current leg carries a tz, else device-local. No faking.
+function dayInfo(trip, today = todayLocalIso()) {
   const nights = stayNights(trip)
   const start = trip?.dateRangeStart
   const end = trip?.dateRangeEnd
   if (!start) return { nights }
-  const today = todayLocalIso()
   const days = (a, b) => Math.round((Date.parse(`${b}T00:00:00`) - Date.parse(`${a}T00:00:00`)) / 86400000)
   if (today < start) return { nights, daysUntil: days(today, start) }
   if (end && today > end) return { nights, after: true }
@@ -120,7 +120,17 @@ export function LivingHeartHome({
   // woven story + a photo wall + a prominent "relive it"; it sheds the upcoming /
   // agenda / now bits and the per-lens broadsheet/timeline/roll (retired). ONE home.
   const isAfter = phase === 'after'
-  const di = useMemo(() => dayInfo(trip), [trip])
+  // Per-leg timezone honesty (hangout-first 06/03): the trip tells time in the
+  // CURRENT LEG's zone, not the phone's — and deriveCurrentLeg resolves the leg,
+  // its zone, and the trip's "today" in that zone in ONE consistent pass, so the
+  // hero city and the dual clock can never name different legs at a cross-tz
+  // boundary. GREENFIELD — no trip carries a leg tz yet, so legTz is null and
+  // todayIso === device today: byte-identical for every current trip (G5). Only a
+  // leg with an explicit tz engages leg-local time + the dual clock below.
+  const legCtx = useMemo(() => deriveCurrentLeg(trip, new Date()), [trip])
+  const legTz = legCtx.tz
+  const todayIso = legCtx.todayIso
+  const di = useMemo(() => dayInfo(trip, todayIso), [trip, todayIso])
   // A complex/composite trip (a city break, flights + timed things) is still the
   // ONE living-heart home, shape-aware (FAMILY_TRIPS_VISION §11): it leads with the
   // PART it's in now and surfaces the next timed thing just-in-time (its ticket).
@@ -130,11 +140,19 @@ export function LivingHeartHome({
   // renders the simple "At [place]" home (Design decision 4c). Stays/routes/legacy
   // trips stay byte-identical (partCount 0 or 1 → not composite; G5).
   const isComplex = isCompositeTrip(trip)
-  const curPart = useMemo(() => (isComplex ? currentPart(trip, todayLocalIso()) : null), [isComplex, trip])
+  // The SAME leg deriveCurrentLeg resolved the zone/today from — so the hero,
+  // dual clock, agenda, and coords all speak for one leg (never a cross-tz mix).
+  const curPart = isComplex ? legCtx.part : null
   // Object-safe: a leg's place is a string (composite) OR an object (a coords-
   // carrying leg) — read the display label through the one shared reader so a
   // coords-bearing leg never renders "In [object Object]".
   const curPlaceLabel = useMemo(() => partPlaceLabel(curPart), [curPart])
+  // The honest dual clock (Design 03/04): the trip's time leads, the viewer's
+  // shows faintly — but ONLY when the current leg's zone differs from the
+  // viewer's ("no delta → no module", 05). No legTz (every trip today) → never
+  // shows: byte-identical (G5/G6). Requires a known viewer zone to claim a delta.
+  const viewerTz = viewerZone()
+  const showDualClock = !isAfter && !!legTz && !!viewerTz && viewerTz !== legTz
   const partN = isComplex ? partCount(trip) : 0
   const partIdx = useMemo(
     () => (curPart ? getParts(trip).findIndex((p) => p.id === curPart.id) : -1),
@@ -142,26 +160,26 @@ export function LivingHeartHome({
   )
   const nextThing = useMemo(() => {
     if (!isComplex) return null
-    const d = new Date()
-    return nextTimedStop(trip, { todayIso: todayLocalIso(), nowMinutes: d.getHours() * 60 + d.getMinutes() })
-  }, [isComplex, trip])
+    // "Now" for the just-in-time ticket ticks on LEG time (nowMinutesInZone falls
+    // back to device time when the leg has no tz — byte-identical today).
+    return nextTimedStop(trip, { todayIso, nowMinutes: nowMinutesInZone(legTz) })
+  }, [isComplex, trip, todayIso, legTz])
   const nextWhen = useMemo(() => {
     if (!nextThing) return ''
-    const today = todayLocalIso()
-    const dayPart = nextThing.iso === today ? 'Today'
-      : nextThing.iso === isoPlus1(today) ? 'Tomorrow'
+    const dayPart = nextThing.iso === todayIso ? 'Today'
+      : nextThing.iso === isoPlus1(todayIso) ? 'Tomorrow'
       : (nextThing.day?.date || '')
     return [dayPart, (nextThing.stop.time || '').trim()].filter(Boolean).join(' · ')
-  }, [nextThing])
+  }, [nextThing, todayIso])
   // The common shapes (stay / hangout / mixed) lead with the place. The rare road
   // trip or place-less itinerary leads with the day's focus instead — a single
   // "At [place]" doesn't fit a moving or place-less trip (family-trips, never
   // road-trip logic). The place is still in the small line + the ambient day count.
   const todayTitle = useMemo(() => {
     const days = trip?.days || []
-    const d = days.find((x) => x.isoDate === todayLocalIso()) || days[0]
+    const d = days.find((x) => x.isoDate === todayIso) || days[0]
     return (d?.title || '').trim()
-  }, [trip])
+  }, [trip, todayIso])
   const heroBig = isAfter
     ? (isStay ? place : (trip.title || place || 'Your trip')) // a keepsake header, not "At [place]"
     : isComplex
@@ -170,7 +188,7 @@ export function LivingHeartHome({
   // Anchor to WHERE THE TRIP IS NOW — the active leg's place on a composite trip,
   // else the trip-level stay anchor (currentPartCoords falls back to it). Identical
   // to before for a stay/route; on a multi-city trip the hero/sun re-anchor per leg.
-  const coords = useMemo(() => currentPartCoords(trip, todayLocalIso()), [trip])
+  const coords = useMemo(() => currentPartCoords(trip, todayIso), [trip, todayIso])
   const sun = useMemo(() => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null), [coords?.lat, coords?.lng])
   const heroUrl = (!heroErr && (trip.heroImage || trip.heroResolved?.url)) || null
 
@@ -230,12 +248,11 @@ export function LivingHeartHome({
   const arrival = useMemo(() => findArrivalStop(trip), [trip])
   const agenda = useMemo(() => {
     const days = trip?.days || []
-    const today = todayLocalIso()
-    let day = days.find((d) => d.isoDate === today)
+    let day = days.find((d) => d.isoDate === todayIso)
     if (!day && upcoming) day = days.find((d) => (d.stops || []).some((s) => s.kind !== 'lodging' && !s.flightNumber))
     const stops = (day?.stops || []).filter((s) => s.kind !== 'lodging' && !s.flightNumber)
     return { day, stops } // FULL list — the render shows a few and HONESTLY discloses the rest
-  }, [trip, upcoming])
+  }, [trip, upcoming, todayIso])
   const hasAgenda = agenda.stops.length > 0 && !!onOpenStop
   // Nothing planned today — the "alive at empty" state (Design 01#4b), not a
   // hidden/missing section. Exact complement of the populated case's gate
@@ -243,8 +260,8 @@ export function LivingHeartHome({
   // nothing planned gets this too; isComplex sheds both for "The plan").
   const agendaIsEmpty = !hasAgenda && !(arrival && onOpenStop)
   const nothingDayLine = useMemo(
-    () => nothingDayLineFor(agenda.day?.isoDate || todayLocalIso()),
-    [agenda.day?.isoDate]
+    () => nothingDayLineFor(agenda.day?.isoDate || todayIso),
+    [agenda.day?.isoDate, todayIso]
   )
   // Honest overflow (Design 01#3): ≤4 events show all (no "+N", the calm case looks
   // calm); 5+ show four, then a row that NAMES the count + the hidden times and
@@ -285,6 +302,15 @@ export function LivingHeartHome({
       </button>
 
       <div style={{ padding: '16px 20px 0' }}>
+        {/* THE DUAL CLOCK — the trip's time leads, yours shows faintly, so a
+            countdown or "now" is never confidently wrong (Design 03). Only when
+            the current leg's zone differs from yours. */}
+        {showDualClock && (
+          <div style={{ marginBottom: 16 }}>
+            <DualClock tz={legTz} city={curPlaceLabel || legCtx.part?.title || 'there'} />
+          </div>
+        )}
+
         {/* THE DAY'S STORY — always reachable (the Weave). Populated when woven;
             else a gentle promise. Either way this is THE weave entry. */}
         <button
@@ -514,6 +540,31 @@ export function LivingHeartHome({
           {bookHasPages && onOpenBook && <QuietAction onClick={onOpenBook} icon={<BookOpen size={13} />} label="The book" aria="The Book · kept pages" />}
         </div>
       </div>
+    </div>
+  )
+}
+
+// The honest dual clock: the trip's (leg's) time leads in --text, the viewer's
+// shows faintly in --muted, so "every now, countdown, and today is in [leg] time
+// — with your time shown faintly, nothing ever confidently wrong" (copy 04).
+// Ticks in its own state (30s — minute precision) so the home doesn't re-render
+// each second. Rendered only when the caller has confirmed a real zone delta.
+function DualClock({ tz, city }) {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div
+      data-testid="dual-clock"
+      style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--muted)' }}
+    >
+      <span style={{ color: 'var(--text)' }}>
+        <strong style={{ fontWeight: 600 }}>{clockInZone(tz, now)}</strong> in {city}
+      </span>
+      <span aria-hidden="true">·</span>
+      <span>{clockInZone(null, now)} where you are</span>
     </div>
   )
 }
