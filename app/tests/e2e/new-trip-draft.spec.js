@@ -76,7 +76,9 @@ async function fillAndCreateDraft(page, title, opts = {}) {
     if (opts.startCity != null) await page.getByPlaceholder('Belmont, MA').fill(opts.startCity)
     if (opts.endCity != null) await page.getByPlaceholder('New York, NY').fill(opts.endCity)
   }
-  await page.getByRole('button', { name: /^Create trip$/i }).click()
+  // "Add plans first" is the secondary, always-available draft→editor path
+  // (Design 01#4 step 2) — the one-tap "Publish" is exercised separately below.
+  await page.getByRole('button', { name: /Add plans first/i }).click()
 }
 
 function readCache(page) {
@@ -257,7 +259,7 @@ test.describe('NewTrip — manual-add draft', () => {
     await page.getByPlaceholder(/Grandma's/).fill("Grandma's")
     await page.getByLabel(/start date/i).fill('2026-07-03')
     await page.getByLabel(/end date/i).fill('2026-07-05')
-    await page.getByRole('button', { name: /^Create trip$/i }).click()
+    await page.getByRole('button', { name: /Add plans first/i }).click()
     await expect(page.getByText(/DRAFT — not shown in the trip list/i)).toBeVisible({ timeout: 7000 })
 
     const cache = await readCache(page)
@@ -269,5 +271,88 @@ test.describe('NewTrip — manual-add draft', () => {
     // publish gate needs (isTripPublishable no longer blocks a fresh dated stay).
     expect(t.days.length, 'three days seeded from the range').toBe(3)
     expect(t.days.every((d) => d.isoDate && d.title?.trim()), 'each day has a date + label').toBe(true)
+  })
+
+  test('one-tap Publish (Design 01#4 step 2) skips the editor and lands on the trip’s own home', async ({ page }) => {
+    await countTripPosts(page)
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    await gotoIndex(page)
+
+    await page.getByRole('button', { name: /New trip/i }).click()
+    await page.getByRole('button', { name: /A stay/i }).click()
+    await expect(page.getByRole('heading', { name: /New Trip/i })).toBeVisible()
+    await page.getByPlaceholder('A weekend at the cabin').fill('Grandma’s Publish Weekend')
+    await page.getByPlaceholder(/Grandma's/).fill("Grandma's")
+    await page.getByLabel(/start date/i).fill('2026-07-03')
+    await page.getByLabel(/end date/i).fill('2026-07-05')
+
+    // The gate is met (title + dates) so Publish is live on the create screen.
+    const publish = page.getByRole('button', { name: /^Publish$/i })
+    await expect(publish).toBeEnabled()
+    await publish.click()
+
+    // No editor, no DRAFT banner — straight to the trip's own living-heart home.
+    await expect(page.getByTestId('living-heart-home')).toBeVisible({ timeout: 7000 })
+    await expect(page.getByText(/DRAFT — not shown in the trip list/i)).toHaveCount(0)
+
+    const cache = await readCache(page)
+    const t = cache.find((x) => x.title === 'Grandma’s Publish Weekend')
+    expect(t, 'the trip is in the cache').toBeTruthy()
+    expect(t.draft, 'published straight from creation, not left as a draft').toBe(false)
+  })
+
+  test('Publish is disabled (and the gate names what’s missing) until dates are filled', async ({ page }) => {
+    await countTripPosts(page)
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    await gotoIndex(page)
+
+    await page.getByRole('button', { name: /New trip/i }).click()
+    await page.getByRole('button', { name: /A stay/i }).click()
+    await expect(page.getByRole('heading', { name: /New Trip/i })).toBeVisible()
+    await page.getByPlaceholder('A weekend at the cabin').fill('No Dates Yet')
+
+    await expect(page.getByText(/still needed before publishing/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Publish$/i })).toBeDisabled()
+
+    // "Add plans first" stays available regardless — the escape valve for a
+    // not-yet-ready trip is never gated.
+    await expect(page.getByRole('button', { name: /Add plans first/i })).toBeEnabled()
+  })
+
+  test('an inverted date range (end before start) names the real problem, not just "at least one day"', async ({ page }) => {
+    await countTripPosts(page)
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    await gotoIndex(page)
+
+    await page.getByRole('button', { name: /New trip/i }).click()
+    await page.getByRole('button', { name: /A stay/i }).click()
+    await expect(page.getByRole('heading', { name: /New Trip/i })).toBeVisible()
+    await page.getByPlaceholder('A weekend at the cabin').fill('Backwards Dates')
+    await page.getByLabel(/start date/i).fill('2026-07-05')
+    await page.getByLabel(/end date/i).fill('2026-07-03')
+
+    await expect(page.getByText(/end date is before the start date/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Publish$/i })).toBeDisabled()
+  })
+
+  test('pressing Enter still creates a draft (Design 01#4 step 2 must not swallow keyboard submit)', async ({ page }) => {
+    await countTripPosts(page)
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    await gotoIndex(page)
+
+    await page.getByRole('button', { name: /New trip/i }).click()
+    await page.getByRole('button', { name: /A stay/i }).click()
+    await expect(page.getByRole('heading', { name: /New Trip/i })).toBeVisible()
+    // Title only — Publish is gated off (no dates), but Enter must still do
+    // SOMETHING: the same always-available draft path "Add plans first" is.
+    const titleField = page.getByPlaceholder('A weekend at the cabin')
+    await titleField.fill('Enter Key Draft')
+    await titleField.press('Enter')
+
+    await expect(page.getByText(/DRAFT — not shown in the trip list/i)).toBeVisible({ timeout: 7000 })
   })
 })

@@ -67,9 +67,42 @@ function isoPlus1(iso) {
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) + 86400000).toISOString().slice(0, 10)
 }
 
+// "Alive at empty" agenda (Design 01#4b + 04-copy-and-conditions.md): a nothing
+// day is common and welcome, not a blank. The evergreen + being-there +
+// spontaneity sets from the copy deck (location/time-aware lines are skipped —
+// this view has no weather/geo classification to pick them honestly).
+const NOTHING_DAY_LINES = [
+  "Today's yours.",
+  'No plans, on purpose.',
+  'Nothing on the books. Good.',
+  'The only plan is no plan.',
+  'An open day. Leave it that way.',
+  'Empty page, full day.',
+  'A day to do nothing in particular.',
+  'Stay in your pajamas a while.',
+  'Wherever everyone drifts is the plan.',
+  'See where the day takes you.',
+  'Follow the good light.',
+  'A slow one, together.',
+  'Whatever the kids invent today.',
+  'Be where your feet are.',
+  'Something will turn up. It usually does.',
+  'Leave room for the accidental.',
+  'Wander first, decide later.',
+  "Nothing planned — peek at what's nearby, or don't.",
+]
+// Deterministic per-day pick (not random) so the line is stable within a day
+// and across re-renders, and varies day to day without any tracking state.
+function nothingDayLineFor(isoDate) {
+  let h = 0
+  const s = isoDate || ''
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
+  return NOTHING_DAY_LINES[Math.abs(h) % NOTHING_DAY_LINES.length]
+}
+
 export function LivingHeartHome({
   trip, traveler, nowReadout, whoAround, weaveReady, bookHasPages,
-  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenAllPhotos, onOpenActivities, onOpenStop,
+  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenEditor, onOpenAllPhotos, onOpenActivities, onOpenStop,
 }) {
   const [weave, setWeave] = useState(null)
   const [heroErr, setHeroErr] = useState(false)
@@ -200,6 +233,15 @@ export function LivingHeartHome({
     return { day, stops } // FULL list — the render shows a few and HONESTLY discloses the rest
   }, [trip, upcoming])
   const hasAgenda = agenda.stops.length > 0 && !!onOpenStop
+  // Nothing planned today — the "alive at empty" state (Design 01#4b), not a
+  // hidden/missing section. Exact complement of the populated case's gate
+  // below (same !isAfter && !isComplex outer guard — a route/road trip with
+  // nothing planned gets this too; isComplex sheds both for "The plan").
+  const agendaIsEmpty = !hasAgenda && !(arrival && onOpenStop)
+  const nothingDayLine = useMemo(
+    () => nothingDayLineFor(agenda.day?.isoDate || todayLocalIso()),
+    [agenda.day?.isoDate]
+  )
   // Honest overflow (Design 01#3): ≤4 events show all (no "+N", the calm case looks
   // calm); 5+ show four, then a row that NAMES the count + the hidden times and
   // expands IN PLACE (no navigation, no silent truncation).
@@ -401,6 +443,36 @@ export function LivingHeartHome({
                   {agendaOpen
                     ? <ChevronUp size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
                     : <ChevronDown size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ON THE AGENDA, EMPTY — "alive at empty" (Design 01#4b): nothing planned
+            reads as permission, not a hidden/missing section. "Add something"
+            is honest — it opens the editor, the real place a plan gets made. */}
+        {!isAfter && !isComplex && agendaIsEmpty && (
+          <div style={{ marginTop: 22 }}>
+            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>On the agenda</span>
+            <div
+              style={{
+                marginTop: 11, padding: '18px 14px', borderRadius: 'min(var(--radius, 12px), 14px)',
+                border: '1px dashed var(--line-bold, var(--border))', textAlign: 'center',
+              }}
+            >
+              <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>
+                Nothing planned — and that's allowed
+              </span>
+              <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14.5, color: 'var(--text)', display: 'block', marginTop: 6 }}>
+                {nothingDayLine}
+              </span>
+              {onOpenEditor && (
+                <button
+                  type="button" onClick={onOpenEditor} aria-label="Add something to the plan"
+                  style={{ ...MONO, fontSize: 10, color: 'var(--accent-text)', background: 'transparent', border: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, padding: 0 }}
+                >
+                  Add something <ChevronRight size={12} />
                 </button>
               )}
             </div>

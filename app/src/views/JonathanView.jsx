@@ -62,6 +62,7 @@ export function JonathanView({
   onOpenBook,
   onOpenSurprises,
   onCompose,
+  onOpenEditor,
   weaveReady,
   bookHasPages,
   surpriseRevealCue,
@@ -89,6 +90,7 @@ export function JonathanView({
         onOpenBook={onOpenBook}
         onOpenSurprises={onOpenSurprises}
         onCompose={onCompose}
+        onOpenEditor={onOpenEditor}
         onOpenAllPhotos={onOpenAllPhotos}
         onOpenActivities={onOpenActivities}
         onOpenStop={onOpenStop}

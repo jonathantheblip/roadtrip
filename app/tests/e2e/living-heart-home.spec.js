@@ -62,6 +62,27 @@ test('a stay with photos shows the Lately carousel (no ghost)', async ({ page })
   await expect(home.getByRole('button', { name: 'Open photos' }).first()).toBeVisible()
 })
 
+// Design 01#4b — "alive at empty": a nothing day is permission, not a hidden
+// section. DURING_STAY's today (2026-05-23, per clockStub) has no stops and
+// no flight, so the agenda is genuinely empty.
+test('an empty agenda is "alive at empty" — a nothing-day line + "Add something" opens the editor for THIS trip', async ({ page }) => {
+  await seedTripIntoCache(page, DURING_STAY)
+  await page.goto('/?person=jonathan&trip=lhh-during&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+
+  // Not hidden — an honest empty state, not a missing section.
+  await expect(home.getByText("On the agenda")).toBeVisible()
+  await expect(home.getByText("Nothing planned — and that's allowed")).toBeVisible()
+  const addSomething = home.getByRole('button', { name: /add something/i })
+  await expect(addSomething).toBeVisible()
+
+  await addSomething.click()
+  // Lands in the editor for THIS trip (not some other one, not a blank screen).
+  await expect(page.getByRole('heading', { name: 'Provincetown' })).toBeVisible({ timeout: 5000 })
+  await expect(page.getByText(/^PUBLISHED$/)).toBeVisible()
+})
+
 // Design decision 4c: the SHAPE OF THE CONTENT decides simple-vs-complex, not a
 // lone internal part. A manually-created trip carries ONE synthetic part; that must
 // NOT force the complex "In [place]" + "The plan" frame. One place → simple "At".

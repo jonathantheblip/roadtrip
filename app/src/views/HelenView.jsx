@@ -33,6 +33,7 @@ export function HelenView({
   onOpenBook,
   onOpenSurprises,
   onCompose,
+  onOpenEditor,
   weaveReady,
   bookHasPages,
   surpriseRevealCue,
@@ -58,6 +59,7 @@ export function HelenView({
         onOpenBook={onOpenBook}
         onOpenSurprises={onOpenSurprises}
         onCompose={onCompose}
+        onOpenEditor={onOpenEditor}
         onOpenAllPhotos={onOpenAllPhotos}
         onOpenActivities={onOpenActivities}
         onOpenStop={onOpenStop}

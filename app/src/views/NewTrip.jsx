@@ -1,8 +1,36 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Check, Loader } from 'lucide-react'
 import { newTripId } from '../utils/ids'
 import { geocodeAddress } from '../lib/geocode'
 import { humanDateRange } from '../lib/createTripCard'
+import { tripCompleteness } from '../lib/tripComplete'
+
+// Pure so the live "Ready to publish" preview on this screen and the actual
+// submit (below) always agree on the seeded summary + days (Design 01#4).
+function seedFromInputs({ driving, endCity, placeName, trimmedTitle, startDate, endDate }) {
+  const overview = driving
+    ? `A road trip${endCity.trim() ? ` to ${endCity.trim()}` : ''}`
+    : placeName.trim()
+      ? `A stay at ${placeName.trim()}`
+      : trimmedTitle
+  const days = (() => {
+    if (!startDate || !endDate) return []
+    const s = new Date(`${startDate}T00:00:00Z`)
+    const e = new Date(`${endDate}T00:00:00Z`)
+    if (isNaN(s) || isNaN(e) || e < s) return []
+    const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const out = []
+    let n = 1
+    for (const d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+      const label = `${WD[d.getUTCDay()]} ${MO[d.getUTCMonth()]} ${d.getUTCDate()}`
+      out.push({ n, isoDate: d.toISOString().slice(0, 10), date: label, title: label, stops: [] })
+      n++
+    }
+    return out
+  })()
+  return { overview, days }
+}
 
 // Manual trip entry. Creates a renderer-safe *draft* trip and hands off
 // to the editor so Days/Stops/pitches get filled in incrementally —
@@ -61,24 +89,63 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
   const [phase, setPhase] = useState('idle') // idle | saving | done
   const [error, setError] = useState('')
   const [titleError, setTitleError] = useState('')
+  // Which action is in flight/just finished, so the OTHER button's label
+  // never flickers to "Saving…"/"Published" for a tap it didn't get.
+  const [pendingKind, setPendingKind] = useState(null) // null | 'publish' | 'draft'
 
   function toggleTraveler(id) {
     setTravelers((cur) => (cur.includes(id) ? cur.filter((c) => c !== id) : [...cur, id]))
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  // Live preview of what creation would seed, so the "Ready to publish" gate
+  // (Design 01#4 step 2) reflects the form as typed — the same seeding logic
+  // submit uses below, kept in one place (seedFromInputs).
+  const trimmedTitleLive = title.trim()
+  const seed = useMemo(
+    () => seedFromInputs({ driving, endCity, placeName, trimmedTitle: trimmedTitleLive, startDate, endDate }),
+    [driving, endCity, placeName, trimmedTitleLive, startDate, endDate]
+  )
+  // An inverted range (end before start) also seeds zero days, so the generic
+  // gate would only say "At least one day" — true but not the actual problem.
+  // Name it directly instead of leaving the fat-finger to guess.
+  const invertedRange = !!(startDate && endDate && startDate > endDate)
+  const comp = useMemo(() => {
+    const base = tripCompleteness({
+      title: trimmedTitleLive,
+      dateRangeStart: startDate || null,
+      dateRangeEnd: endDate || null,
+      overview: seed.overview,
+      days: seed.days,
+    })
+    if (!invertedRange) return base
+    return {
+      ok: false,
+      missing: [
+        'End date is before the start date — swap them',
+        ...base.missing.filter((m) => m !== 'At least one day'),
+      ],
+    }
+  }, [trimmedTitleLive, startDate, endDate, seed, invertedRange])
+  const daysPreviewLabel = useMemo(() => {
+    const weekdays = seed.days.map((d) => (d.title || '').split(' ')[0]).filter(Boolean)
+    if (weekdays.length === 0) return ''
+    return weekdays.length <= 7 ? weekdays.join(' · ') : `${weekdays.length} days`
+  }, [seed.days])
+
+  // The shared core for both CTAs — only the `publish` flag (→ draft:false)
+  // and the resulting navigation (handled by App's onCreate) differ.
+  async function submitTrip(publish) {
     // In-flight guard: ignore taps while a save is pending or already
     // done. This is the primary defense against the triple-submit.
     if (phase !== 'idle') return
 
-    const trimmedTitle = title.trim()
-    if (!trimmedTitle) {
+    if (!trimmedTitleLive) {
       setTitleError('Give the trip a title before creating it.')
       return
     }
     setTitleError('')
     setError('')
+    setPendingKind(publish ? 'publish' : 'draft')
     setPhase('saving')
 
     // Geocode the stay address now (keyless, throttled, never throws → null on a
@@ -91,42 +158,17 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
       if (hit) stayCoords = { lat: hit.lat, lng: hit.lng, geoFor: addr }
     }
 
-    // Seed a valid-by-default SUMMARY + the DAYS from the date range, so the trip
-    // is publishable straight from creation (Design 01#4) — no "add a day + a
-    // summary before you can publish" busywork for a deliberately-unplanned
-    // weekend. Both stay fully editable; empty days are allowed.
-    const seededOverview = driving
-      ? `A road trip${endCity.trim() ? ` to ${endCity.trim()}` : ''}`
-      : placeName.trim()
-        ? `A stay at ${placeName.trim()}`
-        : trimmedTitle
-    const seededDays = (() => {
-      if (!startDate || !endDate) return []
-      const s = new Date(`${startDate}T00:00:00Z`)
-      const e = new Date(`${endDate}T00:00:00Z`)
-      if (isNaN(s) || isNaN(e) || e < s) return []
-      const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      const out = []
-      let n = 1
-      for (const d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
-        const label = `${WD[d.getUTCDay()]} ${MO[d.getUTCMonth()]} ${d.getUTCDate()}`
-        out.push({ n, isoDate: d.toISOString().slice(0, 10), date: label, title: label, stops: [] })
-        n++
-      }
-      return out
-    })()
-
     // Renderer-safe shape: every field the themed views read exists, with safe
-    // empties. `draft: true` keeps it out of the polished views (and the
-    // cold-start picker) until it's published. `shape` is set explicitly so the
-    // trip is what the user said it is, not what a heuristic guesses.
+    // empties. `draft: false` (Publish) sends it straight to the polished views;
+    // `draft: true` ("Add plans first") keeps it out of them (and the cold-start
+    // picker) until it's published later, same as before. `shape` is set
+    // explicitly so the trip is what the user said it is, not a heuristic guess.
     const trip = {
       id: idRef.current,
-      draft: true,
+      draft: !publish,
       status: 'planning',
       shape: driving ? 'route' : 'stay',
-      title: trimmedTitle,
+      title: trimmedTitleLive,
       subtitle: subtitle.trim(),
       epigraph: '',
       // Structured dates carry straight into the editor (pre-filled, no re-entry);
@@ -140,14 +182,14 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
       endCity: driving ? endCity.trim() : '',
       miles: 0,
       travelers,
-      overview: seededOverview,
+      overview: seed.overview,
       sharedAlbumURL: '',
       // The stay spine. Always present (renderer-safe); filled for a stay. Coords
       // ride along when the address geocoded so the place card + filer engage now.
       lodging: !driving
         ? { name: placeName.trim(), address: addr, ...(stayCoords || {}) }
         : {},
-      days: seededDays,
+      days: seed.days,
       // The parts model (new-trip redesign). A simple trip is one part; its type
       // carries the finer shape the picker chose (a city vs a lazy stay) while the
       // legacy `shape`/`lodging`/`days` above keep every existing surface rendering
@@ -156,11 +198,11 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
         {
           id: `${idRef.current}__p1`,
           type: presetShape === 'city' ? 'city' : driving ? 'drive' : 'stay',
-          title: trimmedTitle,
+          title: trimmedTitleLive,
           place: !driving ? { name: placeName.trim(), address: addr, ...(stayCoords || {}) } : null,
           dateStart: startDate || null,
           dateEnd: endDate || null,
-          days: seededDays,
+          days: seed.days,
         },
       ],
     }
@@ -174,15 +216,32 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
 
     if (res && res.ok) {
       setPhase('done')
-      // Brief confirmation, then the editor opens (App handles the
-      // actual navigation once it sees ok).
+      // Brief confirmation, then App navigates (to the trip's home when
+      // published, into the editor when it's a draft) once it sees ok.
     } else {
       setError(
         (res && res.error) ||
           'Could not save the trip. It is kept on this device — tap Create to retry.'
       )
       setPhase('idle') // retry is safe: same stable id, upsert not insert
+      setPendingKind(null)
     }
+  }
+
+  // Enter-to-submit keeps doing exactly what it always did (create as a
+  // draft, gate-free) — it must NOT map to the gated Publish action. A
+  // `disabled` submit button blocks ALL implicit Enter-submission in a form
+  // once it's the only `type="submit"` control, not just clicks on it, so
+  // gating Publish natively would have silently swallowed Enter whenever the
+  // trip wasn't ready to publish yet. "Add plans first" is the real
+  // `type="submit"` below; Publish is a plain gated button.
+  function handleFormSubmit(e) {
+    e.preventDefault()
+    submitTrip(false)
+  }
+  function handleClickPublish() {
+    if (!comp.ok) return
+    submitTrip(true)
   }
 
   const busy = phase === 'saving'
@@ -219,7 +278,7 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
         </p>
       </header>
 
-      <form onSubmit={handleSubmit} className="px-6 py-8" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <form onSubmit={handleFormSubmit} className="px-6 py-8" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
         <Field label="Title" required error={titleError}>
           <input
             value={title}
@@ -378,12 +437,55 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
           </p>
         )}
 
-        <div className="flex items-center justify-between" style={{ marginTop: 24 }}>
+        {/* Publish gate preview (Design 01#4 step 2) — mirrors the editor's gate
+            (lib/tripComplete) so "ready to publish" means the same thing in both
+            places. Floor = title + dates; a place and the seeded summary/days
+            ride along automatically. */}
+        <div
+          style={{
+            padding: '14px 16px',
+            borderRadius: 'min(var(--radius, 12px), 14px)',
+            border: '1px solid var(--border)',
+            background: 'var(--card)',
+          }}
+        >
+          {comp.ok ? (
+            <>
+              <p className="smallcaps f-dm text-[11px]" style={{ color: 'var(--accent-text, var(--text))' }}>
+                Ready to publish
+              </p>
+              <p className="f-news-i text-sm opacity-80" style={{ marginTop: 6 }}>
+                Summary, written for you: “{seed.overview}”
+              </p>
+              {daysPreviewLabel && (
+                <p className="f-dm text-xs opacity-60" style={{ marginTop: 4 }}>
+                  Days seeded from your dates — {daysPreviewLabel}. Empty is fine.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="smallcaps f-dm text-[11px] opacity-70">Still needed before publishing</p>
+              <ul
+                id="publish-gate-missing"
+                style={{ listStyle: 'disc', paddingLeft: 18, marginTop: 6 }}
+                className="f-dm text-xs opacity-70"
+              >
+                {comp.missing.slice(0, 6).map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between" style={{ marginTop: 24, flexWrap: 'wrap', gap: 12 }}>
           <p className="f-dm text-[11px] opacity-50 italic max-w-sm">
-            Saved as a draft on this device — just yours for now. You finish it
-            in the editor; the family sees it only when you publish.
+            {comp.ok
+              ? 'You can plan after you publish — or not at all.'
+              : 'Saved as a draft on this device — just yours for now. You finish it in the editor; the family sees it only when you publish.'}
           </p>
-          <div className="flex items-center" style={{ gap: 10, flexShrink: 0 }}>
+          <div className="flex items-center" style={{ gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={onBack}
@@ -395,9 +497,9 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
             </button>
             <button
               type="submit"
-              className="btn-solid"
+              className="btn-pill"
               disabled={busy || done}
-              aria-busy={busy}
+              aria-busy={busy && pendingKind === 'draft'}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -406,9 +508,28 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
                 cursor: busy || done ? 'default' : 'pointer',
               }}
             >
-              {busy && <Loader size={14} className="rt-spin" />}
-              {done && <Check size={14} />}
-              {busy ? 'Creating…' : done ? 'Created' : 'Create trip'}
+              {pendingKind === 'draft' && busy && <Loader size={14} className="rt-spin" />}
+              {pendingKind === 'draft' && done && <Check size={14} />}
+              {pendingKind === 'draft' && busy ? 'Saving…' : pendingKind === 'draft' && done ? 'Saved' : 'Add plans first →'}
+            </button>
+            <button
+              type="button"
+              onClick={handleClickPublish}
+              className="btn-solid"
+              disabled={busy || done || !comp.ok}
+              aria-busy={busy && pendingKind === 'publish'}
+              aria-describedby={!comp.ok ? 'publish-gate-missing' : undefined}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                opacity: busy || done || !comp.ok ? 0.6 : 1,
+                cursor: busy || done || !comp.ok ? 'default' : 'pointer',
+              }}
+            >
+              {pendingKind === 'publish' && busy && <Loader size={14} className="rt-spin" />}
+              {pendingKind === 'publish' && done && <Check size={14} />}
+              {pendingKind === 'publish' && busy ? 'Publishing…' : pendingKind === 'publish' && done ? 'Published' : 'Publish'}
             </button>
           </div>
         </div>

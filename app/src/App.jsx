@@ -1076,10 +1076,15 @@ export default function App() {
       return { ok: false, error: err?.message || String(err) }
     }
     // The local write succeeded (cache was written before the push was even
-    // attempted), so open the editor regardless of sync state.
+    // attempted), so navigate regardless of sync state. Publish-on-create
+    // (Design 01#4 step 2): a published trip (draft:false) lands straight on
+    // its own home; a draft still opens the editor to finish it — the path
+    // that already existed.
     setTripId(newTrip.id)
-    setView({ name: 'edit' })
-    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    setView({ name: newTrip.draft ? 'edit' : 'trip' })
+    requestAnimationFrame(() =>
+      window.scrollTo({ top: 0, behavior: newTrip.draft ? 'instant' : 'smooth' })
+    )
     return res
   }
   function handleTravelerSwitch(id) {
@@ -1158,6 +1163,10 @@ export default function App() {
       onOpenWeave: openWeave,
       onOpenReplay: () => openReplay(),
       onOpenBook: openBook,
+      // The empty-agenda "Add something" ghost (Design 01#4b) — the honest
+      // destination for "add a plan item" is the editor; wrapped so a click
+      // event is never passed through as an id.
+      onOpenEditor: () => openEditor(),
       onOpenSurprises: openSurprises,
       onCompose: openCompose, // "Share a moment" — designed home-band entry (was ⋯-only)
       weaveReady,
