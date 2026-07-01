@@ -100,3 +100,56 @@ test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)
   await expect(home.getByText('The plan')).toBeVisible()
   await expect(home.getByText(/^In (Rome|Florence)/)).toBeVisible()
 })
+
+// Design 01#3 — honest "On the agenda" overflow. A busy day (5+ events) shows four,
+// then a row NAMING the count + the hidden times, expanding IN PLACE — never a
+// silent truncation. Clock is 2026-05-23, so the busy day is that date.
+const BUSY_DAY = {
+  ...DURING_STAY,
+  id: 'lhh-busy',
+  days: [
+    { n: 1, isoDate: '2026-05-22', date: 'Fri May 22', title: 'Arrive', lodging: 'Harbor Breeze', stops: [] },
+    { n: 2, isoDate: '2026-05-23', date: 'Sat May 23', title: 'Packed', lodging: 'Harbor Breeze', stops: [
+      { id: 'b1', time: '9:00 AM', name: 'Breakfast spot', kind: 'food' },
+      { id: 'b2', time: '10:30 AM', name: 'The Museum', kind: 'sight' },
+      { id: 'b3', time: '1:00 PM', name: 'Lunch out', kind: 'food' },
+      { id: 'b4', time: '2:30 PM', name: 'Long walk', kind: 'sight' },
+      { id: 'b5', time: '3:30 PM', name: 'Coffee stop', kind: 'food' },
+      { id: 'b6', time: '6:30 PM', name: 'Dinner reservation', kind: 'food' },
+    ]},
+  ],
+}
+
+test('a 5+-event day shows an honest overflow that expands in place (01#3)', async ({ page }) => {
+  await seedTripIntoCache(page, BUSY_DAY)
+  await page.goto('/?person=jonathan&trip=lhh-busy&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  // Four shown; the 5th/6th are disclosed but not listed yet. (Match the agenda
+  // ROW buttons by role — the 9am stop also appears in the honest "Next ·" line.)
+  await expect(home.getByRole('button', { name: 'Breakfast spot' })).toBeVisible()
+  await expect(home.getByRole('button', { name: 'Long walk' })).toBeVisible()
+  await expect(home.getByText(/\+2 more today/i)).toBeVisible()
+  await expect(home.getByText(/3:30 PM, 6:30 PM/)).toBeVisible()
+  await expect(home.getByRole('button', { name: 'Coffee stop' })).toHaveCount(0)
+  await expect(home.getByRole('button', { name: 'Dinner reservation' })).toHaveCount(0)
+  // Expand in place → all six + a "Show less" (no navigation).
+  await home.getByRole('button', { name: /show 2 more today/i }).click()
+  await expect(home.getByRole('button', { name: 'Coffee stop' })).toBeVisible()
+  await expect(home.getByRole('button', { name: 'Dinner reservation' })).toBeVisible()
+  await expect(home.getByText(/show less/i)).toBeVisible()
+  await expect(home.getByText(/\+2 more today/i)).toHaveCount(0)
+})
+
+test('a calm day (≤4 events) shows all, with NO overflow row', async ({ page }) => {
+  const calm = { ...BUSY_DAY, id: 'lhh-calm', days: [
+    { ...BUSY_DAY.days[0] },
+    { ...BUSY_DAY.days[1], stops: BUSY_DAY.days[1].stops.slice(0, 3) },
+  ] }
+  await seedTripIntoCache(page, calm)
+  await page.goto('/?person=jonathan&trip=lhh-calm&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  await expect(home.getByText('Lunch out')).toBeVisible()
+  await expect(home.getByText(/more today/i)).toHaveCount(0) // the calm case looks calm
+})

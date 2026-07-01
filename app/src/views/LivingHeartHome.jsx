@@ -20,7 +20,7 @@
 // replay; "next" only when the live readout has one; the day count is derived from
 // the real trip dates (no invented "night 2 of 4").
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, Play, BookOpen, Sparkles, Share2, Compass, Plane, Ticket } from 'lucide-react'
+import { ChevronRight, ChevronDown, ChevronUp, Play, BookOpen, Sparkles, Share2, Compass, Plane, Ticket } from 'lucide-react'
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady } from '../components/EntryCues'
 import { listMemoriesForTrip } from '../lib/memoryStore'
@@ -73,6 +73,7 @@ export function LivingHeartHome({
 }) {
   const [weave, setWeave] = useState(null)
   const [heroErr, setHeroErr] = useState(false)
+  const [agendaOpen, setAgendaOpen] = useState(false) // "On the agenda" overflow accordion
   useEffect(() => {
     let cancelled = false
     fetchStoredWeave(trip.id).then((w) => { if (!cancelled) setWeave(w) }).catch(() => {})
@@ -196,9 +197,16 @@ export function LivingHeartHome({
     let day = days.find((d) => d.isoDate === today)
     if (!day && upcoming) day = days.find((d) => (d.stops || []).some((s) => s.kind !== 'lodging' && !s.flightNumber))
     const stops = (day?.stops || []).filter((s) => s.kind !== 'lodging' && !s.flightNumber)
-    return { day, stops: stops.slice(0, 4) }
+    return { day, stops } // FULL list — the render shows a few and HONESTLY discloses the rest
   }, [trip, upcoming])
   const hasAgenda = agenda.stops.length > 0 && !!onOpenStop
+  // Honest overflow (Design 01#3): ≤4 events show all (no "+N", the calm case looks
+  // calm); 5+ show four, then a row that NAMES the count + the hidden times and
+  // expands IN PLACE (no navigation, no silent truncation).
+  const AGENDA_CAP = 4
+  const agendaOverflow = Math.max(0, agenda.stops.length - AGENDA_CAP)
+  const agendaShown = agendaOpen ? agenda.stops : agenda.stops.slice(0, AGENDA_CAP)
+  const agendaHiddenTimes = agenda.stops.slice(AGENDA_CAP).map((s) => (s.time || '').trim()).filter(Boolean).join(', ')
 
   return (
     <div data-testid="living-heart-home" style={{ color: 'var(--text)' }}>
@@ -364,7 +372,7 @@ export function LivingHeartHome({
                   <ChevronRight size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
                 </button>
               )}
-              {agenda.stops.map((s, i) => {
+              {agendaShown.map((s, i) => {
                 const ec = memCountByStop.get(s.id) || 0
                 return (
                   <button
@@ -379,6 +387,22 @@ export function LivingHeartHome({
                   </button>
                 )
               })}
+              {/* Honest overflow — names the count + the hidden times; expands in place
+                  (nothing silently dropped). Only when there are more than 4 (01#3). */}
+              {agendaOverflow > 0 && (
+                <button
+                  type="button" onClick={() => setAgendaOpen((o) => !o)}
+                  aria-label={agendaOpen ? 'Show fewer agenda items' : `Show ${agendaOverflow} more today`}
+                  style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', cursor: 'pointer', background: 'var(--card)', border: 0, borderTop: '1px solid var(--border)', padding: '11px 13px', color: 'var(--accent-text)' }}
+                >
+                  <span style={{ flex: 1, minWidth: 0, ...MONO, fontSize: 10, color: 'var(--accent-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {agendaOpen ? 'Show less' : `+${agendaOverflow} more today${agendaHiddenTimes ? ` · ${agendaHiddenTimes}` : ''}`}
+                  </span>
+                  {agendaOpen
+                    ? <ChevronUp size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
+                    : <ChevronDown size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />}
+                </button>
+              )}
             </div>
           </div>
         )}
