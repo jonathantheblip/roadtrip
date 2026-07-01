@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords, deriveCurrentLeg } =
+const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords, deriveCurrentLeg, legStatus } =
   await import('../../src/lib/tripParts.js')
 
 function legacyStay() {
@@ -434,4 +434,34 @@ test('currentPartCoords: a STRING-place leg with a coords slot anchors to those 
   const inRome = currentPartCoords(trip, '2026-05-05')
   assert.ok(Math.abs(inRome.lat - 41.9028) < 1e-6)
   assert.equal(inRome.label, 'Rome') // the string place, read object-safely
+})
+
+// ── legStatus (the journey rail's done/now/upcoming) ─────────────────────────
+test('legStatus: the current leg is "now" — even if its own dates look ambiguous', () => {
+  const rome = { id: 'p-rome', dateStart: '2026-05-20', dateEnd: '2026-05-22' }
+  assert.equal(legStatus(rome, rome, '2026-05-21'), 'now')
+  // "now" wins even when curPart is passed as a different-but-equal-id object
+  // (deriveCurrentLeg returns its OWN part object, not always the same ref).
+  assert.equal(legStatus({ ...rome }, rome, '2026-05-20'), 'now')
+})
+
+test('legStatus: a leg whose window ended before today is "done"', () => {
+  const rome = { id: 'p-rome', dateStart: '2026-05-20', dateEnd: '2026-05-22' }
+  const florence = { id: 'p-flor', dateStart: '2026-05-23', dateEnd: '2026-05-24' }
+  assert.equal(legStatus(rome, florence, '2026-05-23'), 'done')
+})
+
+test('legStatus: a leg whose window is still ahead is "upcoming"', () => {
+  const florence = { id: 'p-flor', dateStart: '2026-05-23', dateEnd: '2026-05-24' }
+  const venice = { id: 'p-ven', dateStart: '2026-05-25', dateEnd: '2026-05-26' }
+  assert.equal(legStatus(venice, florence, '2026-05-23'), 'upcoming')
+})
+
+test('legStatus: a dateless leg is never mistaken for done', () => {
+  const flight = { id: 'p-fly' } // a transit marker with no window
+  assert.equal(legStatus(flight, { id: 'p-rome' }, '2026-05-23'), 'upcoming')
+})
+
+test('legStatus: null part → "upcoming" (never throws)', () => {
+  assert.equal(legStatus(null, { id: 'p-rome' }, '2026-05-23'), 'upcoming')
 })

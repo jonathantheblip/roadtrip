@@ -216,6 +216,14 @@ export function cardToTrip(card, { existingId = null, existingIds = null, author
   // optional `parts` array (a flight, a city, a stay, a drive). Carry it onto the
   // trip (additive — a simple trip has none, so getParts derives one part and
   // nothing changes). The legacy `days` above still render every existing surface.
+  // Every leg gets a STABLE, UNIQUE id — the journey rail's "which leg is
+  // current" + "tap a leg → scroll to it in The Plan" both key off `part.id`
+  // equality/DOM-id uniqueness, so a collision would misclassify every leg as
+  // current or scroll to the wrong one. Claude is never asked to emit `id` (it
+  // isn't in the create_trip schema), so the common case is the positional
+  // fallback; this also guards the unlikely case of an AI/import id colliding
+  // with an earlier part's.
+  const seenPartIds = new Set()
   const parts =
     Array.isArray(t.parts) && t.parts.length
       ? t.parts.map((p, pi) => {
@@ -227,8 +235,11 @@ export function cardToTrip(card, { existingId = null, existingIds = null, author
           // name→id normalization travelers/`for` already use, so who's-around can
           // scope by leg. Each is carried ONLY when present (no empty fields).
           const memberIds = Array.isArray(p.members) ? p.members.map(travelerNameToId).filter(Boolean) : []
+          const suppliedId = typeof p.id === 'string' ? p.id.trim() : ''
+          const partId = (suppliedId && !seenPartIds.has(suppliedId)) ? suppliedId : `${id}-part-${pi + 1}`
+          seenPartIds.add(partId)
           return {
-            id: p.id || `${id}-part-${pi + 1}`,
+            id: partId,
             type: PART_TYPES.includes(p.type) ? p.type : 'stay',
             title: p.title || '',
             place: p.place || null,

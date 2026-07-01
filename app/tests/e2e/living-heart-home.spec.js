@@ -4,6 +4,7 @@
 // appears. The weave entry is ALWAYS reachable (populated or a promise).
 import { test, expect } from './_fixtures/clockStub.js'
 import { seedTripIntoCache, seedMemoriesIntoCache, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
+import { expectNoSeriousA11y } from './_fixtures/axe.js'
 
 // Clock is stubbed to 2026-05-23 (see clockStub). An UPCOMING stay sits after it.
 const UPCOMING_STAY = {
@@ -133,9 +134,10 @@ test('a ONE-part stay renders the simple "At [place]" home — not the complex f
   const home = page.getByTestId('living-heart-home')
   await expect(home).toBeVisible({ timeout: 10000 })
   await expect(home.getByText('At Harbor Breeze')).toBeVisible()
-  // The complex frame stays OFF: no "The plan" section, no "In …" hero.
+  // The complex frame stays OFF: no "The plan" section, no "In …" hero, no rail.
   await expect(home.getByText('The plan')).toHaveCount(0)
   await expect(home.getByText(/^In /)).toHaveCount(0)
+  await expect(home.getByTestId('journey-rail')).toHaveCount(0)
 })
 
 test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)', async ({ page }) => {
@@ -248,6 +250,90 @@ const BUSY_DAY = {
     ]},
   ],
 }
+
+// THE JOURNEY RAIL (hangout-first 02#1/03/05) — a composite trip's orientation
+// strip: "Part 2 of 3" + Rome/Florence/Venice as done/now/upcoming, the current
+// leg's local time, and a tap that scrolls to that leg in The Plan. Clock is
+// pinned to 2026-05-23 (clockStub): Rome's window is over (done), Florence
+// contains today (now, and carries a tz so the rail's time line engages),
+// Venice hasn't started (upcoming).
+const JOURNEY_RAIL_TRIP = {
+  ...DURING_STAY,
+  id: 'lhh-rail',
+  title: 'Italy — three cities',
+  dateRange: 'May 20 – 26, 2026', dateRangeStart: '2026-05-20', dateRangeEnd: '2026-05-26',
+  parts: [
+    { id: 'p-rome', type: 'city', title: 'Three days in Rome', place: 'Rome', dateStart: '2026-05-20', dateEnd: '2026-05-22' },
+    { id: 'p-flor', type: 'city', title: 'A day in Florence', place: 'Florence', tz: 'Europe/Rome', dateStart: '2026-05-23', dateEnd: '2026-05-24' },
+    { id: 'p-ven', type: 'city', title: 'Venice to finish', place: 'Venice', dateStart: '2026-05-25', dateEnd: '2026-05-26' },
+  ],
+}
+
+test('the journey rail shows Part 2 of 3, done/now/upcoming legs, and the current leg\'s local time', async ({ page }) => {
+  await seedTripIntoCache(page, JOURNEY_RAIL_TRIP)
+  await page.goto('/?person=jonathan&trip=lhh-rail&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  await dismissArrival(home) // hands off to the quiet surfaces (rail's time line included)
+
+  const rail = home.getByTestId('journey-rail')
+  await expect(rail).toBeVisible()
+  await expect(rail).toContainText('Part 2 of 3')
+
+  const rome = rail.getByRole('button', { name: /Rome — done/ })
+  const florence = rail.getByRole('button', { name: /Florence — current leg/ })
+  const venice = rail.getByRole('button', { name: 'Venice' })
+  await expect(rome).toBeVisible()
+  await expect(florence).toBeVisible()
+  await expect(venice).toBeVisible()
+
+  // The current leg's local time — a real zone delta (Rome/CEST vs the UTC
+  // clock stub), so it engages; no exact digits pinned (locale-robust, same
+  // caution as the dual-clock test below).
+  await expect(rail).toContainText('in Florence')
+})
+
+test('tapping a leg in the journey rail scrolls to that leg in The Plan (no new screen)', async ({ page }) => {
+  await seedTripIntoCache(page, JOURNEY_RAIL_TRIP)
+  await page.goto('/?person=jonathan&trip=lhh-rail&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  await dismissArrival(home)
+
+  await home.getByTestId('journey-rail').getByRole('button', { name: 'Venice' }).click()
+  const veniceCard = home.getByTestId('parts-trip-part').filter({ hasText: 'Venice to finish' })
+  await expect(veniceCard).toBeInViewport()
+})
+
+test('a FINISHED composite trip sheds the journey rail — the keepsake takes over, not the live orientation strip', async ({ page }) => {
+  const finished = {
+    ...JOURNEY_RAIL_TRIP, id: 'lhh-rail-after',
+    dateRange: 'May 1 – 7, 2026', dateRangeStart: '2026-05-01', dateRangeEnd: '2026-05-07',
+    parts: JOURNEY_RAIL_TRIP.parts.map((p) => ({ ...p, dateStart: '2026-05-01', dateEnd: '2026-05-07' })),
+  }
+  await seedTripIntoCache(page, finished)
+  // No ?trip= — a finished trip isn't "active today", so a cold deep-link bounces
+  // to the index; open it the way a person would, by tapping its card.
+  await page.goto('/?person=jonathan&nosw=1')
+  // A short, single-word match — the full title's em-dash can split across
+  // DOM nodes in the card's heading, which breaks a literal multi-word filter.
+  await page.getByRole('button').filter({ hasText: 'Italy' }).first().click()
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  await expect(home.getByTestId('journey-rail')).toHaveCount(0)
+  await expect(home.getByText('The plan')).toHaveCount(0)
+})
+
+test('the journey rail renders for Helen and Aurelia too, AA-clean', async ({ page }) => {
+  await seedTripIntoCache(page, JOURNEY_RAIL_TRIP)
+  for (const who of ['helen', 'aurelia']) {
+    await page.goto(`/?person=${who}&trip=lhh-rail&nosw=1`)
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible({ timeout: 10000 })
+    await expect(home.getByTestId('journey-rail')).toBeVisible()
+    await expectNoSeriousA11y(page)
+  }
+})
 
 test('a 5+-event day shows an honest overflow that expands in place (01#3)', async ({ page }) => {
   await seedTripIntoCache(page, BUSY_DAY)

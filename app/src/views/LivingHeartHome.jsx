@@ -30,7 +30,7 @@ import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
 import { TRAVELERS } from '../data/travelers'
-import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg } from '../lib/tripParts'
+import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg, legStatus } from '../lib/tripParts'
 import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
@@ -68,6 +68,11 @@ function isoPlus1(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '')
   if (!m) return null
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) + 86400000).toISOString().slice(0, 10)
+}
+// Journey rail "tap a leg" — reuses The Plan below (PartsOutline stamps each
+// part `id="plan-part-<id>"`); zero new screens (hangout-first 05).
+function scrollToLeg(partId) {
+  document.getElementById(`plan-part-${partId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // "Alive at empty" agenda (Design 01#4b + 04-copy-and-conditions.md): a nothing
@@ -184,9 +189,11 @@ export function LivingHeartHome({
   const showDualClock = !isAfter && !!legTz && !!viewerTz && viewerTz !== legTz && !showArrival
   const showContext = !isAfter && !!(orientation.currencyCode || orientation.languageName) && !showArrival
   const partN = isComplex ? partCount(trip) : 0
+  // Shared by partIdx below and the journey rail — one getParts(trip) call.
+  const legParts = useMemo(() => (isComplex ? getParts(trip) : []), [isComplex, trip])
   const partIdx = useMemo(
-    () => (curPart ? getParts(trip).findIndex((p) => p.id === curPart.id) : -1),
-    [curPart, trip]
+    () => (curPart ? legParts.findIndex((p) => p.id === curPart.id) : -1),
+    [curPart, legParts]
   )
   const nextThing = useMemo(() => {
     if (!isComplex) return null
@@ -266,9 +273,10 @@ export function LivingHeartHome({
     } else if (di.nights > 0) {
       segs.push(`${di.nights} night${di.nights > 1 ? 's' : ''}`)
     }
-    if (isComplex && !isAfter && partN > 1 && partIdx >= 0) segs.push(`part ${partIdx + 1} of ${partN}`)
+    // "part X of Y" now lives in the journey rail (above the hero), not here —
+    // it would otherwise repeat within a few lines of itself.
     return segs.join(' · ')
-  }, [isAfter, upcoming, di.daysUntil, di.dayX, di.nights, sun?.goldenHour, isComplex, partN, partIdx])
+  }, [isAfter, upcoming, di.daysUntil, di.dayX, di.nights, sun?.goldenHour, isComplex])
 
   // ON THE AGENDA — a stay sheds the road-trip day-by-day broadsheet, but its few
   // PLANNED events (a dinner out, an activity) + any flight are "the exception"
@@ -303,6 +311,24 @@ export function LivingHeartHome({
 
   return (
     <div data-testid="living-heart-home" style={{ color: 'var(--text)' }}>
+      {/* JOURNEY RAIL — composite only (hangout-first 02#1/03/05): "Part 2 of 3 ·
+          Rome ✓ · Florence ● · Venice" + the current leg's local time. Sits above
+          the hero (the trip's own orientation, before its place). Tapping a leg
+          scrolls to it in "The Plan" below — no new screen. */}
+      {isComplex && !isAfter && (
+        // Top padding clears the FIXED trip topbar (position:fixed, z-index 40 —
+        // it overlays the hero on purpose, but the rail's tap targets must sit
+        // below its footprint or its buttons never receive the tap). Same
+        // clearance DayChips already uses (platform.css .day-chips).
+        <div style={{ padding: 'max(40px, calc(env(safe-area-inset-top) + 32px)) 20px 8px' }}>
+          <JourneyRail
+            parts={legParts} curPart={curPart} todayIso={todayIso} partIdx={partIdx} partN={partN}
+            legTz={legTz} showTime={showDualClock} curPlaceLabel={curPlaceLabel}
+            onOpenLeg={scrollToLeg} lc={v.lc}
+          />
+        </div>
+      )}
+
       {/* HERO — the place, cinematic. Tapping it opens "where we are" (the map). */}
       <button
         type="button" onClick={onOpenMap} aria-label={`Where we are — ${isStay ? place : (curPlaceLabel || trip.title)}`}
@@ -597,6 +623,55 @@ export function LivingHeartHome({
         </div>
       </div>
     </div>
+  )
+}
+
+// THE JOURNEY RAIL (Design 02#1 / 03 / 05) — a composite trip's orientation
+// strip: "Part 2 of 3" + the legs as a row (done ✓ / now ● / upcoming, plain),
+// each tappable → scrolls to that leg in The Plan (no new screen). The
+// current leg's local time follows, but ONLY on a real timezone delta (same
+// gate as the dual clock below it — "no delta → no module", 05) so a
+// domestic multi-city trip never claims a time difference that isn't real.
+// Leg labels prefer the PLACE name (Rome/Florence) over any descriptive
+// title ("Three days in Rome") — the rail stays a slim strip of city names;
+// the fuller title still leads each part's card in The Plan.
+function JourneyRail({ parts, curPart, todayIso, partIdx, partN, legTz, showTime, curPlaceLabel, onOpenLeg, lc = (s) => s }) {
+  if (!parts?.length || partN < 2 || partIdx < 0) return null
+  return (
+    <nav data-testid="journey-rail" aria-label="Trip parts">
+      <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>
+        {lc(`Part ${partIdx + 1} of ${partN}`)}
+      </span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', marginTop: 5 }}>
+        {parts.map((p, i) => {
+          const status = legStatus(p, curPart, todayIso)
+          const label = partPlaceLabel(p) || p?.title || `Part ${i + 1}`
+          return (
+            <span key={p?.id ?? i} style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+              {i > 0 && <span aria-hidden="true" style={{ margin: '0 6px', color: 'var(--muted)', fontSize: 12.5 }}>·</span>}
+              <button
+                type="button" onClick={() => onOpenLeg(p.id)}
+                aria-label={`${label}${status === 'now' ? ' — current leg' : status === 'done' ? ' — done' : ''}`}
+                style={{
+                  background: 'transparent', border: 0, padding: '4px 2px', margin: '-4px -2px', cursor: 'pointer',
+                  fontFamily: 'var(--font-body)', fontSize: 12.5, fontWeight: status === 'now' ? 700 : 400,
+                  color: status === 'now' ? 'var(--text)' : 'var(--muted)',
+                }}
+              >
+                {status === 'done' && <span aria-hidden="true">✓ </span>}
+                {status === 'now' && <span aria-hidden="true" style={{ color: 'var(--accent-text)' }}>● </span>}
+                {lc(label)}
+              </button>
+            </span>
+          )
+        })}
+      </div>
+      {showTime && legTz && (
+        <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginTop: 4 }}>
+          {lc(`${clockInZone(legTz)} in ${curPlaceLabel || 'this leg'}`)}
+        </span>
+      )}
+    </nav>
   )
 }
 

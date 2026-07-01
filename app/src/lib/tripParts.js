@@ -320,6 +320,21 @@ export function deriveCurrentLeg(trip, now = new Date()) {
   }
 }
 
+// A leg's progress relative to "today" — done / now / upcoming — for the
+// composite trip's journey rail (hangout-first 03: "Rome ✓ · Florence ● ·
+// Venice"). `curPart` is whatever deriveCurrentLeg/currentPart already
+// resolved, so "now" always agrees with the hero/clock (never a second
+// opinion on which leg is active). Other legs are dated by their own window
+// vs todayIso; a dateless leg (no end date) is never mistaken for done.
+export function legStatus(part, curPart, todayIso) {
+  if (!part) return 'upcoming'
+  if (curPart && part.id === curPart.id) return 'now'
+  const end = String(part.dateEnd || part.dateStart || '').slice(0, 10)
+  const today = String(todayIso || '').slice(0, 10)
+  if (end && today && end < today) return 'done'
+  return 'upcoming'
+}
+
 // "3:00 PM" / "9:00 AM" / "17:00" → minutes since midnight, or null when
 // unparseable (an untimed stop sorts to the front of its day).
 export function clockMinutes(t) {

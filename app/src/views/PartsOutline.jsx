@@ -111,7 +111,10 @@ function PartSection({ part, onOpenStop }) {
   // display label through the shared reader (never render the raw object).
   const placeLabel = partPlaceLabel(part)
   return (
+    // The scroll target for the journey rail's "tap a leg" (LivingHeartHome):
+    // reuses The Plan, no new screen.
     <section
+      id={`plan-part-${part.id}`}
       data-testid="parts-trip-part"
       style={{
         background: 'var(--card)',

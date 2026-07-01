@@ -304,6 +304,27 @@ test('cardToTrip carries an emitted parts[] (composite trip), validated + id-sta
   assert.ok(trip.parts[0].id, 'each part gets a stable id')
 })
 
+test('cardToTrip disambiguates a colliding part id — never lets two legs share one', () => {
+  // Claude is never asked to emit `id` (not in the create_trip schema), but the
+  // schema is prompt-engineered, not enforced — this proves a would-be collision
+  // (e.g. two legs both emitting "id": "leg-1") can never reach storage, since
+  // the journey rail's current-leg match + scroll target both key off it.
+  const card = {
+    type: 'create_trip',
+    trip: {
+      ...SAMPLE_CARD.trip,
+      title: 'Italy, summer',
+      parts: [
+        { id: 'leg-1', type: 'city', title: 'Rome', place: 'Rome', dateStart: '2026-07-01', dateEnd: '2026-07-03' },
+        { id: 'leg-1', type: 'city', title: 'Florence', place: 'Florence', dateStart: '2026-07-04', dateEnd: '2026-07-06' },
+      ],
+    },
+  }
+  const trip = cardToTrip(card)
+  assert.notEqual(trip.parts[0].id, trip.parts[1].id)
+  assert.equal(trip.parts[0].id, 'leg-1') // the first claimant keeps the supplied id
+})
+
 test('cardToTrip omits parts for a simple trip (no parts field at all)', () => {
   const trip = cardToTrip(SAMPLE_CARD)
   assert.equal('parts' in trip, false) // a one-place trip stays parts-less; getParts derives one
