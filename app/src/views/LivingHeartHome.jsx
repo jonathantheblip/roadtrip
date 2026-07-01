@@ -32,6 +32,7 @@ import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib
 import { TRAVELERS } from '../data/travelers'
 import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg } from '../lib/tripParts'
 import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
+import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { PartsOutline } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -153,13 +154,30 @@ export function LivingHeartHome({
   // viewer's ("no delta → no module", 05). No legTz (every trip today) → never
   // shows: byte-identical (G5/G6). Requires a known viewer zone to claim a delta.
   const viewerTz = viewerZone()
-  const showDualClock = !isAfter && !!legTz && !!viewerTz && viewerTz !== legTz
   // Per-leg context (Design 05): the money + language that differ from home on
   // the current leg. legOrientation returns ONLY real deltas (foreign currency /
-  // non-English language), so the card mounts on a genuine delta and never on a
+  // non-English language), so it mounts on a genuine delta and never on a
   // domestic leg — "no delta → no module". Greenfield → empty → no card (G5).
   const orientation = useMemo(() => legOrientation(legCtx), [legCtx])
-  const showContext = !isAfter && !!(orientation.currencyCode || orientation.languageName)
+  // ARRIVAL MOMENT (Design 05 / Jonathan's "two versions by who's looking"): a
+  // trip announces a new place ONCE — the first open there — then the quieter
+  // dual clock + context card carry it. Two-version by whether THIS device is in
+  // the leg's zone: a traveler (phone on local time) gets "You've arrived"; a
+  // remote viewer gets "The family's arrived." Signature = zone+money+language,
+  // so same-zone legs don't re-announce. Persisted per trip in localStorage.
+  const arrivalSig = useMemo(
+    () => arrivalSignature({ legTz, currencyCode: orientation.currencyCode, languageName: orientation.languageName }),
+    [legTz, orientation.currencyCode, orientation.languageName]
+  )
+  const [arrivalDismissed, setArrivalDismissed] = useState(false)
+  const arrivalSeen = useMemo(() => hasSeenArrival(trip.id, arrivalSig), [trip.id, arrivalSig])
+  const showArrival = !isAfter && !!arrivalSig && !arrivalSeen && !arrivalDismissed
+  const viewerIsHere = !!legTz && viewerTz === legTz // phone on the leg's time → a traveler
+  const dismissArrival = () => { markArrivalSeen(trip.id, arrivalSig); setArrivalDismissed(true) }
+  // The quiet orientation surfaces yield to the arrival moment while it's up (it
+  // already carries the clock + money + language); they return after "Got it".
+  const showDualClock = !isAfter && !!legTz && !!viewerTz && viewerTz !== legTz && !showArrival
+  const showContext = !isAfter && !!(orientation.currencyCode || orientation.languageName) && !showArrival
   const partN = isComplex ? partCount(trip) : 0
   const partIdx = useMemo(
     () => (curPart ? getParts(trip).findIndex((p) => p.id === curPart.id) : -1),
@@ -309,6 +327,23 @@ export function LivingHeartHome({
       </button>
 
       <div style={{ padding: '16px 20px 0' }}>
+        {/* ARRIVAL MOMENT — a warm one-time "you've arrived" (traveler) / "the
+            family's arrived" (watching from home), the first open in a new place.
+            Carries the clock + money + language; dismiss → the quiet surfaces
+            below take over. */}
+        {showArrival && (
+          <div style={{ marginBottom: 16 }}>
+            <ArrivalMoment
+              isHere={viewerIsHere}
+              city={curPlaceLabel || legCtx.part?.title || 'a new place'}
+              country={orientation.countryName}
+              legTz={legTz}
+              orientation={orientation}
+              onDismiss={dismissArrival}
+            />
+          </div>
+        )}
+
         {/* THE DUAL CLOCK — the trip's time leads, yours shows faintly, so a
             countdown or "now" is never confidently wrong (Design 03). Only when
             the current leg's zone differs from yours. */}
@@ -620,6 +655,71 @@ function ContextCard({ orientation }) {
         </span>
       ) : null}
     </section>
+  )
+}
+
+// The arrival moment — a warm one-time welcome to a new place, in TWO voices by
+// who's looking (Jonathan's call): a TRAVELER (phone already on local time) gets
+// "You've arrived"; someone watching from HOME gets "The family's arrived." It
+// carries the honest clock + money + language, then "Got it" hands off to the
+// quiet dual clock + context card. Accent-tinted so it reads as a moment.
+function ArrivalMoment({ isHere, city, country, legTz, orientation, onDismiss }) {
+  const { currencyName, currencySymbol, usdHint, languageName, greeting } = orientation
+  const place = country || city
+  return (
+    <section
+      data-testid="arrival-moment"
+      style={{
+        border: '1px solid var(--accent)', borderRadius: 'min(var(--radius, 12px), 16px)',
+        background: 'color-mix(in srgb, var(--accent) 10%, var(--card))', padding: '16px 16px 14px',
+      }}
+    >
+      <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', display: 'block' }}>
+        {isHere ? 'You’ve arrived' : 'The family’s arrived'}{city ? ` · ${city}` : ''}
+      </span>
+      <span style={{ ...DISPLAY, fontSize: 22, color: 'var(--text)', display: 'block', marginTop: 4 }}>
+        {isHere ? `Welcome to ${place}.` : `They’re in ${place} now.`}
+      </span>
+      <span style={{ fontSize: 12.5, color: 'var(--muted)', display: 'block', marginTop: 3 }}>
+        {isHere ? 'A few things are different here.' : 'Here’s the local rundown.'}
+      </span>
+
+      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {legTz && (
+          <ArrivalRow label="Clocks">
+            {isHere
+              ? `You’re on ${city} time now — it’s ${clockInZone(legTz)}.`
+              : `${clockInZone(legTz)} in ${city} · ${clockInZone(null)} where you are`}
+          </ArrivalRow>
+        )}
+        {currencyName && (
+          <ArrivalRow label="Money">
+            {currencyName} ({currencySymbol}){usdHint ? ` · ${usdHint}` : ''}
+          </ArrivalRow>
+        )}
+        {languageName && (
+          <ArrivalRow label="Language">
+            {languageName}{greeting ? ` · “${greeting}”` : ''}
+          </ArrivalRow>
+        )}
+      </div>
+
+      <button
+        type="button" onClick={onDismiss} aria-label="Got it"
+        style={{ ...MONO, fontSize: 10, color: 'var(--accent-ink, #fff)', background: 'var(--accent)', border: 0, borderRadius: 999, cursor: 'pointer', padding: '8px 16px', marginTop: 14 }}
+      >
+        Got it
+      </button>
+    </section>
+  )
+}
+
+function ArrivalRow({ label, children }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+      <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', width: 64, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13.5, color: 'var(--text)' }}>{children}</span>
+    </div>
   )
 }
 

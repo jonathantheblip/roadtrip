@@ -150,11 +150,18 @@ test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)
   await expect(home.getByTestId('leg-context')).toHaveCount(0)
 })
 
+// A new place greets ONCE with the arrival moment; the quiet dual clock + context
+// card take over after "Got it". Dismiss it to reach them.
+async function dismissArrival(home) {
+  await home.getByTestId('arrival-moment').getByRole('button', { name: 'Got it' }).click()
+}
+
 test('a leg with a timezone shows the honest dual clock — leg time leads, yours faint', async ({ page }) => {
   await seedTripIntoCache(page, TZ_LEG_TRIP)
   await page.goto('/?person=jonathan&trip=lhh-tz&nosw=1')
   const home = page.getByTestId('living-heart-home')
   await expect(home).toBeVisible({ timeout: 10000 })
+  await dismissArrival(home) // the arrival moment hands off to the quiet clock
   const clock = home.getByTestId('dual-clock')
   await expect(clock).toBeVisible()
   // The current leg (Rome) leads; the viewer's own time is named faintly. (Exact
@@ -169,12 +176,46 @@ test('a leg abroad shows the per-leg context card — money + language, honest �
   await page.goto('/?person=jonathan&trip=lhh-tz&nosw=1')
   const home = page.getByTestId('living-heart-home')
   await expect(home).toBeVisible({ timeout: 10000 })
+  await dismissArrival(home) // the arrival moment hands off to the quiet card
   const ctx = home.getByTestId('leg-context')
   await expect(ctx).toBeVisible()
   await expect(ctx).toContainText('Euro') // the money the leg uses
   await expect(ctx).toContainText('Italian') // the language
   await expect(ctx).toContainText('Buongiorno') // a greeting
   await expect(ctx).toContainText('≈') // the $ hint is APPROXIMATE, never live/precise (G6)
+})
+
+test('arrival moment (watching from home): "The family\'s arrived", then it hands off on Got it', async ({ page }) => {
+  await seedTripIntoCache(page, TZ_LEG_TRIP) // Rome; viewer is UTC (≠ Europe/Rome) → remote voice
+  await page.goto('/?person=jonathan&trip=lhh-tz&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  const arrival = home.getByTestId('arrival-moment')
+  await expect(arrival).toBeVisible()
+  await expect(arrival).toContainText('The family’s arrived') // the remote-viewer voice
+  await expect(arrival).toContainText('Italy')
+  await expect(arrival).toContainText('Euro') // it carries the local rundown
+  await expect(arrival).toContainText('Italian')
+  // While it's up, the quiet surfaces defer to it (no double clock/card).
+  await expect(home.getByTestId('dual-clock')).toHaveCount(0)
+  // "Got it" hands off to the quiet dual clock and doesn't come back.
+  await arrival.getByRole('button', { name: 'Got it' }).click()
+  await expect(arrival).toHaveCount(0)
+  await expect(home.getByTestId('dual-clock')).toBeVisible()
+})
+
+test.describe('arrival moment (a traveler, phone on local time)', () => {
+  test.use({ timezoneId: 'Europe/Rome' }) // emulate the family's phone in Rome
+  test('gets the personal "You\'ve arrived · Welcome to Italy"', async ({ page }) => {
+    await seedTripIntoCache(page, TZ_LEG_TRIP)
+    await page.goto('/?person=jonathan&trip=lhh-tz&nosw=1')
+    const home = page.getByTestId('living-heart-home')
+    await expect(home).toBeVisible({ timeout: 10000 })
+    const arrival = home.getByTestId('arrival-moment')
+    await expect(arrival).toBeVisible()
+    await expect(arrival).toContainText('You’ve arrived') // the traveler voice (phone tz == leg tz)
+    await expect(arrival).toContainText('Welcome to Italy')
+  })
 })
 
 test('a composite leg with an OBJECT place names the hero "In Rome" — never "[object Object]" (leg-model object-safe)', async ({ page }) => {

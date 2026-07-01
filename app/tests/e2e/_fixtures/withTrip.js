@@ -21,6 +21,7 @@ export async function seedTripIntoCache(page, tripSeed) {
       'rt_memories_private_helen_v1',
       'rt_memories_private_aurelia_v1',
       'rt_memories_private_rafa_v1',
+      'rt_arrival_seen_v1', // the arrival-moment "seen" set — reset so each test starts unseen
     ]
     for (const k of KEYS_TO_CLEAR) localStorage.removeItem(k)
     localStorage.setItem('rt_trips_cache_v1', JSON.stringify([trip]))
