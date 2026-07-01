@@ -171,6 +171,10 @@ test('a calm day (≤4 events) shows all, with NO overflow row', async ({ page }
   await page.goto('/?person=jonathan&trip=lhh-calm&nosw=1')
   const home = page.getByTestId('living-heart-home')
   await expect(home).toBeVisible({ timeout: 10000 })
-  await expect(home.getByText('Lunch out')).toBeVisible()
+  // Scope to the agenda ROW (its aria-label is exactly the stop name). Plain
+  // getByText was TZ-fragile: when the stubbed "now" makes this the NEXT stop
+  // (noon-UTC on CI), the name also appears in the "Next ·" line → a strict-mode
+  // double match. The row button is unambiguous in every timezone.
+  await expect(home.getByRole('button', { name: 'Lunch out', exact: true })).toBeVisible()
   await expect(home.getByText(/more today/i)).toHaveCount(0) // the calm case looks calm
 })
