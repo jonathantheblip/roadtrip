@@ -243,4 +243,31 @@ test.describe('NewTrip — manual-add draft', () => {
     await expect(page.getByText(/here is a first draft/i)).toBeVisible({ timeout: 7000 })
     await expect(page.getByLabel(/Message Claude/i)).toHaveValue('')
   })
+
+  test('a created stay with dates is immediately publishable — seeded summary + days (Design 01#4)', async ({ page }) => {
+    await countTripPosts(page)
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    await gotoIndex(page)
+
+    await page.getByRole('button', { name: /New trip/i }).click()
+    await page.getByRole('button', { name: /A stay/i }).click()
+    await expect(page.getByRole('heading', { name: /New Trip/i })).toBeVisible()
+    await page.getByPlaceholder('A weekend at the cabin').fill("Grandma's this weekend")
+    await page.getByPlaceholder(/Grandma's/).fill("Grandma's")
+    await page.getByLabel(/start date/i).fill('2026-07-03')
+    await page.getByLabel(/end date/i).fill('2026-07-05')
+    await page.getByRole('button', { name: /^Create trip$/i }).click()
+    await expect(page.getByText(/DRAFT — not shown in the trip list/i)).toBeVisible({ timeout: 7000 })
+
+    const cache = await readCache(page)
+    const t = cache.find((x) => x.title === "Grandma's this weekend")
+    expect(t, 'the trip is in the cache').toBeTruthy()
+    // A valid-by-default summary was written…
+    expect(t.overview?.trim().length, 'a summary is seeded').toBeGreaterThan(0)
+    // …and the days seeded from the Jul 3–5 range, each with the date + label the
+    // publish gate needs (isTripPublishable no longer blocks a fresh dated stay).
+    expect(t.days.length, 'three days seeded from the range').toBe(3)
+    expect(t.days.every((d) => d.isoDate && d.title?.trim()), 'each day has a date + label').toBe(true)
+  })
 })

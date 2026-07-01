@@ -91,6 +91,32 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
       if (hit) stayCoords = { lat: hit.lat, lng: hit.lng, geoFor: addr }
     }
 
+    // Seed a valid-by-default SUMMARY + the DAYS from the date range, so the trip
+    // is publishable straight from creation (Design 01#4) — no "add a day + a
+    // summary before you can publish" busywork for a deliberately-unplanned
+    // weekend. Both stay fully editable; empty days are allowed.
+    const seededOverview = driving
+      ? `A road trip${endCity.trim() ? ` to ${endCity.trim()}` : ''}`
+      : placeName.trim()
+        ? `A stay at ${placeName.trim()}`
+        : trimmedTitle
+    const seededDays = (() => {
+      if (!startDate || !endDate) return []
+      const s = new Date(`${startDate}T00:00:00Z`)
+      const e = new Date(`${endDate}T00:00:00Z`)
+      if (isNaN(s) || isNaN(e) || e < s) return []
+      const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      const out = []
+      let n = 1
+      for (const d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+        const label = `${WD[d.getUTCDay()]} ${MO[d.getUTCMonth()]} ${d.getUTCDate()}`
+        out.push({ n, isoDate: d.toISOString().slice(0, 10), date: label, title: label, stops: [] })
+        n++
+      }
+      return out
+    })()
+
     // Renderer-safe shape: every field the themed views read exists, with safe
     // empties. `draft: true` keeps it out of the polished views (and the
     // cold-start picker) until it's published. `shape` is set explicitly so the
@@ -114,14 +140,14 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
       endCity: driving ? endCity.trim() : '',
       miles: 0,
       travelers,
-      overview: '',
+      overview: seededOverview,
       sharedAlbumURL: '',
       // The stay spine. Always present (renderer-safe); filled for a stay. Coords
       // ride along when the address geocoded so the place card + filer engage now.
       lodging: !driving
         ? { name: placeName.trim(), address: addr, ...(stayCoords || {}) }
         : {},
-      days: [],
+      days: seededDays,
       // The parts model (new-trip redesign). A simple trip is one part; its type
       // carries the finer shape the picker chose (a city vs a lazy stay) while the
       // legacy `shape`/`lodging`/`days` above keep every existing surface rendering
@@ -134,7 +160,7 @@ export function NewTrip({ onBack, onCreate, presetShape, dark = false }) {
           place: !driving ? { name: placeName.trim(), address: addr, ...(stayCoords || {}) } : null,
           dateStart: startDate || null,
           dateEnd: endDate || null,
-          days: [],
+          days: seededDays,
         },
       ],
     }
