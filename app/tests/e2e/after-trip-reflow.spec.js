@@ -52,8 +52,9 @@ for (const person of ['jonathan', 'helen', 'aurelia']) {
     await expect(home).toBeVisible()
     // The unified keepsake markers: the "Looking back" hero + the photo WALL section
     // ("The trip in photos"), the SAME living heart for everyone.
-    await expect(home).toContainText('Looking back')
-    await expect(home).toContainText('The trip in photos')
+    // Case-insensitive: Aurelia's lens lowercases the home's prose (the facelift).
+    await expect(home).toContainText(/Looking back/i)
+    await expect(home).toContainText(/The trip in photos/i)
     // The per-lens keepsake heroes are RETIRED — gone for everyone.
     await expect(page.getByTestId('entries-replay-hero')).toHaveCount(0)
     await expect(page.getByTestId('helen-replay-hero')).toHaveCount(0)
@@ -68,8 +69,9 @@ for (const person of ['jonathan', 'helen', 'aurelia']) {
 
     const home = page.getByTestId('living-heart-home')
     await expect(home).toBeVisible()
-    // DURING: the "Lately" layout, not the after keepsake.
-    await expect(home).toContainText('Lately')
+    // DURING: the "Lately" layout, not the after keepsake. (Case-insensitive —
+    // Aurelia's lens lowercases it to "lately".)
+    await expect(home).toContainText(/Lately/i)
     await expect(home).not.toContainText('Looking back')
     await expect(home.getByTestId('relive-trip')).toHaveCount(0)
 

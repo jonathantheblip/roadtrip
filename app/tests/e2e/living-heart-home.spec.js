@@ -73,7 +73,8 @@ test('an empty agenda is "alive at empty" — a nothing-day line + "Add somethin
 
   // Not hidden — an honest empty state, not a missing section.
   await expect(home.getByText("On the agenda")).toBeVisible()
-  await expect(home.getByText("Nothing planned — and that's allowed")).toBeVisible()
+  // Jonathan's voice (the per-lens facelift): warm + direct, not the warm base.
+  await expect(home.getByText("Nothing planned today — take it easy")).toBeVisible()
   const addSomething = home.getByRole('button', { name: /add something/i })
   await expect(addSomething).toBeVisible()
 

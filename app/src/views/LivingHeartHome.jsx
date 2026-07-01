@@ -33,6 +33,7 @@ import { TRAVELERS } from '../data/travelers'
 import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg } from '../lib/tripParts'
 import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
+import { homeVoice } from '../lib/homeVoice'
 import { PartsOutline } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -115,6 +116,10 @@ export function LivingHeartHome({
     return () => { cancelled = true }
   }, [trip.id])
 
+  // Per-lens VOICE (Design 06 facelift): same structure, tuned words — Aurelia
+  // lowercase + dreamier, Jonathan drier/ops, Helen the warm base. v.lc() is the
+  // lowercase transform (identity for everyone but Aurelia).
+  const v = useMemo(() => homeVoice(traveler), [traveler])
   const place = stayLabel(trip)
   const isStay = isStayTrip(trip)
   const phase = tripPhase(trip)
@@ -321,8 +326,8 @@ export function LivingHeartHome({
         <span aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 34%, rgba(0,0,0,0.80))' }} />
         <span style={{ position: 'absolute', left: 20, right: 20, bottom: 16, display: 'block' }}>
           <span style={{ ...MONO, fontSize: 11, color: 'rgba(255,255,255,0.82)', display: 'block' }}>{trip.title}</span>
-          <span style={{ ...DISPLAY, fontSize: 32, color: '#fff', lineHeight: 1.04, display: 'block', marginTop: 6 }}>{heroBig}</span>
-          {ambient && <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.86)', display: 'block', marginTop: 5 }}>{ambient}</span>}
+          <span style={{ ...DISPLAY, fontSize: 32, color: '#fff', lineHeight: 1.04, display: 'block', marginTop: 6 }}>{v.lc(heroBig)}</span>
+          {ambient && <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.86)', display: 'block', marginTop: 5 }}>{v.lc(ambient)}</span>}
         </span>
       </button>
 
@@ -340,6 +345,7 @@ export function LivingHeartHome({
               legTz={legTz}
               orientation={orientation}
               onDismiss={dismissArrival}
+              lc={v.lc}
             />
           </div>
         )}
@@ -349,7 +355,7 @@ export function LivingHeartHome({
             the current leg's zone differs from yours. */}
         {showDualClock && (
           <div style={{ marginBottom: 16 }}>
-            <DualClock tz={legTz} city={curPlaceLabel || legCtx.part?.title || 'there'} />
+            <DualClock tz={legTz} city={curPlaceLabel || legCtx.part?.title || 'there'} lc={v.lc} />
           </div>
         )}
 
@@ -357,7 +363,7 @@ export function LivingHeartHome({
             Only on a real delta; a domestic leg mounts nothing. */}
         {showContext && (
           <div style={{ marginBottom: 16 }}>
-            <ContextCard orientation={orientation} />
+            <ContextCard orientation={orientation} lc={v.lc} />
           </div>
         )}
 
@@ -371,12 +377,12 @@ export function LivingHeartHome({
             <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 16, lineHeight: 1.5, color: 'var(--text)', display: 'block' }}>{weave.opening}</span>
           ) : (
             <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 15, lineHeight: 1.5, color: 'var(--muted)', display: 'block' }}>
-              {isAfter ? 'Your trip’s story lives here.' : upcoming ? 'Your trip’s story will write itself here.' : 'The day’s story appears here once the day has a little in it.'}
+              {isAfter ? v.weaveAfter : upcoming ? v.weaveUpcoming : v.weaveDuring}
             </span>
           )}
           <span style={{ ...MONO, fontSize: 10, color: 'var(--accent-text)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 9 }}>
             {weaveReady && <WeaveReady traveler={traveler} />}
-            {weave?.opening ? 'The story so far' : 'The Weave'} <ChevronRight size={12} />
+            {weave?.opening ? v.weaveStoryKicker : v.weaveKicker} <ChevronRight size={12} />
           </span>
         </button>
 
@@ -402,7 +408,7 @@ export function LivingHeartHome({
               </span>
             )}
             <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', display: 'block' }}>{nextWhen ? `Next up · ${nextWhen}` : 'Next up'}</span>
+              <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', display: 'block' }}>{v.lc(nextWhen ? `Next up · ${nextWhen}` : 'Next up')}</span>
               <span style={{ fontSize: 14.5, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nextThing.stop.name}</span>
               {(nextThing.stop.flightNumber || nextThing.stop.note) && (
                 <span style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -426,8 +432,8 @@ export function LivingHeartHome({
           >
             <Compass size={16} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
             <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>While you’re there</span>
-              <span style={{ fontSize: 13.5, color: 'var(--text)', display: 'block', marginTop: 2 }}>See what you could do nearby</span>
+              <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>{v.nearbyKicker}</span>
+              <span style={{ fontSize: 13.5, color: 'var(--text)', display: 'block', marginTop: 2 }}>{v.nearbyLine}</span>
             </span>
             <ChevronRight size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
           </button>
@@ -436,7 +442,7 @@ export function LivingHeartHome({
         {/* PHOTOS — "Lately" during a trip; a fuller WALL once it's over (keepsake). */}
         <div style={{ marginTop: 22 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{isAfter ? 'The trip in photos' : 'Lately'}</span>
+            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{v.lc(isAfter ? 'The trip in photos' : 'Lately')}</span>
             {!isAfter && hasPhotos && todayCount > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{todayCount} today</span>}
           </div>
           {hasPhotos ? (
@@ -456,7 +462,7 @@ export function LivingHeartHome({
             </>
           ) : (
             <div style={{ marginTop: 11, padding: '18px 14px', borderRadius: 'min(var(--radius, 12px), 14px)', border: '1px dashed var(--line-bold, var(--border))', textAlign: 'center', fontSize: 12.5, color: 'var(--muted)' }}>
-              {isAfter ? 'No photos from this trip.' : 'Photos will gather here as you go'}
+              {isAfter ? v.lc('No photos from this trip.') : v.photosGather}
             </div>
           )}
         </div>
@@ -467,7 +473,7 @@ export function LivingHeartHome({
             type="button" onClick={onOpenReplay} data-testid="relive-trip" aria-label="Relive the trip"
             style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, padding: '13px 14px', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink, #fff)', border: 0, borderRadius: 'min(var(--radius, 12px), 14px)', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 600 }}
           >
-            <Play size={16} /> Relive the trip
+            <Play size={16} /> {v.lc('Relive the trip')}
           </button>
         )}
 
@@ -476,7 +482,7 @@ export function LivingHeartHome({
             row opens the stop; renders only when there's something planned. */}
         {!isAfter && !isComplex && (hasAgenda || (arrival && onOpenStop)) && (
           <div style={{ marginTop: 22 }}>
-            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>On the agenda</span>
+            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{v.lc('On the agenda')}</span>
             <div style={{ marginTop: 11, border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', overflow: 'hidden' }}>
               {arrival && onOpenStop && (
                 <button
@@ -486,7 +492,7 @@ export function LivingHeartHome({
                 >
                   <Plane size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>Flight</span>
+                    <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>{v.lc('Flight')}</span>
                     <span style={{ fontSize: 13.5, color: 'var(--text)', display: 'block', marginTop: 2 }}>
                       {arrival.stop.flightNumber || 'Flight'}{arrival.stop.flightOrigin ? ` · ${arrival.stop.flightOrigin}→${arrival.stop.flightDest || ''}` : ''}
                     </span>
@@ -518,7 +524,7 @@ export function LivingHeartHome({
                   style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', cursor: 'pointer', background: 'var(--card)', border: 0, borderTop: '1px solid var(--border)', padding: '11px 13px', color: 'var(--accent-text)' }}
                 >
                   <span style={{ flex: 1, minWidth: 0, ...MONO, fontSize: 10, color: 'var(--accent-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {agendaOpen ? 'Show less' : `+${agendaOverflow} more today${agendaHiddenTimes ? ` · ${agendaHiddenTimes}` : ''}`}
+                    {v.lc(agendaOpen ? 'Show less' : `+${agendaOverflow} more today${agendaHiddenTimes ? ` · ${agendaHiddenTimes}` : ''}`)}
                   </span>
                   {agendaOpen
                     ? <ChevronUp size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
@@ -534,7 +540,7 @@ export function LivingHeartHome({
             is honest — it opens the editor, the real place a plan gets made. */}
         {!isAfter && !isComplex && agendaIsEmpty && (
           <div style={{ marginTop: 22 }}>
-            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>On the agenda</span>
+            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{v.lc('On the agenda')}</span>
             <div
               style={{
                 marginTop: 11, padding: '18px 14px', borderRadius: 'min(var(--radius, 12px), 14px)',
@@ -542,17 +548,17 @@ export function LivingHeartHome({
               }}
             >
               <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>
-                Nothing planned — and that's allowed
+                {v.agendaEmptyKicker}
               </span>
               <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14.5, color: 'var(--text)', display: 'block', marginTop: 6 }}>
-                {nothingDayLine}
+                {v.lc(nothingDayLine)}
               </span>
               {onOpenEditor && (
                 <button
                   type="button" onClick={onOpenEditor} aria-label="Add something to the plan"
                   style={{ ...MONO, fontSize: 10, color: 'var(--accent-text)', background: 'transparent', border: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, padding: 0 }}
                 >
-                  Add something <ChevronRight size={12} />
+                  {v.addSomething} <ChevronRight size={12} />
                 </button>
               )}
             </div>
@@ -564,7 +570,7 @@ export function LivingHeartHome({
         {isComplex && !isAfter && (
           <div style={{ marginTop: 22 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>The plan</span>
+              <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{v.lc('The plan')}</span>
               {partN > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{partN} {partN === 1 ? 'part' : 'parts'}</span>}
             </div>
             <div style={{ marginTop: 11 }}>
@@ -577,17 +583,17 @@ export function LivingHeartHome({
         {nowReadout?.next && (
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--live, var(--accent))', flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>Next · {nowReadout.next}</span>
+            <span style={{ fontSize: 13, color: 'var(--muted)' }}>{v.lc(`Next · ${nowReadout.next}`)}</span>
           </div>
         )}
 
         {/* QUIET ACTIONS — the folded features (demoted, NOT deleted: do-not-lose).
             Replay only when there's something to replay (honest). */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 18, paddingTop: 14, borderTop: nowReadout?.next ? 0 : '1px solid var(--border)' }}>
-          {onCompose && <QuietAction onClick={onCompose} icon={<Share2 size={13} />} label="Share a moment" />}
-          {onOpenSurprises && <QuietAction onClick={onOpenSurprises} icon={<Sparkles size={13} />} label="Surprises" />}
-          {!isAfter && hasPhotos && onOpenReplay && <QuietAction onClick={onOpenReplay} icon={<Play size={13} />} label="Replay" />}
-          {bookHasPages && onOpenBook && <QuietAction onClick={onOpenBook} icon={<BookOpen size={13} />} label="The book" aria="The Book · kept pages" />}
+          {onCompose && <QuietAction onClick={onCompose} icon={<Share2 size={13} />} label={v.lc('Share a moment')} aria="Share a moment" />}
+          {onOpenSurprises && <QuietAction onClick={onOpenSurprises} icon={<Sparkles size={13} />} label={v.lc('Surprises')} aria="Surprises" />}
+          {!isAfter && hasPhotos && onOpenReplay && <QuietAction onClick={onOpenReplay} icon={<Play size={13} />} label={v.lc('Replay')} aria="Replay" />}
+          {bookHasPages && onOpenBook && <QuietAction onClick={onOpenBook} icon={<BookOpen size={13} />} label={v.lc('The book')} aria="The Book · kept pages" />}
         </div>
       </div>
     </div>
@@ -599,7 +605,7 @@ export function LivingHeartHome({
 // — with your time shown faintly, nothing ever confidently wrong" (copy 04).
 // Ticks in its own state (30s — minute precision) so the home doesn't re-render
 // each second. Rendered only when the caller has confirmed a real zone delta.
-function DualClock({ tz, city }) {
+function DualClock({ tz, city, lc = (s) => s }) {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000)
@@ -611,10 +617,10 @@ function DualClock({ tz, city }) {
       style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--muted)' }}
     >
       <span style={{ color: 'var(--text)' }}>
-        <strong style={{ fontWeight: 600 }}>{clockInZone(tz, now)}</strong> in {city}
+        <strong style={{ fontWeight: 600 }}>{lc(clockInZone(tz, now))}</strong> {lc(`in ${city}`)}
       </span>
       <span aria-hidden="true">·</span>
-      <span>{clockInZone(null, now)} where you are</span>
+      <span>{lc(`${clockInZone(null, now)} where you are`)}</span>
     </div>
   )
 }
@@ -623,7 +629,7 @@ function DualClock({ tz, city }) {
 // differ HERE, labelled by country. Honest — the $ hint carries a "≈" + the
 // snapshot's as-of month (never a live rate); a row shows only for an axis that
 // actually differs from home. Ambient information, not a to-do.
-function ContextCard({ orientation }) {
+function ContextCard({ orientation, lc = (s) => s }) {
   const { currencyCode, currencyName, currencySymbol, usdHint, languageName, greeting, countryName } = orientation
   return (
     <section
@@ -631,27 +637,27 @@ function ContextCard({ orientation }) {
       style={{ border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', background: 'var(--card)', padding: '12px 14px' }}
     >
       <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>
-        {countryName ? `In ${countryName} · good to know` : 'Good to know'}
+        {lc(countryName ? `In ${countryName} · good to know` : 'Good to know')}
       </span>
       {currencyCode && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 8 }}>
-          <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', width: 64, flexShrink: 0 }}>Money</span>
+          <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', width: 64, flexShrink: 0 }}>{lc('Money')}</span>
           <span style={{ fontSize: 13.5, color: 'var(--text)' }}>
-            {currencyName || currencyCode} ({currencySymbol}){usdHint ? ` · ${usdHint}` : ''}
+            {lc(`${currencyName || currencyCode} (${currencySymbol})${usdHint ? ` · ${usdHint}` : ''}`)}
           </span>
         </div>
       )}
       {languageName && (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
-          <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', width: 64, flexShrink: 0 }}>Language</span>
+          <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', width: 64, flexShrink: 0 }}>{lc('Language')}</span>
           <span style={{ fontSize: 13.5, color: 'var(--text)' }}>
-            {languageName}{greeting ? ` · “${greeting}”` : ''}
+            {lc(`${languageName}${greeting ? ` · “${greeting}”` : ''}`)}
           </span>
         </div>
       )}
       {usdHint ? (
         <span style={{ fontSize: 10.5, color: 'var(--muted)', display: 'block', marginTop: 8 }}>
-          Approximate rate, {FX_AS_OF}
+          {lc(`Approximate rate, ${FX_AS_OF}`)}
         </span>
       ) : null}
     </section>
@@ -663,7 +669,7 @@ function ContextCard({ orientation }) {
 // "You've arrived"; someone watching from HOME gets "The family's arrived." It
 // carries the honest clock + money + language, then "Got it" hands off to the
 // quiet dual clock + context card. Accent-tinted so it reads as a moment.
-function ArrivalMoment({ isHere, city, country, legTz, orientation, onDismiss }) {
+function ArrivalMoment({ isHere, city, country, legTz, orientation, onDismiss, lc = (s) => s }) {
   const { currencyName, currencySymbol, usdHint, languageName, greeting } = orientation
   const place = country || city
   return (
@@ -675,31 +681,31 @@ function ArrivalMoment({ isHere, city, country, legTz, orientation, onDismiss })
       }}
     >
       <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', display: 'block' }}>
-        {isHere ? 'You’ve arrived' : 'The family’s arrived'}{city ? ` · ${city}` : ''}
+        {lc(`${isHere ? 'You’ve arrived' : 'The family’s arrived'}${city ? ` · ${city}` : ''}`)}
       </span>
       <span style={{ ...DISPLAY, fontSize: 22, color: 'var(--text)', display: 'block', marginTop: 4 }}>
-        {isHere ? `Welcome to ${place}.` : `They’re in ${place} now.`}
+        {lc(isHere ? `Welcome to ${place}.` : `They’re in ${place} now.`)}
       </span>
       <span style={{ fontSize: 12.5, color: 'var(--muted)', display: 'block', marginTop: 3 }}>
-        {isHere ? 'A few things are different here.' : 'Here’s the local rundown.'}
+        {lc(isHere ? 'A few things are different here.' : 'Here’s the local rundown.')}
       </span>
 
       <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {legTz && (
-          <ArrivalRow label="Clocks">
-            {isHere
+          <ArrivalRow label={lc('Clocks')}>
+            {lc(isHere
               ? `You’re on ${city} time now — it’s ${clockInZone(legTz)}.`
-              : `${clockInZone(legTz)} in ${city} · ${clockInZone(null)} where you are`}
+              : `${clockInZone(legTz)} in ${city} · ${clockInZone(null)} where you are`)}
           </ArrivalRow>
         )}
         {currencyName && (
-          <ArrivalRow label="Money">
-            {currencyName} ({currencySymbol}){usdHint ? ` · ${usdHint}` : ''}
+          <ArrivalRow label={lc('Money')}>
+            {lc(`${currencyName} (${currencySymbol})${usdHint ? ` · ${usdHint}` : ''}`)}
           </ArrivalRow>
         )}
         {languageName && (
-          <ArrivalRow label="Language">
-            {languageName}{greeting ? ` · “${greeting}”` : ''}
+          <ArrivalRow label={lc('Language')}>
+            {lc(`${languageName}${greeting ? ` · “${greeting}”` : ''}`)}
           </ArrivalRow>
         )}
       </div>
@@ -708,7 +714,7 @@ function ArrivalMoment({ isHere, city, country, legTz, orientation, onDismiss })
         type="button" onClick={onDismiss} aria-label="Got it"
         style={{ ...MONO, fontSize: 10, color: 'var(--accent-ink, #fff)', background: 'var(--accent)', border: 0, borderRadius: 999, cursor: 'pointer', padding: '8px 16px', marginTop: 14 }}
       >
-        Got it
+        {lc('Got it')}
       </button>
     </section>
   )
