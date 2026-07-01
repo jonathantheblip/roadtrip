@@ -29,7 +29,9 @@ jobs:
     # -linux baselines and the e2e gate would fail. macos-latest matches
     # the baselines (and is the OS they were captured on).
     runs-on: macos-latest
-    timeout-minutes: 30
+    # 45, not 30 — matches deploy-client: the shared e2e suite grew to ~25–30 min
+    # and a slow runner can tip a green run past 30, cancelling it at the finish.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v5

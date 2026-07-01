@@ -39,7 +39,11 @@ jobs:
     # e2e gate would fail. Same constraint as the worker pipeline — it runs
     # the same suite.
     runs-on: macos-latest
-    timeout-minutes: 30
+    # 45, not 30: the e2e suite (chromium + webkit-mobile, retries:1 on CI) grew
+    # to ~25–30 min and a slightly-slow runner tipped a green run past the old
+    # 30-min limit — cancelling it AT the finish line (all tests passed). Headroom
+    # so a passing suite is never cut off; shard into parallel jobs if it climbs.
+    timeout-minutes: 45
     # Pages deployment environment (required by actions/deploy-pages); the
     # published URL surfaces on the run and in the environment.
     environment:
