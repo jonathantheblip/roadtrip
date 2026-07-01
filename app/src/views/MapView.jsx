@@ -10,6 +10,9 @@ import {
 } from '../lib/routeProgress'
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { RouteMapLazy } from '../components/RouteMapLazy'
+import { isStayTrip, stayLabel, stayPlaceCoords, atPlace } from '../lib/tripShape'
+import { isCompositeTrip, currentPart, currentPartCoords } from '../lib/tripParts'
+import { todayLocalIso } from '../lib/localDate'
 import './MapView.css'
 
 // The device must be within ~3 km of the route line to count as "on the trip"
@@ -20,30 +23,52 @@ import './MapView.css'
 // fabricated "this drive 73%" / trip bar as if they were driving it).
 const OFF_ROUTE_LIMIT_M = 3000
 
-// Generalized live map. Works for ANY trip: route line, pins, and framing
-// all come from the active trip's stops (allStops flattens days + adds
-// .day). Straight-line live progress per the decided scope — directionally
-// right, not road-accurate. Themed to the active traveler via the existing
-// activePerson-keyed tile/accent in RouteMap.
+// A part's place as a plain string (the composite renderer stores place as a
+// STRING; NewTrip/currentPartCoords store it as an OBJECT — read both safely so
+// an object place never renders as "[object Object]" or crashes).
+function partPlaceLabel(part) {
+  const p = part?.place
+  if (typeof p === 'string') return p.trim()
+  if (p && typeof p === 'object') return String(p.name || p.address || '').trim()
+  return ''
+}
+
+// Generalized live map. Works for ANY trip, SHAPE-AWARE (Design decision 1): the
+// drive %/bar/road rail is the exception, shown ONLY when the trip is a genuine
+// road trip (a drive is the live thing). Every stay and every composite/multi-
+// city trip gets the calm "Where we are" place face — no route line, no %, no
+// "up next" drive rail (which answered a question those trips never asked). The
+// full per-leg city/mixed detail (next-leg walk/transit rows, the FLIGHT·TRAIN·
+// ON-FOOT strip) + live presence bubbles wait for the leg data-model + a transit
+// source; this ships the core rule now. Themed via the activePerson tile/accent.
 export function MapView({ trip, traveler = 'everyone', onBack }) {
   const stops = useMemo(() => allStops(trip), [trip])
   const geometry = useMemo(() => buildRouteGeometry(stops), [stops])
 
+  // WHICH FACE. A stay or a composite (multi-city) trip is NOT a drive — its
+  // "live thing" is where you are, not a percentage of a road. Only a genuine
+  // road trip (neither stay nor composite) earns the drive face + its bar.
+  const isStay = useMemo(() => isStayTrip(trip), [trip])
+  const isComposite = useMemo(() => isCompositeTrip(trip), [trip])
+  const isDrive = !isStay && !isComposite
+
   // Real road route (Google Routes via the worker /route, async + cached).
   // The drawn route + traveled overlay upgrade from straight-line to real
   // roads when it resolves; everything falls back to `geometry` until then /
-  // when the worker is unconfigured or offline.
+  // when the worker is unconfigured or offline. Only fetched for the drive
+  // face — a stay/city trip has no "road distance" to draw or announce.
   const [road, setRoad] = useState(null)
   useEffect(() => {
     let cancelled = false
     setRoad(null)
+    if (!isDrive) return
     fetchRoadRoute(stops).then((r) => {
       if (!cancelled) setRoad(r)
     })
     return () => {
       cancelled = true
     }
-  }, [stops])
+  }, [stops, isDrive])
 
   const routeLine = useMemo(
     () =>
@@ -132,8 +157,37 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
     : status === 'unavailable' ? 'Location unavailable'
     : 'Locating…'
 
+  // WHERE-WE-ARE face data (stay + composite). The place we're anchored at — a
+  // stay's lodging, or the composite's current leg (currentPartCoords falls back
+  // to the stay place, and is object-safe re: the string-vs-object part.place).
+  const today = todayLocalIso()
+  const placeName = useMemo(() => {
+    if (isStay) return stayLabel(trip)
+    if (isComposite) return partPlaceLabel(currentPart(trip, today)) || trip?.title || 'where we are'
+    return ''
+  }, [isStay, isComposite, trip, today])
+  const placeCoords = useMemo(
+    () => (isDrive ? null : (isComposite ? currentPartCoords(trip, today) : stayPlaceCoords(trip))),
+    [isDrive, isComposite, trip, today]
+  )
+  // "You're here" ONLY when a real fix sits inside the place footprint — never a
+  // fabricated presence (G6). Else a calm, honest orientation line (no "follow
+  // the drive" scolding — a stay isn't a drive).
+  const atThePlace = !isDrive && live && atPlace(placeCoords, position)
+  const whereLine =
+    atThePlace ? 'You’re here'
+    : live ? 'Following along'
+    : status === 'denied' ? 'Location off'
+    : status === 'unavailable' ? 'Location unavailable'
+    : 'Locating…'
+
+  // The map draws the route line + traveled overlay ONLY on the drive face —
+  // a stay/composite gets pins + the live dot, no connecting road line.
+  const mapRouteLine = isDrive ? routeLine : []
+  const mapTraveledLine = isDrive ? traveled : []
+
   return (
-    <div className="mapview" data-mode="trip">
+    <div className="mapview" data-mode="trip" data-face={isDrive ? 'drive' : isComposite ? 'composite' : 'stay'}>
       <button
         type="button"
         className="mapview-back"
@@ -147,13 +201,29 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
         <RouteMapLazy
           stops={stops}
           activePerson={traveler}
-          routeLine={routeLine}
-          traveledLine={traveled}
+          routeLine={mapRouteLine}
+          traveledLine={mapTraveledLine}
           onStopSelect={(s) => setSelectedStopId(s.id)}
           selectedStopId={selectedStopId}
         />
       </div>
 
+      {!isDrive ? (
+        // WHERE WE ARE — the calm place face for a stay or a composite/multi-city
+        // trip. No drive %, no road rail, no "up next" stop-by-clock — just where
+        // we are, honestly (Design decision 1: the bar is the drive exception).
+        <div className="mapview-panel" data-testid="map-where-we-are">
+          <div className="mapview-status">
+            <span className={`mapview-dot ${atThePlace ? 'on' : 'off'}`} />
+            Where we are
+            {selectedStop && <span className="mapview-sel"> · {selectedStop.name}</span>}
+          </div>
+          <div className="mapview-cell">
+            <strong className="mapview-next-name">{placeName}</strong>
+            <span className="mapview-leg-ends">{whereLine}</span>
+          </div>
+        </div>
+      ) : (
       <div className="mapview-panel">
         {/* Where we are */}
         <div className="mapview-status">
@@ -228,6 +298,7 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
