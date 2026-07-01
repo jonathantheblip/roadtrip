@@ -9,9 +9,19 @@
 // trips as JSON and never inspects this field). The worker's draft read-filter and masking
 // boundary are unaffected.
 //
-//   Part = {
+//   Part / "leg" = {
 //     id, type,                 // type ∈ PART_TYPES
-//     title?, place?,           // place: the stay/destination anchor (null for a pure drive/flight leg)
+//     title?, place?,           // place: a STRING city name (NewTripComposite + the worker
+//                               //   create_trip prompt both emit one) OR an OBJECT
+//                               //   { name, address, lat, lng } (a single-part NewTrip stay).
+//                               //   Read it ONLY through partPlaceLabel / partCoords below —
+//                               //   NEVER `${part.place}` (an object renders "[object Object]").
+//     coords?,                  // { lat, lng } — the leg's canonical coord slot, so a
+//                               //   string-place leg can carry coordinates without reshaping
+//                               //   `place` (the leg model's forward slot for tz/We-could anchoring)
+//     tz?,                      // IANA zone, e.g. 'Europe/Rome' — per-leg "now"/countdowns
+//     currency?, locale?,       // ISO 4217 + BCP-47 — per-leg context card + nearby search
+//     members?,                 // [travelerId] — who is on THIS leg (presence scoping)
 //     dateStart?, dateEnd?,     // both OPTIONAL — a loose "weekend at Grandma's" needs neither
 //     days?,                    // the day/stop detail for this part (legacy days live in the one wrapper)
 //     visibility?,              // surprise scoping (set by the intake; enforced by worker/src/surprises.js)
@@ -47,6 +57,39 @@ export function getParts(trip) {
       days: trip.days || [],
     },
   ]
+}
+
+// ── Object-safe place accessors (the ONE home for reading a leg's place) ─────
+// `place` is inconsistent across producers: a STRING city name (NewTripComposite
+// + the worker create_trip prompt) vs an OBJECT { name, address, lat, lng } (a
+// single-part NewTrip stay). Today's composite trips carry string places, so the
+// display reads work — but the moment a composite leg gains coords (which per-leg
+// hero / conditions / We-could / Map anchoring REQUIRES), a bare `${part.place}`
+// would render "[object Object]". So every place read — label and coords — goes
+// through these. Mirrors (and now replaces) MapView's local partPlaceLabel.
+
+// The human label for a part's place: the string itself, or an object place's
+// name (then address). '' when absent — the caller falls back to title/trip title.
+export function partPlaceLabel(part) {
+  const p = part?.place
+  if (typeof p === 'string') return p.trim()
+  if (p && typeof p === 'object') return String(p.name || p.address || '').trim()
+  return ''
+}
+
+// The coordinates for a part, or null. Prefers the leg's explicit `coords` slot
+// (canonical — lets a string-place leg carry coordinates), then an object place's
+// own lat/lng. Never throws; a string place with no `coords` returns null.
+export function partCoords(part) {
+  const c = part?.coords
+  if (c && typeof c === 'object' && Number.isFinite(c.lat) && Number.isFinite(c.lng)) {
+    return { lat: c.lat, lng: c.lng }
+  }
+  const p = part?.place
+  if (p && typeof p === 'object' && Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+    return { lat: p.lat, lng: p.lng }
+  }
+  return null
 }
 
 // The overall shape of a trip, generalized for parts. An explicit `trip.shape` always wins (as
@@ -228,14 +271,14 @@ export function currentPart(trip, todayIso) {
 // ADDITIVE + non-breaking: a trip with no explicit parts (the common stay) returns
 // exactly stayPlaceCoords(trip) — byte-identical to before. A composite whose
 // active part has no coords also falls back to the trip-level anchor, so it never
-// regresses below today's single-anchor behavior.
+// regresses below today's single-anchor behavior. Coords + label come from the
+// object-safe partCoords / partPlaceLabel, so an explicit-`coords` string-place
+// leg anchors too (not only an object place).
 export function currentPartCoords(trip, todayIso) {
   if (hasExplicitParts(trip)) {
     const part = currentPart(trip, todayIso)
-    const place = part?.place
-    if (place && typeof place === 'object' && Number.isFinite(place.lat) && Number.isFinite(place.lng)) {
-      return { lat: place.lat, lng: place.lng, label: place.name || place.address || part.title || '' }
-    }
+    const c = partCoords(part)
+    if (c) return { lat: c.lat, lng: c.lng, label: partPlaceLabel(part) || part?.title || '' }
   }
   return stayPlaceCoords(trip)
 }

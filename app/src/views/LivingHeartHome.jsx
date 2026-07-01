@@ -30,7 +30,7 @@ import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
 import { TRAVELERS } from '../data/travelers'
-import { isCompositeTrip, currentPart, nextTimedStop, partCount, getParts, currentPartCoords } from '../lib/tripParts'
+import { isCompositeTrip, currentPart, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel } from '../lib/tripParts'
 import { PartsOutline } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -131,6 +131,10 @@ export function LivingHeartHome({
   // trips stay byte-identical (partCount 0 or 1 → not composite; G5).
   const isComplex = isCompositeTrip(trip)
   const curPart = useMemo(() => (isComplex ? currentPart(trip, todayLocalIso()) : null), [isComplex, trip])
+  // Object-safe: a leg's place is a string (composite) OR an object (a coords-
+  // carrying leg) — read the display label through the one shared reader so a
+  // coords-bearing leg never renders "In [object Object]".
+  const curPlaceLabel = useMemo(() => partPlaceLabel(curPart), [curPart])
   const partN = isComplex ? partCount(trip) : 0
   const partIdx = useMemo(
     () => (curPart ? getParts(trip).findIndex((p) => p.id === curPart.id) : -1),
@@ -161,7 +165,7 @@ export function LivingHeartHome({
   const heroBig = isAfter
     ? (isStay ? place : (trip.title || place || 'Your trip')) // a keepsake header, not "At [place]"
     : isComplex
-    ? (curPart?.place ? `In ${curPart.place}` : (curPart?.title || trip.title || 'Your trip'))
+    ? (curPlaceLabel ? `In ${curPlaceLabel}` : (curPart?.title || trip.title || 'Your trip'))
     : isStay ? `At ${place}` : (todayTitle || (di.dayX ? `Day ${di.dayX}` : (trip.title || 'Your trip')))
   // Anchor to WHERE THE TRIP IS NOW — the active leg's place on a composite trip,
   // else the trip-level stay anchor (currentPartCoords falls back to it). Identical
@@ -254,7 +258,7 @@ export function LivingHeartHome({
     <div data-testid="living-heart-home" style={{ color: 'var(--text)' }}>
       {/* HERO — the place, cinematic. Tapping it opens "where we are" (the map). */}
       <button
-        type="button" onClick={onOpenMap} aria-label={`Where we are — ${isStay ? place : (curPart?.place || trip.title)}`}
+        type="button" onClick={onOpenMap} aria-label={`Where we are — ${isStay ? place : (curPlaceLabel || trip.title)}`}
         style={{
           display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer', border: 0, padding: 0,
           position: 'relative', height: 300, overflow: 'hidden', background: 'linear-gradient(135deg, var(--bg2), var(--card))',

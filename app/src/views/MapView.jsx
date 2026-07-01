@@ -11,7 +11,7 @@ import {
 import { fetchRoadRoute } from '../lib/driveRoute'
 import { RouteMapLazy } from '../components/RouteMapLazy'
 import { isStayTrip, stayLabel, stayPlaceCoords, atPlace } from '../lib/tripShape'
-import { isCompositeTrip, currentPart, currentPartCoords } from '../lib/tripParts'
+import { isCompositeTrip, currentPart, currentPartCoords, partPlaceLabel } from '../lib/tripParts'
 import { todayLocalIso } from '../lib/localDate'
 import './MapView.css'
 
@@ -22,16 +22,6 @@ import './MapView.css'
 // (who would otherwise be projected onto the nearest segment and shown a
 // fabricated "this drive 73%" / trip bar as if they were driving it).
 const OFF_ROUTE_LIMIT_M = 3000
-
-// A part's place as a plain string (the composite renderer stores place as a
-// STRING; NewTrip/currentPartCoords store it as an OBJECT — read both safely so
-// an object place never renders as "[object Object]" or crashes).
-function partPlaceLabel(part) {
-  const p = part?.place
-  if (typeof p === 'string') return p.trim()
-  if (p && typeof p === 'object') return String(p.name || p.address || '').trim()
-  return ''
-}
 
 // Generalized live map. Works for ANY trip, SHAPE-AWARE (Design decision 1): the
 // drive %/bar/road rail is the exception, shown ONLY when the trip is a genuine

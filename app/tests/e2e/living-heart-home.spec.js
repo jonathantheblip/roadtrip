@@ -101,6 +101,19 @@ const TWO_PART_TRIP = {
     { id: 'p-b', type: 'city', title: 'Florence', place: 'Florence', dateStart: '2026-05-24', dateEnd: '2026-05-25' },
   ],
 }
+// The forward case the leg data-model unlocks: a composite leg carrying an OBJECT
+// place { name, lat, lng } (coords, so the hero/We-could/Map can anchor per leg).
+// A bare `${part.place}` would render "In [object Object]"; the object-safe reader
+// (partPlaceLabel) must name it "In Rome". Titles are OMITTED so the hero must
+// fall through to the place object — the exact path that would break.
+const TWO_PART_OBJECT_TRIP = {
+  ...DURING_STAY,
+  id: 'lhh-twopart-obj',
+  parts: [
+    { id: 'p-a', type: 'city', place: { name: 'Rome', lat: 41.9028, lng: 12.4964 }, dateStart: '2026-05-22', dateEnd: '2026-05-23' },
+    { id: 'p-b', type: 'city', place: { name: 'Florence', lat: 43.7696, lng: 11.2558 }, dateStart: '2026-05-24', dateEnd: '2026-05-25' },
+  ],
+}
 
 test('a ONE-part stay renders the simple "At [place]" home — not the complex frame (4c)', async ({ page }) => {
   await seedTripIntoCache(page, ONE_PART_STAY)
@@ -120,6 +133,17 @@ test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)
   await expect(home).toBeVisible({ timeout: 10000 })
   await expect(home.getByText('The plan')).toBeVisible()
   await expect(home.getByText(/^In (Rome|Florence)/)).toBeVisible()
+})
+
+test('a composite leg with an OBJECT place names the hero "In Rome" — never "[object Object]" (leg-model object-safe)', async ({ page }) => {
+  await seedTripIntoCache(page, TWO_PART_OBJECT_TRIP)
+  await page.goto('/?person=jonathan&trip=lhh-twopart-obj&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  // The current leg (Rome, on May 23) names the hero via the object-safe reader.
+  await expect(home.getByText(/^In Rome/)).toBeVisible()
+  // The raw-object regression must never appear — not in the hero, not anywhere.
+  await expect(home.getByText('[object Object]')).toHaveCount(0)
 })
 
 // Design 01#3 — honest "On the agenda" overflow. A busy day (5+ events) shows four,

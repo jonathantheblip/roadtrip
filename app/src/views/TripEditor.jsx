@@ -15,7 +15,7 @@ import { VoiceRecorder } from '../components/VoiceRecorder'
 import { newTripId } from '../utils/ids'
 import { tripCompleteness } from '../lib/tripComplete'
 import { isStayTrip } from '../lib/tripShape'
-import { hasExplicitParts, getParts } from '../lib/tripParts'
+import { hasExplicitParts, getParts, partPlaceLabel } from '../lib/tripParts'
 import { humanDateRange } from '../lib/createTripCard'
 
 // Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
@@ -348,7 +348,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
                 <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', minWidth: 46 }}>
                   {p.type || 'stay'}
                 </span>
-                <span style={{ flex: 1, color: 'var(--text)' }}>{p.title || p.place || 'A part'}</span>
+                <span style={{ flex: 1, color: 'var(--text)' }}>{p.title || partPlaceLabel(p) || 'A part'}</span>
                 {when && when !== 'TBD' && (
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{when}</span>
                 )}

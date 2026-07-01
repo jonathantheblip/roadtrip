@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip } =
+const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords } =
   await import('../../src/lib/tripParts.js')
 
 function legacyStay() {
@@ -310,4 +310,51 @@ test('isCompositeTrip: a 2+-leg trip IS composite', () => {
 test('isCompositeTrip: never throws on null / garbage', () => {
   assert.equal(isCompositeTrip(null), false)
   assert.equal(isCompositeTrip({ id: 'x' }), false)
+})
+
+// ── partPlaceLabel / partCoords — object-safe place readers (the keystone fix) ──
+// `place` is a STRING in composite trips (NewTripComposite + the worker prompt)
+// but an OBJECT { name, address, lat, lng } in a single-part NewTrip stay. Every
+// display + coord read goes through these so an object place never renders as
+// "[object Object]" and a coords-bearing string-place leg still anchors.
+
+test('partPlaceLabel: reads a STRING place, an OBJECT place, and degrades to ""', () => {
+  assert.equal(partPlaceLabel({ place: 'Rome' }), 'Rome')
+  assert.equal(partPlaceLabel({ place: '  Florence  ' }), 'Florence') // trimmed
+  assert.equal(partPlaceLabel({ place: { name: 'Rome', lat: 41.9, lng: 12.5 } }), 'Rome')
+  assert.equal(partPlaceLabel({ place: { address: '10 Via Roma' } }), '10 Via Roma') // name-less → address
+  assert.equal(partPlaceLabel({ place: {} }), '') // empty object → ''
+  assert.equal(partPlaceLabel({ title: 'A leg' }), '') // no place → '' (caller falls back to title)
+  assert.equal(partPlaceLabel(null), '')
+  assert.equal(partPlaceLabel(undefined), '')
+})
+
+test('partCoords: coords slot, object place, precedence, and null cases', () => {
+  // Explicit coords slot (canonical) — lets a STRING-place leg carry coordinates.
+  assert.deepEqual(partCoords({ place: 'Rome', coords: { lat: 41.9, lng: 12.5 } }), { lat: 41.9, lng: 12.5 })
+  // An object place's own lat/lng.
+  assert.deepEqual(partCoords({ place: { name: 'Rome', lat: 41.9, lng: 12.5 } }), { lat: 41.9, lng: 12.5 })
+  // The coords slot WINS over an object place's own coords (canonical override).
+  assert.deepEqual(partCoords({ coords: { lat: 1, lng: 2 }, place: { lat: 9, lng: 9 } }), { lat: 1, lng: 2 })
+  // A string place with no coords slot → null (no coordinates to anchor on).
+  assert.equal(partCoords({ place: 'Rome' }), null)
+  // An object place without finite lat/lng → null.
+  assert.equal(partCoords({ place: { name: 'Rome' } }), null)
+  assert.equal(partCoords(null), null)
+})
+
+test('currentPartCoords: a STRING-place leg with a coords slot anchors to those coords', () => {
+  // The forward path the leg model unlocks: a composite leg whose place stays a
+  // string (city name) but which carries geocoded coords — the hero/We-could/Map
+  // anchor to it, labelled by the string place (not "[object Object]").
+  const trip = {
+    id: 'eu', title: 'Europe',
+    parts: [
+      { id: 'p1', type: 'city', title: 'Paris days', place: 'Paris', coords: { lat: 48.8566, lng: 2.3522 }, dateStart: '2026-05-01', dateEnd: '2026-05-03' },
+      { id: 'p2', type: 'city', title: 'Rome days', place: 'Rome', coords: { lat: 41.9028, lng: 12.4964 }, dateStart: '2026-05-04', dateEnd: '2026-05-06' },
+    ],
+  }
+  const inRome = currentPartCoords(trip, '2026-05-05')
+  assert.ok(Math.abs(inRome.lat - 41.9028) < 1e-6)
+  assert.equal(inRome.label, 'Rome') // the string place, read object-safely
 })

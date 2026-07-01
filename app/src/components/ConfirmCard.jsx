@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react'
 import { TRAVELER_DOT } from '../data/travelers'
 import { travelerNameToId, humanDateRange } from '../lib/createTripCard'
+import { partPlaceLabel } from '../lib/tripParts'
 import { draftCover } from '../lib/workerSync'
 import { userFacingApplyError } from '../lib/claudeCardApply'
 import { logUploadEvent } from '../lib/uploadLog'
@@ -1014,7 +1015,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
                     {p.type || 'stay'}
                   </span>
                   <span style={{ fontFamily: FONT.serif, fontSize: 13, color: T.ink, flex: 1, lineHeight: 1.25 }}>
-                    {p.title || p.place || 'A part'}
+                    {p.title || partPlaceLabel(p) || 'A part'}
                   </span>
                   {when && when !== 'TBD' && (
                     <span style={{ fontFamily: FONT.mono, fontSize: 8.5, color: T.inkFaint, whiteSpace: 'nowrap' }}>{when}</span>
@@ -1023,7 +1024,7 @@ function CreateTripCard({ card, draft, setDraft, onSave, onDiscard, committing }
                 {surprise && (
                   <PartSurpriseReview
                     surprise={surprise}
-                    partLabel={p.title || p.place || 'this part'}
+                    partLabel={p.title || partPlaceLabel(p) || 'this part'}
                     T={T}
                     onChange={(next) =>
                       setDraft((d) => ({

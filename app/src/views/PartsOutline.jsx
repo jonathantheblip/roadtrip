@@ -12,7 +12,7 @@
 // --muted / --border / --card), so it carries each person's color identity. It
 // sits in the living heart's padded content column, so its cards carry no extra
 // horizontal margin (the column pads them).
-import { partsWithDays } from '../lib/tripParts.js'
+import { partsWithDays, partPlaceLabel } from '../lib/tripParts.js'
 import { humanDateRange } from '../lib/createTripCard.js'
 import { AvatarStack } from '../components/Avatar'
 
@@ -107,6 +107,9 @@ function DayRow({ day, onOpenStop }) {
 function PartSection({ part, onOpenStop }) {
   const when = humanDateRange(part.dateStart, part.dateEnd)
   const days = part.days || []
+  // Object-safe: place may be a string OR a { name, lat, lng } object — read the
+  // display label through the shared reader (never render the raw object).
+  const placeLabel = partPlaceLabel(part)
   return (
     <section
       data-testid="parts-trip-part"
@@ -124,10 +127,10 @@ function PartSection({ part, onOpenStop }) {
         {when && when !== 'TBD' && <Label size={8.5}>{when}</Label>}
       </div>
       <h2 style={{ fontFamily: SERIF, fontSize: 23, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.02em', color: 'var(--text)', margin: '6px 0 0' }}>
-        {part.title || part.place || 'A part of the trip'}
+        {part.title || placeLabel || 'A part of the trip'}
       </h2>
-      {part.place && part.title && part.place !== part.title && (
-        <div style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{part.place}</div>
+      {placeLabel && part.title && placeLabel !== part.title && (
+        <div style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{placeLabel}</div>
       )}
       <div style={{ marginTop: 8 }}>
         {days.length === 0 ? (
