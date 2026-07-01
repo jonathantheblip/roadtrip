@@ -24,13 +24,13 @@ import { ChevronRight, Play, BookOpen, Sparkles, Share2, Compass, Plane, Ticket 
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady } from '../components/EntryCues'
 import { listMemoriesForTrip } from '../lib/memoryStore'
-import { isStayTrip, stayLabel, stayNights, stayPlaceCoords } from '../lib/tripShape'
+import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
 import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso } from '../lib/localDate'
 import { TRAVELERS } from '../data/travelers'
-import { hasExplicitParts, currentPart, nextTimedStop, partCount, getParts } from '../lib/tripParts'
+import { isCompositeTrip, currentPart, nextTimedStop, partCount, getParts, currentPartCoords } from '../lib/tripParts'
 import { PartsOutline } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -90,8 +90,12 @@ export function LivingHeartHome({
   // A complex/composite trip (a city break, flights + timed things) is still the
   // ONE living-heart home, shape-aware (FAMILY_TRIPS_VISION §11): it leads with the
   // PART it's in now and surfaces the next timed thing just-in-time (its ticket).
-  // All gated on hasExplicitParts so stays/routes render byte-identical (G5).
-  const isComplex = hasExplicitParts(trip)
+  // Composite = ≥2 real legs (isCompositeTrip) — NOT merely "has a parts[] array".
+  // A manually-created trip carries ONE synthetic part; keying off that made every
+  // plain stay render complex ("In [place]" + "The plan"). Now a one-place stay
+  // renders the simple "At [place]" home (Design decision 4c). Stays/routes/legacy
+  // trips stay byte-identical (partCount 0 or 1 → not composite; G5).
+  const isComplex = isCompositeTrip(trip)
   const curPart = useMemo(() => (isComplex ? currentPart(trip, todayLocalIso()) : null), [isComplex, trip])
   const partN = isComplex ? partCount(trip) : 0
   const partIdx = useMemo(
@@ -125,7 +129,10 @@ export function LivingHeartHome({
     : isComplex
     ? (curPart?.place ? `In ${curPart.place}` : (curPart?.title || trip.title || 'Your trip'))
     : isStay ? `At ${place}` : (todayTitle || (di.dayX ? `Day ${di.dayX}` : (trip.title || 'Your trip')))
-  const coords = useMemo(() => stayPlaceCoords(trip), [trip])
+  // Anchor to WHERE THE TRIP IS NOW — the active leg's place on a composite trip,
+  // else the trip-level stay anchor (currentPartCoords falls back to it). Identical
+  // to before for a stay/route; on a multi-city trip the hero/sun re-anchor per leg.
+  const coords = useMemo(() => currentPartCoords(trip, todayLocalIso()), [trip])
   const sun = useMemo(() => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null), [coords?.lat, coords?.lng])
   const heroUrl = (!heroErr && (trip.heroImage || trip.heroResolved?.url)) || null
 

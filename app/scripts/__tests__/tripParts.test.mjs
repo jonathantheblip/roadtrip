@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes } =
+const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip } =
   await import('../../src/lib/tripParts.js')
 
 function legacyStay() {
@@ -236,4 +236,78 @@ test('nextTimedStop: the soonest non-lodging stop at/after now', () => {
 test('nextTimedStop: never throws on null / empty', () => {
   assert.equal(nextTimedStop(null), null)
   assert.equal(nextTimedStop({ id: 'x' }), null)
+})
+
+// ── currentPartCoords — per-part "where are we now" anchor (Phase 2 foundation) ──
+
+const ROME = { name: 'Rome', lat: 41.9028, lng: 12.4964 }
+const FLORENCE = { name: 'Florence', lat: 43.7696, lng: 11.2558 }
+
+function italyComposite() {
+  return {
+    id: 'italy', shape: 'route', title: 'Italy', dateRangeStart: '2026-06-01', dateRangeEnd: '2026-06-06',
+    lodging: { name: 'Rome hotel', lat: ROME.lat, lng: ROME.lng },
+    parts: [
+      { id: 'p-rome', type: 'city', title: 'Rome', place: { ...ROME }, dateStart: '2026-06-01', dateEnd: '2026-06-03' },
+      { id: 'p-flor', type: 'city', title: 'Florence', place: { ...FLORENCE }, dateStart: '2026-06-04', dateEnd: '2026-06-06' },
+    ],
+  }
+}
+
+test('currentPartCoords: anchors to the CURRENT city on a multi-city trip', () => {
+  const trip = italyComposite()
+  const inRome = currentPartCoords(trip, '2026-06-02')
+  assert.equal(inRome.label, 'Rome')
+  assert.ok(Math.abs(inRome.lat - ROME.lat) < 1e-6)
+  // Once the family is in Florence, the anchor MOVES — not stuck on Rome.
+  const inFlorence = currentPartCoords(trip, '2026-06-05')
+  assert.equal(inFlorence.label, 'Florence')
+  assert.ok(Math.abs(inFlorence.lat - FLORENCE.lat) < 1e-6)
+})
+
+test('currentPartCoords: composite part with NO coords falls back to the trip anchor', () => {
+  const trip = italyComposite()
+  trip.parts[1].place = { name: 'Florence' } // no lat/lng on the active part
+  const coords = currentPartCoords(trip, '2026-06-05')
+  // Falls back to trip.lodging (Rome coords) rather than returning null.
+  assert.ok(Math.abs(coords.lat - ROME.lat) < 1e-6)
+})
+
+test('currentPartCoords: a non-composite stay returns exactly stayPlaceCoords (byte-identical path)', () => {
+  const trip = { id: 'cabin', shape: 'stay', title: 'Cabin', lodging: { name: 'The Cabin', lat: 43.2, lng: -72.9 } }
+  const coords = currentPartCoords(trip, '2026-06-05')
+  assert.equal(coords.lat, 43.2)
+  assert.equal(coords.lng, -72.9)
+})
+
+test('currentPartCoords: never throws on null / coords-less trip', () => {
+  assert.equal(currentPartCoords(null, '2026-06-05'), null)
+  assert.equal(currentPartCoords({ id: 'x' }, '2026-06-05'), null)
+})
+
+// ── isCompositeTrip — the "render the complex home?" gate (Design 4c) ──────────
+// The bug it kills: every manually-created trip carries ONE synthetic part, and
+// keying the complex home off "has a parts[] array" made a plain stay render
+// "In [place]" + "The plan". Composite = ≥2 REAL legs, not a lone part.
+
+test('isCompositeTrip: a legacy trip (no parts) is NOT composite', () => {
+  assert.equal(isCompositeTrip(legacyStay()), false)
+  assert.equal(isCompositeTrip(legacyRoute()), false)
+})
+
+test('isCompositeTrip: a ONE-part trip (the manual-create case) is NOT composite — renders simple', () => {
+  const oneP = { id: 'p1', title: 'A weekend', parts: [{ id: 'a', type: 'stay', title: 'The cabin' }] }
+  assert.equal(hasExplicitParts(oneP), true, 'it does have a parts array…')
+  assert.equal(isCompositeTrip(oneP), false, '…but one part is NOT composite (the 4c fix)')
+})
+
+test('isCompositeTrip: a 2+-leg trip IS composite', () => {
+  assert.equal(isCompositeTrip(composite()), true) // 3 parts
+  const twoP = { id: 't', parts: [{ id: 'a', type: 'city' }, { id: 'b', type: 'city' }] }
+  assert.equal(isCompositeTrip(twoP), true)
+})
+
+test('isCompositeTrip: never throws on null / garbage', () => {
+  assert.equal(isCompositeTrip(null), false)
+  assert.equal(isCompositeTrip({ id: 'x' }), false)
 })

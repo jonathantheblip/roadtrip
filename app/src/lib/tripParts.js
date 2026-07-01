@@ -16,7 +16,7 @@
 //     days?,                    // the day/stop detail for this part (legacy days live in the one wrapper)
 //     visibility?,              // surprise scoping (set by the intake; enforced by worker/src/surprises.js)
 //   }
-import { inferTripShape, stayPlace, stayLabel } from './tripShape.js'
+import { inferTripShape, stayPlace, stayLabel, stayPlaceCoords } from './tripShape.js'
 
 // The kinds of part a trip can hold. Stay/city/drive/flight are the core four; event + the
 // transport trio are the "flexible, not complex" long tail (Jonathan's pick).
@@ -65,6 +65,19 @@ export function deriveTripShape(trip) {
 // How many REAL (persisted, non-derived) parts a trip has: 0 for a legacy trip, N for a composite.
 export function partCount(trip) {
   return hasExplicitParts(trip) ? trip.parts.length : 0
+}
+
+// Should this trip render the COMPOSITE home ("In [city]" + the journey rail + "The
+// plan"), vs the simple stay home ("At [place]")? Design decision 4c (hangout-first
+// handoff): the SHAPE OF THE CONTENT decides, NOT a lone internal part. Every
+// manually-created trip carries ONE synthetic part, which used to make even a plain
+// stay render complex — the bug this kills. A trip is composite when it has ≥2 REAL
+// legs. (Design also names "or a timed multi-event day"; that refinement is deferred
+// to the scaling track — triggering the full composite frame on a one-leg busy day
+// risks wrongly framing a lake-house day as "In [place]", which Design's own examples
+// call "At". Revisit with the journey-rail work.)
+export function isCompositeTrip(trip) {
+  return partCount(trip) >= 2
 }
 
 // ── Real timed days, derived ───────────────────────────────────────────────
@@ -203,6 +216,28 @@ export function currentPart(trip, todayIso) {
     if (dated.length) return dated[dated.length - 1]
   }
   return parts[0]
+}
+
+// Coords for "where the trip is RIGHT NOW" — the active PART's own place for a
+// composite trip, falling back to the trip-level stay anchor. Fixes the multi-city
+// gap where the hero / sun-times / "We could…" tray all anchored to ONE city for
+// the WHOLE trip (Rome's restaurants shown while the family is in Florence). The
+// Part shape already carries `place` ({ name, address, lat, lng }); this is the
+// resolver that finally reads it. Returns { lat, lng, label } or null. Pure.
+//
+// ADDITIVE + non-breaking: a trip with no explicit parts (the common stay) returns
+// exactly stayPlaceCoords(trip) — byte-identical to before. A composite whose
+// active part has no coords also falls back to the trip-level anchor, so it never
+// regresses below today's single-anchor behavior.
+export function currentPartCoords(trip, todayIso) {
+  if (hasExplicitParts(trip)) {
+    const part = currentPart(trip, todayIso)
+    const place = part?.place
+    if (place && typeof place === 'object' && Number.isFinite(place.lat) && Number.isFinite(place.lng)) {
+      return { lat: place.lat, lng: place.lng, label: place.name || place.address || part.title || '' }
+    }
+  }
+  return stayPlaceCoords(trip)
 }
 
 // "3:00 PM" / "9:00 AM" / "17:00" → minutes since midnight, or null when

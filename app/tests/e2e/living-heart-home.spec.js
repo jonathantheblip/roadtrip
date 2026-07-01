@@ -61,3 +61,42 @@ test('a stay with photos shows the Lately carousel (no ghost)', async ({ page })
   await expect(home.getByText(/Photos will gather here/i)).toHaveCount(0)
   await expect(home.getByRole('button', { name: 'Open photos' }).first()).toBeVisible()
 })
+
+// Design decision 4c: the SHAPE OF THE CONTENT decides simple-vs-complex, not a
+// lone internal part. A manually-created trip carries ONE synthetic part; that must
+// NOT force the complex "In [place]" + "The plan" frame. One place → simple "At".
+const ONE_PART_STAY = {
+  ...DURING_STAY,
+  id: 'lhh-onepart',
+  // Mirrors NewTrip output: exactly one part wrapping the whole stay. `place` is a
+  // STRING (the convention the composite renderer + AI use).
+  parts: [{ id: 'lhh-onepart__p1', type: 'stay', title: 'Harbor Breeze', place: 'Harbor Breeze', dateStart: '2026-05-22', dateEnd: '2026-05-25' }],
+}
+const TWO_PART_TRIP = {
+  ...DURING_STAY,
+  id: 'lhh-twopart',
+  parts: [
+    { id: 'p-a', type: 'city', title: 'Rome', place: 'Rome', dateStart: '2026-05-22', dateEnd: '2026-05-23' },
+    { id: 'p-b', type: 'city', title: 'Florence', place: 'Florence', dateStart: '2026-05-24', dateEnd: '2026-05-25' },
+  ],
+}
+
+test('a ONE-part stay renders the simple "At [place]" home — not the complex frame (4c)', async ({ page }) => {
+  await seedTripIntoCache(page, ONE_PART_STAY)
+  await page.goto('/?person=jonathan&trip=lhh-onepart&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  await expect(home.getByText('At Harbor Breeze')).toBeVisible()
+  // The complex frame stays OFF: no "The plan" section, no "In …" hero.
+  await expect(home.getByText('The plan')).toHaveCount(0)
+  await expect(home.getByText(/^In /)).toHaveCount(0)
+})
+
+test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)', async ({ page }) => {
+  await seedTripIntoCache(page, TWO_PART_TRIP)
+  await page.goto('/?person=jonathan&trip=lhh-twopart&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  await expect(home.getByText('The plan')).toBeVisible()
+  await expect(home.getByText(/^In (Rome|Florence)/)).toBeVisible()
+})
