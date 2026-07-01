@@ -1,0 +1,156 @@
+/* ============================================================================
+   Roadtrip — design tokens (the source of visual truth)
+   ----------------------------------------------------------------------------
+   One trip-data spine, four person "skins." Each skin sets color + display font
+   + radius via CSS custom properties; everything in the home reads these vars,
+   so the SAME components re-theme per person (the facelift).
+
+   Usage:  <html data-skin="helen">  (or jonathan | aurelia | rafa)
+   Values are EXACT — do not round, re-pick, or "harmonize." The per-person
+   personality (color + type + radius) IS the brand.
+   ============================================================================ */
+
+/* ---- Type (load these families) ------------------------------------------ */
+/* Fraunces (display: Jonathan/Helen) · Inter Tight (UI/body) · JetBrains Mono
+   (labels/metadata) · Instrument Serif (Aurelia display, italic) · Fredoka (Rafa) */
+:root {
+  --font-fraunces:   "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-inter:      "Inter Tight", -apple-system, system-ui, sans-serif;
+  --font-mono:       "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-instrument: "Instrument Serif", "Times New Roman", serif;
+  --font-fredoka:    "Fredoka", "Inter Tight", system-ui, sans-serif;
+
+  /* type scale (px) — display steps are clamped per skin where noted */
+  --t-hero:        30;   /* "At [place]" / "In [city]" */
+  --t-section:     19;   /* "On the agenda", "Lately" */
+  --t-title:       16;   /* card titles */
+  --t-body:        13.5; /* running text */
+  --t-meta:        12;   /* italic captions */
+  --t-label:       9;    /* mono eyebrows (letter-spacing ~1.6, uppercase) */
+
+  /* shared module tokens (skin-independent geometry) */
+  --hero-h:        248px;  /* full-bleed place photo on the home */
+  --rail-h:        auto;   /* journey rail; only on composite trips */
+  --gap-section:   20px;   /* vertical rhythm between home modules */
+  --pad-screen:    18px;   /* screen side padding */
+  --dot-presence:  10px;   /* who's-around live dot */
+  --tap-min:       44px;   /* min hit target — non-negotiable on phones */
+  --ease:          cubic-bezier(.2,.7,.2,1);
+
+  /* presence dot semantics (skin overrides only --good/--live/away hue) */
+  --away:          #C9A24B; /* "out and about" amber — same family across skins */
+}
+
+/* ---- JONATHAN · Ops · dark editorial / clay --------------------------------
+   Fraunces + JetBrains Mono. Hard radius. The "command" reading.            */
+[data-skin="jonathan"] {
+  --dot:        #2E6BB8;  /* constant person-identity color */
+  --bg:         #0E0F11;  --bg2: #15171A;  --surface: #1C1E22;  --raise: #24262B;
+  --ink:        #EDE6D6;  --muted: rgba(237,230,214,0.60);  --faint: rgba(237,230,214,0.32);
+  --line:       rgba(237,230,214,0.14);   --line-bold: rgba(237,230,214,0.30);
+  --accent:     #E0654F;  --accent-text: #EC8770;  --accent-ink: #16100C;
+  --live:       #E0654F;  --good: #7FB069;
+  --font-display: var(--font-fraunces);
+  --radius:     2px;
+  --scheme:     dark;
+}
+
+/* ---- HELEN · Keeper + Planner · warm paper / sage --------------------------
+   Fraunces. Soft radius. The reference skin used across the prototypes.      */
+[data-skin="helen"] {
+  --dot:        #2E7D52;
+  --bg:         #F4F0E7;  --bg2: #ECE6D9;  --surface: #FFFFFF;  --raise: #FBF8F1;
+  --ink:        #1C2A21;  --muted: rgba(28,42,33,0.62);  --faint: rgba(28,42,33,0.34);
+  --line:       rgba(28,42,33,0.12);   --line-bold: rgba(28,42,33,0.22);
+  --accent:     #2E7D52;  --accent-text: #256B45;  --accent-ink: #FFFFFF;
+  --live:       #C2603A;  --good: #2E7D52;
+  --font-display: var(--font-fraunces);
+  --radius:     18px;
+  --scheme:     light;
+}
+
+/* ---- AURELIA · 13 · near-black film-roll / hot-pink ------------------------
+   Instrument Serif (ITALIC display). Tight radius. Lowercase voice.          */
+[data-skin="aurelia"] {
+  --dot:        #E8478C;
+  --bg:         #0B0A0C;  --bg2: #141215;  --surface: #1A171B;  --raise: #241F26;
+  --ink:        #F3EEE9;  --muted: rgba(243,238,233,0.56);  --faint: rgba(243,238,233,0.30);
+  --line:       rgba(243,238,233,0.12);   --line-bold: rgba(243,238,233,0.24);
+  --accent:     #FF3D78;  --accent-text: #FF5C8E;  --accent-ink: #0B0A0C;
+  --live:       #FF3D78;  --good: #C7B5FF;
+  --font-display: var(--font-instrument);
+  --display-italic: italic;   /* Aurelia's display is italic; others normal */
+  --radius:     4px;
+  --scheme:     dark;
+}
+
+/* ---- RAFA · ~5 · bright chunky / ochre · iPad-first ------------------------
+   Fredoka. Round radius. NOTE: Rafa keeps his own simpler "pad," not this
+   home — but inherits the same warmth, type energy, and tokens.             */
+[data-skin="rafa"] {
+  --dot:        #E8552E;
+  --bg:         #1B1108;  --bg2: #28190C;  --surface: #33200F;  --raise: #41290F;
+  --ink:        #FFF3DF;  --muted: rgba(255,243,223,0.74);  --faint: rgba(255,243,223,0.42);
+  --line:       rgba(255,243,223,0.16);   --line-bold: rgba(255,243,223,0.30);
+  --accent:     #FFB12E;  --accent-text: #FFC247;  --accent-ink: #1B1108;
+  --live:       #FF6B4D;  --good: #4CC36E;
+  --font-display: var(--font-fredoka);
+  --radius:     24px;
+  /* sticker palette (Rafa-only accents): #FFB12E #3DA5E0 #4CC36E #FF6B4D #C77DFF */
+  --scheme:     dark;
+}
+
+/* ---- defaults so a bare page is legible (Helen) -------------------------- */
+:root {
+  --dot: #2E7D52; --bg: #F4F0E7; --bg2: #ECE6D9; --surface: #FFFFFF; --raise: #FBF8F1;
+  --ink: #1C2A21; --muted: rgba(28,42,33,0.62); --faint: rgba(28,42,33,0.34);
+  --line: rgba(28,42,33,0.12); --line-bold: rgba(28,42,33,0.22);
+  --accent: #2E7D52; --accent-text: #256B45; --accent-ink: #FFFFFF;
+  --live: #C2603A; --good: #2E7D52; --font-display: var(--font-fraunces);
+  --display-italic: normal; --radius: 18px; --scheme: light;
+}
+
+/* ============================================================================
+   PRIMITIVES — the handful of classes the home is built from. Skin-agnostic;
+   they only ever reference vars above. (Reference impl — adapt to your framework.)
+   ============================================================================ */
+.rt-screen   { background: var(--bg); color: var(--ink); font-family: var(--font-inter);
+               display: flex; flex-direction: column; height: 100%; }
+.rt-scroll   { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.rt-scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+.rt-eyebrow  { font-family: var(--font-mono); font-size: calc(var(--t-label) * 1px);
+               letter-spacing: 1.6px; text-transform: uppercase; font-weight: 600;
+               color: var(--accent-text); }
+.rt-hero-title { font-family: var(--font-display); font-style: var(--display-italic, normal);
+               font-size: calc(var(--t-hero) * 1px); font-weight: 600; letter-spacing: -0.7px;
+               color: #fff; line-height: 1.02; }
+.rt-section  { font-family: var(--font-display); font-style: var(--display-italic, normal);
+               font-size: calc(var(--t-section) * 1px); font-weight: 600; letter-spacing: -0.3px;
+               color: var(--ink); }
+.rt-meta     { font-family: var(--font-display); font-style: italic;
+               font-size: calc(var(--t-meta) * 1px); color: var(--muted); }
+
+.rt-card     { background: var(--surface); border: 1px solid var(--line);
+               border-radius: min(var(--radius), 16px); }
+.rt-pill     { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+               border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+               font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.7px;
+               text-transform: uppercase; font-weight: 600; }
+
+.rt-btn      { min-height: var(--tap-min); border: none; border-radius: min(var(--radius), 14px);
+               background: var(--accent); color: var(--accent-ink); cursor: pointer;
+               font-family: var(--font-inter); font-weight: 600; font-size: 15px; }
+.rt-btn--ghost { background: transparent; color: var(--accent-text);
+               border: 1.5px solid var(--accent); }
+
+/* presence dot: .is-home → good · .is-out → away · .is-live → live (pulsing) */
+.rt-dot      { width: var(--dot-presence); height: var(--dot-presence); border-radius: 50%;
+               box-shadow: 0 0 0 2.5px var(--bg); }
+.rt-dot.is-home { background: var(--good); }
+.rt-dot.is-out  { background: var(--away); }
+.rt-dot.is-live { background: var(--live); }
+
+/* the one decoration we reuse: the warm "+1 day" / live treatment */
+.rt-flag-live { background: color-mix(in srgb, var(--live) 12%, transparent);
+               color: var(--live); border: 1px solid color-mix(in srgb, var(--live) 34%, transparent); }

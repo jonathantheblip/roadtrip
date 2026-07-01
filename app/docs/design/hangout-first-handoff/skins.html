@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="design_doc_mode" content="canvas" />
+<title>Roadtrip — Per-Skin Facelift</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  html, body { background: transparent; }
+  #root { width: max-content; }
+  .ft-scroll::-webkit-scrollbar { width: 0; height: 0; }
+  .ft-scroll { scrollbar-width: none; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="lib/system.jsx"></script>
+  <script type="text/babel" src="skin-home.jsx"></script>
+  <script type="text/babel">
+    const { Phone, SkinHome, TRAVELERS, FONTS } = window;
+    const INK = '#26302a';
+
+    function Cap({ children, sub }) {
+      return (
+        <div style={{ width: 375, marginBottom: 14 }}>
+          <div style={{ fontFamily: FONTS.mono, fontSize: 11, letterSpacing: 1.6, textTransform: 'uppercase', color: INK, fontWeight: 600 }}>{children}</div>
+          <div style={{ fontFamily: FONTS.inter, fontSize: 12.5, color: 'rgba(38,48,42,0.66)', marginTop: 4, lineHeight: 1.4 }}>{sub}</div>
+        </div>
+      );
+    }
+    function Cell({ id, label, sub }) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          <Cap sub={sub}>{label}</Cap>
+          <Phone traveler={id} time="4:02"><SkinHome id={id} /></Phone>
+        </div>
+      );
+    }
+    function RafaNote() {
+      const t = TRAVELERS.rafa, c = t.pal;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          <Cap sub="Kept as its own thing — not this home.">RAFA · ~5 · IPAD PAD</Cap>
+          <div style={{ width: 375, height: 812, borderRadius: 46, overflow: 'hidden', background: c.bg, color: c.ink, boxShadow: '0 30px 80px rgba(0,0,0,0.30), 0 0 0 1px rgba(0,0,0,0.10)', padding: '54px 26px 30px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontFamily: FONTS.fredoka, fontSize: 15, fontWeight: 600, color: c.accentText, letterSpacing: 1 }}>WHY NO HOME HERE</div>
+            <div style={{ fontFamily: FONTS.fredoka, fontSize: 30, fontWeight: 700, color: c.ink, marginTop: 12, lineHeight: 1.08 }}>Rafa keeps his big, chunky pad.</div>
+            <div style={{ fontFamily: FONTS.fredoka, fontSize: 16, color: c.muted, marginTop: 14, lineHeight: 1.5 }}>
+              A 5-year-old shouldn’t get an editorial home screen. He keeps the iPad-first pad — huge tap targets, countdown, video reel, games — but inherits the <b style={{ color: c.accent }}>same warmth</b>: the ochre skin, Fredoka, round corners, and the family’s living heart underneath.
+            </div>
+            <div style={{ marginTop: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {c.sticker.map((s) => <span key={s} style={{ width: 34, height: 34, borderRadius: 12, background: s, boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.08)' }} />)}
+            </div>
+            <div style={{ fontFamily: FONTS.mono, fontSize: 9, letterSpacing: 1, color: c.faint, marginTop: 16, textTransform: 'uppercase' }}>Same tokens · different shape</div>
+          </div>
+        </div>
+      );
+    }
+
+    function Board() {
+      return (
+        <div style={{ padding: '84px 96px 120px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 40 }}>
+          <div style={{ maxWidth: 1000 }}>
+            <div style={{ fontFamily: FONTS.mono, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase', color: '#256B45', fontWeight: 600 }}>Roadtrip · the facelift, every lens</div>
+            <div style={{ fontFamily: FONTS.fraunces, fontSize: 52, fontWeight: 600, color: INK, letterSpacing: -1.5, lineHeight: 1.0, marginTop: 14 }}>One home, four voices.</div>
+            <div style={{ fontFamily: FONTS.fraunces, fontSize: 18, fontStyle: 'italic', color: 'rgba(38,48,42,0.7)', lineHeight: 1.5, marginTop: 16, maxWidth: 760 }}>
+              The exact same living-heart home — hero, the forming Weave, who’s-around, We-could, the agenda — rendered through each person’s skin. Same structure and warmth; only color, display type, and radius change. This is the polish carried across the app, not just Helen’s lens.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 56, alignItems: 'flex-start' }}>
+            <Cell id="jonathan" label="JONATHAN · OPS" sub="Dark editorial + clay. Fraunces + mono. Hard 2px corners — reads as command." />
+            <Cell id="helen" label="HELEN · KEEPER" sub="Warm paper + sage. Fraunces. Soft 18px corners — the reference lens." />
+            <Cell id="aurelia" label="AURELIA · 13" sub="Near-black film-roll + hot pink. Instrument italic, lowercase voice. Tight 4px." />
+            <RafaNote />
+          </div>
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  </script>
+</body>
+</html>
