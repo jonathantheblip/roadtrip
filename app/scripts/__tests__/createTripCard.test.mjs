@@ -309,6 +309,34 @@ test('cardToTrip omits parts for a simple trip (no parts field at all)', () => {
   assert.equal('parts' in trip, false) // a one-place trip stays parts-less; getParts derives one
 })
 
+test('cardToTrip carries per-leg tz/currency/locale + normalizes members; a domestic leg stays clean', () => {
+  const card = {
+    type: 'create_trip',
+    trip: {
+      ...SAMPLE_CARD.trip,
+      title: 'Italy, summer',
+      parts: [
+        // An ABROAD leg — the concierge stamped the orientation slots + a subset.
+        { type: 'city', title: 'Rome', place: 'Rome', tz: 'Europe/Rome', currency: 'EUR', locale: 'it-IT', members: ['Jonathan', 'Aurelia'], dateStart: '2026-07-01', dateEnd: '2026-07-04' },
+        // A DOMESTIC leg — no zone/currency/language delta → no orientation fields.
+        { type: 'city', title: 'Boston', place: 'Boston', dateStart: '2026-07-05', dateEnd: '2026-07-07' },
+      ],
+    },
+  }
+  const trip = cardToTrip(card)
+  // Abroad leg keeps its orientation slots verbatim…
+  assert.equal(trip.parts[0].tz, 'Europe/Rome')
+  assert.equal(trip.parts[0].currency, 'EUR')
+  assert.equal(trip.parts[0].locale, 'it-IT')
+  // …and members are normalized to app ids (the same name→id path travelers use).
+  assert.deepEqual(trip.parts[0].members, ['jonathan', 'aurelia'])
+  // The domestic leg carries NONE of them — no empty fields, byte-clean.
+  assert.equal('tz' in trip.parts[1], false)
+  assert.equal('currency' in trip.parts[1], false)
+  assert.equal('locale' in trip.parts[1], false)
+  assert.equal('members' in trip.parts[1], false)
+})
+
 // ── "Surprises by sentence" Slice 2 — cardToTrip carries a SAFE, author-stamped surprise ──
 test('sanitizePartSurprise: author from session (never Claude), hideFrom validated, teaser default', () => {
   const s = sanitizePartSurprise({ hideFrom: ['Helen'], conceal: 'cover', cover: { title: 'Quiet coast', loc: 'Amalfi' } }, 'jonathan')

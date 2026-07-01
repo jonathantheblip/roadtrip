@@ -46,6 +46,19 @@ describe('claude system prompt — trip-settings taxonomy', () => {
     expect(prompt).toMatch(/lazy/i)
   })
 
+  it('teaches create_trip to stamp per-leg tz/currency/locale for a leg abroad (and OMIT them at home)', async () => {
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
+    // The forward orientation slots the living heart reads per leg (the keystone).
+    expect(prompt).toContain('"tz"')
+    expect(prompt).toContain('"currency"')
+    expect(prompt).toContain('"locale"')
+    expect(prompt).toMatch(/Europe\/Rome/) // an IANA-zone example, not an offset
+    // Gated at the producer: a domestic leg gets NONE ("no delta → no module").
+    expect(prompt).toMatch(/OMIT all three for a domestic leg/i)
+    // Per-leg membership powers the who's-around leg scoping.
+    expect(prompt).toContain('"members"')
+  })
+
   it('documents the exact editable trip-level field names the applier reads', async () => {
     const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
     for (const name of [

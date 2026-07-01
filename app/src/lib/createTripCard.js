@@ -220,6 +220,13 @@ export function cardToTrip(card, { existingId = null, existingIds = null, author
     Array.isArray(t.parts) && t.parts.length
       ? t.parts.map((p, pi) => {
           const surprise = sanitizePartSurprise(p.surprise, authorTraveler)
+          // Per-leg orientation slots (the leg data-model keystone): the concierge
+          // stamps tz/currency/locale ONLY for a leg that crosses a zone/currency/
+          // language boundary (a domestic leg carries none → the home stays
+          // byte-identical, "no delta → no module"). members → ids, the same
+          // name→id normalization travelers/`for` already use, so who's-around can
+          // scope by leg. Each is carried ONLY when present (no empty fields).
+          const memberIds = Array.isArray(p.members) ? p.members.map(travelerNameToId).filter(Boolean) : []
           return {
             id: p.id || `${id}-part-${pi + 1}`,
             type: PART_TYPES.includes(p.type) ? p.type : 'stay',
@@ -227,6 +234,10 @@ export function cardToTrip(card, { existingId = null, existingIds = null, author
             place: p.place || null,
             dateStart: p.dateStart || null,
             dateEnd: p.dateEnd || null,
+            ...(typeof p.tz === 'string' && p.tz.trim() ? { tz: p.tz.trim() } : {}),
+            ...(typeof p.currency === 'string' && p.currency.trim() ? { currency: p.currency.trim() } : {}),
+            ...(typeof p.locale === 'string' && p.locale.trim() ? { locale: p.locale.trim() } : {}),
+            ...(memberIds.length ? { members: memberIds } : {}),
             // "Surprises by sentence": a Claude-suggested (or author-edited) surprise
             // rides on the part, AUTHOR-STAMPED FROM THE SESSION (never from Claude),
             // hideFrom validated to known travelers. The worker boundary masks it; a
