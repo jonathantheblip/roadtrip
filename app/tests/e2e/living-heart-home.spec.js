@@ -144,8 +144,10 @@ test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)
   await expect(home).toBeVisible({ timeout: 10000 })
   await expect(home.getByText('The plan')).toBeVisible()
   await expect(home.getByText(/^In (Rome|Florence)/)).toBeVisible()
-  // No leg timezone → no dual clock (the gate: "no delta → no module").
+  // No leg timezone/currency/locale → no dual clock, no context card
+  // (the gate: "no delta → no module").
   await expect(home.getByTestId('dual-clock')).toHaveCount(0)
+  await expect(home.getByTestId('leg-context')).toHaveCount(0)
 })
 
 test('a leg with a timezone shows the honest dual clock — leg time leads, yours faint', async ({ page }) => {
@@ -160,6 +162,19 @@ test('a leg with a timezone shows the honest dual clock — leg time leads, your
   // the leg naming, which is locale-robust.)
   await expect(clock).toContainText('in Rome')
   await expect(clock).toContainText('where you are')
+})
+
+test('a leg abroad shows the per-leg context card — money + language, honest ≈ rate', async ({ page }) => {
+  await seedTripIntoCache(page, TZ_LEG_TRIP) // Rome leg carries currency EUR + locale it-IT
+  await page.goto('/?person=jonathan&trip=lhh-tz&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+  const ctx = home.getByTestId('leg-context')
+  await expect(ctx).toBeVisible()
+  await expect(ctx).toContainText('Euro') // the money the leg uses
+  await expect(ctx).toContainText('Italian') // the language
+  await expect(ctx).toContainText('Buongiorno') // a greeting
+  await expect(ctx).toContainText('≈') // the $ hint is APPROXIMATE, never live/precise (G6)
 })
 
 test('a composite leg with an OBJECT place names the hero "In Rome" — never "[object Object]" (leg-model object-safe)', async ({ page }) => {

@@ -31,6 +31,7 @@ import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
 import { TRAVELERS } from '../data/travelers'
 import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg } from '../lib/tripParts'
+import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { PartsOutline } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -153,6 +154,12 @@ export function LivingHeartHome({
   // shows: byte-identical (G5/G6). Requires a known viewer zone to claim a delta.
   const viewerTz = viewerZone()
   const showDualClock = !isAfter && !!legTz && !!viewerTz && viewerTz !== legTz
+  // Per-leg context (Design 05): the money + language that differ from home on
+  // the current leg. legOrientation returns ONLY real deltas (foreign currency /
+  // non-English language), so the card mounts on a genuine delta and never on a
+  // domestic leg — "no delta → no module". Greenfield → empty → no card (G5).
+  const orientation = useMemo(() => legOrientation(legCtx), [legCtx])
+  const showContext = !isAfter && !!(orientation.currencyCode || orientation.languageName)
   const partN = isComplex ? partCount(trip) : 0
   const partIdx = useMemo(
     () => (curPart ? getParts(trip).findIndex((p) => p.id === curPart.id) : -1),
@@ -308,6 +315,14 @@ export function LivingHeartHome({
         {showDualClock && (
           <div style={{ marginBottom: 16 }}>
             <DualClock tz={legTz} city={curPlaceLabel || legCtx.part?.title || 'there'} />
+          </div>
+        )}
+
+        {/* PER-LEG CONTEXT — the money + language that differ here (Design 05).
+            Only on a real delta; a domestic leg mounts nothing. */}
+        {showContext && (
+          <div style={{ marginBottom: 16 }}>
+            <ContextCard orientation={orientation} />
           </div>
         )}
 
@@ -566,6 +581,45 @@ function DualClock({ tz, city }) {
       <span aria-hidden="true">·</span>
       <span>{clockInZone(null, now)} where you are</span>
     </div>
+  )
+}
+
+// The per-leg context card (Design 05 / copy 04): the money + language that
+// differ HERE, labelled by country. Honest — the $ hint carries a "≈" + the
+// snapshot's as-of month (never a live rate); a row shows only for an axis that
+// actually differs from home. Ambient information, not a to-do.
+function ContextCard({ orientation }) {
+  const { currencyCode, currencyName, currencySymbol, usdHint, languageName, greeting, countryName } = orientation
+  return (
+    <section
+      data-testid="leg-context"
+      style={{ border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', background: 'var(--card)', padding: '12px 14px' }}
+    >
+      <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>
+        {countryName ? `In ${countryName} · good to know` : 'Good to know'}
+      </span>
+      {currencyCode && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 8 }}>
+          <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', width: 64, flexShrink: 0 }}>Money</span>
+          <span style={{ fontSize: 13.5, color: 'var(--text)' }}>
+            {currencyName || currencyCode} ({currencySymbol}){usdHint ? ` · ${usdHint}` : ''}
+          </span>
+        </div>
+      )}
+      {languageName && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
+          <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', width: 64, flexShrink: 0 }}>Language</span>
+          <span style={{ fontSize: 13.5, color: 'var(--text)' }}>
+            {languageName}{greeting ? ` · “${greeting}”` : ''}
+          </span>
+        </div>
+      )}
+      {usdHint ? (
+        <span style={{ fontSize: 10.5, color: 'var(--muted)', display: 'block', marginTop: 8 }}>
+          Approximate rate, {FX_AS_OF}
+        </span>
+      ) : null}
+    </section>
   )
 }
 
