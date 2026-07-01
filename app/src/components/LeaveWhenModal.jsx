@@ -6,26 +6,33 @@ import {
   defaultBufferMinutes,
   formatTimeOfDay,
   parseStopTime,
+  reachability,
   roundToNextNMinutes,
 } from '../lib/leaveWhen'
 
-// "Leave when?" modal. Given a destination + a target arrival, asks
-// the Worker for a traffic-aware leave-by. Two origin modes: the
-// trip's home base (default), or geolocation ("From here").
+// "Getting there" modal (Design decision 2). It reads the MODE and shapes
+// itself to it — a short walk shouldn't wear a car's clothing:
+//   - WALK (short straight-line hop): "About a N-min walk." Open-ended (a stop
+//     with no fixed time) shows NO leave-by at all — "no need to time it." A
+//     fixed time gets a gentle nudge ("head out around H:MM — not an alarm"),
+//     never a red countdown. Deep-link → Apple Maps WALKING. No Worker call.
+//   - DRIVE (anything farther): today's traffic-aware leave-by, unchanged — a
+//     big "Leave by H:MMpm" from the Worker, "≈ N min in traffic", the amber
+//     "Heavier than usual" pill, the 30-min live countdown (amber ≤10, red if
+//     past), "Open in Maps/Waze", and "Re-check" (bypasses the 5-min cache).
 //
-// Result UX:
-//   - Big primary "Leave by HH:MMpm" (large, headline weight).
-//   - Secondary "≈ N min in traffic".
-//   - Amber "Heavier than usual" pill when the Worker flags it.
-//   - "Open in Maps" jumps the user into navigation immediately.
-//   - "Re-check in 15 min" forces a fresh Worker call (bypasses the
-//     5-min client cache).
-//
-// Within 30 min of leave-by, the headline shifts to a live countdown
-// ("Leave in 8 min."). Amber within 10 min; red if leave-by has passed.
+// Transit ETAs are intentionally NOT shown (no transit data source — we won't
+// fabricate "Blue Line ~18 min"); that face waits for a real source.
+// Two origin modes: the trip's place/home base (default) or geolocation.
 
 const COUNTDOWN_THRESHOLD_MS = 30 * 60 * 1000
 const AMBER_THRESHOLD_MS = 10 * 60 * 1000
+
+// The first, friendly segment of an origin label ("Harbor Breeze, 690 …" →
+// "Harbor Breeze") for the "from [place]" line. Empty → the caller omits it.
+function shortPlaceLabel(label) {
+  return String(label || '').split(',')[0].trim()
+}
 
 function defaultTargetArrival() {
   // Now + 1 hour, rounded up to the next 15-min boundary.
@@ -57,7 +64,12 @@ export function friendlyLeaveWhenError(e) {
   return "We couldn't work out a leave-by time. Check your connection and tap re-check."
 }
 
-function mapsLinkFor(destination, traveler, name) {
+function mapsLinkFor(destination, traveler, name, mode = 'drive') {
+  // A walk always opens Apple Maps WALKING directions — Waze is a driving app,
+  // so the mode wins over a traveler's Waze preference for an on-foot hop.
+  if (mode === 'walk') {
+    return `https://maps.apple.com/?daddr=${destination.lat},${destination.lng}&dirflg=w`
+  }
   if (TRAVELERS[traveler]?.maps === 'waze') {
     return `https://waze.com/ul?ll=${destination.lat},${destination.lng}&navigate=yes`
   }
@@ -100,6 +112,16 @@ export function LeaveWhenModal({
   const effectiveOrigin =
     originMode === 'here' && hereCoords ? hereCoords : defaultOrigin
 
+  // The travel MODE (decision 2). A short straight-line hop from the origin is a
+  // WALK; anything farther keeps today's DRIVE flow. Recomputes live as the
+  // origin toggles (home ↔ here). `hasFixedTime` = the caller passed a real stop
+  // time; an open-ended stop (no target) gets no leave-by at all on a walk.
+  const reach = reachability(effectiveOrigin, destination)
+  const mode = reach.mode
+  const hasFixedTime = !!defaultTarget
+  const originLabel =
+    originMode === 'here' ? 'where you are' : shortPlaceLabel(defaultOrigin?.label)
+
   // Geolocation request when the user flips the toggle.
   useEffect(() => {
     if (originMode !== 'here' || hereCoords) return
@@ -121,8 +143,16 @@ export function LeaveWhenModal({
     )
   }, [originMode, hereCoords])
 
-  // Kick off the Worker call any time inputs change.
+  // Kick off the Worker call any time inputs change — DRIVE mode only. A walk
+  // never asks the Worker (there's no traffic to beat); clear any stale drive
+  // result so flipping origin from a far drive to a near walk goes calm.
   useEffect(() => {
+    if (mode !== 'drive') {
+      setResult(null)
+      setError(null)
+      setLoading(false)
+      return
+    }
     const target = fromInputValue(targetISO)
     if (!target || !effectiveOrigin) return
     if (target.getTime() <= Date.now()) {
@@ -158,7 +188,7 @@ export function LeaveWhenModal({
     return () => {
       cancelled = true
     }
-  }, [targetISO, effectiveOrigin, destination, seedDurationMinutes, refreshCounter])
+  }, [targetISO, effectiveOrigin, destination, seedDurationMinutes, refreshCounter, mode])
 
   // Compute the countdown banner. Recomputes every render (tick state
   // forces re-render every 30s).
@@ -175,12 +205,24 @@ export function LeaveWhenModal({
     }
   }
 
-  const mapsUrl = mapsLinkFor(destination, traveler, destinationName)
+  // Walk soft-nudge: head out roughly walkMinutes before the target — a gentle
+  // "around H:MM," never a countdown. Only when there's a real fixed time.
+  const walkTarget = fromInputValue(targetISO)
+  const walkHeadOut =
+    mode === 'walk' && hasFixedTime && walkTarget
+      ? new Date(walkTarget.getTime() - (reach.walkMinutes || 0) * 60_000)
+      : null
+
+  // Whether to show the "Be there by" time input: always for a drive; for a
+  // walk only when there's a fixed time to nudge toward (open-ended → hidden).
+  const showTimeInput = mode === 'drive' || (mode === 'walk' && hasFixedTime)
+
+  const mapsUrl = mapsLinkFor(destination, traveler, destinationName, mode)
 
   return (
     <div
       role="dialog"
-      aria-label="Leave when calculator"
+      aria-label="Getting there"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose?.()
       }}
@@ -224,7 +266,7 @@ export function LeaveWhenModal({
               opacity: 0.6,
             }}
           >
-            Leave when?
+            Getting there
           </div>
           <button
             type="button"
@@ -256,22 +298,33 @@ export function LeaveWhenModal({
           </div>
         )}
 
-        <ResultBlock
-          loading={loading}
-          error={error}
-          result={result}
-          countdown={countdown}
-        />
-
-        <div style={{ marginTop: 22 }}>
-          <Label>Be there by</Label>
-          <input
-            type="datetime-local"
-            value={targetISO}
-            onChange={(e) => setTargetISO(e.target.value)}
-            style={inputStyle}
+        {mode === 'walk' ? (
+          <WalkBlock
+            walkMinutes={reach.walkMinutes}
+            headOut={walkHeadOut}
+            hasFixedTime={hasFixedTime}
+            originLabel={originLabel}
           />
-        </div>
+        ) : (
+          <ResultBlock
+            loading={loading}
+            error={error}
+            result={result}
+            countdown={countdown}
+          />
+        )}
+
+        {showTimeInput && (
+          <div style={{ marginTop: 22 }}>
+            <Label>Be there by</Label>
+            <input
+              type="datetime-local"
+              value={targetISO}
+              onChange={(e) => setTargetISO(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+        )}
 
         <div style={{ marginTop: 16 }}>
           <Label>Leaving from</Label>
@@ -315,22 +368,56 @@ export function LeaveWhenModal({
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 22, flexWrap: 'wrap' }}>
-          <a className="btn-pill" href={mapsUrl} target="_blank" rel="noreferrer">
-            <MapPin size={12} />
-            {TRAVELERS[traveler]?.maps === 'waze' ? 'Open in Waze' : 'Open in Maps'}
-          </a>
-          <button
-            type="button"
-            className="btn-pill"
-            onClick={() => setRefreshCounter((c) => c + 1)}
-            style={{ cursor: 'pointer' }}
-            disabled={loading}
-          >
-            <RotateCw size={12} />
-            Re-check
-          </button>
+          {mode === 'walk' ? (
+            // A walk opens Apple Maps walking directions; no traffic "re-check"
+            // (there's no Worker call to redo).
+            <a className="btn-pill" href={mapsUrl} target="_blank" rel="noreferrer">
+              <Navigation size={12} />
+              Walk there
+            </a>
+          ) : (
+            <>
+              <a className="btn-pill" href={mapsUrl} target="_blank" rel="noreferrer">
+                <MapPin size={12} />
+                {TRAVELERS[traveler]?.maps === 'waze' ? 'Open in Waze' : 'Open in Maps'}
+              </a>
+              <button
+                type="button"
+                className="btn-pill"
+                onClick={() => setRefreshCounter((c) => c + 1)}
+                style={{ cursor: 'pointer' }}
+                disabled={loading}
+              >
+                <RotateCw size={12} />
+                Re-check
+              </button>
+            </>
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// The WALK face (decision 2) — warm, never a countdown. Open-ended shows no
+// time at all ("no need to time it"); a fixed time gets a gentle "head out
+// around H:MM" nudge. The precise time comes from the walking deep-link.
+function WalkBlock({ walkMinutes, headOut, hasFixedTime, originLabel }) {
+  return (
+    <div style={resultBlockStyle}>
+      <div style={headlineStyle}>About a {walkMinutes}-min walk</div>
+      {hasFixedTime && headOut ? (
+        <div style={subTextStyle}>
+          Head out around {formatTimeOfDay(headOut)} — a gentle nudge, not an alarm.
+        </div>
+      ) : (
+        <div style={subTextStyle}>No need to time it — head over when you like.</div>
+      )}
+      {originLabel && (
+        <div style={{ ...subTextStyle, fontStyle: 'normal', fontSize: 12, marginTop: 2, opacity: 0.8 }}>
+          from {originLabel}
+        </div>
+      )}
     </div>
   )
 }

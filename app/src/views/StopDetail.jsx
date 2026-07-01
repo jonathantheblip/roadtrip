@@ -3,6 +3,7 @@ import { ChevronLeft, Clock, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { tripHomeBase } from '../data/trips'
 import { mapsLink, scenicMapsLink } from '../lib/mapsLink'
+import { isStayTrip, stayPlaceCoords } from '../lib/tripShape'
 import { FlightStatus } from './FlightStatus'
 import { DayChips } from './DayChips'
 import { ThreadedMemories } from '../components/ThreadedMemories'
@@ -23,11 +24,15 @@ function urlLabel(stop) {
 // Embedded panels (flight, lodging) react to the surface via CSS.
 export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay }) {
   const [leaveOpen, setLeaveOpen] = useState(false)
-  // Show leave-when only when we have the inputs the modal needs and
-  // it makes sense (skip on lodging — that's the home base itself).
-  const homeBase = tripHomeBase(trip)
+  // "Getting there" needs an ORIGIN. On a STAY the origin is the place you're
+  // staying (its lodging coords) — where tripHomeBase deliberately doesn't look,
+  // since a stay keeps coords on trip.lodging, not homeBase; without this the
+  // affordance never appeared on the very trips where a short walk matters most.
+  // A route trip keeps the home-base origin (the drive-home anchor).
+  const gettingThereOrigin =
+    (isStayTrip(trip) && stayPlaceCoords(trip)) || tripHomeBase(trip)
   const canLeaveWhen =
-    !!homeBase &&
+    !!gettingThereOrigin &&
     Number.isFinite(stop?.lat) &&
     Number.isFinite(stop?.lng) &&
     stop.kind !== 'lodging'
@@ -106,7 +111,7 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
               style={{ cursor: 'pointer' }}
             >
               <Clock size={12} />
-              Leave when?
+              Getting there
             </button>
           )}
         </div>
@@ -115,7 +120,7 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
         <LeaveWhenModal
           destination={{ lat: stop.lat, lng: stop.lng }}
           destinationName={stop.name}
-          defaultOrigin={homeBase}
+          defaultOrigin={gettingThereOrigin}
           defaultTarget={leaveWhenDefault}
           traveler={traveler}
           onClose={() => setLeaveOpen(false)}

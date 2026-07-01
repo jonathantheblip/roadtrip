@@ -113,6 +113,34 @@ export function defaultBufferMinutes(kind) {
   return 15
 }
 
+// Straight-line distance in meters (haversine). Returns Infinity if either
+// point is missing coords (→ the caller treats it as "not walkable", i.e. drive).
+export function haversineMeters(a, b) {
+  const lats = [a?.lat, a?.lng, b?.lat, b?.lng]
+  if (!lats.every(Number.isFinite)) return Infinity
+  const R = 6371000, toRad = (d) => (d * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng)
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
+// "Getting there" mode from the straight-line distance origin→destination.
+// Walking distance runs longer than the crow flies (streets aren't straight),
+// so we apply a detour factor and only call it a WALK when it's genuinely short.
+// The minute estimate is deliberately approximate (labelled "about ~N min" and
+// backed by the walking deep-link's real number) — never a hard countdown.
+const WALK_SPEED_M_PER_MIN = 80   // ~4.8 km/h, an unhurried family pace
+const WALK_DETOUR_FACTOR = 1.3    // real walked distance ≈ 1.3 × straight-line
+const WALK_MAX_MINUTES = 20       // beyond ~20 min on foot → treat as a drive
+export function reachability(origin, destination) {
+  const meters = haversineMeters(origin, destination)
+  if (!Number.isFinite(meters)) return { mode: 'drive', walkMinutes: null }
+  const walkMinutes = Math.max(1, Math.round((meters * WALK_DETOUR_FACTOR) / WALK_SPEED_M_PER_MIN))
+  return walkMinutes <= WALK_MAX_MINUTES
+    ? { mode: 'walk', walkMinutes }
+    : { mode: 'drive', walkMinutes }
+}
+
 // Round a Date up to the next n-minute boundary. Used to produce a
 // sensible default target arrival in the modal.
 export function roundToNextNMinutes(d, n) {

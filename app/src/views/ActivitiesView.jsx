@@ -83,6 +83,11 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate 
   // (FAMILY_TRIPS_VISION §2/§3). When that tray is present, drop the
   // dead-end "No activities seeded" line; the tray speaks for the page.
   const nearbyEnabled = isStayTrip(trip) && !!stayPlaceCoords(trip)
+  // "Getting there" origin: the stay place on a stay (its lodging coords), else
+  // the trip's home base — so the affordance appears on stays too (tripHomeBase
+  // deliberately ignores trip.lodging coords, which a stay relies on).
+  const gettingThereOrigin =
+    (isStayTrip(trip) && stayPlaceCoords(trip)) || tripHomeBase(trip)
   const subtitle =
     activities.length === 0
       ? nearbyEnabled
@@ -307,7 +312,7 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate 
                   key={activity.id}
                   activity={activity}
                   traveler={traveler}
-                  homeBase={tripHomeBase(trip)}
+                  homeBase={gettingThereOrigin}
                 />
               ))}
             </Section>
@@ -473,9 +478,9 @@ function ActivityCard({ activity, traveler, homeBase }) {
   const isShareIn = activity.source === 'share_in'
   const mapsUrl = mapsLinkForActivity(activity, traveler)
   const telHref = activity.phone ? `tel:${String(activity.phone).replace(/[^\d+]/g, '')}` : null
-  // "Leave when?" needs both an origin (homeBase from the trip) and a
-  // destination (the activity's lat/lng). If either is missing, hide
-  // the affordance.
+  // "Getting there" needs both an origin (the stay place / home base, passed as
+  // homeBase) and a destination (the activity's lat/lng). If either is missing,
+  // hide the affordance.
   const canLeaveWhen =
     !!homeBase &&
     Number.isFinite(activity?.lat) &&
@@ -624,7 +629,7 @@ function ActivityCard({ activity, traveler, homeBase }) {
               style={{ cursor: 'pointer' }}
             >
               <Clock size={12} />
-              Leave when?
+              Getting there
             </button>
           )}
           {telHref && (
