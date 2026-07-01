@@ -28,6 +28,9 @@ const STAY = {
         // ~20 km away → a drive.
         { id: 'gt-drive', time: '5:00 PM', name: 'Big Aquarium', kind: 'sights',
           for: ['jonathan'], note: 'fish', address: 'far', lat: 42.24, lng: -70.18 },
+        // A short walk with NO fixed time → open-ended (nothing to time).
+        { id: 'gt-open', time: '', name: 'Beach Shack', kind: 'food',
+          for: ['jonathan'], note: 'snacks', address: 'nearby', lat: 42.0596, lng: -70.1787 },
       ],
     },
   ],
@@ -53,6 +56,19 @@ test('a walkable stop shows the calm walk face — no traffic, a walking deep-li
   // Walking deep-link, and no drive-only "Re-check".
   await expect(dialog.getByRole('link', { name: /walk there/i })).toBeVisible()
   await expect(dialog.getByRole('button', { name: /re-check/i })).toHaveCount(0)
+})
+
+test('an open-ended walk (no fixed time) shows no leave-by at all — "no need to time it"', async ({ page }) => {
+  await seedTripIntoCache(page, STAY)
+  await page.goto('/?person=jonathan&trip=gt-stay&nosw=1')
+  const dialog = await openStopThenGettingThere(page, /Beach Shack/i)
+
+  await expect(dialog.getByText(/about a \d+-min walk/i)).toBeVisible()
+  await expect(dialog.getByText(/no need to time it/i)).toBeVisible()
+  // Nothing to time → no nudge, no "be there by" input, no traffic.
+  await expect(dialog.getByText(/gentle nudge/i)).toHaveCount(0)
+  await expect(dialog.getByText(/be there by/i)).toHaveCount(0)
+  await expect(dialog.getByRole('link', { name: /walk there/i })).toBeVisible()
 })
 
 test('a far stop keeps the drive face — a traffic re-check + driving deep-link, not a walk', async ({ page }) => {
