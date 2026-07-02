@@ -9,6 +9,27 @@ import { DayChips } from './DayChips'
 import { ThreadedMemories } from '../components/ThreadedMemories'
 import { LeaveWhenModal, leaveWhenDefaultForStop } from '../components/LeaveWhenModal'
 
+// "Get directions" for a check-in / check-out stop on a STAY must point at the
+// trip's OWN lodging — not whatever address the stop itself happens to carry.
+// Live bug (2026-07-01): an "Arrive" stop's own address was just the city
+// ("Provincetown, MA", no street number), so mapsLink's full-address heuristic
+// rejected it and fell back to a vague city search; a "Depart"-type stop can
+// carry an even more misleading address (the day-level `lodging` field flips
+// to "— (home)" on checkout day in some trips, per isLodgingStop below —
+// pointing "directions" at the family's home city instead of the stay).
+// `trip.lodging.address` is the one blessed, always-correct source for where
+// the family is actually staying (tripShape.stayPlaceCoords reads the same
+// field) — prefer it for any stop that's plainly ABOUT that lodging, rather
+// than trusting a per-stop address that may be stale, vague, or home-shaped.
+function lodgingAwareStop(trip, stop) {
+  const kind = stop?.kind
+  const isLodgingKind = kind === 'lodging' || kind === 'arrival' || kind === 'departure'
+  if (isLodgingKind && isStayTrip(trip) && trip?.lodging?.address) {
+    return { ...stop, address: trip.lodging.address }
+  }
+  return stop
+}
+
 function urlLabel(stop) {
   const ticketKinds = new Set(['theater', 'show', 'concert', 'tour', 'arrival', 'departure'])
   if (ticketKinds.has(stop.kind)) return 'Tickets'
@@ -73,7 +94,7 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
           {stop.address && (
             <a
               className="btn-pill"
-              href={mapsLink(stop, traveler)}
+              href={mapsLink(lodgingAwareStop(trip, stop), traveler)}
               target="_blank"
               rel="noreferrer"
             >

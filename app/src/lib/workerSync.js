@@ -254,6 +254,18 @@ export async function pullAll({ asTraveler } = {}) {
     // active traveler (every existing caller), unchanged.
     const r = await workerFetch('/memories', {}, { asTraveler })
     const arr = await r.json()
+    // NOTE (2026-07-01): the worker emits createdAt/updatedAt as ISO strings
+    // (`new Date(r.created_at).toISOString()`) — deliberately NOT normalized to
+    // epoch ms here. A local record's updatedAt is ALSO an ISO string
+    // (memoryStore.js's saves all use `new Date().toISOString()`), and
+    // shouldTakeRemote's last-write-wins check compares `remote.updatedAt >
+    // local.updatedAt` as strings (ISO 8601's lexical order matches chronological
+    // order). Converting only the remote side to a number here would silently
+    // break that comparison (`number > string` coerces the string via bare
+    // Number(), not Date.parse — always NaN, always false) — so a genuinely
+    // newer remote edit would stop propagating. The "NaNd ago" display bug this
+    // was chasing is fixed at the DISPLAY layer instead (relTime in
+    // LivingHeartHome.jsx now accepts either shape), which doesn't touch sync.
     return Array.isArray(arr) ? arr : []
   } catch (err) {
     console.warn('workerSync pullAll failed', err)

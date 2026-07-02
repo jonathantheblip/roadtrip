@@ -29,6 +29,7 @@ import { findArrivalStop } from './FlightStatus'
 import { sunTimes } from '../lib/sunTimes'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
+import { useNowTick } from '../hooks/useNowTick'
 import { TRAVELERS } from '../data/travelers'
 import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg, legStatus } from '../lib/tripParts'
 import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
@@ -42,9 +43,25 @@ const DISPLAY = { fontFamily: 'var(--font-display)', fontWeight: 600, letterSpac
 function fmtTime(d) {
   return d ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null
 }
+// Live bug (2026-07-01): a memory's createdAt/updatedAt can be an ISO STRING
+// (the worker's wire format) OR epoch ms (a locally-created memory, via
+// Date.now()) — deliberately NOT normalized to one shape at the sync layer
+// (workerSync.pullAll), since the local store's OWN last-write-wins compare
+// needs the ISO-string form (see workerSync.js's comment on pullAll). Any
+// LOCAL arithmetic on a memory's timestamp — display, sort, or a same-day
+// count — must go through this first. Bare `Date.now() - ms` / `a.createdAt -
+// b.createdAt` / `ms >= number` all silently coerce a string via Number(),
+// NOT Date.parse, which is NaN for an ISO string — showing the literal text
+// "NaNd ago", or (quieter) making a newest-first sort a no-op and a same-day
+// count always read zero. Never throws; a truly bad value reads as 0 (oldest).
+function toEpochMs(v) {
+  const ms = typeof v === 'string' ? Date.parse(v) : v
+  return Number.isFinite(ms) ? ms : 0
+}
 function relTime(ms) {
-  if (!ms) return ''
-  const min = Math.round((Date.now() - ms) / 60000)
+  const epochMs = toEpochMs(ms)
+  if (!epochMs) return ''
+  const min = Math.round((Date.now() - epochMs) / 60000)
   if (min < 1) return 'just now'
   if (min < 60) return `${min} min ago`
   const hr = Math.round(min / 60)
@@ -139,7 +156,12 @@ export function LivingHeartHome({
   // boundary. GREENFIELD — no trip carries a leg tz yet, so legTz is null and
   // todayIso === device today: byte-identical for every current trip (G5). Only a
   // leg with an explicit tz engages leg-local time + the dual clock below.
-  const legCtx = useMemo(() => deriveCurrentLeg(trip, new Date()), [trip])
+  // `now` (useNowTick, ticks every minute + on foreground) is a real dependency:
+  // without it this only re-resolves the leg when the `trip` prop's object
+  // reference changes, so a family that leaves the home open across a leg's
+  // midnight handoff would stay pinned to yesterday's city.
+  const now = useNowTick()
+  const legCtx = useMemo(() => deriveCurrentLeg(trip, now), [trip, now])
   const legTz = legCtx.tz
   const todayIso = legCtx.todayIso
   const di = useMemo(() => dayInfo(trip, todayIso), [trip, todayIso])
@@ -230,7 +252,7 @@ export function LivingHeartHome({
   const heroUrl = (!heroErr && (trip.heroImage || trip.heroResolved?.url)) || null
 
   const mems = useMemo(() => listMemoriesForTrip(trip.id, traveler), [trip.id, traveler])
-  const sorted = useMemo(() => [...mems].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [mems])
+  const sorted = useMemo(() => [...mems].sort((a, b) => toEpochMs(b.createdAt) - toEpochMs(a.createdAt)), [mems])
   const photoUrls = useMemo(() => {
     const cap = isAfter ? 12 : 6 // an after-trip keepsake shows a fuller wall
     const out = []
@@ -244,7 +266,7 @@ export function LivingHeartHome({
   const todayCount = useMemo(() => {
     const start = new Date(); start.setHours(0, 0, 0, 0)
     const s = start.getTime()
-    return mems.filter((m) => (m.createdAt || 0) >= s).length
+    return mems.filter((m) => toEpochMs(m.createdAt) >= s).length
   }, [mems])
   // Per-stop memory count, so an agenda row can show "N ENTRIES" (a stop that
   // already has memories) — the same signal the old broadsheet "plan" carried.

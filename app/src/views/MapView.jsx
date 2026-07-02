@@ -40,14 +40,20 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
   const isComposite = useMemo(() => isCompositeTrip(trip), [trip])
   const isDrive = !isStay && !isComposite
 
-  // Hoisted above `stops`: a composite trip's map pins scope to the leg it's IN
+  // Hoisted above `stops` (and above the `now`/`schedule` block below, which
+  // needs the same tick): a composite trip's map pins scope to the leg it's IN
   // today (currentLegStops) — Rome's pins don't linger once the family's in
   // Florence. A stay/drive is unaffected (allStops, byte-identical, G5).
   // deriveCurrentLeg's todayIso (leg-timezone-aware when the leg carries a tz) —
   // not the bare device-local date — so the map picks the SAME current leg
   // "We could…" does; a stay/drive has no leg tz, so this is byte-identical to
   // todayLocalIso() for them (deriveCurrentLeg falls back to device-local, G5).
-  const today = useMemo(() => deriveCurrentLeg(trip).todayIso, [trip])
+  // `now` is a REAL dependency, not decoration: without it this only re-picks
+  // the leg when `trip`'s object reference changes, so a family that leaves the
+  // map open across a leg's midnight handoff would stay pinned to yesterday's
+  // city until something else refreshed the trip.
+  const now = useNowTick()
+  const today = useMemo(() => deriveCurrentLeg(trip, now).todayIso, [trip, now])
   const stops = useMemo(
     () => (isComposite ? currentLegStops(trip, today) : allStops(trip)),
     [isComposite, trip, today]
@@ -82,9 +88,9 @@ export function MapView({ trip, traveler = 'everyone', onBack }) {
 
   const { position, status, request: requestLocation } = useGeolocation()
   const [selectedStopId, setSelectedStopId] = useState(null)
-  // The wall clock, ticking — so "up next" / "done" advance through the day on
-  // their own instead of being frozen to a manual checkbox nobody taps.
-  const now = useNowTick()
+  // `now` (hoisted above, feeds `today`/the leg resolution too) also drives
+  // "up next" / "done" advancing through the day on their own instead of being
+  // frozen to a manual checkbox nobody taps.
   const schedule = useMemo(() => selectScheduleNowNext(trip, now), [trip, now])
 
   const projection = useMemo(

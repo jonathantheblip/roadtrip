@@ -120,6 +120,107 @@ test.describe("Who's around — the presence band", () => {
     await expectNoSeriousA11y(page) // --muted on a light surface must still clear AA
   })
 
+  // COMPOSITE TRIPS GO LIVE — "who's around" was gated to a single-place stay
+  // only; a multi-city trip got none of it (presence, waves, the band itself).
+  // Clock is 2026-05-23: Rome's window is over, Florence is the current leg and
+  // carries its OWN members (a partial-party leg) to prove roster scoping.
+  const COMPOSITE_LIVE = {
+    id: 'composite-live-2026',
+    status: 'planning',
+    title: 'Italy composite',
+    subtitle: 'fixture',
+    dateRange: 'May 20 – 26, 2026',
+    dateRangeStart: '2026-05-20',
+    dateRangeEnd: '2026-05-26',
+    travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+    parts: [
+      { id: 'p-rome', type: 'city', place: { name: 'Rome', lat: 41.9028, lng: 12.4964 }, dateStart: '2026-05-20', dateEnd: '2026-05-22' },
+      { id: 'p-flor', type: 'city', place: { name: 'Florence', lat: 43.7696, lng: 11.2558 }, dateStart: '2026-05-23', dateEnd: '2026-05-24', members: ['jonathan', 'aurelia'] },
+    ],
+    days: [
+      { n: 1, isoDate: '2026-05-23', stops: [] },
+    ],
+  }
+
+  test('a composite trip gets the SAME live "who\'s around" band, scoped to the CURRENT leg\'s roster', async ({ page }) => {
+    await seedTripIntoCache(page, COMPOSITE_LIVE)
+    mockPresence(page)
+    await page.goto(`/?person=jonathan&trip=${COMPOSITE_LIVE.id}&nosw=1`)
+    const band = page.getByTestId('whos-around')
+    await expect(band).toBeVisible({ timeout: 10000 })
+    // Florence's own members (a partial-party leg) — not the whole trip's four.
+    await expect(band).toContainText('Jonathan')
+    await expect(band).toContainText('Aurelia')
+    await expect(band).not.toContainText('Helen')
+    await expect(band).not.toContainText('Rafa')
+    await expectNoSeriousA11y(page)
+  })
+
+  test('a composite trip shares presence too (a POST fires) — the SAME live gate as a stay', async ({ page }) => {
+    const posted = []
+    await seedTripIntoCache(page, COMPOSITE_LIVE)
+    page.route(/workers\.dev\/presence(\?.*)?$/, async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+        return
+      }
+      const body = (() => { try { return JSON.parse(route.request().postData() || '{}') } catch { return {} } })()
+      posted.push(body)
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) })
+    })
+    await page.goto(`/?person=jonathan&trip=${COMPOSITE_LIVE.id}&nosw=1`)
+    await expect.poll(() => posted.length, { timeout: 10000 }).toBeGreaterThan(0)
+    expect(posted[0].tripId).toBe(COMPOSITE_LIVE.id)
+  })
+
+  test('a composite leg with NO explicit members falls back to the whole trip\'s party (G5)', async ({ page }) => {
+    // Florence carries no `members` here — everyone on the trip is "around".
+    const noMembers = {
+      ...COMPOSITE_LIVE, id: 'composite-live-nomembers-2026',
+      parts: COMPOSITE_LIVE.parts.map((p) => (p.id === 'p-flor' ? { ...p, members: undefined } : p)),
+    }
+    await seedTripIntoCache(page, noMembers)
+    mockPresence(page)
+    await page.goto(`/?person=jonathan&trip=${noMembers.id}&nosw=1`)
+    const band = page.getByTestId('whos-around')
+    await expect(band).toBeVisible({ timeout: 10000 })
+    for (const nm of ['Jonathan', 'Helen', 'Aurelia', 'Rafa']) {
+      await expect(band).toContainText(nm)
+    }
+  })
+
+  test('a composite leg with an EXPLICIT EMPTY members array also falls back to everyone (not a blank band)', async ({ page }) => {
+    // `[]` is truthy in JS — a naive `legCtx.members || travelers` fallback
+    // would pass an empty array straight through instead of falling back.
+    const emptyMembers = {
+      ...COMPOSITE_LIVE, id: 'composite-live-emptymembers-2026',
+      parts: COMPOSITE_LIVE.parts.map((p) => (p.id === 'p-flor' ? { ...p, members: [] } : p)),
+    }
+    await seedTripIntoCache(page, emptyMembers)
+    mockPresence(page)
+    await page.goto(`/?person=jonathan&trip=${emptyMembers.id}&nosw=1`)
+    const band = page.getByTestId('whos-around')
+    await expect(band).toBeVisible({ timeout: 10000 })
+    for (const nm of ['Jonathan', 'Helen', 'Aurelia', 'Rafa']) {
+      await expect(band).toContainText(nm)
+    }
+  })
+
+  test('a FINISHED composite trip gets no live presence band at all (the gate still holds)', async ({ page }) => {
+    const finished = {
+      ...COMPOSITE_LIVE, id: 'composite-finished-2026',
+      dateRange: 'May 1 – 7, 2026', dateRangeStart: '2026-05-01', dateRangeEnd: '2026-05-07',
+      parts: COMPOSITE_LIVE.parts.map((p) => ({ ...p, dateStart: '2026-05-01', dateEnd: '2026-05-07' })),
+      days: [{ n: 1, isoDate: '2026-05-01', stops: [] }],
+    }
+    await seedTripIntoCache(page, finished)
+    mockPresence(page)
+    await page.goto('/?person=jonathan&nosw=1')
+    await page.getByRole('button').filter({ hasText: 'Italy composite' }).first().click()
+    await expect(page.getByTestId('living-heart-home')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('whos-around')).toHaveCount(0)
+  })
+
   test('a non-adult lens never puts coordinates on the wire (kid-coarse)', async ({ page }) => {
     // Even with geolocation granted, Aurelia (a non-adult) POSTs only the coarse
     // bucket — her exact GPS never leaves the device (the client half of the gate;

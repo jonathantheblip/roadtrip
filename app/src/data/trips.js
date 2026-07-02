@@ -448,10 +448,6 @@ export const NYC_TRIP = {
   // record carries no heroImage, so the live card resolves its hero
   // worker-side; this is the pre-first-pull fallback. © Richard T.
   heroImage: './images/nyc-rafa-2026.webp',
-  packingList: [
-    '4× over-ear earmuffs, NRR 25–28 dB (Bridgeport monster truck show)',
-    'Sharpie + small Hot Wheels truck (driver autographs at the pre-show party)',
-  ],
   lodging: {
     name: 'Murray Hill Airbnb',
     address: '40 East 38th Street, New York, NY 10016',

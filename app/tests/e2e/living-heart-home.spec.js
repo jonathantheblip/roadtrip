@@ -61,6 +61,11 @@ test('a stay with photos shows the Lately carousel (no ghost)', async ({ page })
   // The ghost is gone, and real photo thumbnails are present.
   await expect(home.getByText(/Photos will gather here/i)).toHaveCount(0)
   await expect(home.getByRole('button', { name: 'Open photos' }).first()).toBeVisible()
+  // Live bug (2026-07-01): PHOTOS' createdAt is an ISO STRING (the real shape a
+  // memory can carry, e.g. straight from a worker pull) — relTime must format
+  // it honestly ("just now" / "3h ago"), never the literal string "NaNd ago".
+  await expect(home.getByText(/added ·/)).toBeVisible()
+  await expect(home.getByText(/NaN/)).toHaveCount(0)
 })
 
 // Design 01#4b — "alive at empty": a nothing day is permission, not a hidden

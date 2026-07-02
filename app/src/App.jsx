@@ -5,7 +5,7 @@ import { Switcher } from './views/Switcher'
 import { StayTabBar, STAY_TABS, tabForView } from './views/StayTabBar'
 import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
 import { isStayTrip, stayPlace, stayPlaceCoords, stayGeocodeQuery } from './lib/tripShape'
-import { isCompositeTrip, getParts, partCoords, legGeocodeQuery } from './lib/tripParts'
+import { isCompositeTrip, getParts, partCoords, legGeocodeQuery, deriveCurrentLeg, partPlaceLabel } from './lib/tripParts'
 import { geocodeAddress } from './lib/geocode'
 import { useGeolocationWhen } from './hooks/useGeolocation'
 import { usePresence } from './lib/presence'
@@ -660,19 +660,25 @@ export default function App() {
   // shows. `now` ticks (useNowTick) so the readout advances through the day on
   // its own instead of freezing at the last render.
   const now = useNowTick()
-  // On a LIVE STAY trip, read this device's location so the live rail can say "At
-  // the cabin" by geofencing against the trip's place. Gated to live + stay so a
-  // road trip (or any non-live view) never starts a watch here — the route's GPS
-  // ETA keeps using the Live Map's passive watch. No fix yet → honest clock readout.
-  const stayLive = !!tripForView && !tripForView.draft && isStayTrip(tripForView) && isTripLive(tripForView, now)
-  const stayGeo = useGeolocationWhen(stayLive)
+  // On a LIVE STAY *or* composite/multi-city trip, read this device's location so
+  // the live rail / "who's around" can geofence honestly. Gated to live +
+  // (stay|composite) so a road trip (or any non-live view) never starts a watch
+  // here — the route's GPS ETA keeps using the Live Map's passive watch. No fix
+  // yet → honest clock readout. Renamed from `stayLive` ("composite trips go
+  // live", 2026-07-01): every consumer below was stay-only by convention, not by
+  // necessity — a composite trip gets the SAME live presence/waves band, scoped
+  // to its current leg (below). `nowReadout`'s "At [place] · next" stays
+  // STAY-ONLY on purpose (its own isStayTrip check, further down) — a composite
+  // trip's live orientation is the journey rail + We-could/Map, already shipped.
+  const familyLive = !!tripForView && !tripForView.draft && (isStayTrip(tripForView) || isCompositeTrip(tripForView)) && isTripLive(tripForView, now)
+  const stayGeo = useGeolocationWhen(familyLive)
   const dockLedge = buildLedgeModel({
     trip: tripForView,
     traveler,
     now,
     weaveReady,
     surpriseRevealCue,
-    position: stayLive && stayGeo.status === 'granted' ? stayGeo.position : null,
+    position: familyLive && stayGeo.status === 'granted' ? stayGeo.position : null,
   })
   // Live-GPS ETA upgrade: when this device is actually ON the trip route (and
   // location was granted via the Live Map — read passively, never prompts), the
@@ -695,19 +701,47 @@ export default function App() {
       : null
 
   // "Who's around" (slice 8) — live family presence on the Now tab. This device
-  // shares its OWN presence while on a live stay (foreground); the hook also polls
-  // the family's. `myStatus` is the optional manual "what are you up to" note,
-  // seeded once from this device's stored row so a reload doesn't wipe it. Kids'
-  // exact GPS is never sent (lib/presence) and is dropped server-side too (015).
-  const stayPlaceObj = stayLive ? stayPlace(tripForView) : null
-  const stayPosition = stayLive && stayGeo.status === 'granted' ? stayGeo.position : null
+  // shares its OWN presence while on a live stay OR composite trip (foreground);
+  // the hook also polls the family's. `myStatus` is the optional manual "what are
+  // you up to" note, seeded once from this device's stored row so a reload
+  // doesn't wipe it. Kids' exact GPS is never sent (lib/presence) and is dropped
+  // server-side too (015).
+  // A composite trip anchors "where" + "who" to the CURRENT LEG (deriveCurrentLeg
+  // — the SAME leg the journey rail/We-could/Map already resolve), so "at
+  // Florence" is honest once the family's arrived there (not stuck naming the
+  // trip's first city forever), and the roster only shows who's actually on
+  // THIS leg when it carries its own members (else the whole trip's party, G5).
+  // `now` (useNowTick, ticks every minute + on foreground) is a real dependency
+  // here, not decoration — without it this would only re-resolve the leg when
+  // `tripForView`'s object reference changes (a sync/edit), so a family that
+  // leaves the app open across a leg's midnight handoff would stay pinned to
+  // yesterday's city until something else happened to refresh the trip.
+  const legCtx = useMemo(
+    () => (familyLive && isCompositeTrip(tripForView) ? deriveCurrentLeg(tripForView, now) : null),
+    [familyLive, tripForView, now]
+  )
+  const legCoords = legCtx ? partCoords(legCtx.part) : null
+  const livePlaceObj = familyLive
+    ? isStayTrip(tripForView)
+      ? stayPlace(tripForView)
+      : legCoords
+      ? { lat: legCoords.lat, lng: legCoords.lng, name: partPlaceLabel(legCtx.part) || legCtx.part?.title || '' }
+      : null
+    : null
+  // An explicit-but-EMPTY members array (as opposed to missing/null) must also
+  // fall back to the whole trip's party — `[]` is truthy, so a bare `||` would
+  // silently pass it through and rely on WhoAround's OWN internal `.length`
+  // check to save it. Make the fallback explicit here, where the contract is
+  // documented, not implicit in a second file.
+  const liveRoster = (legCtx?.members?.length ? legCtx.members : null) || tripForView?.travelers
+  const livePosition = familyLive && stayGeo.status === 'granted' ? stayGeo.position : null
   const [myStatus, setMyStatus] = useState('')
   const statusTouched = useRef(false)
-  const presence = usePresence(stayLive ? tripForView?.id : null, {
-    enabled: stayLive,
+  const presence = usePresence(familyLive ? tripForView?.id : null, {
+    enabled: familyLive,
     traveler,
-    place: stayPlaceObj,
-    position: stayPosition,
+    place: livePlaceObj,
+    position: livePosition,
     note: myStatus,
   })
   useEffect(() => {
@@ -722,9 +756,10 @@ export default function App() {
 
   // Cross-device "Wave hi!" (016): receive waves addressed to me (a friendly pop,
   // shown once), and a sender used by both the band's per-person 👋 and Rafa's
-  // reveal. Only on a live stay (where presence + the family surfaces live).
-  const waveTripId = stayLive ? tripForView?.id : null
-  const { waves: incomingWaves, markSeen: markWavesSeen } = useWaves(waveTripId, { enabled: stayLive })
+  // reveal. On a live stay OR composite trip (where presence + the family
+  // surfaces live).
+  const waveTripId = familyLive ? tripForView?.id : null
+  const { waves: incomingWaves, markSeen: markWavesSeen } = useWaves(waveTripId, { enabled: familyLive })
   const onWave = (to) => sendWave(waveTripId, to)
 
   // Family-trips recenter shell: on a STAY the home is the 4-tab "WHAT" bar
@@ -1230,18 +1265,19 @@ export default function App() {
       surpriseRevealCue,
       nowReadout, // stay-only live "At [place] · next" for the Now band (else null)
       // "Who's around" (slice 8) — the live presence band, placed by each lens in
-      // its Now section. Null off a live stay (route/after → byte-identical, G5).
-      // Rafa gets his OWN kid treatment (the storybook diorama) on the same data;
-      // the other three get the standard band.
-      whoAround: stayLive ? (
+      // its Now section. Null off a live stay/composite trip (route/after →
+      // byte-identical, G5). Rafa gets his OWN kid treatment (the storybook
+      // diorama) on the same data; the other three get the standard band, leg-
+      // scoped roster + place on a composite trip.
+      whoAround: familyLive ? (
         traveler === 'rafa' ? (
           <RafaWhosAround people={presence.people} now={now.getTime()} onWave={onWave} />
         ) : (
           <WhoAround
             people={presence.people}
             me={traveler}
-            place={stayPlaceObj}
-            roster={tripForView?.travelers}
+            place={livePlaceObj}
+            roster={liveRoster}
             now={now.getTime()}
             onSetStatus={setMyPresenceStatus}
             onWave={onWave}
@@ -1249,7 +1285,7 @@ export default function App() {
         )
       ) : null,
       // Raw presence for Rafa's iPad Adventure Map (the family bubbles ride it).
-      presencePeople: stayLive ? presence.people : [],
+      presencePeople: familyLive ? presence.people : [],
       nowMs: now.getTime(),
     }
     // ONE home for every trip (FAMILY_TRIPS_VISION §11): a COMPOSITE trip (explicit
@@ -1840,8 +1876,8 @@ export default function App() {
       )}
 
       {/* Cross-device "Wave hi!" (016): a friendly pop when someone waves at me —
-          shown once, any tab, any lens. Only on a live stay. */}
-      {stayLive && <WaveCue waves={incomingWaves} viewer={traveler} onSeen={markWavesSeen} />}
+          shown once, any tab, any lens. On a live stay OR composite trip. */}
+      {familyLive && <WaveCue waves={incomingWaves} viewer={traveler} onSeen={markWavesSeen} />}
 
       {/* Claude-in-App M1 — floating entry on the trips index.
           Bottom-right, lifted ABOVE the persona dock now that the dock also

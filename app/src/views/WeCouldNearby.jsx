@@ -17,6 +17,7 @@ import {
   rankByConditions,
 } from '../lib/weCould'
 import { useConditions, tideLine } from '../lib/conditions'
+import { useNowTick } from '../hooks/useNowTick'
 
 // WeCouldNearby — the never-empty "We could…" tray for a STAY home, and (per-
 // leg) for a composite/multi-city trip.
@@ -83,10 +84,14 @@ export function WeCouldNearby({ trip, traveler, onPropose, onLocate, onLocateLeg
   // A composite (multi-city) trip anchors to WHERE IT IS NOW — the current
   // leg's own coords — instead of one whole-trip place; a plain stay is
   // unaffected (stayPlaceCoords, byte-identical, G5). legCtx also names the
-  // leg for the header + the per-leg "Locate this leg" fallback below.
+  // leg for the header + the per-leg "Locate this leg" fallback below. `now`
+  // is a real dependency: without it this only re-picks the leg when `trip`'s
+  // object reference changes, so a family that leaves the tray open across a
+  // leg's midnight handoff would stay pinned to yesterday's city.
   const isStay = isStayTrip(trip)
   const isComposite = isCompositeTrip(trip)
-  const legCtx = useMemo(() => (isComposite ? deriveCurrentLeg(trip) : null), [isComposite, trip])
+  const now = useNowTick()
+  const legCtx = useMemo(() => (isComposite ? deriveCurrentLeg(trip, now) : null), [isComposite, trip, now])
   const coords = useMemo(
     () => (isComposite ? currentPartCoords(trip, legCtx?.todayIso) : stayPlaceCoords(trip)),
     [isComposite, trip, legCtx?.todayIso]
