@@ -83,7 +83,18 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay,
     !(isStayTrip(trip) ? lodgingKind : stop.kind === 'lodging')
   const leaveWhenDefault = leaveWhenDefaultForStop(stop, day)
   return (
-    <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>
+    // Top clearance tracks the SAME expression as the fixed shell top bar
+    // (App.jsx trip-topbar) and the sticky day-chips (platform.css .day-chips):
+    // max(40px, safe-area + 32px). Without it, the stop content starts UNDER
+    // the fixed bar, and in a zero-safe-area env (desktop, some Androids, every
+    // e2e viewport) the day-chips — whose natural top is then above its 40px
+    // sticky inset — sticks immediately and juts down over the header's back
+    // button, swallowing it. A real iPhone's notch inset pushed the content
+    // clear, which is why this only ever bit off-device. (chip task_c6f1b43d)
+    <div
+      className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}
+      style={{ paddingTop: 'max(40px, calc(env(safe-area-inset-top) + 32px))' }}
+    >
       {onOpenDay && (
         <DayChips days={trip.days} activeDayN={day.n} onJump={onOpenDay} />
       )}
