@@ -140,7 +140,9 @@ test('a ONE-part stay renders the simple "At [place]" home — not the complex f
   await expect(home).toBeVisible({ timeout: 10000 })
   await expect(home.getByText('At Harbor Breeze')).toBeVisible()
   // The complex frame stays OFF: no "The plan" section, no "In …" hero, no rail.
-  await expect(home.getByText('The plan')).toHaveCount(0)
+  // (exact — the "Change the plan" quiet action legitimately contains the
+  // substring; the assertion is about the composite SECTION header.)
+  await expect(home.getByText('The plan', { exact: true })).toHaveCount(0)
   await expect(home.getByText(/^In /)).toHaveCount(0)
   await expect(home.getByTestId('journey-rail')).toHaveCount(0)
 })
@@ -150,7 +152,9 @@ test('a TWO-part trip still renders the composite frame ("In [city]" + The plan)
   await page.goto('/?person=jonathan&trip=lhh-twopart&nosw=1')
   const home = page.getByTestId('living-heart-home')
   await expect(home).toBeVisible({ timeout: 10000 })
-  await expect(home.getByText('The plan')).toBeVisible()
+  // exact — "Change the plan" (the quiet edit door, present here too) would
+  // otherwise make this a two-element strict-mode match.
+  await expect(home.getByText('The plan', { exact: true })).toBeVisible()
   await expect(home.getByText(/^In (Rome|Florence)/)).toBeVisible()
   // No leg timezone/currency/locale → no dual clock, no context card
   // (the gate: "no delta → no module").

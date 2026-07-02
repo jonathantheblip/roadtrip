@@ -5,6 +5,8 @@ import { Switcher } from './views/Switcher'
 import { StayTabBar, STAY_TABS, tabForView } from './views/StayTabBar'
 import { buildLedgeModel, itineraryNearToday, isTripLive } from './lib/liveDock'
 import { isStayTrip, stayPlace, stayPlaceCoords, stayGeocodeQuery } from './lib/tripShape'
+import { tripPhase } from './lib/tripPhase'
+import { tripHasMaskedContent } from './lib/surprises'
 import { isCompositeTrip, getParts, partCoords, legGeocodeQuery, deriveCurrentLeg, partPlaceLabel } from './lib/tripParts'
 import { geocodeAddress } from './lib/geocode'
 import { useGeolocationWhen } from './hooks/useGeolocation'
@@ -874,10 +876,17 @@ export default function App() {
     setView({ name: 'new' })
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
   }
-  function openEditor(id) {
+  // opts (SEE+EDIT, 2026-07-02): { focusDayIso, from } — the home's per-day
+  // pencil / a stop's "Change" pill pass the day to land on and where Back
+  // should return ('trip' → the trip home instead of the index). When a
+  // focus day is named, the editor owns the scroll (to that day's block), so
+  // the scroll-to-top here would just undo it — skip it.
+  function openEditor(id, opts) {
     if (id) setTripId(id)
-    setView({ name: 'edit' })
-    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    setView({ name: 'edit', focusDayIso: opts?.focusDayIso, editFrom: opts?.from })
+    if (!opts?.focusDayIso) {
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    }
   }
   function openActivities() {
     setView({ name: 'activities' })
@@ -1254,10 +1263,12 @@ export default function App() {
       onOpenWeave: openWeave,
       onOpenReplay: () => openReplay(),
       onOpenBook: openBook,
-      // The empty-agenda "Add something" ghost (Design 01#4b) — the honest
-      // destination for "add a plan item" is the editor; wrapped so a click
-      // event is never passed through as an id.
-      onOpenEditor: () => openEditor(),
+      // The editor doors on the home (Design 01#4b + SEE+EDIT 2026-07-02):
+      // "Add something", "Change the plan", and the whole-stay day pencils.
+      // Wrapped so ONLY a real opts object flows through — a click event (or
+      // anything else) can never be mistaken for a trip id or for opts.
+      onOpenEditor: (opts) =>
+        openEditor(null, opts && typeof opts.focusDayIso === 'string' ? { ...opts, from: 'trip' } : { from: 'trip' }),
       onOpenSurprises: openSurprises,
       onCompose: openCompose, // "Share a moment" — designed home-band entry (was ⋯-only)
       weaveReady,
@@ -1699,9 +1710,19 @@ export default function App() {
             traveler={traveler}
             dark={darkSurface}
             tripsApi={tripsApi}
-            onBack={openIndex}
+            focusDayIso={view.focusDayIso}
+            backLabel={view.editFrom === 'trip' ? (trip.title || 'The trip') : undefined}
+            // The from-trip Back only points at the trip while the trip can
+            // still RENDER there (published). After "Move back to draft" the
+            // trip view would be a blank body — this closure re-evaluates each
+            // render, so an unpublish flips Back to the index automatically.
+            onBack={view.editFrom === 'trip' && !trip.draft ? () => setView({ name: 'trip' }) : openIndex}
             onOpenTrip={openTrip}
             onDiscard={(id) => tripsApi.removeTrip(id)}
+            // After a DISCARD the trip is gone — the only sane landing is the
+            // index, whatever `from` said (a from-trip Back would strand the
+            // app on a trip view whose trip no longer exists).
+            onDiscarded={openIndex}
           />
         )}
         {view.name === 'trip' && trip && !trip.draft && renderTripView()}
@@ -1714,6 +1735,16 @@ export default function App() {
             dark={darkSurface}
             onBack={() => setView({ name: 'trip' })}
             onOpenDay={openDayFirstStop}
+            // The stop's edit door (SEE+EDIT, 2026-07-02): lands in the editor
+            // on this stop's day, Back returns to the trip. Not for Rafa (a
+            // kid lens gets no destructive path), not when the viewer's trip
+            // view carries ANY masked surprise content (the editor opens the
+            // RAW trip), and never on a finished trip's keepsake.
+            onEdit={
+              traveler !== 'rafa' && !tripHasMaskedContent(tripForView) && tripPhase(trip) !== 'after'
+                ? () => openEditor(trip.id, { focusDayIso: day.isoDate, from: 'trip' })
+                : undefined
+            }
           />
         )}
         {view.name === 'activities' && trip && (

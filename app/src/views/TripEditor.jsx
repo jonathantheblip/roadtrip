@@ -59,7 +59,7 @@ function humanDate(iso) {
 // Drafts list's one-tap "Restore" and this editor agree on "ready to publish".
 const completeness = tripCompleteness
 
-export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, onOpenTrip, onDiscard }) {
+export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, onOpenTrip, onDiscard, onDiscarded, focusDayIso, backLabel }) {
   const [trip, setTrip] = useState(() => clone(incoming))
   const tripRef = useRef(trip)
   tripRef.current = trip
@@ -83,6 +83,49 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
       setSaveState('idle')
     }
   }, [incoming?.id])
+
+  // Land on the day the caller was looking at (SEE+EDIT, 2026-07-02): the
+  // home's per-day pencil and a stop's "Change" pill pass focusDayIso so
+  // "move Thursday's dinner" doesn't start with a scroll hunt. If the day
+  // doesn't exist yet — "Add something" on an OPEN day the grid enumerated
+  // but the trip never wrote — CREATE it (empty, dated, inserted in date
+  // order) so the caller gets the day they asked for, then scroll to it.
+  // The caller suppressed its own scroll-to-top, so this owns the landing.
+  const focusScrollPending = useRef(!!focusDayIso)
+  useEffect(() => {
+    if (!focusDayIso) return
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(focusDayIso)) {
+      // Garbage in → land at the top, once, and stop looking.
+      focusScrollPending.current = false
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+      return
+    }
+    const days = [...(tripRef.current.days || [])]
+    if (!days.some((d) => d?.isoDate === focusDayIso)) {
+      const newDay = {
+        n: 0, isoDate: focusDayIso, date: humanDate(focusDayIso), title: '',
+        drive: { from: '', to: '', hours: '', miles: 0 }, lodging: '', stops: [],
+      }
+      // Insert before the first LATER dated day; dateless days keep their
+      // manual order untouched (no whole-array sort — order is load-bearing).
+      const at = days.findIndex((d) => d?.isoDate && d.isoDate > focusDayIso)
+      if (at >= 0) days.splice(at, 0, newDay)
+      else days.push(newDay)
+      days.forEach((d, i) => { d.n = i + 1 })
+      patchDays(days)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // The scroll lands once the anchor exists (created days need a render
+  // first). Self-terminating: clears the flag the render it fires.
+  useEffect(() => {
+    if (!focusScrollPending.current || !focusDayIso) return
+    const el = document.getElementById(`editor-day-${focusDayIso}`)
+    if (el) {
+      focusScrollPending.current = false
+      requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }))
+    }
+  })
 
   // Concurrent-edit detection (change order §6.4 — last-write-wins is
   // acceptable, the conflict must surface). If the synced copy for this
@@ -239,7 +282,10 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
       timerRef.current = null
     }
     if (onDiscard) await onDiscard(trip.id)
-    onBack?.()
+    // The trip is GONE — land where a trip-less view makes sense (the caller
+    // passes the index). A from-trip Back here would strand the app on a
+    // trip view whose trip no longer exists.
+    ;(onDiscarded || onBack)?.()
   }
 
   async function onCover(file) {
@@ -264,7 +310,10 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
           style={{ background: 'transparent', border: 0, cursor: 'pointer', padding: 0, marginBottom: 18 }}
           type="button"
         >
-          <ChevronLeft size={14} /> Trips
+          {/* The label tells the truth about where Back goes: opened from the
+              trip home / a stop it returns to the trip (the caller passes its
+              title); the Settings/drafts flows keep the index return. */}
+          <ChevronLeft size={14} /> {backLabel || 'Trips'}
         </button>
         <div className="flex items-start justify-between" style={{ gap: 12 }}>
           <div>
@@ -374,6 +423,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
         {(trip.days || []).map((d, di) => (
           <DayBlock
             key={di}
+            anchorId={d.isoDate ? `editor-day-${d.isoDate}` : undefined}
             day={d}
             index={di}
             count={trip.days.length}
@@ -489,11 +539,11 @@ function SaveBadge({ state, err }) {
 // ── Day block ─────────────────────────────────────────────────────────
 function DayBlock(props) {
   const {
-    day, index, count, traveler, tripId, travelers, stay,
+    day, index, count, traveler, tripId, travelers, stay, anchorId,
     onUpdate, onMove, onRemove, onAddStop, onUpdateStop, onMoveStop, onRemoveStop,
   } = props
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
+    <div id={anchorId} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14, scrollMarginTop: 12 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <p className="smallcaps f-dm text-[11px] opacity-70">Day {index + 1}</p>
         <div className="flex" style={{ gap: 4 }}>

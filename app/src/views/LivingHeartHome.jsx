@@ -20,7 +20,7 @@
 // replay; "next" only when the live readout has one; the day count is derived from
 // the real trip dates (no invented "night 2 of 4").
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, ChevronDown, ChevronUp, Play, BookOpen, Sparkles, Share2, Compass, Plane, Ticket } from 'lucide-react'
+import { ChevronRight, ChevronDown, ChevronUp, Play, BookOpen, Sparkles, Share2, Compass, Plane, Ticket, Pencil } from 'lucide-react'
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady } from '../components/EntryCues'
 import { listMemoriesForTrip } from '../lib/memoryStore'
@@ -31,11 +31,12 @@ import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
 import { useNowTick } from '../hooks/useNowTick'
 import { TRAVELERS } from '../data/travelers'
-import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg, legStatus } from '../lib/tripParts'
+import { isCompositeTrip, nextTimedStop, partCount, getParts, currentPartCoords, partPlaceLabel, deriveCurrentLeg, legStatus, stayDayGrid } from '../lib/tripParts'
 import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
-import { PartsOutline } from './PartsOutline'
+import { tripHasMaskedContent } from '../lib/surprises'
+import { PartsOutline, StopRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
 const DISPLAY = { fontFamily: 'var(--font-display)', fontWeight: 600, letterSpacing: '-0.01em' }
@@ -132,6 +133,10 @@ export function LivingHeartHome({
   const [weave, setWeave] = useState(null)
   const [heroErr, setHeroErr] = useState(false)
   const [agendaOpen, setAgendaOpen] = useState(false) // "On the agenda" overflow accordion
+  // "The whole stay" unfold (SEE-the-plan, 2026-07-02): the agenda section can
+  // open into every day of the trip, in place. Collapsed by default on every
+  // visit so today always leads — the unfold is strictly additive.
+  const [wholeStay, setWholeStay] = useState(false)
   useEffect(() => {
     let cancelled = false
     fetchStoredWeave(trip.id).then((w) => { if (!cancelled) setWeave(w) }).catch(() => {})
@@ -315,10 +320,8 @@ export function LivingHeartHome({
   }, [trip, upcoming, todayIso])
   const hasAgenda = agenda.stops.length > 0 && !!onOpenStop
   // Nothing planned today — the "alive at empty" state (Design 01#4b), not a
-  // hidden/missing section. Exact complement of the populated case's gate
-  // below (same !isAfter && !isComplex outer guard — a route/road trip with
-  // nothing planned gets this too; isComplex sheds both for "The plan").
-  const agendaIsEmpty = !hasAgenda && !(arrival && onOpenStop)
+  // hidden/missing section: the agenda section always renders on a live
+  // stay/route home, and the empty face is the populated face's complement.
   const nothingDayLine = useMemo(
     () => nothingDayLineFor(agenda.day?.isoDate || todayIso),
     [agenda.day?.isoDate, todayIso]
@@ -330,6 +333,25 @@ export function LivingHeartHome({
   const agendaOverflow = Math.max(0, agenda.stops.length - AGENDA_CAP)
   const agendaShown = agendaOpen ? agenda.stops : agenda.stops.slice(0, AGENDA_CAP)
   const agendaHiddenTimes = agenda.stops.slice(AGENDA_CAP).map((s) => (s.time || '').trim()).filter(Boolean).join(', ')
+
+  // THE WHOLE STAY (SEE-the-plan, 2026-07-02): the honest day grid behind the
+  // agenda's unfold — the trip's real date window with saved days laid onto it,
+  // so open days appear and a sparse trip shows every date. The toggle only
+  // exists when there's genuinely more than one day to see. A route trip (the
+  // rare exception) shares this same one-home surface — the label just reads
+  // "Day by day" instead of a stay's "The whole stay" (never road-trip logic).
+  const dayGrid = useMemo(
+    () => (!isComplex && !isAfter ? stayDayGrid(trip) : []),
+    [isComplex, isAfter, trip]
+  )
+  const canUnfold = dayGrid.length >= 2 && !!onOpenStop
+  const unfoldLabel = isStay ? 'The whole stay' : 'Day by day'
+  // Standing edit doors go quiet when THIS VIEW of the trip carries ANY masked
+  // (surprise) content — whole-trip stand-in, hidden part, or hidden stop. The
+  // editor opens the RAW trip, so any stand-in in view means the viewer must
+  // not be handed an editor into the secret. (trip.masked alone misses the
+  // per-stop/per-part surprises — the adversarial review's catch.)
+  const editable = !isAfter && !tripHasMaskedContent(trip) && !!onOpenEditor
 
   return (
     <div data-testid="living-heart-home" style={{ color: 'var(--text)' }}>
@@ -527,10 +549,32 @@ export function LivingHeartHome({
 
         {/* ON THE AGENDA — a stay's few planned events + flight (the exception,
             vision §5), kept reachable now the road-trip itinerary is shed. Each
-            row opens the stop; renders only when there's something planned. */}
-        {!isAfter && !isComplex && (hasAgenda || (arrival && onOpenStop)) && (
+            row opens the stop. The header's quiet toggle unfolds THE WHOLE STAY
+            in place (SEE-the-plan, 2026-07-02) — every day, chronologically,
+            today accent-tagged — so days beyond today are one tap away instead
+            of unreachable. Collapsed is the default on every visit: today
+            always leads, and the unfold is strictly additive. */}
+        {!isAfter && !isComplex && (
           <div style={{ marginTop: 22 }}>
-            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{v.lc('On the agenda')}</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{v.lc('On the agenda')}</span>
+              {canUnfold && (
+                <button
+                  type="button" onClick={() => setWholeStay((o) => !o)} data-testid="whole-stay-toggle"
+                  aria-label={wholeStay ? 'Show just today' : (isStay ? 'Show the whole stay' : 'Show every day')}
+                  style={{ ...MONO, fontSize: 10, color: 'var(--accent-text)', background: 'transparent', border: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 0' }}
+                >
+                  {v.lc(wholeStay ? 'Just today' : unfoldLabel)}
+                  {wholeStay ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+              )}
+            </div>
+            {wholeStay ? (
+              <WholeStay
+                days={dayGrid} todayIso={todayIso} upcoming={upcoming} onOpenStop={onOpenStop}
+                onEditDay={editable ? (iso) => onOpenEditor({ focusDayIso: iso }) : null} v={v}
+              />
+            ) : (hasAgenda || (arrival && onOpenStop)) ? (
             <div style={{ marginTop: 11, border: '1px solid var(--border)', borderRadius: 'min(var(--radius, 12px), 14px)', overflow: 'hidden' }}>
               {arrival && onOpenStop && (
                 <button
@@ -580,15 +624,13 @@ export function LivingHeartHome({
                 </button>
               )}
             </div>
-          </div>
-        )}
-
-        {/* ON THE AGENDA, EMPTY — "alive at empty" (Design 01#4b): nothing planned
-            reads as permission, not a hidden/missing section. "Add something"
-            is honest — it opens the editor, the real place a plan gets made. */}
-        {!isAfter && !isComplex && agendaIsEmpty && (
-          <div style={{ marginTop: 22 }}>
-            <span style={{ ...DISPLAY, fontSize: 18, color: 'var(--text)' }}>{v.lc('On the agenda')}</span>
+            ) : (
+            /* ON THE AGENDA, EMPTY — "alive at empty" (Design 01#4b): nothing
+               planned reads as permission, not a hidden/missing section. "Add
+               something" is honest — it opens the editor, the real place a plan
+               gets made. The header toggle above rides this face too: the
+               live-bug case ("nothing today" while Thursday's dinner exists,
+               invisible) is exactly where the unfold matters most. */
             <div
               style={{
                 marginTop: 11, padding: '18px 14px', borderRadius: 'min(var(--radius, 12px), 14px)',
@@ -601,15 +643,20 @@ export function LivingHeartHome({
               <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14.5, color: 'var(--text)', display: 'block', marginTop: 6 }}>
                 {v.lc(nothingDayLine)}
               </span>
-              {onOpenEditor && (
+              {/* Gated `editable`, not just onOpenEditor: a WHOLE-TRIP stand-in
+                  always renders this empty face (its days are stripped), so an
+                  ungated door here would hand the surprise recipient the raw
+                  editor — the one door the first masked-gating pass forgot. */}
+              {editable && (
                 <button
-                  type="button" onClick={onOpenEditor} aria-label="Add something to the plan"
+                  type="button" onClick={() => onOpenEditor()} aria-label="Add something to the plan"
                   style={{ ...MONO, fontSize: 10, color: 'var(--accent-text)', background: 'transparent', border: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, padding: 0 }}
                 >
                   {v.addSomething} <ChevronRight size={12} />
                 </button>
               )}
             </div>
+            )}
           </div>
         )}
 
@@ -636,14 +683,90 @@ export function LivingHeartHome({
         )}
 
         {/* QUIET ACTIONS — the folded features (demoted, NOT deleted: do-not-lose).
-            Replay only when there's something to replay (honest). */}
+            Replay only when there's something to replay (honest). "Change the
+            plan" is the standing editor door (SEE+EDIT, 2026-07-02) — present on
+            any live/upcoming trip, not only when the agenda is empty; quiet on a
+            masked stand-in trip. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 18, paddingTop: 14, borderTop: nowReadout?.next ? 0 : '1px solid var(--border)' }}>
+          {editable && <QuietAction onClick={() => onOpenEditor()} icon={<Pencil size={13} />} label={v.lc('Change the plan')} aria="Change the plan" />}
           {onCompose && <QuietAction onClick={onCompose} icon={<Share2 size={13} />} label={v.lc('Share a moment')} aria="Share a moment" />}
           {onOpenSurprises && <QuietAction onClick={onOpenSurprises} icon={<Sparkles size={13} />} label={v.lc('Surprises')} aria="Surprises" />}
           {!isAfter && hasPhotos && onOpenReplay && <QuietAction onClick={onOpenReplay} icon={<Play size={13} />} label={v.lc('Replay')} aria="Replay" />}
           {bookHasPages && onOpenBook && <QuietAction onClick={onOpenBook} icon={<BookOpen size={13} />} label={v.lc('The book')} aria="The Book · kept pages" />}
         </div>
       </div>
+    </div>
+  )
+}
+
+// THE WHOLE STAY (SEE-the-plan, 2026-07-02) — the agenda's unfolded face: every
+// day of the trip chronologically, reusing the composite plan's StopRow +
+// UTC-safe dayLabel so a stop reads identically on both surfaces. Today is
+// accent-tagged; past days recede (dimmed, a quiet check); an open day shows
+// its own permission line (the same deterministic per-day pick the collapsed
+// empty card uses) plus an inline "Add something" door; a planned day carries
+// an icon pencil into the editor focused on that day. Lodging-kind stops are
+// filtered (the base is where you ARE, not an agenda item — same rule as the
+// collapsed face); flights show inline on their day. Nothing here is capped:
+// the +N-more accordion is the collapsed glance face's rule only (01#3).
+function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
+  return (
+    <div data-testid="whole-stay" style={{ marginTop: 6 }}>
+      {days.map((d, i) => {
+        const iso = d.isoDate || ''
+        // Pre-trip nothing is past and nothing is "today" — the whole stay
+        // reads as the week ahead (todayIso precedes every day).
+        const isToday = !upcoming && !!iso && iso === todayIso
+        const isPast = !upcoming && !!iso && !!todayIso && iso < todayIso
+        const stops = (d.stops || []).filter((s) => s && !s.skipped && s.kind !== 'lodging')
+        const open = stops.length === 0
+        return (
+          <div
+            key={`${iso || 'd'}-${i}`} data-testid="whole-stay-day"
+            style={{
+              padding: '10px 0 10px 10px', opacity: isPast ? 0.55 : 1,
+              borderLeft: isToday ? '2px solid var(--accent)' : '2px solid transparent',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ ...MONO, fontSize: 9.5, fontWeight: 600, color: 'var(--text)' }}>{dayLabel(d)}</span>
+              {isPast && <span aria-label="done" style={{ fontSize: 10, color: 'var(--muted)' }}>✓</span>}
+              {isToday && <span style={{ ...MONO, fontSize: 8.5, color: 'var(--accent-text)' }}>{v.lc('Today')}</span>}
+              {!open && <span style={{ ...MONO, fontSize: 8.5, color: 'var(--muted)' }}>{stops.length} {stops.length === 1 ? 'stop' : 'stops'}</span>}
+              {onEditDay && !open && (
+                <button
+                  type="button" onClick={() => onEditDay(iso)} aria-label={`Change this day — ${dayLabel(d)}`}
+                  style={{ marginLeft: 'auto', background: 'transparent', border: 0, cursor: 'pointer', color: 'var(--muted)', padding: 10, margin: '-10px -10px -10px auto', display: 'inline-flex' }}
+                >
+                  <Pencil size={12} />
+                </button>
+              )}
+            </div>
+            {open ? (
+              <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: 'var(--muted)', marginTop: 5 }}>
+                {v.lc(nothingDayLineFor(iso))}
+                {onEditDay && iso && (
+                  <button
+                    type="button" onClick={() => onEditDay(iso)} aria-label={`Add something — ${dayLabel(d)}`}
+                    style={{ ...MONO, fontStyle: 'normal', fontSize: 9, color: 'var(--accent-text)', background: 'transparent', border: 0, cursor: 'pointer', padding: '4px 0 4px 8px', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                  >
+                    {v.addSomething} <ChevronRight size={10} />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ marginTop: 2 }}>
+                {stops.map((s, si) => (
+                  <StopRow
+                    key={s.id || si} stop={s} first={si === 0}
+                    onOpen={onOpenStop && d.n ? () => onOpenStop(d.n, s.id) : undefined}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

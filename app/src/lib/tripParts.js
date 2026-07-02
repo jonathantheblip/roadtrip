@@ -151,6 +151,34 @@ function isoRange(start, end) {
   return out
 }
 
+// The whole stay as one honest day grid — for the home's "The whole stay"
+// unfold (SEE-the-plan, 2026-07-02). Enumerates the trip's REAL date window
+// (dateRangeStart..End) and lays the saved days onto it by isoDate, so a
+// sparse trip (a Claude-created stay that only saved the days it had plans
+// for) still shows every date, with open days honestly present rather than
+// silently missing. Dateless trips (or days without isoDate) fall back to
+// the saved days[] in order — the original SEE wound stays fixed for them
+// too. Pure; no storage.
+export function stayDayGrid(trip) {
+  const saved = Array.isArray(trip?.days) ? trip.days : []
+  const window_ = isoRange(trip?.dateRangeStart, trip?.dateRangeEnd)
+  if (!window_.length) return saved
+  const byIso = new Map()
+  for (const d of saved) {
+    if (d?.isoDate && !byIso.has(d.isoDate)) byIso.set(d.isoDate, d)
+  }
+  const grid = window_.map(
+    (iso) => byIso.get(iso) || { isoDate: iso, stops: [], open: true }
+  )
+  // Saved days OUTSIDE the window, without an isoDate, or with a duplicate
+  // isoDate still belong to the trip — append them so no planned day is
+  // ever silently dropped (grid holds placed days by reference).
+  for (const d of saved) {
+    if (!grid.includes(d)) grid.push(d)
+  }
+  return grid
+}
+
 // The parts of a trip, each augmented with a derived `days[]` and a per-part
 // `dayCount`. A LEGACY trip returns its single derived wrapper untouched (days =
 // trip.days) so nothing about its rendering changes (G5). A composite partitions

@@ -421,6 +421,21 @@ export function isTripMaskedFrom(trip, viewer) {
   return s.hideFrom.includes('everyone') || s.hideFrom.includes(viewer)
 }
 
+// Whether THIS VIEW of a trip carries ANY masked (surprise stand-in) content —
+// the whole-trip stand-in, a masked part, or a masked stop. The standing EDIT
+// doors gate on this (SEE+EDIT, 2026-07-02): an editor always opens the RAW
+// trip record, so a viewer whose view contains any stand-in must not be handed
+// an editor — one tap would put the hidden stop's real name in plain text.
+// (trip.masked alone misses per-stop/per-part surprises: only tripStandIn sets
+// the trip-level flag; maskTripStops/maskTripParts flag the stand-ins only.)
+export function tripHasMaskedContent(trip) {
+  if (!trip) return false
+  if (trip.masked) return true
+  if (Array.isArray(trip.parts) && trip.parts.some((p) => p?.masked)) return true
+  const days = trip.days || trip.data?.days || []
+  return days.some((d) => (d?.stops || []).some((s) => s?.masked))
+}
+
 // What a masked-from viewer gets INSTEAD of the real trip: a believable stand-in
 // carrying ONLY non-secret framing (the real dates, so they keep the time free) —
 // never the real title / destination / days / stops. `masked:true` so it can't be

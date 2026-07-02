@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronLeft, Clock, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash, Copy, Wifi, ClipboardCheck, Route } from 'lucide-react'
+import { ChevronLeft, Clock, MapPin, ExternalLink, Bed, Key, Phone, Ticket, Hash, Copy, Wifi, ClipboardCheck, Route, Pencil } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { tripHomeBase } from '../data/trips'
 import { mapsLink, scenicMapsLink } from '../lib/mapsLink'
@@ -43,7 +43,7 @@ function urlLabel(stop) {
 // photo composer at the bottom). `dark` flips the page surface to
 // charcoal/cream so it matches Jonathan / Rafa / dark-mode Helen.
 // Embedded panels (flight, lodging) react to the surface via CSS.
-export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay }) {
+export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay, onEdit }) {
   const [leaveOpen, setLeaveOpen] = useState(false)
   // "Getting there" needs an ORIGIN. On a STAY the origin is the place you're
   // staying (its lodging coords) — where tripHomeBase deliberately doesn't look,
@@ -133,6 +133,24 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay 
             >
               <Clock size={12} />
               Getting there
+            </button>
+          )}
+          {/* The stop's own door into the editor (SEE+EDIT, 2026-07-02) — the
+              plan is editable from where you're reading it, not only via
+              Settings. The caller gates who gets it (not the kid lens, not a
+              masked trip); a surprise stand-in stop — cover OR teaser, both
+              carry masked:true — never shows it: the editor would open the
+              RAW trip focus-scrolled to the secret's own day. */}
+          {onEdit && !stop.masked && (
+            <button
+              type="button"
+              className="btn-pill"
+              onClick={onEdit}
+              aria-label="Change this stop in the plan"
+              style={{ cursor: 'pointer' }}
+            >
+              <Pencil size={12} />
+              Change
             </button>
           )}
         </div>

@@ -23,7 +23,11 @@ const MONO = 'JetBrains Mono, monospace'
 // drifts across timezones). Falls back to the day's own human label when present.
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-function dayLabel(day) {
+// Exported for the stay home's "The whole stay" unfold (SEE-the-plan,
+// 2026-07-02) — the one shared, UTC-safe day-label format, so the unfolded
+// stay and the composite plan can never disagree on a date (and no caller is
+// tempted into toLocaleDateString on an ISO string, the TZ-fragile class).
+export function dayLabel(day) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day?.isoDate || '')
   if (m) {
     const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
@@ -40,7 +44,9 @@ function Label({ children, color = 'var(--muted)', size = 9 }) {
   )
 }
 
-function StopRow({ stop, onOpen, first }) {
+// Exported for the stay home's "The whole stay" unfold — the same stop row
+// the composite plan renders, so a stop reads identically on both surfaces.
+export function StopRow({ stop, onOpen, first }) {
   return (
     <div style={{ borderTop: first ? 'none' : '1px solid var(--border)', padding: '11px 0' }}>
       <button

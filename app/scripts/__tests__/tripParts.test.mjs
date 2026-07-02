@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords, deriveCurrentLeg, legStatus, legGeocodeQuery, currentLegStops } =
+const { getParts, deriveTripShape, partCount, hasExplicitParts, partsWithDays, PART_TYPES, currentPart, nextTimedStop, clockMinutes, currentPartCoords, isCompositeTrip, partPlaceLabel, partCoords, deriveCurrentLeg, legStatus, legGeocodeQuery, currentLegStops, stayDayGrid } =
   await import('../../src/lib/tripParts.js')
 
 function legacyStay() {
@@ -540,4 +540,53 @@ test('currentLegStops: a legacy/no-parts trip → empty (callers use allStops in
 
 test('currentLegStops: never throws on null', () => {
   assert.deepEqual(currentLegStops(null, '2026-05-01'), [])
+})
+
+// ─── stayDayGrid — the whole-stay unfold's honest day grid (2026-07-02) ──
+
+test('stayDayGrid: enumerates the full date window, laying saved days onto it', () => {
+  const trip = {
+    dateRangeStart: '2026-07-01', dateRangeEnd: '2026-07-05',
+    days: [
+      { n: 1, isoDate: '2026-07-01', title: 'Arrive', stops: [{ id: 'a' }] },
+      { n: 2, isoDate: '2026-07-03', title: 'Whale watch', stops: [{ id: 'b' }] },
+    ],
+  }
+  const grid = stayDayGrid(trip)
+  assert.equal(grid.length, 5, 'one row per calendar day of the window')
+  assert.equal(grid[0].title, 'Arrive', 'saved day placed on its date')
+  assert.equal(grid[1].open, true, 'Jul 2 is an honest open day, not missing')
+  assert.equal(grid[2].title, 'Whale watch')
+  assert.equal(grid[3].open, true)
+  assert.equal(grid[4].open, true)
+  assert.deepEqual(grid.map((d) => d.isoDate), ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'])
+})
+
+test('stayDayGrid: a dateless trip falls back to its saved days in order', () => {
+  const days = [
+    { n: 1, title: 'One', stops: [] },
+    { n: 2, title: 'Two', stops: [] },
+  ]
+  assert.deepEqual(stayDayGrid({ days }), days)
+  assert.deepEqual(stayDayGrid({ days: [] }), [])
+  assert.deepEqual(stayDayGrid({}), [])
+})
+
+test('stayDayGrid: saved days outside the window (or dateless) are appended, never dropped', () => {
+  const stray = { n: 3, isoDate: '2026-07-09', title: 'Stray', stops: [] }
+  const dateless = { n: 4, title: 'No date', stops: [] }
+  const trip = {
+    dateRangeStart: '2026-07-01', dateRangeEnd: '2026-07-02',
+    days: [{ n: 1, isoDate: '2026-07-01', title: 'On grid', stops: [] }, stray, dateless],
+  }
+  const grid = stayDayGrid(trip)
+  assert.equal(grid.length, 4, '2 window days + 2 appended')
+  assert.ok(grid.includes(stray), 'outside-window day kept')
+  assert.ok(grid.includes(dateless), 'dateless day kept')
+})
+
+test('stayDayGrid: an inverted or half-missing window falls back to saved days (bad data never loops)', () => {
+  const days = [{ n: 1, isoDate: '2026-07-01', stops: [] }]
+  assert.deepEqual(stayDayGrid({ dateRangeStart: '2026-07-05', dateRangeEnd: '2026-07-01', days }), days)
+  assert.deepEqual(stayDayGrid({ dateRangeStart: '2026-07-01', days }), days)
 })
