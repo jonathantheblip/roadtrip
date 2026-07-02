@@ -37,7 +37,7 @@ import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArr
 import { homeVoice } from '../lib/homeVoice'
 import { tripHasMaskedContent } from '../lib/surprises'
 import { namedRecordEntries } from '../lib/dayRecord'
-import { PartsOutline, StopRow, dayLabel } from './PartsOutline'
+import { PartsOutline, StopRow, RecordRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
 const DISPLAY = { fontFamily: 'var(--font-display)', fontWeight: 600, letterSpacing: '-0.01em' }
@@ -778,7 +778,7 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
                   {v.lc('As it happened')}
                 </span>
                 {recorded.map((e, ei) => (
-                  <StopRow key={e.id || ei} stop={e} first={ei === 0} looseTime />
+                  <RecordRow key={e.id || ei} entry={e} first={ei === 0} />
                 ))}
               </div>
             )}

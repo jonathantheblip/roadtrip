@@ -85,6 +85,44 @@ export function StopRow({ stop, onOpen, first, looseTime = false }) {
   )
 }
 
+// A RECORD entry — "what actually happened" — reads in the MEMORY tense, not
+// the plan's. The plan (StopRow) leads with a mono time column + a [kind] tag;
+// memory drops both and leads with the serif place, its loose time in words
+// beneath ("late morning, till one"). A small marker dot in the record accent
+// stands where the plan has none. (Design 02 "Named row" / 03 read faces; gold
+// is reserved for a KEPT day, which arrives with the keep flow.) Read-only.
+export function RecordRow({ entry, first }) {
+  const time = (entry?.time || '').trim()
+  return (
+    <div style={{ borderTop: first ? 'none' : '1px solid var(--border)', padding: '10px 0', display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+      <span
+        aria-hidden="true"
+        style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--accent-text, var(--accent))', flexShrink: 0, marginTop: 8 }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: SERIF, fontSize: 15.5, fontWeight: 600, lineHeight: 1.2, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+          {entry.name}
+        </div>
+        {time && (
+          <div style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 12, color: 'var(--muted)', marginTop: 1, lineHeight: 1.35 }}>
+            {time}
+          </div>
+        )}
+        {entry.note && (
+          <div style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 12.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {entry.note}
+          </div>
+        )}
+        {Array.isArray(entry.for) && entry.for.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <AvatarStack ids={entry.for} size={15} gap={-4} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function DayRow({ day, onOpenStop }) {
   const stops = (day.stops || []).filter((s) => s && !s.skipped)
   const loose = day.loose || stops.length === 0
@@ -119,7 +157,7 @@ function DayRow({ day, onOpenStop }) {
         <div data-testid="day-record" style={{ marginTop: 6 }}>
           <Label color="var(--accent-text, var(--accent))" size={8.5}>As it happened</Label>
           {recorded.map((e, ei) => (
-            <StopRow key={e.id || ei} stop={e} first={ei === 0} looseTime />
+            <RecordRow key={e.id || ei} entry={e} first={ei === 0} />
           ))}
         </div>
       )}
