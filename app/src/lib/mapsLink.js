@@ -7,7 +7,9 @@
 // rather than the named place. The address is the source of truth;
 // coordinates are only a last-resort fallback.
 
-import { TRAVELERS } from '../data/travelers'
+// Explicit extension so the module loads under bare node too (the unit
+// tests exercise the URL ladder directly; vite resolves either form).
+import { TRAVELERS } from '../data/travelers.js'
 
 function looksLikeFullAddress(addr) {
   if (!addr) return false
@@ -21,8 +23,19 @@ function looksLikeFullAddress(addr) {
 export function mapsLink(stop, travelerId) {
   const traveler = TRAVELERS[travelerId] || TRAVELERS.jonathan
   const address = (stop?.address || '').trim()
+  const name = (stop?.name || '').trim()
   const hasCoords = stop?.lat != null && stop?.lng != null
   const useAddress = looksLikeFullAddress(address)
+  // The NO-COORDS fallback: a name-anchored search ("The Canteen,
+  // Provincetown, MA") beats the old bare-city search — the maps app's own
+  // index finds the venue instead of the town center. Coords, when present,
+  // still outrank it: hand-pinned and API-sourced stops carry PRECISE
+  // coords with descriptive names ("Aurelia pickup — …") that would search
+  // as junk. (The residual gap — a stop whose coords were geocoded FROM its
+  // own vague address IS the centroid — needs coord provenance to fix
+  // honestly; the worst class, arrival/departure stops, is already handled
+  // by the caller's lodgingAwareStop substitution.)
+  const nameQuery = !useAddress && name ? [name, address].filter(Boolean).join(', ') : null
 
   if (traveler.maps === 'waze') {
     // Waze: q= takes a search query; the app geocodes against its own
@@ -34,7 +47,10 @@ export function mapsLink(stop, travelerId) {
     if (hasCoords) {
       return `https://waze.com/ul?ll=${stop.lat},${stop.lng}&navigate=yes`
     }
-    return `https://waze.com/ul?q=${encodeURIComponent(address || stop?.name || '')}&navigate=yes`
+    if (nameQuery) {
+      return `https://waze.com/ul?q=${encodeURIComponent(nameQuery)}&navigate=yes`
+    }
+    return `https://waze.com/ul?q=${encodeURIComponent(address || name)}&navigate=yes`
   }
 
   // Apple Maps universal link. daddr= accepts an address string or
@@ -45,7 +61,10 @@ export function mapsLink(stop, travelerId) {
   if (hasCoords) {
     return `https://maps.apple.com/?daddr=${stop.lat},${stop.lng}`
   }
-  return `https://maps.apple.com/?daddr=${encodeURIComponent(address || stop?.name || '')}`
+  if (nameQuery) {
+    return `https://maps.apple.com/?daddr=${encodeURIComponent(nameQuery)}`
+  }
+  return `https://maps.apple.com/?daddr=${encodeURIComponent(address || name)}`
 }
 
 // Multi-stop route link. Waze accepts at most one intermediate waypoint

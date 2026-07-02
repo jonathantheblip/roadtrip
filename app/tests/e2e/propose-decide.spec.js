@@ -128,4 +128,32 @@ test.describe('Propose → decide (slice 6)', () => {
     await expect.poll(() => posted.vote.length).toBe(1)
     expect(posted.vote[0].id).toBe('prop-1')
   })
+
+  // Stay-only-gate hunt (2026-07-02): propose→decide was gated isStayTrip —
+  // a composite trip's We-could tray rendered spots the family could never
+  // propose. The gate now includes composite (the familyLive precedent).
+  test('propose → decide runs on a COMPOSITE trip too (the tray is leg-scoped, the loop must follow)', async ({ page }) => {
+    const composite = {
+      id: 'propose-composite-2026',
+      status: 'planning',
+      title: 'Italy, in pieces',
+      dateRangeStart: '2026-05-20', dateRangeEnd: '2026-05-26',
+      travelers: ['jonathan', 'helen', 'aurelia', 'rafa'],
+      parts: [
+        { id: 'p-rome', type: 'city', place: { name: 'Rome', lat: 41.9028, lng: 12.4964 }, dateStart: '2026-05-20', dateEnd: '2026-05-22' },
+        { id: 'p-flor', type: 'city', place: { name: 'Florence', lat: 43.7696, lng: 11.2558 }, dateStart: '2026-05-23', dateEnd: '2026-05-24' },
+      ],
+      days: [],
+    }
+    await seedTripIntoCache(page, composite)
+    await mockNearby(page)
+    mockProposals(page, { pending: { ...A_PENDING, tripId: 'propose-composite-2026' } })
+    await page.goto('/?person=jonathan&trip=propose-composite-2026&nosw=1')
+    await expect(page.getByTestId('stay-tabbar')).toBeVisible({ timeout: 10000 })
+    await page.locator('.stay-tab', { hasText: 'We could' }).click()
+    // The pending proposal reaches the banner — pre-fix, useProposals got a
+    // null tripId on a composite trip and this never rendered.
+    await expect(page.getByTestId('proposals-banner')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('proposals-banner')).toContainText('Cabin Diner')
+  })
 })

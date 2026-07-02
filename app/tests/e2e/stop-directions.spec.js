@@ -83,3 +83,59 @@ test('helen (Apple Maps lens) also gets the lodging address for the Arrive stop'
   const href = await link.getAttribute('href')
   expect(href).toContain(encodeURIComponent('690 Commercial St #4d, Provincetown, MA'))
 })
+
+// Same hunt, the modal's sibling gap (2026-07-02): the "Getting there" modal
+// fed the stop's OWN coords — for an Arrive/Depart stop on a stay those are
+// usually the city centroid geocoded from its bare-city address, and the
+// journey "from the lodging to the lodging" is nonsense anyway. Those stops
+// are ABOUT the stay; they get no Getting-there (the maps button already
+// carries the right address). A normal stop keeps the affordance.
+test('an "Arrive"/"Depart" stop on a stay shows NO "Getting there" — a normal stop keeps it', async ({ page }) => {
+  const withCoords = JSON.parse(JSON.stringify(STAY))
+  withCoords.id = 'stay-directions-coords'
+  // The exact trap: the arrival stop carries the town-centroid coords its
+  // bare-city address geocoded to.
+  withCoords.days[0].stops[0].lat = 42.0526
+  withCoords.days[0].stops[0].lng = -70.1849
+  withCoords.days[0].stops[1].lat = 42.0512
+  withCoords.days[0].stops[1].lng = -70.1856
+  await seedTripIntoCache(page, withCoords)
+
+  await page.goto(`/?person=jonathan&trip=${withCoords.id}&nosw=1`)
+  await page.getByRole('button', { name: /^Arrive$/i }).click()
+  await expect(page.getByRole('link', { name: /Open in Waze/i })).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('button', { name: /Getting there/i })).toHaveCount(0)
+
+  // The dinner stop (real coords, not lodging-kind) keeps the affordance.
+  await page.goto(`/?person=jonathan&trip=${withCoords.id}&nosw=1`)
+  await page.getByRole('button', { name: /^Spiritus$/i }).click()
+  await expect(page.getByRole('button', { name: /Getting there/i })).toBeVisible({ timeout: 10000 })
+})
+
+// The review's catch on the catch (2026-07-02): a FLIGHT stop is also kind
+// arrival/departure — but its place is the AIRPORT. It must keep its OWN
+// address on the maps button (never the lodging substitution) AND keep
+// "Getting there" (lodging→airport leave-by planning is the modal's
+// highest-value use on a flights-to-family stay).
+test('a FLIGHT arrival stop keeps its own airport address AND its "Getting there"', async ({ page }) => {
+  const withFlight = JSON.parse(JSON.stringify(STAY))
+  withFlight.id = 'stay-directions-flight'
+  withFlight.days[0].stops.push({
+    id: 'fl-1', time: '11:10 AM', name: 'DL 4961 lands', kind: 'arrival',
+    flightNumber: 'DL4961', flightOrigin: 'BOS', flightDest: 'PVC',
+    address: 'Provincetown Municipal Airport, Provincetown, MA',
+    lat: 42.0722, lng: -70.2214,
+    for: ['jonathan', 'helen', 'aurelia', 'rafa'],
+  })
+  await seedTripIntoCache(page, withFlight)
+  await page.goto(`/?person=jonathan&trip=${withFlight.id}&nosw=1`)
+  // The home files a flightNumber stop under its dedicated "Flight" agenda row.
+  await page.getByRole('button', { name: /Flight DL4961/i }).click()
+  const link = page.getByRole('link', { name: /Open in Waze/i })
+  await expect(link).toBeVisible({ timeout: 10000 })
+  const href = await link.getAttribute('href')
+  // Its own airport coords/address — NOT the lodging substitution.
+  expect(decodeURIComponent(href)).not.toContain('690 Commercial St')
+  // And the leave-by planner stays.
+  await expect(page.getByRole('button', { name: /Getting there/i })).toBeVisible()
+})

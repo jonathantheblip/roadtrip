@@ -44,17 +44,18 @@ const DISPLAY = { fontFamily: 'var(--font-display)', fontWeight: 600, letterSpac
 function fmtTime(d) {
   return d ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null
 }
-// Live bug (2026-07-01): a memory's createdAt/updatedAt can be an ISO STRING
-// (the worker's wire format) OR epoch ms (a locally-created memory, via
-// Date.now()) — deliberately NOT normalized to one shape at the sync layer
-// (workerSync.pullAll), since the local store's OWN last-write-wins compare
-// needs the ISO-string form (see workerSync.js's comment on pullAll). Any
-// LOCAL arithmetic on a memory's timestamp — display, sort, or a same-day
-// count — must go through this first. Bare `Date.now() - ms` / `a.createdAt -
-// b.createdAt` / `ms >= number` all silently coerce a string via Number(),
-// NOT Date.parse, which is NaN for an ISO string — showing the literal text
-// "NaNd ago", or (quieter) making a newest-first sort a no-op and a same-day
-// count always read zero. Never throws; a truly bad value reads as 0 (oldest).
+// Live bug (2026-07-01): a memory's createdAt/updatedAt is an ISO STRING on
+// every reachable path (saveMemory stamps toISOString(); the worker's wire
+// format is ISO; verified across the repo's history 2026-07-02 — no epoch-ms
+// writer has ever existed). The bug was NUMERIC ARITHMETIC applied to those
+// strings: bare `Date.now() - x` / `a.createdAt - b.createdAt` / `x >= n`
+// coerce via Number(), NOT Date.parse — NaN for an ISO string — showing the
+// literal text "NaNd ago", making a newest-first sort a no-op, and a same-day
+// count read zero. So any LOCAL arithmetic on a memory timestamp goes through
+// this point-of-use conversion first (it also tolerates a numeric value
+// defensively, should one ever appear). Never normalize the STORED value —
+// the memory-sync LWW compares updatedAt as ISO strings on both sides.
+// Never throws; a truly bad value reads as 0 (oldest).
 function toEpochMs(v) {
   const ms = typeof v === 'string' ? Date.parse(v) : v
   return Number.isFinite(ms) ? ms : 0

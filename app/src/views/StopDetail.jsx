@@ -4,6 +4,7 @@ import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { tripHomeBase } from '../data/trips'
 import { mapsLink, scenicMapsLink } from '../lib/mapsLink'
 import { isStayTrip, stayPlaceCoords } from '../lib/tripShape'
+import { isCompositeTrip, deriveCurrentLeg, currentPartCoords } from '../lib/tripParts'
 import { FlightStatus } from './FlightStatus'
 import { DayChips } from './DayChips'
 import { ThreadedMemories } from '../components/ThreadedMemories'
@@ -24,6 +25,11 @@ import { LeaveWhenModal, leaveWhenDefaultForStop } from '../components/LeaveWhen
 function lodgingAwareStop(trip, stop) {
   const kind = stop?.kind
   const isLodgingKind = kind === 'lodging' || kind === 'arrival' || kind === 'departure'
+  // A FLIGHT stop is also kind arrival/departure — but its place is the
+  // AIRPORT, not the stay (FlightStatus keys live tracking off exactly
+  // flightNumber + these kinds). Substituting the lodging address would
+  // point "directions" at the Airbnb when the family needs LGA.
+  if (stop?.flightNumber) return stop
   if (isLodgingKind && isStayTrip(trip) && trip?.lodging?.address) {
     return { ...stop, address: trip.lodging.address }
   }
@@ -49,14 +55,32 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay,
   // staying (its lodging coords) — where tripHomeBase deliberately doesn't look,
   // since a stay keeps coords on trip.lodging, not homeBase; without this the
   // affordance never appeared on the very trips where a short walk matters most.
-  // A route trip keeps the home-base origin (the drive-home anchor).
+  // A composite trip anchors to its CURRENT leg (the family is in Florence, not
+  // at their home city). A route trip keeps the home-base origin.
+  const isComposite = isCompositeTrip(trip)
+  const legCtx = isComposite ? deriveCurrentLeg(trip) : null
+  // The composite current-leg anchor outranks the trip-level lodging: a
+  // multi-leg trip that also carries a lodging record is IN its current leg.
   const gettingThereOrigin =
-    (isStayTrip(trip) && stayPlaceCoords(trip)) || tripHomeBase(trip)
+    (isComposite && currentPartCoords(trip, legCtx?.todayIso)) ||
+    (isStayTrip(trip) && stayPlaceCoords(trip)) ||
+    tripHomeBase(trip)
+  // NON-FLIGHT arrival/departure stops on a stay are ABOUT the stay itself
+  // (their maps button already points at the lodging — lodgingAwareStop).
+  // Their own coords are usually the city centroid geocoded from a bare-city
+  // address, and the journey "from the lodging to the lodging" is nonsense —
+  // so they get no "Getting there", same as the lodging stop. A FLIGHT stop
+  // (flightNumber) keeps it: its place is the airport, and lodging→airport
+  // leave-by planning is the modal's highest-value use on a flights-to-family
+  // stay.
+  const lodgingKind =
+    !stop?.flightNumber &&
+    (stop?.kind === 'lodging' || stop?.kind === 'arrival' || stop?.kind === 'departure')
   const canLeaveWhen =
     !!gettingThereOrigin &&
     Number.isFinite(stop?.lat) &&
     Number.isFinite(stop?.lng) &&
-    stop.kind !== 'lodging'
+    !(isStayTrip(trip) ? lodgingKind : stop.kind === 'lodging')
   const leaveWhenDefault = leaveWhenDefaultForStop(stop, day)
   return (
     <div className={`min-h-screen pb-32 ${dark ? 'surface-dark' : 'surface-light'}`}>

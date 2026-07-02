@@ -39,9 +39,10 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate,
   const [pasteDraft, setPasteDraft] = useState('')
 
   // Propose → decide (slice 6): the family loop lives here, on the "We could…"
-  // tab — where the ideas are. Gated to a stay (where the nearby tray runs); the
-  // hook no-ops without a worker. `proposeSpot` drives the bottom-sheet.
-  const proposalsOn = isStayTrip(trip)
+  // tab — where the ideas are. A stay OR a composite trip (its leg-scoped tray
+  // renders the same spots — the familyLive precedent); the hook no-ops
+  // without a worker. `proposeSpot` drives the bottom-sheet.
+  const proposalsOn = isStayTrip(trip) || isCompositeTrip(trip)
   const { pending, accepted, propose, vote, decide } = useProposals(proposalsOn ? trip?.id : null)
   const [proposeSpot, setProposeSpot] = useState(null)
 
@@ -92,11 +93,12 @@ export function ActivitiesView({ trip, traveler, onBack, onOpenImport, onLocate,
   const legCtx = useMemo(() => (isComposite ? deriveCurrentLeg(trip) : null), [isComposite, trip])
   const legCoords = isComposite ? currentPartCoords(trip, legCtx?.todayIso) : null
   const nearbyEnabled = (isStayTrip(trip) && !!stayPlaceCoords(trip)) || (isComposite && !!legCoords)
-  // "Getting there" origin: the stay place on a stay (its lodging coords), else
-  // the trip's home base — so the affordance appears on stays too (tripHomeBase
-  // deliberately ignores trip.lodging coords, which a stay relies on).
+  // "Getting there" origin: the CURRENT LEG's anchor on a composite trip
+  // first (the family is in Florence — the trip-level lodging or home city
+  // would be nonsense), then the stay place (its lodging coords), else the
+  // trip's home base (tripHomeBase deliberately ignores trip.lodging coords).
   const gettingThereOrigin =
-    (isStayTrip(trip) && stayPlaceCoords(trip)) || tripHomeBase(trip)
+    (isComposite && legCoords) || (isStayTrip(trip) && stayPlaceCoords(trip)) || tripHomeBase(trip)
   const subtitle =
     activities.length === 0
       ? nearbyEnabled
