@@ -12,6 +12,9 @@
 // Reuse the canonical human-date-range formatter so a date edited via a
 // trip-settings card renders identically to one set at trip creation.
 import { humanDateRange } from './createTripCard.js'
+// The Record ("what actually happened") — the pure day-record model. The
+// record-day card is the conversational mouth onto it.
+import { normalizeRecordEntry, applyDayRecord } from './dayRecord.js'
 
 // Convert a card.fields array into a flat { name → value } object,
 // keeping the *user-edited* values from the draft (not the originals).
@@ -302,6 +305,36 @@ function applyMulti(trip, card) {
   return next
 }
 
+// Apply a `record-day` card — write "what actually happened" onto a day's
+// RECORD (day.record), never its plan (day.stops). Entries arrive as the
+// card's `entries` array (each row skippable in the UI, same escape hatch
+// as multi); they keep told order; ids derive from the card so a retried
+// save upserts instead of duplicating. Zero live NAMED entries fails loud
+// (the silent no-op class — "Saved ✓" on nothing recorded would be a lie).
+function applyRecordDay(trip, card) {
+  const target = card?.target || {}
+  const raw = Array.isArray(card.entries) ? card.entries : []
+  const party =
+    (trip.travelers?.length ? trip.travelers : trip.data?.travelers) || []
+  const live = raw.filter((e) => e && !e.skipped)
+  const entries = live
+    .map((e, i) =>
+      normalizeRecordEntry(e, {
+        cardId: card.id || null,
+        index: raw.indexOf(e), // index in the FULL list — stable across skips
+        party,
+        recordedBy: card.recordedBy || null,
+      })
+    )
+    .filter(Boolean)
+  if (!entries.length) {
+    throw new Error(
+      'applyRecordDay: no named entries to record — refusing a no-op save'
+    )
+  }
+  return applyDayRecord(trip, { dayIso: target.dayIso, dayN: target.dayN }, entries)
+}
+
 // Merge trip-level field updates into the record at the correct level —
 // the seed shape keeps fields at the root, the D1 row shape nests them
 // under `.data` (same split withDays handles for days). Never touches
@@ -400,6 +433,8 @@ export function applyCardToTrip(trip, card) {
       return applyCancel(trip, card)
     case 'multi':
       return applyMulti(trip, card)
+    case 'record-day':
+      return applyRecordDay(trip, card)
     case 'trip-settings':
       return applySettings(trip, card)
     default:

@@ -678,6 +678,107 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
   )
 }
 
+// The record-day card — "what actually happened," reflected back as a
+// row-by-row draft (SEE the day → skip a row → Save). Same skip machinery
+// as the multi card; saving writes the day's RECORD, never its plan.
+// Provisional styling — the Record design pass owns the final look; this
+// follows the established draft-card language so it ships honest today.
+function RecordDayCard({ card, draft, setDraftEntries, onSave, onDiscard, committing }) {
+  const entries = Array.isArray(draft.entries) ? draft.entries : []
+  const liveCount = entries.filter((e) => !e.skipped).length
+  function toggleSkip(i) {
+    setDraftEntries(
+      entries.map((e, idx) => (idx === i ? { ...e, skipped: !e.skipped } : e))
+    )
+  }
+  return (
+    <div
+      style={{
+        background: T.draftBg,
+        color: T.ink,
+        border: `1px solid ${T.draftBorder}`,
+        borderRadius: 14,
+        padding: 12,
+        marginBottom: 14,
+      }}
+      data-testid="confirm-card-record-day"
+    >
+      <CardHeader
+        tone="draft"
+        actionLabel={`The day, as it happened · ${liveCount} ${liveCount === 1 ? 'entry' : 'entries'}`}
+        scopeLabel={card.eyebrow}
+        onCream={true}
+      />
+      {entries.map((e, i) => (
+        <div
+          key={i}
+          style={{
+            padding: '8px 10px',
+            borderBottom: i < entries.length - 1 ? '1px solid var(--border)' : 'none',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            opacity: e.skipped ? 0.45 : 1,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: FONT.mono, fontSize: 9, letterSpacing: 1.2, color: T.draftEyebrow,
+              fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.04)',
+              marginTop: 2, flexShrink: 0, minWidth: 58, textAlign: 'center',
+            }}
+          >
+            {(e.time || '—').toUpperCase()}
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontFamily: FONT.serif, fontSize: 13.5, fontWeight: 600, letterSpacing: -0.1,
+                textDecoration: e.skipped ? 'line-through' : 'none',
+              }}
+            >
+              {e.name}
+            </div>
+            {e.note && (
+              <div style={{ fontFamily: FONT.serif, fontSize: 11.5, fontStyle: 'italic', color: T.inkMuted, marginTop: 2, lineHeight: 1.4 }}>
+                {e.note}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => toggleSkip(i)}
+            style={{
+              background: 'transparent', border: 'none', color: T.inkMuted, fontFamily: FONT.mono,
+              fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', padding: 4, flexShrink: 0,
+            }}
+          >
+            {e.skipped ? 'Restore' : 'Skip'}
+          </button>
+        </div>
+      ))}
+      {card.note && (
+        <div
+          style={{
+            marginTop: 10, padding: '6px 8px', borderRadius: 8, background: 'rgba(178,128,40,0.10)',
+            color: T.draftEyebrow, fontFamily: FONT.serif, fontStyle: 'italic', fontSize: 11.5, lineHeight: 1.35,
+          }}
+        >
+          {card.note}
+        </div>
+      )}
+      <CardActions
+        saveLabel={committing ? 'Saving…' : `Record ${liveCount === entries.length ? 'all ' : ''}${liveCount}`}
+        saveTone="draft"
+        onCream={true}
+        onSave={onSave}
+        onDiscard={onDiscard}
+        disabled={liveCount === 0 || committing}
+      />
+    </div>
+  )
+}
+
 // ─── create_trip card ────────────────────────────────────────────────
 // A new card type (alongside add/move/cancel/multi) that drafts a whole
 // trip on the trips-index surface. Scrollable preview: header, collapsible
@@ -1229,6 +1330,9 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
   function setDraftEdits(edits) {
     setDraft((d) => ({ ...d, edits }))
   }
+  function setDraftEntries(entries) {
+    setDraft((d) => ({ ...d, entries }))
+  }
   async function handleSave() {
     if (commit.phase === 'committing') return
     setCommit({ phase: 'committing', error: null })
@@ -1359,6 +1463,20 @@ export function ConfirmCard({ card, onSave, onDiscard, initialPhase = 'idle', su
           {commit.error && <CardErrorNote message={commit.error} />}
         </>
       )
+    case 'record-day':
+      return (
+        <>
+          <RecordDayCard
+            card={card}
+            draft={draft}
+            setDraftEntries={setDraftEntries}
+            onSave={handleSave}
+            onDiscard={handleDiscard}
+            committing={isCommitting}
+          />
+          {commit.error && <CardErrorNote message={commit.error} />}
+        </>
+      )
     case 'trip-settings':
       return (
         <>
@@ -1386,6 +1504,8 @@ function CardSavedNote({ action, title, synced = true }) {
       ? 'Moved'
       : action === 'multi'
       ? 'Saved'
+      : action === 'record-day'
+      ? 'Recorded'
       : action === 'create_trip'
       ? 'Created'
       : action === 'trip-settings'
@@ -1592,7 +1712,11 @@ function seedDraft(card) {
   const edits = Array.isArray(card.edits)
     ? card.edits.map((e) => ({ ...e, skipped: false }))
     : []
-  return { fields, edits }
+  // record-day rows ride the same skip machinery as multi's edits.
+  const entries = Array.isArray(card.entries)
+    ? card.entries.map((e) => ({ ...e, skipped: false }))
+    : []
+  return { fields, edits, entries }
 }
 
 function applyDraft(card, draft) {
@@ -1611,5 +1735,6 @@ function applyDraft(card, draft) {
     ...card,
     fields: draft.fields,
     edits: draft.edits,
+    ...(card.action === 'record-day' ? { entries: draft.entries } : {}),
   }
 }

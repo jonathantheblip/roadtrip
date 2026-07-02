@@ -36,6 +36,7 @@ import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
 import { tripHasMaskedContent } from '../lib/surprises'
+import { dayRecordOf } from '../lib/dayRecord'
 import { PartsOutline, StopRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -720,6 +721,12 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
         const isToday = !upcoming && !!iso && iso === todayIso
         const isPast = !upcoming && !!iso && !!todayIso && iso < todayIso
         const stops = (d.stops || []).filter((s) => s && !s.skipped && s.kind !== 'lodging')
+        // THE RECORD — what actually happened on this day (dayRecord.js).
+        // A recorded day is a full day even when its PLAN is empty: the
+        // record renders where the nothing-line would have been, under a
+        // quiet "as it happened" kicker. (Provisional placement — the
+        // Record design pass owns the final read face.)
+        const recorded = dayRecordOf(d)
         const open = stops.length === 0
         return (
           <div
@@ -743,7 +750,7 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
                 </button>
               )}
             </div>
-            {open ? (
+            {open && recorded.length === 0 ? (
               <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: 'var(--muted)', marginTop: 5 }}>
                 {v.lc(nothingDayLineFor(iso))}
                 {onEditDay && iso && (
@@ -762,6 +769,16 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
                     key={s.id || si} stop={s} first={si === 0}
                     onOpen={onOpenStop && d.n ? () => onOpenStop(d.n, s.id) : undefined}
                   />
+                ))}
+              </div>
+            )}
+            {recorded.length > 0 && (
+              <div data-testid="day-record" style={{ marginTop: stops.length ? 8 : 2 }}>
+                <span style={{ ...MONO, fontSize: 8.5, color: 'var(--accent-text)', display: 'block' }}>
+                  {v.lc('As it happened')}
+                </span>
+                {recorded.map((e, ei) => (
+                  <StopRow key={e.id || ei} stop={e} first={ei === 0} looseTime />
                 ))}
               </div>
             )}

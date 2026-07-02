@@ -22,7 +22,7 @@ describe('claude system prompt — trip-settings taxonomy', () => {
   it('lists trip-settings in the action enum alongside the four stop actions', async () => {
     const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'helen', tripId: null })
     // The existing four are preserved, and trip-settings is appended.
-    expect(prompt).toContain('"add" | "move" | "cancel" | "multi" | "trip-settings"')
+    expect(prompt).toContain('"add" | "move" | "cancel" | "multi" | "record-day" | "trip-settings"')
   })
 
   it('instructs the model to route trip-level edits through trip-settings, not add/move', async () => {

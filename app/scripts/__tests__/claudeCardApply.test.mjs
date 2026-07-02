@@ -742,3 +742,81 @@ test('applyCardToTrip — cross-day move via target.dayN plus a retime field sti
   assert.equal(moved.time, '1:00 PM')
   assert.equal(next.days.find((d) => d.n === 2).stops.length, 0, 'left the old day')
 })
+
+// ─── The Record — the record-day card (2026-07-02) ────────────────────
+
+test('applyCardToTrip — record-day writes the day\'s RECORD, never its plan', () => {
+  const trip = fixtureTrip()
+  const next = applyCardToTrip(trip, {
+    action: 'record-day',
+    id: 'c-rec-1',
+    title: 'Saturday, as it happened',
+    target: { tripId: 'volleyball-2026', dayIso: undefined, dayN: 2 },
+    entries: [
+      { name: 'Warmup drills', time: 'Morning' },
+      { name: 'Team lunch', time: '12:30 PM', kind: 'food', note: 'The diner by the arena.' },
+      { name: 'Skipped row', skipped: true },
+    ],
+  })
+  const day2 = next.days.find((d) => d.n === 2)
+  assert.equal(day2.record.length, 2, 'live entries recorded, skipped row honored')
+  assert.equal(day2.record[0].name, 'Warmup drills')
+  assert.equal(day2.record[1].note, 'The diner by the arena.')
+  assert.equal(day2.record[0].id, 'rec-c-rec-1-0', 'entry id derives from the card (idempotent retries)')
+  // The PLAN is untouched — the match is still on the schedule.
+  assert.equal(day2.stops.length, 1)
+  assert.equal(day2.stops[0].id, 'vb2-3')
+})
+
+test('applyCardToTrip — record-day with zero named live entries fails loud (the no-op class)', () => {
+  const trip = fixtureTrip()
+  assert.throws(
+    () =>
+      applyCardToTrip(trip, {
+        action: 'record-day',
+        id: 'c-rec-empty',
+        target: { tripId: 'volleyball-2026', dayN: 2 },
+        entries: [{ time: '3 PM' }, { name: 'Real thing', skipped: true }],
+      }),
+    /no-op/
+  )
+  const s = userFacingApplyError(
+    new Error('applyRecordDay: no named entries to record — refusing a no-op save')
+  )
+  assert.match(s, /didn.t actually carry a change/i)
+})
+
+test('applyCardToTrip — record-day re-save (retry) upserts, never duplicates', () => {
+  const trip = fixtureTrip()
+  const card = {
+    action: 'record-day',
+    id: 'c-rec-retry',
+    target: { tripId: 'volleyball-2026', dayN: 3 },
+    entries: [{ name: 'Long beach walk' }],
+  }
+  const once = applyCardToTrip(trip, card)
+  const twice = applyCardToTrip(once, card)
+  assert.equal(twice.days.find((d) => d.n === 3).record.length, 1)
+})
+
+test('applyCardToTrip — a SECOND recount (new card, new id) APPENDS to the day, never overwrites the first', () => {
+  const trip = fixtureTrip()
+  const morning = applyCardToTrip(trip, {
+    action: 'record-day',
+    id: 'c-rec-am',
+    target: { tripId: 'volleyball-2026', dayN: 2 },
+    entries: [{ name: 'Slow breakfast', time: 'morning' }],
+  })
+  const evening = applyCardToTrip(morning, {
+    action: 'record-day',
+    id: 'c-rec-pm',
+    target: { tripId: 'volleyball-2026', dayN: 2 },
+    entries: [{ name: 'Sunset walk', time: 'evening' }],
+  })
+  const day2 = evening.days.find((d) => d.n === 2)
+  assert.deepEqual(
+    day2.record.map((e) => e.name),
+    ['Slow breakfast', 'Sunset walk'],
+    'both recounts survive, in order'
+  )
+})

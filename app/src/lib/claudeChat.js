@@ -81,6 +81,12 @@ export async function streamClaudeChat({
       user_id: userId,
       trip_id: tripId,
       message,
+      // The reader's LOCAL calendar date (en-CA = YYYY-MM-DD). The prompt's
+      // CURRENT DATE line is built from this so "today"/"yesterday"/"tonight"
+      // resolve to the day the FAMILY is living, not UTC's — from 8 PM
+      // Eastern onward the two disagree, exactly when someone recounts
+      // their day to the record.
+      client_date: new Date().toLocaleDateString('en-CA'),
       // Screenshot intake (vision): [{ media_type, data(base64) }]. Omitted when
       // there are none — the worker treats absence as a plain text turn.
       ...(Array.isArray(images) && images.length ? { images } : {}),
