@@ -585,7 +585,16 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
               >
                 {e.title}
               </div>
-              {e.from && e.to ? (
+              {(() => {
+                // What SAVES is the sub-edit's time FIELD (the applier's
+                // contract) — from/to are display prose the model writes
+                // separately and they can drift. When a time field exists,
+                // render ITS values so the reader confirms what will
+                // actually land; prose is the fallback (e.g. cancel rows).
+                const timeField = (e.fields || []).find((f) => f && f.name === 'time')
+                const fromShown = timeField?.previousValue ?? e.from
+                const toShown = timeField ? timeField.value : e.to
+                return fromShown && toShown ? (
                 <div
                   style={{
                     fontFamily: FONT.sans,
@@ -595,10 +604,10 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
                   }}
                 >
                   <span style={{ textDecoration: 'line-through', color: T.inkFaint }}>
-                    {e.from}
+                    {fromShown}
                   </span>
                   <span style={{ margin: '0 5px' }}>→</span>
-                  <span style={{ color: T.ink, fontWeight: 600 }}>{e.to}</span>
+                  <span style={{ color: T.ink, fontWeight: 600 }}>{toShown}</span>
                 </div>
               ) : e.note ? (
                 <div
@@ -613,7 +622,7 @@ function MultiEditCard({ card, draft, setDraftEdits, onSave, onDiscard, committi
                 >
                   {e.note}
                 </div>
-              ) : null}
+              ) : null})()}
             </div>
             <button
               type="button"

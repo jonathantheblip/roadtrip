@@ -172,6 +172,17 @@ function applyAdd(trip, card) {
 // fields whose names match canonical stop properties (time, name,
 // address, kind, note) overwrite those properties. Cross-day moves
 // happen when target.dayN differs from the stop's current day.
+// The stop properties a move card can actually change. A card that changes
+// NONE of them (and isn't relocating across days) would apply as a silent
+// no-op — the live "swap dinner → Saved ✓ → nothing changed" bug
+// (2026-07-01): the model emitted `from`/`to` display prose instead of
+// canonical fields, fieldMap() came back empty, and the card still
+// reported success. Zero actual changes must FAIL LOUD (G6/G7). The check
+// is VALUE-based (next vs. current), so a card that merely echoes the
+// stop's existing values back is caught too — same lived experience,
+// different card shape.
+const CANONICAL_STOP_PROPS = ['time', 'name', 'address', 'kind', 'note']
+
 function applyMove(trip, card) {
   const target = card?.target || {}
   const stopId = target.stopId
@@ -183,15 +194,29 @@ function applyMove(trip, card) {
   const origStop = days[loc.dayIndex].stops[loc.stopIndex]
   // Apply field updates by canonical name. Unknown field names are
   // ignored — Sonnet may emit derived fields (e.g., "Duration") for
-  // display that don't map to a stored property.
+  // display that don't map to a stored property. The `location` /
+  // `description` aliases mirror applyAdd (and the worker prompt documents
+  // them un-scoped to action) — alias first, canonical name last, so the
+  // canonical name wins when both are present (same precedence as add).
   const next = { ...origStop }
   if ('time' in fields) next.time = fields.time
   if ('name' in fields) next.name = fields.name
   if ('title' in fields) next.name = fields.title
+  if ('location' in fields) next.address = fields.location
   if ('address' in fields) next.address = fields.address
   if ('kind' in fields) next.kind = String(fields.kind || '').toLowerCase()
+  if ('description' in fields) next.note = fields.description
   if ('note' in fields) next.note = fields.note
   if ('notes' in fields) next.note = fields.notes
+  // No-op guard: the card must actually CHANGE a stop property or relocate
+  // the stop to a different day. Otherwise "Saved ✓" would be a lie.
+  const changedField = CANONICAL_STOP_PROPS.some((k) => next[k] !== origStop[k])
+  const crossDay = typeof target.dayN === 'number' && days[loc.dayIndex].n !== target.dayN
+  if (!changedField && !crossDay) {
+    throw new Error(
+      'applyMove: card carried no editable stop fields and no day change — refusing a no-op save'
+    )
+  }
   next.claudeMeta = {
     ...(origStop.claudeMeta || {}),
     cardId: card.id || null,
@@ -234,15 +259,45 @@ function applyCancel(trip, card) {
 // re-load detection coherent.
 function applyMulti(trip, card) {
   const edits = Array.isArray(card.edits) ? card.edits : []
+  const live = edits.filter((e) => e && !e.skipped)
+  // Defense-in-depth: the UI disables Save at zero live rows, but a card
+  // arriving here with nothing to run must not report success (no-op class).
+  if (!live.length) {
+    throw new Error('applyMulti: no live edits on the card — refusing a no-op save')
+  }
   let next = trip
-  for (const e of edits) {
-    if (!e || e.skipped) continue
+  for (const e of live) {
+    // A move/cancel sub-edit must name its OWN stop. Inheriting the parent
+    // card's stopId is never right here: pre-fix, a target-less cancel row
+    // labeled "Lobster Roll Co." would have deleted whatever stop the
+    // PARENT target pointed at — a destructive wrong-stop edit. Fail loud
+    // instead of guessing.
+    if ((e.action === 'move' || e.action === 'cancel') && !e.target?.stopId) {
+      throw new Error(
+        `applyMulti: sub-edit "${e.title || e.action}" (${e.action}) needs its own ` +
+          'target.stopId — refusing to guess the stop'
+      )
+    }
     const subCard = {
       ...e,
       id: e.id || card.id,
       target: e.target || card.target,
     }
-    next = applyCardToTrip(next, subCard)
+    try {
+      next = applyCardToTrip(next, subCard)
+    } catch (err) {
+      // A no-op ROW inside a batch: rewrap naming the row, so the reader
+      // learns WHICH row to Skip — the batch is atomic (nothing above was
+      // written), and "the card carried no change" would be false for a
+      // batch whose other rows carried real ones.
+      if (/refusing a no-op save/.test(String(err?.message || ''))) {
+        throw new Error(
+          `applyMulti: sub-edit "${e.title || e.action}" carried no actual change — ` +
+            'skip that row to save the rest (refusing a no-op save)'
+        )
+      }
+      throw err
+    }
   }
   return next
 }
@@ -302,6 +357,16 @@ function applySettings(trip, card) {
     patch.dateRange = humanDateRange(ds, de)
   }
 
+  // No-op guard: nothing recognized to write (e.g. only an unknown field
+  // name, or a shape value that wasn't one of the two valid kinds). The bad
+  // value still never lands — but the reader hears "that didn't apply"
+  // instead of a false Saved ✓.
+  if (Object.keys(patch).length === 0) {
+    throw new Error(
+      'applySettings: card carried no recognized trip-level changes — refusing a no-op save'
+    )
+  }
+
   return withTripFields(trip, patch)
 }
 
@@ -349,7 +414,23 @@ export function applyCardToTrip(trip, card) {
 // surface). Mirrors ClaudeChat's userFacingClaudeError for the streaming
 // path. Pure + exported so the mapping is unit-tested directly.
 export function userFacingApplyError(err) {
-  const msg = String(err?.message || err || '').toLowerCase()
+  const raw = String(err?.message || err || '')
+  const msg = raw.toLowerCase()
+  // The no-op guards are checked FIRST: their fixed suffixes are
+  // distinctive, and a model-authored row title interpolated into the
+  // message (a stop could be named "Lost & Not Found") must never steer
+  // the mapping into the wrong branch below.
+  // A no-op ROW in a batch — name it, so the reader knows what to Skip.
+  const rowMatch = /sub-edit "(.+?)" carried no actual change/.exec(raw)
+  if (rowMatch) {
+    return `The “${rowMatch[1]}” edit in that batch didn't actually carry a change, so nothing was saved. Skip that row to save the rest, or ask again.`
+  }
+  // The no-op guard: the card resolved to zero actual changes (or a batched
+  // edit didn't name its stop). Saving it would have reported success while
+  // changing nothing — the live dinner-swap bug. Be honest instead.
+  if (/no-op save|refusing to guess the stop/.test(msg)) {
+    return "That card didn't actually carry a change, so I didn't save it. Try asking again — say exactly what should move or change."
+  }
   // A day or stop the card targeted is no longer where it was — the most
   // common genuine failure (the trip changed under the draft).
   if (/not found/.test(msg)) {

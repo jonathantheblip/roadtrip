@@ -376,16 +376,25 @@ test('applyCardToTrip — trip-settings flips the trip shape (stay/route), stops
   )
 })
 
-test('applyCardToTrip — trip-settings IGNORES an unrecognized shape value (loose word leaked as the value)', () => {
+test('applyCardToTrip — an unrecognized shape value FAILS LOUD instead of silently saving nothing', () => {
+  // Behavior change with the no-op guard (2026-07-02): a shape-only card
+  // whose value is a loose word ("lazy") used to save "successfully" while
+  // changing nothing — the silent-lie class. The bad value is still never
+  // WRITTEN (a real road trip can't be flipped by a leaked word — G5), but
+  // now the reader hears "that didn't apply" instead of a false Saved ✓.
   const trip = fixtureTrip()
   trip.shape = 'route'
-  const next = applyCardToTrip(trip, {
-    action: 'trip-settings',
-    id: 'c-shape-bad',
-    target: { tripId: 'volleyball-2026' },
-    fields: [{ name: 'shape', value: 'lazy' }],
-  })
-  assert.equal(next.shape, 'route', 'a bad value is dropped — existing shape stands (heuristic stays safe)')
+  assert.throws(
+    () =>
+      applyCardToTrip(trip, {
+        action: 'trip-settings',
+        id: 'c-shape-bad',
+        target: { tripId: 'volleyball-2026' },
+        fields: [{ name: 'shape', value: 'lazy' }],
+      }),
+    /no-op/
+  )
+  assert.equal(trip.shape, 'route', 'existing shape stands — bad value never written')
 })
 
 test('applyCardToTrip — a shape-only card mis-tagged "add" is caught as a trip-settings edit, not a junk stop', () => {
@@ -450,4 +459,286 @@ test('userFacingApplyError — unknown errors fall back to a generic plain line,
 test('userFacingApplyError — tolerates a non-Error argument (string / null)', () => {
   assert.match(userFacingApplyError('stop xyz not found'), /find that day or stop/i)
   assert.match(userFacingApplyError(null), /something went wrong/i)
+})
+
+// ─── P0 (2026-07-02) — the SILENT NO-OP class ─────────────────────────
+// LIVE BUG (Provincetown, 2026-07-01): "swap tonight's dinner + push the
+// other to Thursday" → the card said Saved ✓ TWICE and the trip never
+// changed. Root cause: the worker prompt's own `edits` example shows
+// sub-edits as { action, title, from, to } — no fields[], so fieldMap()
+// = {} and applyMove writes nothing (from/to are display prose, not
+// canonical fields). An apply that resolves to ZERO canonical changes
+// must FAIL LOUD (G6/G7), never report success.
+
+test('applyCardToTrip — a multi card shaped like the REAL captured model reply (per-edit target, NO fields) fails loud', () => {
+  // Shape lifted from _fixtures/claude-cards/multi-change.sse — what
+  // claude-sonnet-4-6 actually emitted under the pre-fix prompt.
+  const trip = fixtureTrip()
+  const before = JSON.stringify(trip)
+  const card = {
+    action: 'multi',
+    id: 'c-dinner-swap',
+    eyebrow: 'DAY 2 · SAT MAY 23',
+    title: 'Swap dinner + push the match',
+    edits: [
+      {
+        action: 'move',
+        title: 'vs BEV 13 Empire',
+        from: '3:45 PM',
+        to: '11:00 AM',
+        target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+      },
+    ],
+    target: { tripId: 'volleyball-2026' },
+  }
+  assert.throws(() => applyCardToTrip(trip, card), /no-op/)
+  assert.equal(JSON.stringify(trip), before, 'trip untouched on the throw path')
+})
+
+test('applyCardToTrip — a multi card shaped VERBATIM like the worker prompt example (no per-edit target either) fails loud', () => {
+  const trip = fixtureTrip()
+  const card = {
+    action: 'multi',
+    id: 'c-prompt-example',
+    edits: [
+      { action: 'move', title: 'Sift Bake Shop', from: '8:00 AM', to: '9:00 AM' },
+      { action: 'cancel', title: 'Lobster Roll Co.', note: 'Most skippable.' },
+    ],
+    // The parent target carries a stopId — pre-fix, BOTH sub-edits
+    // silently inherited it: the move no-oped on it and the cancel would
+    // have deleted the WRONG stop (the parent's, not "Lobster Roll Co.").
+    target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+  }
+  assert.throws(() => applyCardToTrip(trip, card), /own target\.stopId|no-op/)
+  // vb2-3 survives — the inherited-target cancel never ran.
+  assert.ok(
+    trip.days.find((d) => d.n === 2).stops.find((s) => s.id === 'vb2-3'),
+    'parent-target stop NOT deleted by an inherited-target cancel'
+  )
+})
+
+test('applyCardToTrip — a single move card with zero canonical fields and no day change fails loud', () => {
+  const trip = fixtureTrip()
+  assert.throws(
+    () =>
+      applyCardToTrip(trip, {
+        action: 'move',
+        id: 'c-empty-move',
+        title: 'Reschedule',
+        from: '3:45 PM',
+        to: '11:00 AM',
+        target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+      }),
+    /no-op/
+  )
+})
+
+test('applyCardToTrip — a move with ONLY a cross-day relocation (no fields) still works', () => {
+  // Moving a stop to another day without editing its fields is a real,
+  // legitimate change — the guard must not catch it.
+  const trip = fixtureTrip()
+  const next = applyCardToTrip(trip, {
+    action: 'move',
+    id: 'c-day-only',
+    title: 'Push Sunday match to Saturday',
+    target: { tripId: 'volleyball-2026', stopId: 'vb3-4', dayN: 2 },
+  })
+  assert.equal(next.days.find((d) => d.n === 3).stops.length, 0, 'left the old day')
+  assert.equal(next.days.find((d) => d.n === 2).stops.length, 2, 'landed on the new day')
+})
+
+test('applyCardToTrip — a trip-settings card with no recognized fields fails loud', () => {
+  const trip = fixtureTrip()
+  assert.throws(
+    () =>
+      applyCardToTrip(trip, {
+        action: 'trip-settings',
+        id: 'c-empty-settings',
+        target: { tripId: 'volleyball-2026' },
+        fields: [{ name: 'vibe', value: 'cozier' }],
+      }),
+    /no-op/
+  )
+})
+
+test('applyCardToTrip — a multi card with empty or all-skipped edits fails loud', () => {
+  const trip = fixtureTrip()
+  assert.throws(
+    () => applyCardToTrip(trip, { action: 'multi', id: 'c-empty', edits: [], target: {} }),
+    /no-op|no live edits/
+  )
+  assert.throws(
+    () =>
+      applyCardToTrip(trip, {
+        action: 'multi',
+        id: 'c-all-skipped',
+        edits: [
+          {
+            action: 'cancel',
+            title: 'Sunday match',
+            target: { tripId: 'volleyball-2026', stopId: 'vb3-4' },
+            skipped: true,
+          },
+        ],
+      }),
+    /no-op|no live edits/
+  )
+})
+
+test('applyCardToTrip — a multi still works when every sub-edit carries its own target + fields (the good shape)', () => {
+  // The shape the fixed prompt now demands — and what the e2e fixtures
+  // already used. Pins that the guard doesn't over-reach.
+  const trip = fixtureTrip()
+  const next = applyCardToTrip(trip, {
+    action: 'multi',
+    id: 'c-good-multi',
+    edits: [
+      {
+        action: 'move',
+        title: 'Saturday match',
+        from: '3:45 PM',
+        to: '11:00 AM',
+        target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+        fields: [{ name: 'time', value: '11:00 AM', previousValue: '3:45 PM' }],
+      },
+      {
+        action: 'cancel',
+        title: 'Sunday match',
+        target: { tripId: 'volleyball-2026', stopId: 'vb3-4' },
+      },
+    ],
+    target: { tripId: 'volleyball-2026' },
+  })
+  assert.equal(next.days.find((d) => d.n === 2).stops.find((s) => s.id === 'vb2-3').time, '11:00 AM')
+  assert.equal(next.days.find((d) => d.n === 3).stops.length, 0)
+})
+
+test('userFacingApplyError — the no-op guard maps to a plain "nothing to save" line, no internals leak', () => {
+  for (const raw of [
+    'applyMove: card carried no editable stop fields and no day change — refusing a no-op save',
+    'applySettings: card carried no recognized trip-level changes — refusing a no-op save',
+    'applyMulti: no live edits on the card — refusing a no-op save',
+    'applyMulti: sub-edit "Lobster Roll Co." (cancel) needs its own target.stopId — refusing to guess the stop',
+  ]) {
+    const s = userFacingApplyError(new Error(raw))
+    assert.match(s, /didn.t actually carry a change|didn.t include an actual change/i)
+    assert.doesNotMatch(s, /applyMove|applyMulti|applySettings|stopId|no-op/i, 'no raw internals leak')
+  }
+})
+
+// ─── P0 follow-ups from the adversarial review (2026-07-02) ───────────
+
+test('applyCardToTrip — a move that merely ECHOES the stop’s current values fails loud (value-based guard)', () => {
+  // Same lived experience as the dinner bug, different card shape: the
+  // model emits real canonical fields whose values equal what the stop
+  // already holds. Nothing would change; "Saved ✓" would be a lie.
+  const trip = fixtureTrip()
+  assert.throws(
+    () =>
+      applyCardToTrip(trip, {
+        action: 'move',
+        id: 'c-echo',
+        title: 'Reschedule Saturday match',
+        fields: [
+          { name: 'time', value: '3:45 PM', previousValue: '3:45 PM' },
+          { name: 'address', value: 'Court 1, Mohegan Sun' },
+        ],
+        target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+      }),
+    /no-op/
+  )
+})
+
+test('applyCardToTrip — a move card using the prompt-blessed `description` alias SAVES the note', () => {
+  // worker prompt Rules: "the applier also accepts `notes` / `description`"
+  // — that must be true for move (editing an existing stop), not just add.
+  const trip = fixtureTrip()
+  const next = applyCardToTrip(trip, {
+    action: 'move',
+    id: 'c-desc-alias',
+    title: 'Note on the match',
+    fields: [{ name: 'description', value: 'Bring the cooler.' }],
+    target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+  })
+  assert.equal(
+    next.days.find((d) => d.n === 2).stops.find((s) => s.id === 'vb2-3').note,
+    'Bring the cooler.'
+  )
+  // And `location` maps to address, mirroring applyAdd.
+  const next2 = applyCardToTrip(trip, {
+    action: 'move',
+    id: 'c-loc-alias',
+    fields: [{ name: 'location', value: 'Court 9, Mohegan Sun' }],
+    target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+  })
+  assert.equal(
+    next2.days.find((d) => d.n === 2).stops.find((s) => s.id === 'vb2-3').address,
+    'Court 9, Mohegan Sun'
+  )
+})
+
+test('applyCardToTrip — a mixed multi (one real row + one empty row) fails naming the EMPTY row, trip untouched', () => {
+  const trip = fixtureTrip()
+  const before = JSON.stringify(trip)
+  const card = {
+    action: 'multi',
+    id: 'c-mixed',
+    edits: [
+      {
+        action: 'move',
+        title: 'Saturday match',
+        target: { tripId: 'volleyball-2026', stopId: 'vb2-3' },
+        fields: [{ name: 'time', value: '10:00 AM', previousValue: '3:45 PM' }],
+      },
+      {
+        action: 'move',
+        title: 'Beach Bungalow',
+        from: 'Evening',
+        to: 'Late',
+        target: { tripId: 'volleyball-2026', stopId: 'vb1-3' },
+        // no fields — the empty-row shape
+      },
+    ],
+    target: { tripId: 'volleyball-2026' },
+  }
+  assert.throws(() => applyCardToTrip(trip, card), /sub-edit "Beach Bungalow" carried no actual change/)
+  assert.equal(JSON.stringify(trip), before, 'atomic — the good row did not half-apply')
+})
+
+test('userFacingApplyError — a no-op ROW in a batch is named, so the reader knows what to Skip', () => {
+  const s = userFacingApplyError(
+    new Error(
+      'applyMulti: sub-edit "Beach Bungalow" carried no actual change — skip that row to save the rest (refusing a no-op save)'
+    )
+  )
+  assert.match(s, /Beach Bungalow/)
+  assert.match(s, /skip that row/i)
+  assert.doesNotMatch(s, /applyMulti|no-op/i, 'no raw internals leak')
+})
+
+test('userFacingApplyError — a stop TITLE containing "not found" cannot steer the mapping to the wrong branch', () => {
+  const s = userFacingApplyError(
+    new Error(
+      'applyMulti: sub-edit "Lost & Not Found Museum" (cancel) needs its own target.stopId — refusing to guess the stop'
+    )
+  )
+  assert.match(s, /didn.t actually carry a change/i, 'maps to the no-op line, not the not-found line')
+})
+
+test('applyCardToTrip — cross-day move via target.dayN plus a retime field still lands on the new day', () => {
+  // The "push dinner to Thursday at 7" shape the prompt now teaches:
+  // stopId + destination dayN + a time field.
+  const trip = fixtureTrip()
+  const next = applyCardToTrip(trip, {
+    action: 'move',
+    id: 'c-cross-retime',
+    title: 'Push the match to Sunday at 1',
+    fields: [{ name: 'time', value: '1:00 PM', previousValue: '3:45 PM' }],
+    target: { tripId: 'volleyball-2026', stopId: 'vb2-3', dayN: 3 },
+  })
+  const day3 = next.days.find((d) => d.n === 3)
+  const moved = day3.stops.find((s) => s.id === 'vb2-3')
+  assert.ok(moved, 'landed on the destination day')
+  assert.equal(moved.time, '1:00 PM')
+  assert.equal(next.days.find((d) => d.n === 2).stops.length, 0, 'left the old day')
 })
