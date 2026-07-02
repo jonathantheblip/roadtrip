@@ -1,9 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, Mic, Sparkles,
-  MapPin, Image as ImageIcon, Check, Loader, AlertTriangle, Eye,
+  MapPin, Image as ImageIcon, Check, Loader, AlertTriangle, Eye, Lock,
 } from 'lucide-react'
 import { TRAVELER_ORDER, TRAVELERS } from '../data/travelers'
+import { homeVoice } from '../lib/homeVoice'
+import { recordEntryId, dayRecordOf } from '../lib/dayRecord'
 import { geocodeAddress } from '../lib/geocode'
 import { stopIsBase } from '../lib/photoMatch'
 import { suggestPitch, isAiAssistConfigured } from '../lib/aiAssist'
@@ -68,6 +70,10 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   const [saveErr, setSaveErr] = useState('')
   const [conflict, setConflict] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  // The editor's two tenses: 'plan' (stops — the default, unchanged) and
+  // 'record' (what actually happened — mouth three). UI-only; flipping never
+  // schedules a save. The record tense writes day.record, never day.stops.
+  const [mode, setMode] = useState('plan')
   const lastPushedJson = useRef(JSON.stringify(incoming))
   const timerRef = useRef(null)
   // When the user discards a draft, the unmount autosave below MUST NOT fire — it
@@ -189,6 +195,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
     scheduleSave()
   }, [scheduleSave])
 
+  const v = useMemo(() => homeVoice(traveler), [traveler])
   const comp = useMemo(() => completeness(trip), [trip])
   // SHAPE-AWARE EDITOR (FAMILY_TRIPS_VISION): a stay sheds the road-trip fields —
   // start/end city and the per-day drive plan — so the editor stops asking a cabin
@@ -252,6 +259,39 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   function removeStop(di, si) {
     const days = clone(trip.days)
     days[di].stops = days[di].stops.filter((_, idx) => idx !== si)
+    patchDays(days)
+  }
+
+  // ── Record (what actually happened) mutations ───────────────────────
+  // These write day.record ONLY — never day.stops. The plan is the future,
+  // the record is the past, and the design's hard rule is they never cross
+  // ("Changes here never touch the plan"). Each manual entry earns a stable
+  // id up front so the debounced autosave is idempotent. A row lives in the
+  // working copy until it earns a name; the read faces (namedRecordEntries)
+  // hide the nameless, so a half-typed row never leaks onto the home.
+  function addRecordEntry(di) {
+    const days = clone(trip.days)
+    const d = days[di]
+    d.record = Array.isArray(d.record) ? d.record : []
+    d.record.push({
+      id: recordEntryId(null, d.record.length),
+      time: '', name: '', kind: '',
+      for: [...(trip.travelers || TRAVELER_ORDER)],
+      note: '', address: '', lat: null, lng: null,
+      source: 'manual', recordedBy: traveler || null,
+      recordedAt: new Date().toISOString(),
+    })
+    patchDays(days)
+  }
+  function updateRecordEntry(di, ri, p) {
+    const days = clone(trip.days)
+    if (!Array.isArray(days[di].record) || !days[di].record[ri]) return
+    days[di].record[ri] = { ...days[di].record[ri], ...p }
+    patchDays(days)
+  }
+  function removeRecordEntry(di, ri) {
+    const days = clone(trip.days)
+    days[di].record = (days[di].record || []).filter((_, idx) => idx !== ri)
     patchDays(days)
   }
 
@@ -350,6 +390,19 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
         )}
       </header>
 
+      <ModeTabs mode={mode} onChange={setMode} v={v} />
+
+      {mode === 'record' ? (
+        <RecordMode
+          trip={trip}
+          travelers={trip.travelers || TRAVELER_ORDER}
+          v={v}
+          onAdd={addRecordEntry}
+          onUpdate={updateRecordEntry}
+          onRemove={removeRecordEntry}
+        />
+      ) : (
+        <>
       {/* ── Trip-level ─────────────────────────────────────────────── */}
       <Section title="The trip">
         <Text label="Title" required value={trip.title} onChange={(v) => patch({ title: v })} placeholder="Vermont — Juneteenth Weekend" />
@@ -516,6 +569,8 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }
@@ -752,6 +807,176 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
 }
 
 // ── Field primitives ──────────────────────────────────────────────────
+// ── The two tenses: The plan | The record ────────────────────────────
+// A segmented control under the header. THE PLAN is the default and leaves
+// the editor byte-identical to before this control existed. THE RECORD wears
+// the gold --kept tint so the tense reads before the label does. Aurelia's
+// labels lowercase via v.lc (chrome only). (02-capture-arc.md, screenshot 08.)
+function ModeTabs({ mode, onChange, v }) {
+  function Tab({ id, label }) {
+    const on = mode === id
+    const gold = id === 'record'
+    return (
+      <button
+        type="button"
+        aria-pressed={on}
+        data-testid={`editor-mode-${id}`}
+        onClick={() => onChange(id)}
+        style={{
+          flex: 1, minHeight: 38, padding: '8px 12px', borderRadius: 999, cursor: 'pointer',
+          fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.13em',
+          textTransform: 'uppercase', fontWeight: 600,
+          background: on ? (gold ? 'color-mix(in srgb, var(--kept) 15%, transparent)' : 'var(--card)') : 'transparent',
+          color: on ? (gold ? 'var(--kept)' : 'var(--text)') : 'var(--muted)',
+          border: `1px solid ${on ? (gold ? 'color-mix(in srgb, var(--kept) 42%, transparent)' : 'var(--border)') : 'transparent'}`,
+        }}
+      >
+        {v.lc(label)}
+      </button>
+    )
+  }
+  return (
+    <div className="px-6" style={{ paddingTop: 16 }}>
+      <div role="group" aria-label="The plan or the record" style={{ display: 'flex', gap: 6, padding: 4, border: '1px solid var(--border)', borderRadius: 999 }}>
+        <Tab id="plan" label="The plan" />
+        <Tab id="record" label="The record" />
+      </div>
+    </div>
+  )
+}
+
+// Mouth three — "type it." The editor's record tense: what actually happened,
+// day by day. Writes day.record only; the plan/lodging/trip sections are
+// hidden here so the two tenses never blur. (02-capture-arc.md.)
+function RecordMode({ trip, travelers, v, onAdd, onUpdate, onRemove }) {
+  const days = trip.days || []
+  return (
+    <div data-testid="record-mode">
+      <Section title={v.lc('Record the day')}>
+        <p className="f-news-i text-sm" style={{ color: 'var(--muted)', marginTop: -6 }}>
+          {v.lc('What actually happened — the loose truth of the day. It lives beside the plan and never rewrites it.')}
+        </p>
+        {days.length === 0 && (
+          <p className="f-news-i text-sm opacity-70">{v.lc('Add a day in the plan first, then record what happened on it.')}</p>
+        )}
+        {days.map((d, di) => (
+          <RecordDayBlock
+            key={d.isoDate || di}
+            day={d}
+            index={di}
+            travelers={travelers}
+            v={v}
+            onAdd={() => onAdd(di)}
+            onUpdate={(ri, p) => onUpdate(di, ri, p)}
+            onRemove={(ri) => onRemove(di, ri)}
+          />
+        ))}
+      </Section>
+      <div className="px-6 py-8 border-t surface-rule">
+        <p className="f-dm text-xs" style={{ color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Lock size={12} /> {v.lc('Changes here never touch the plan.')}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function RecordDayBlock({ day, index, travelers, v, onAdd, onUpdate, onRemove }) {
+  // The editor edits the RAW array (dayRecordOf) — nameless rows are legit
+  // working state here; the read faces (namedRecordEntries) hide them.
+  const entries = dayRecordOf(day)
+  const label = day.date || humanDate(day.isoDate) || ''
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
+      <div className="flex items-baseline" style={{ gap: 8, marginBottom: entries.length ? 10 : 6 }}>
+        <p className="smallcaps f-dm text-[11px] opacity-70">{v.lc(`Day ${index + 1}`)}</p>
+        {label && <p className="f-dm text-[11px]" style={{ color: 'var(--muted)' }}>{label}</p>}
+      </div>
+      {entries.map((e, ri) => (
+        <RecordEntry
+          key={e.id || ri}
+          entry={e}
+          travelers={travelers}
+          v={v}
+          onChange={(p) => onUpdate(ri, p)}
+          onRemove={() => onRemove(ri)}
+        />
+      ))}
+      <div style={{ marginTop: entries.length ? 12 : 0 }}>
+        <IconBtn onClick={onAdd} label="Add what happened"><Plus size={13} /> {v.lc('Add what happened')}</IconBtn>
+      </div>
+    </div>
+  )
+}
+
+// Words-first time — the record speaks in "late morning," not "10:42". The
+// four chips cover the common case; "Exact…" opens a free field for a real
+// time or any other phrase. Stored as the entry's loose `time` string.
+const WHEN_WORDS = ['Morning', 'Midday', 'Afternoon', 'Evening']
+function RecordEntry({ entry, travelers, v, onChange, onRemove }) {
+  const isWord = WHEN_WORDS.some((w) => w.toLowerCase() === (entry.time || '').toLowerCase())
+  const [exact, setExact] = useState(() => !!(entry.time || '').trim() && !isWord)
+  const chipStyle = (on) => ({
+    fontSize: 11,
+    background: on ? 'var(--accent)' : 'transparent',
+    color: on ? 'var(--accent-ink, #fff)' : 'inherit',
+    borderColor: on ? 'var(--accent)' : 'currentColor',
+  })
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+        <Lbl label={v.lc('What happened')} />
+        <IconBtn onClick={onRemove} label="Remove this entry" danger><Trash2 size={12} /></IconBtn>
+      </div>
+      <input
+        value={entry.name || ''}
+        onChange={(e) => onChange({ name: e.target.value })}
+        placeholder={v.lc('The beach below the house')}
+        aria-label={v.lc('What happened')}
+        className="memory-textarea"
+        style={{ minHeight: 'auto', padding: 10, fontSize: 16, fontFamily: 'var(--font-display)', width: '100%' }}
+      />
+      <div style={{ marginTop: 10 }}>
+        <Lbl label={v.lc('Roughly when')} />
+        <div className="flex" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          {WHEN_WORDS.map((w) => (
+            <button
+              key={w} type="button" className="btn-pill"
+              onClick={() => { setExact(false); onChange({ time: w }) }}
+              style={chipStyle(!exact && (entry.time || '').toLowerCase() === w.toLowerCase())}
+            >
+              {v.lc(w)}
+            </button>
+          ))}
+          <button
+            type="button" className="btn-pill"
+            onClick={() => setExact(true)}
+            style={chipStyle(exact)}
+          >
+            {v.lc('Exact…')}
+          </button>
+        </div>
+        {exact && (
+          <input
+            value={entry.time || ''}
+            onChange={(e) => onChange({ time: e.target.value })}
+            placeholder={v.lc("e.g. 4:30, or ‘after lunch’")}
+            aria-label={v.lc('When (exact)')}
+            className="memory-textarea"
+            style={{ minHeight: 'auto', padding: 10, fontSize: 14, marginTop: 8, width: '100%' }}
+          />
+        )}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <Travelers label={v.lc('Who')} value={entry.for || []} onChange={(f) => onChange({ for: f })} pool={travelers} compact />
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <Area label={v.lc('A line, if you like')} value={entry.note} onChange={(n) => onChange({ note: n })} placeholder={v.lc('One sentence is plenty.')} />
+      </div>
+    </div>
+  )
+}
+
 function Section({ title, action, children }) {
   return (
     <section className="px-6 py-7 border-b surface-rule">

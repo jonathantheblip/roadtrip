@@ -9,6 +9,7 @@ import {
   normalizeRecordEntry,
   applyDayRecord,
   dayRecordOf,
+  namedRecordEntries,
   dayHasRecord,
   recordEntryId,
 } from '../../src/lib/dayRecord.js'
@@ -100,6 +101,26 @@ test('applyDayRecord: dayN fallback works; a garbage target fails loud; D1 row s
   const nextD1 = applyDayRecord(d1, { dayIso: '2026-07-03' }, [e])
   assert.ok(nextD1.data.days.find((d) => d.isoDate === '2026-07-03').record.length === 1)
   assert.equal(dayRecordOf(nextD1.data.days[0]).length, 0)
+})
+
+test('namedRecordEntries: the read faces see NAMED rows only — a half-typed row never leaks', () => {
+  // The editor's record mode adds a row (name:'') that lives in the working
+  // copy until it earns a name. dayRecordOf returns the raw array (for the
+  // editor); namedRecordEntries is what a reader (the home) shows.
+  const day = {
+    record: [
+      { id: 'a', name: 'Biked the dunes' },
+      { id: 'b', name: '' },          // just-added, unnamed → hidden from readers
+      { id: 'c', name: '   ' },       // whitespace-only → also nothing
+      { id: 'd', name: 'Taffy run' },
+    ],
+  }
+  assert.equal(dayRecordOf(day).length, 4, 'the raw array keeps every working row')
+  assert.deepEqual(namedRecordEntries(day).map((e) => e.name), ['Biked the dunes', 'Taffy run'])
+  assert.equal(dayHasRecord(day), true, 'a named row means the day has a record')
+  assert.equal(dayHasRecord({ record: [{ id: 'x', name: '' }] }), false, 'only nameless rows → no record to show')
+  assert.equal(dayHasRecord({}), false)
+  assert.deepEqual(namedRecordEntries({}), [], 'no record → empty')
 })
 
 test('recordEntryId: stable with a cardId, unique without', () => {

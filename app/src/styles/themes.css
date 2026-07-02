@@ -229,3 +229,17 @@ body[data-theme='jonathan'] {
 body[data-theme='aurelia'] {
   background-image: none;
 }
+
+/* ── THE RECORD · tense token (2026-07-02) ──────────────────────────────
+   "What actually happened" reads in a different tense from the plan. The
+   plan is monospace + exact; the record is serif memory; KEPT is GOLD — the
+   --kept thread. Adapted from the design handoff tokens.css record layer to
+   this app's var names (--text/--card/--border, data-theme). Per-person gold
+   so the thread carries each lens's warmth; the faint tint + line the record
+   chrome needs derive from --kept inline (color-mix on the element, so they
+   resolve against the active theme's gold — no intermediate custom prop). */
+[data-theme='jonathan'] { --kept: #D4AF5E; }
+[data-theme='helen']    { --kept: #A8821F; }
+[data-theme='aurelia']  { --kept: #D9B25C; }
+[data-theme='rafa']     { --kept: #FFCF6B; }
+:root                   { --kept: #A8821F; }  /* bare page = Helen's gold */

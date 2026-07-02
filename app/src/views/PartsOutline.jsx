@@ -13,7 +13,7 @@
 // sits in the living heart's padded content column, so its cards carry no extra
 // horizontal margin (the column pads them).
 import { partsWithDays, partPlaceLabel } from '../lib/tripParts.js'
-import { dayRecordOf } from '../lib/dayRecord.js'
+import { namedRecordEntries } from '../lib/dayRecord.js'
 import { humanDateRange } from '../lib/createTripCard.js'
 import { AvatarStack } from '../components/Avatar'
 
@@ -92,7 +92,7 @@ function DayRow({ day, onOpenStop }) {
   // shown on the composite plan too: "Saved ✓ then invisible" would be a
   // lying surface. Renders only when a record exists — composite trips
   // without records are byte-identical.
-  const recorded = dayRecordOf(day)
+  const recorded = namedRecordEntries(day)
   return (
     <div data-testid="parts-trip-day" data-loose={loose ? '1' : undefined} style={{ padding: '10px 0' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>

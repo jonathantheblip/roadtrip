@@ -65,8 +65,17 @@ export function dayRecordOf(day) {
   return Array.isArray(day?.record) ? day.record : []
 }
 
+// The record entries a READER should see: named ones only. A record row
+// about nothing is nothing (same rule normalizeRecordEntry enforces for the
+// chat mouth) — so a half-typed row in the editor's record mode, which lives
+// in the working copy until it earns a name, never leaks onto the home or the
+// plan. The editor still edits the raw array (dayRecordOf); read faces use this.
+export function namedRecordEntries(day) {
+  return dayRecordOf(day).filter((e) => (e?.name || '').trim())
+}
+
 export function dayHasRecord(day) {
-  return dayRecordOf(day).length > 0
+  return namedRecordEntries(day).length > 0
 }
 
 // Write entries onto the day named by ISO date (preferred — stable across

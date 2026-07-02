@@ -36,7 +36,7 @@ import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
 import { tripHasMaskedContent } from '../lib/surprises'
-import { dayRecordOf } from '../lib/dayRecord'
+import { namedRecordEntries } from '../lib/dayRecord'
 import { PartsOutline, StopRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -726,7 +726,7 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
         // record renders where the nothing-line would have been, under a
         // quiet "as it happened" kicker. (Provisional placement — the
         // Record design pass owns the final read face.)
-        const recorded = dayRecordOf(d)
+        const recorded = namedRecordEntries(d)
         const open = stops.length === 0
         return (
           <div
