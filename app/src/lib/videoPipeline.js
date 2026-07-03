@@ -19,7 +19,15 @@
 
 const TARGET_LONG_EDGE = 720
 const KEYFRAME_INTERVAL_SECONDS = 2
-const ENCODE_TIMEOUT_MS = 120_000 // hard cap so a stuck encode doesn't strand the UI
+// Length cap (#4): a clip longer than 3:00 hands off to the phone's own trimmer
+// rather than being kept — 3:00 keeps a stored clip ≤ ~48MB. encodeVideo throws
+// 'video-too-long' (carrying .durationMs) BEFORE the expensive frame walk; the
+// importer surfaces the honest "6:12 — max is 3:00, trim it" boundary.
+export const MAX_VIDEO_DURATION_MS = 180_000 // 3:00
+// Hard cap so a stuck encode can't strand the UI. Raised from 120s so a full
+// 3-minute clip finishes: the frame walk plays the clip in REAL TIME (~180s for
+// a 3-min clip), so the budget must exceed the length cap with margin.
+const ENCODE_TIMEOUT_MS = 240_000
 
 // Detect at runtime whether WebCodecs is usable on this device. The
 // composer calls this before rendering the video picker — when false,
@@ -73,6 +81,14 @@ export async function encodeVideo(file, { onProgress, signal } = {}) {
       throw withCode('decode-failed', 'video has no dimensions')
     }
     const durationMs = Math.max(1000, Math.round((video.duration || 0) * 1000))
+    // Length cap (#4): a clip over 3:00 hands off to the phone's trimmer instead
+    // of being kept. Throw BEFORE the frame walk (no wasted work); the importer
+    // reads .durationMs to show the honest "6:12 — max is 3:00, trim it" boundary.
+    if (durationMs > MAX_VIDEO_DURATION_MS) {
+      const e = withCode('video-too-long', `clip is ${Math.round(durationMs / 1000)}s; keepable max is ${MAX_VIDEO_DURATION_MS / 1000}s`)
+      e.durationMs = durationMs
+      throw e
+    }
     const frameRate = await estimateFrameRate(video).catch(() => 30)
     const totalFrames = Math.max(1, Math.round((durationMs / 1000) * frameRate))
 

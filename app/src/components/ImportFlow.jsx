@@ -99,6 +99,8 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         // this guard is the backstop for a drag-dropped one.
         const videoItems = []
         const tooLargeVideos = [] // encoded over the upload limit — surfaced, not silently dropped
+        const failedVideos = [] // shrink failed on this device — surfaced honestly (#2), never silently dropped
+        const tooLongVideos = [] // over the 3:00 cap (#4) — hand off to the phone's trimmer, never dropped silently
         if (videoFiles.length > 0 && isVideoEncodeSupported()) {
           setPhase(PHASE.ENCODING)
           for (let vi = 0; vi < videoFiles.length; vi++) {
@@ -143,14 +145,18 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                 photo: { id, capturedAt, lat: null, lng: null },
               })
             } catch (err) {
-              // This clip won't encode on this device — skip it silently and
-              // keep the rest of the batch moving. The UI stays quiet (the
-              // Apple/Google Photos feel), but the swallowed skip is logged
-              // to the dev upload log so it's traceable and harvestable — a
-              // Bucket A silent failure, exactly as the old dispatch composer
-              // recorded its silent video-encode failures.
+              // #2 honesty: a shrink failure is NEVER silently dropped. Classify it so
+              // the confirm surfaces the right honest message — a too-long clip hands
+              // off to the phone's trimmer (#4); any other failure becomes the warm
+              // "couldn't add" banner with a retry (the original stays on the phone).
+              // The technical detail still goes to the dev log ONLY (never the family).
+              if (err?.code === 'video-too-long') {
+                tooLongVideos.push({ name: f?.name || 'a video', file: f, durationMs: err.durationMs || null })
+              } else {
+                failedVideos.push({ name: f?.name || 'a video', file: f, bytes: f?.size ?? null })
+              }
               logUploadEvent({
-                code: 'video-encode-failed',
+                code: err?.code || 'video-encode-failed',
                 message: err?.message || String(err),
                 stack: err?.stack || null,
                 fileMeta: { name: f?.name || 'video', type: f?.type || null, size: f?.size ?? null },
@@ -190,6 +196,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         let interstitials = 0
         let duplicates = 0
         let videos = 0
+        let videosBytes = 0 // total shrunk bytes across imported clips — the confirm size chip (#2 proof)
         const payload = []
         for (const item of kept) {
           // A photo that matches an EXISTING photo memory by capture time is a
@@ -210,8 +217,10 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           // Mutually-exclusive summary categories (sum to willImport): a video
           // is counted as a video (it files by time), a photo as filed-to-stop
           // or on-the-road.
-          if (item.kind === 'video') videos += 1
-          else if (stopId) matchedToStops += 1
+          if (item.kind === 'video') {
+            videos += 1
+            videosBytes += item.encoded?.blob?.size || 0
+          } else if (stopId) matchedToStops += 1
           else interstitials += 1
           payload.push({
             kind: item.kind,
@@ -231,22 +240,28 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           autoAddedStops,
           duplicates,
           videos,
+          videosBytes, // total shrunk bytes across imported clips — the confirm size chip (#2 proof)
           excludedCount,
           tooLarge: tooLargeVideos.length,
+          failed: failedVideos.length, // shrink failures — the warm "couldn't add" banner (#2)
+          tooLong: tooLongVideos.length, // over the 3:00 cap — the "trim it" banner (#4)
         }
-        const data = { payload, out, summary, tooLargeVideos }
+        const data = { payload, out, summary, tooLargeVideos, failedVideos, tooLongVideos }
         if (cancelled) return
         setAnalysis(data)
 
-        if (payload.length === 0 && tooLargeVideos.length === 0) {
+        const hasVideoNotice =
+          tooLargeVideos.length > 0 || failedVideos.length > 0 || tooLongVideos.length > 0
+        if (payload.length === 0 && !hasVideoNotice) {
           // Nothing new (all duplicates / out of range) — bounce straight back
           // with a "nothing new" toast rather than an empty confirm screen.
           onComplete?.({ ok: 0, queued: 0, reattached: 0, failed: 0, nothingNew: true })
           return
         }
         if (payload.length === 0) {
-          // ONLY too-large videos, nothing importable — show the honest notice
-          // (the confirm renders it) instead of a silent "nothing new".
+          // ONLY problem videos (too-large / couldn't-add / too-long), nothing
+          // importable — show the honest confirm so the family SEES what didn't make
+          // it, never a silent "nothing new".
           setPhase(PHASE.CONFIRM)
           return
         }
@@ -256,9 +271,10 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         // → video summary" and stop before a real Worker upload. Inert in
         // production — the global is never set there.
         const forceConfirm = typeof window !== 'undefined' && !!window.__RT_IMPORT_FORCE_CONFIRM
-        // A too-large video must never smart-skip: the family has to SEE that it
-        // didn't upload (the whole point of the fix), so any tooLarge forces the confirm.
-        if (!forceConfirm && tooLargeVideos.length === 0 && decideClean(summary)) {
+        // A video notice (too-large / couldn't-add / too-long) must never smart-skip:
+        // the family has to SEE what didn't make it (the whole point of #2), so any
+        // notice forces the confirm.
+        if (!forceConfirm && !hasVideoNotice && decideClean(summary)) {
           await doSave(data, () => cancelled)
         } else {
           setPhase(PHASE.CONFIRM)
