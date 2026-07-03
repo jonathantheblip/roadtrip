@@ -481,6 +481,14 @@ export async function uploadBlobMultipart(kind, memoryId, blob, { asTraveler, on
 // PhotosView's drain) so they can't drift: pick single-POST for a small blob, multipart
 // for a large one. Photos are always small → single-POST unchanged. Returns { key, url, mime }.
 export async function uploadAssetBlob(kind, memoryId, blob, { asTraveler, onProgress } = {}) {
+  // Storage firewall (#1), client side: fail fast rather than waste an upload on a
+  // raw (un-shrunk) video — a real clip is always the encoder's video/mp4. The Worker
+  // enforces this authoritatively too; this is just the quick local check.
+  if (kind === 'video' && blob && blob.type !== 'video/mp4') {
+    const e = new Error('a video must be an encoded video/mp4, not a raw file')
+    e.code = 'unshrunk-video'
+    throw e
+  }
   if (blob && blob.size > SINGLE_POST_MAX_BYTES) {
     return uploadBlobMultipart(kind, memoryId, blob, { asTraveler, onProgress })
   }

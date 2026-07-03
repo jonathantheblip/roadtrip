@@ -1837,6 +1837,25 @@ export async function resolveTripHero(env, trip, origin) {
 
 // ─── Assets (R2) ──────────────────────────────────────────────────────
 
+// ─── storage firewall (guarantee #1) ──────────────────────────────
+// A VIDEO asset must be a real, shrunk clip: the on-import encoder ALWAYS
+// produces video/mp4. The Worker is the AUTHORITATIVE storage door — a client
+// bug, a stale build, or a hand-rolled request can NOT store a raw container
+// (video/quicktime, etc.) here. We REFUSE (never delete anything the device
+// still holds), so a rejected upload stays queued on the device and surfaces
+// honestly; guarantee #3 purges a raw leftover from that device queue. (A tight
+// SIZE ceiling — safe only once clips are capped at 3 min — arrives with #4.)
+const VIDEO_MIME = 'video/mp4'
+
+function baseMime(ct) {
+  return String(ct || '').split(';')[0].trim().toLowerCase()
+}
+// True when a video asset's declared type is not the shrunk mp4 the pipeline
+// produces — i.e. a raw container that must never be stored.
+function isUnshrunkVideo(kind, contentType) {
+  return kind === 'video' && baseMime(contentType) !== VIDEO_MIME
+}
+
 async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
   // The random suffix is the unguessable part of a PUBLICLY-served R2 key (GET
   // /assets/:key is pre-auth), so it must be cryptographically random — not
@@ -1845,6 +1864,11 @@ async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
   const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
   const key = `${traveler}/${memoryId}/${kind}-${rand}`
   const contentType = request.headers.get('Content-Type') || 'application/octet-stream'
+  // Storage firewall (#1): never store a raw (un-shrunk) video. Refuse — the
+  // device keeps its copy queued; a raw leftover is purged by the queue self-heal.
+  if (isUnshrunkVideo(kind, contentType)) {
+    return json({ error: 'unshrunk-video', detail: 'a video must be an encoded video/mp4' }, 415, cors)
+  }
   const obj = await env.ASSETS.put(key, request.body, {
     httpMetadata: { contentType },
   })
@@ -1886,9 +1910,13 @@ async function createMultipartUpload(env, traveler, request, cors) {
   if (!MPU_KINDS.has(kind) || !memoryId || typeof memoryId !== 'string') {
     return json({ error: 'bad request' }, 400, cors)
   }
+  const contentType = (typeof body.contentType === 'string' && body.contentType) || 'application/octet-stream'
+  // Storage firewall (#1): never even BEGIN a multipart upload for a raw video.
+  if (isUnshrunkVideo(kind, contentType)) {
+    return json({ error: 'unshrunk-video', detail: 'a video must be an encoded video/mp4' }, 415, cors)
+  }
   const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
   const key = `${traveler}/${memoryId}/${kind}-${rand}`
-  const contentType = (typeof body.contentType === 'string' && body.contentType) || 'application/octet-stream'
   const mp = await env.ASSETS.createMultipartUpload(key, { httpMetadata: { contentType } })
   return json({ key, uploadId: mp.uploadId, mime: contentType }, 200, cors)
 }

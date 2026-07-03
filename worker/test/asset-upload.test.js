@@ -66,6 +66,20 @@ describe('asset upload route', () => {
     expect(Array.from(back)).toEqual(Array.from(bytes))
   })
 
+  it('POST /assets/video/:id with a RAW container (video/quicktime) is REFUSED (415) — storage firewall #1', async () => {
+    // The exact class of the stranded 168MB clip: a raw .mov that never went
+    // through the shrinker. It must never be stored. NON-VACUOUS: the identical
+    // bytes labeled video/mp4 store fine (the routed-video test above).
+    const bytes = new Uint8Array([0, 0, 0, 0x14, 0x66, 0x74, 0x79, 0x70, 0x71, 0x74, 0x20, 0x20])
+    const res = await postAsset('/assets/video/mem_raw_vid', {
+      body: bytes,
+      contentType: 'video/quicktime',
+    })
+    expect(res.status, 'a raw video must be refused, never stored').toBe(415)
+    const listed = await env.ASSETS.list({ prefix: 'jonathan/mem_raw_vid/' })
+    expect(listed.objects.length, 'nothing is stored for a refused raw video').toBe(0)
+  })
+
   it('POST /assets/photo/:id still works (working-path guard, G5)', async () => {
     const res = await postAsset('/assets/photo/mem_photo_test', {
       body: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
@@ -158,6 +172,16 @@ describe('multipart asset upload', () => {
     const q = `?key=${encodeURIComponent(foreignKey)}&uploadId=${encodeURIComponent(uploadId)}&partNumber=1`
     const res = await mpu('part', { method: 'PUT', body: new Uint8Array([1, 2, 3]), query: q })
     expect(res.status).toBe(403)
+  })
+
+  it('multipart create for a RAW video (video/quicktime) is REFUSED (415) — storage firewall #1', async () => {
+    // A raw container must not even be able to BEGIN a multipart upload.
+    // NON-VACUOUS: the identical create with video/mp4 succeeds (the stitch test above).
+    const res = await mpu('create', {
+      json: true,
+      body: JSON.stringify({ kind: 'video', memoryId: 'mem_raw_mpu', contentType: 'video/quicktime' }),
+    })
+    expect(res.status).toBe(415)
   })
 
   it('create with a bad kind is rejected (400)', async () => {
