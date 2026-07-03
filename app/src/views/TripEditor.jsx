@@ -156,7 +156,9 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
     const res = await tripsApi.upsertTrip(snapshot)
     lastPushedJson.current = JSON.stringify(snapshot)
     if (res.ok) {
-      setSaveState('saved')
+      // Only claim "synced" when the edit actually reached the family (res.synced);
+      // a draft / unconfigured save is honest as "Saved" (not "Saved · synced").
+      setSaveState(res.synced ? 'saved' : 'saved-unsynced')
     } else {
       setSaveState('error')
       setSaveErr(res.error || 'Sync failed — kept on this device.')
@@ -315,7 +317,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
     setSaveState('saving')
     const res = await tripsApi.upsertTrip(snap)
     lastPushedJson.current = JSON.stringify(snap)
-    setSaveState(res.ok ? 'saved' : 'error')
+    setSaveState(res.ok ? (res.synced ? 'saved' : 'saved-unsynced') : 'error')
     if (!res.ok) setSaveErr(res.error || 'Sync failed.')
   }
   function unpublish() {
@@ -591,6 +593,11 @@ function SaveBadge({ state, err }) {
     idle: { t: 'No unsaved changes', c: 'inherit', i: null },
     saving: { t: 'Saving…', c: 'inherit', i: <Loader size={12} className="rt-spin" /> },
     saved: { t: 'Saved · synced', c: '#2E5D3A', i: <Check size={12} /> },
+    // Saved locally/server but NOT yet shared with the family (a draft, or the worker
+    // unconfigured). Honest: "Saved" without the false "synced" — the family can't see
+    // it yet, and a draft is shared only on publish (G6: the label promises no more
+    // than the plumbing delivers; upsertTrip's res.synced is the source of truth).
+    'saved-unsynced': { t: 'Saved', c: '#2E5D3A', i: <Check size={12} /> },
     error: { t: err || 'Saved locally · sync failed', c: 'var(--accent-text, var(--text))', i: <AlertTriangle size={12} /> },
   }
   const m = map[state] || map.idle
