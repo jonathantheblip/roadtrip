@@ -9,7 +9,7 @@ import { tripImplicitBase } from '../lib/photoMatch'
 import { refileTripToPlaces } from '../lib/refilePlaces'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
-import { isWorkerConfigured, workerFetch } from '../lib/workerSync'
+import { isWorkerConfigured, uploadAssetBlob } from '../lib/workerSync'
 import { uploadPosterOrQueue } from '../lib/posterRetry'
 import { removeAsset } from '../lib/memAssets'
 import { saveMemory } from '../lib/memoryStore'
@@ -194,16 +194,9 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
         // now — mirrors App.jsx uploadQueueRunner so the credit is correct on the
         // shared iPad regardless of which surface drained the queue.
         const asAuthor = { asTraveler: item.authorTraveler }
-        const r = await workerFetch(
-          `/assets/${item.kind === 'video' ? 'video' : 'photo'}/${encodeURIComponent(item.id)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': item.blob?.type || 'application/octet-stream' },
-            body: item.blob,
-          },
-          asAuthor
-        )
-        const remote = await r.json()
+        // A queued LARGE video retries via multipart (uploadAssetBlob); small
+        // photos/videos keep the single POST. Mirrors App.jsx uploadQueueRunner.
+        const remote = await uploadAssetBlob(item.kind === 'video' ? 'video' : 'photo', item.id, item.blob, asAuthor)
         const photoRef = { ...item.ref, storage: 'r2', key: remote.key, url: remote.url }
         // Re-upload a queued video's poster so the synced tile renders a still
         // (best-effort; mirrors uploadOrQueueVideo + App.jsx uploadQueueRunner).

@@ -22,7 +22,7 @@ import { saveMemory } from './memoryStore'
 import { mergeRefIntoExisting } from './photoRefMerge'
 import { preparePhotoForUpload } from './photoPipeline'
 import { enqueue, registerBackgroundSync } from './uploadQueue'
-import { workerFetch } from './workerSync'
+import { workerFetch, uploadAssetBlob } from './workerSync'
 import { uploadPosterOrQueue } from './posterRetry'
 
 function makeMemoryId() {
@@ -297,12 +297,9 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
   // Worker configured — workerFetch throws when unconfigured), matching the
   // photo path + AddDispatchModal.queueSilently.
   try {
-    const r = await workerFetch(`/assets/video/${encodeURIComponent(memoryId)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': blob.type || 'video/mp4' },
-      body: blob,
-    })
-    const remote = await r.json()
+    // A large video exceeds CF's ~100MB single-POST cap → uploadAssetBlob switches to
+    // multipart transparently; a small video keeps the single POST unchanged.
+    const remote = await uploadAssetBlob('video', memoryId, blob)
     const ref = { ...baseRef, storage: 'r2', key: remote.key, url: remote.url }
     // Upload the poster too so the synced tile renders a still instead of a
     // fallback icon. If it fails, uploadPosterOrQueue parks it for retry (part 2)

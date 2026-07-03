@@ -273,6 +273,21 @@ export default {
           env, traveler, uploadMatch[1], uploadMatch[2], request, url, cors
         )
       }
+
+      // Multipart asset upload (large videos over CF's ~100MB single-POST cap):
+      // create → part (×N) → complete, all through the R2 binding (no new secret).
+      if (path === '/assets/mpu/create' && request.method === 'POST') {
+        return await createMultipartUpload(env, traveler, request, cors)
+      }
+      if (path === '/assets/mpu/part' && request.method === 'PUT') {
+        return await uploadMultipartPart(env, traveler, url, request, cors)
+      }
+      if (path === '/assets/mpu/complete' && request.method === 'POST') {
+        return await completeMultipartUpload(env, traveler, request, url, cors)
+      }
+      if (path === '/assets/mpu/abort' && request.method === 'POST') {
+        return await abortMultipartUpload(env, traveler, request, cors)
+      }
       if (path === '/leave-when' && request.method === 'POST') {
         return await postLeaveWhen(env, request, cors)
       }
@@ -1849,6 +1864,90 @@ async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
     url: assetUrl(key, workerOrigin(env, url)),
     mime: contentType,
   }, 200, cors)
+}
+
+// ─── Multipart asset upload (large videos) ────────────────────────────
+//
+// The single-POST uploadAsset above is capped by Cloudflare's ~100MB request-body
+// limit — a bigger encoded video is cut off mid-transfer and the client retries it
+// forever, invisibly. This trio uploads a large blob in parts THROUGH the Worker's
+// R2 binding (no S3 credentials / presigned URLs / new secret): the client splits the
+// blob into <100MB parts, each part is its own request, and R2 stitches them. The
+// key is minted server-side with the caller's traveler prefix (exactly like
+// uploadAsset), and every part/complete verifies the key stays under that prefix so a
+// member can't scribble into another's namespace. An orphaned upload (client gives up
+// mid-way) is reclaimed by R2's own multipart lifecycle; we also expose abort.
+
+const MPU_KINDS = new Set(['audio', 'photo', 'video'])
+
+async function createMultipartUpload(env, traveler, request, cors) {
+  const body = await request.json().catch(() => null)
+  const { kind, memoryId } = body || {}
+  if (!MPU_KINDS.has(kind) || !memoryId || typeof memoryId !== 'string') {
+    return json({ error: 'bad request' }, 400, cors)
+  }
+  const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+  const key = `${traveler}/${memoryId}/${kind}-${rand}`
+  const contentType = (typeof body.contentType === 'string' && body.contentType) || 'application/octet-stream'
+  const mp = await env.ASSETS.createMultipartUpload(key, { httpMetadata: { contentType } })
+  return json({ key, uploadId: mp.uploadId, mime: contentType }, 200, cors)
+}
+
+// Guard: the client passes the key + uploadId back on every part/complete. The key was
+// minted with the caller's own prefix at create; refuse anything else so a valid session
+// can't target another member's object namespace.
+function ownsKey(key, traveler) {
+  return typeof key === 'string' && key.startsWith(`${traveler}/`)
+}
+
+async function uploadMultipartPart(env, traveler, url, request, cors) {
+  const key = url.searchParams.get('key')
+  const uploadId = url.searchParams.get('uploadId')
+  const partNumber = Number(url.searchParams.get('partNumber'))
+  if (!key || !uploadId || !Number.isInteger(partNumber) || partNumber < 1) {
+    return json({ error: 'bad request' }, 400, cors)
+  }
+  if (!ownsKey(key, traveler)) return json({ error: 'forbidden' }, 403, cors)
+  const mp = env.ASSETS.resumeMultipartUpload(key, uploadId)
+  const part = await mp.uploadPart(partNumber, request.body)
+  return json({ partNumber: part.partNumber, etag: part.etag }, 200, cors)
+}
+
+async function completeMultipartUpload(env, traveler, request, url, cors) {
+  const body = await request.json().catch(() => null)
+  const { key, uploadId } = body || {}
+  const parts = Array.isArray(body?.parts) ? body.parts : null
+  if (!key || !uploadId || !parts || !parts.length) return json({ error: 'bad request' }, 400, cors)
+  if (!ownsKey(key, traveler)) return json({ error: 'forbidden' }, 403, cors)
+  const uploaded = parts
+    .map((p) => ({ partNumber: Number(p?.partNumber), etag: p?.etag }))
+    .filter((p) => Number.isInteger(p.partNumber) && p.partNumber >= 1 && typeof p.etag === 'string')
+  if (uploaded.length !== parts.length) return json({ error: 'bad parts' }, 400, cors)
+  const mp = env.ASSETS.resumeMultipartUpload(key, uploadId)
+  const obj = await mp.complete(uploaded)
+  // Same honesty guard as uploadAsset: a degenerate/empty result must fail loud, not
+  // be reported as a stored asset the client records + never re-queues.
+  if (!obj || obj.size === 0) {
+    try { await env.ASSETS.delete(key) } catch { /* best-effort cleanup */ }
+    return json({ error: 'empty asset' }, 400, cors)
+  }
+  return json({
+    key,
+    url: assetUrl(key, workerOrigin(env, url)),
+    mime: obj.httpMetadata?.contentType || 'application/octet-stream',
+  }, 200, cors)
+}
+
+async function abortMultipartUpload(env, traveler, request, cors) {
+  const body = await request.json().catch(() => null)
+  const { key, uploadId } = body || {}
+  if (!key || !uploadId) return json({ error: 'bad request' }, 400, cors)
+  if (!ownsKey(key, traveler)) return json({ error: 'forbidden' }, 403, cors)
+  try {
+    const mp = env.ASSETS.resumeMultipartUpload(key, uploadId)
+    await mp.abort()
+  } catch { /* already gone / never existed — abort is best-effort */ }
+  return json({ ok: true }, 200, cors)
 }
 
 async function fetchAsset(env, key, cors) {

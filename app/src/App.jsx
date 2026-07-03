@@ -54,7 +54,7 @@ import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer, isTripMaskedFrom } from './lib/surprises'
-import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover } from './lib/workerSync'
+import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover, uploadAssetBlob } from './lib/workerSync'
 import { keepDay, applyDayRecord, dayRecordIsKept } from './lib/dayRecord'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
@@ -188,19 +188,9 @@ async function uploadQueueRunner(item) {
   // persona. The worker stamps author/namespace from the token, so this is what
   // makes the credit correct.
   const asAuthor = { asTraveler: item.authorTraveler }
-  const r = await workerFetch(
-    `/assets/${endpoint}/${encodeURIComponent(item.id)}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type':
-          item.blob?.type || (item.kind === 'video' ? 'video/mp4' : 'application/octet-stream'),
-      },
-      body: item.blob,
-    },
-    asAuthor
-  )
-  const remote = await r.json()
+  // A queued LARGE video would fail its single POST forever (CF's ~100MB cap);
+  // uploadAssetBlob retries it in multipart. Small photos/videos keep the single POST.
+  const remote = await uploadAssetBlob(endpoint, item.id, item.blob, asAuthor)
   const photoRef = { ...item.ref, storage: 'r2', key: remote.key, url: remote.url }
   // A queued video carries its poster blob too — re-upload it so the synced
   // tile renders a still, not a fallback icon (best-effort; mirrors

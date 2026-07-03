@@ -101,3 +101,67 @@ describe('asset upload route', () => {
     expect(listed.objects.length, 'no empty object should remain in R2').toBe(0)
   })
 })
+
+// Multipart upload (large videos over CF's ~100MB single-POST cap): create → part(s)
+// → complete, all through the R2 binding. NON-VACUOUS: proves parts stitch into one
+// R2 object of the summed size, that a key outside the caller's prefix is refused, and
+// that a bad create is rejected.
+describe('multipart asset upload', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+    await seedSession(env.DB, TOKEN, 'jonathan')
+  })
+
+  async function mpu(step, { method = 'POST', body, json: isJson = false, query = '', token = TOKEN } = {}) {
+    const headers = { Origin: 'http://localhost:5173' }
+    if (token) headers.Authorization = `Bearer ${token}`
+    if (isJson) headers['Content-Type'] = 'application/json'
+    const req = new Request('https://worker.test/assets/mpu/' + step + query, { method, headers, body })
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(req, authEnv(), ctx)
+    await waitOnExecutionContext(ctx)
+    return res
+  }
+
+  it('create → parts → complete stitches a multi-part video into one R2 object', async () => {
+    const cRes = await mpu('create', { json: true, body: JSON.stringify({ kind: 'video', memoryId: 'mem_big_vid', contentType: 'video/mp4' }) })
+    expect(cRes.status).toBe(200)
+    const { key, uploadId } = await cRes.json()
+    expect(key, 'key is minted under the caller prefix').toMatch(/^jonathan\/mem_big_vid\/video-/)
+    expect(typeof uploadId).toBe('string')
+
+    // R2 requires each non-last part >= 5MB; part 1 is 5MB, part 2 is the small tail.
+    const partA = new Uint8Array(5 * 1024 * 1024).fill(0x41)
+    const partB = new Uint8Array([0x42, 0x42, 0x42])
+    const q = (n) => `?key=${encodeURIComponent(key)}&uploadId=${encodeURIComponent(uploadId)}&partNumber=${n}`
+    const p1 = await (await mpu('part', { method: 'PUT', body: partA, query: q(1) })).json()
+    const p2 = await (await mpu('part', { method: 'PUT', body: partB, query: q(2) })).json()
+    expect(p1.partNumber).toBe(1)
+    expect(typeof p1.etag).toBe('string')
+
+    const compRes = await mpu('complete', { json: true, body: JSON.stringify({ key, uploadId, parts: [p1, p2] }) })
+    expect(compRes.status).toBe(200)
+    const out = await compRes.json()
+    expect(out.key).toBe(key)
+    expect(out.mime).toBe('video/mp4')
+
+    // The assembled object is in R2 at the summed size + right content-type.
+    const stored = await env.ASSETS.get(key)
+    expect(stored, 'the stitched object exists in R2').not.toBeNull()
+    expect(stored.size).toBe(partA.length + partB.length)
+    expect(stored.httpMetadata?.contentType).toBe('video/mp4')
+  })
+
+  it('a part for a key OUTSIDE the caller prefix is forbidden (403)', async () => {
+    const { uploadId } = await (await mpu('create', { json: true, body: JSON.stringify({ kind: 'video', memoryId: 'mem_x', contentType: 'video/mp4' }) })).json()
+    const foreignKey = 'helen/mem_x/video-deadbeef00'
+    const q = `?key=${encodeURIComponent(foreignKey)}&uploadId=${encodeURIComponent(uploadId)}&partNumber=1`
+    const res = await mpu('part', { method: 'PUT', body: new Uint8Array([1, 2, 3]), query: q })
+    expect(res.status).toBe(403)
+  })
+
+  it('create with a bad kind is rejected (400)', async () => {
+    const res = await mpu('create', { json: true, body: JSON.stringify({ kind: 'bogus', memoryId: 'm' }) })
+    expect(res.status).toBe(400)
+  })
+})

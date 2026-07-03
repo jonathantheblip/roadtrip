@@ -50,13 +50,12 @@ const SMART_SKIP_MAX = 12
 // even if one is a between-stops shot.
 const TINY_BATCH = 2
 
-// A video that ENCODES above this can't upload in one POST: Cloudflare rejects a
-// request body over ~100MB before the Worker even runs, so the single-POST
-// /assets/video path (no chunking yet) fails mid-transfer — the silent "halfway"
-// failure a family member hit. We now catch it up front and say so honestly instead
-// of queuing a doomed, invisible retry. (Real large-video support = a chunked /
-// direct-to-R2 upload — a separate, larger task.)
-const VIDEO_MAX_UPLOAD_BYTES = 95 * 1024 * 1024
+// Large videos now upload via MULTIPART — uploadAssetBlob chunks anything over ~90MB
+// through the Worker's R2 multipart endpoints, so a big clip (the silent "halfway"
+// failure a family member hit) uploads for real instead of failing the old single POST.
+// This is now just a generous SANITY cap: a pathologically huge encode (many GB) would
+// bog the browser down, so refuse it up front + say so honestly rather than churn.
+const VIDEO_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024 // 2GB
 
 export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComplete }) {
   const [phase, setPhase] = useState(PHASE.PREPARING)
@@ -114,9 +113,9 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                 },
               })
               const capturedAt = await capturedAtPromise
-              // SIZE GUARD: a video encoded above the upload limit would fail its single
-              // POST mid-transfer (Cloudflare's ~100MB body cap) and then retry forever,
-              // invisibly. Skip it and REMEMBER it so the summary can say so honestly.
+              // SANITY CAP: large videos upload via multipart now (uploadAssetBlob), so
+              // only a pathologically huge encode (over the 2GB cap) is refused up front
+              // + REMEMBERED so the summary can say so honestly, instead of churning.
               if (enc.blob && enc.blob.size > VIDEO_MAX_UPLOAD_BYTES) {
                 logUploadEvent({
                   code: 'video-too-large',
@@ -508,7 +507,7 @@ const IMPORT_ROWS = [
     key: 'tooLarge',
     icon: 'CalendarX',
     phrase: (n) => (n === 1 ? 'video too large to sync' : 'videos too large to sync'),
-    note: 'over ~100MB — didn’t upload. Try a shorter clip (bigger-video support is coming)',
+    note: 'too big to add here — try a shorter clip',
     warn: true,
   },
   { key: 'dupes', icon: 'Duplicate', phrase: 'already imported', note: 'we’ll skip these', skip: true },

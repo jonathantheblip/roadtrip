@@ -418,6 +418,84 @@ export async function uploadBlob(kind, memoryId, blob, { asTraveler } = {}) {
   return r.json() // { key, url, mime }
 }
 
+// Cloudflare caps a single request body at ~100MB — a bigger blob (a longer video)
+// is cut off mid-POST and the client retries it forever, invisibly. Anything over
+// this goes through the multipart route below instead. 90MB keeps a margin under the
+// cap AND is a valid R2 part size (non-last parts must be equal and ≥5MB).
+const SINGLE_POST_MAX_BYTES = 90 * 1024 * 1024
+const MPU_PART_BYTES = 90 * 1024 * 1024
+
+// Upload a large blob in parts through the Worker's R2 multipart endpoints (no new
+// secret): create → part (×N) → complete. Aborts a half-done upload on failure so it
+// doesn't dangle in R2. Returns { key, url, mime }; onProgress(0..100) is optional.
+export async function uploadBlobMultipart(kind, memoryId, blob, { asTraveler, onProgress } = {}) {
+  const contentType = blob.type || (kind === 'video' ? 'video/mp4' : 'application/octet-stream')
+  const created = await workerFetch(
+    '/assets/mpu/create',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, memoryId, contentType }) },
+    { asTraveler }
+  )
+  const { key, uploadId } = await created.json()
+  if (!key || !uploadId) throw new Error('multipart upload could not start')
+  const total = blob.size
+  const parts = []
+  let partNumber = 1
+  try {
+    for (let start = 0; start < total; start += MPU_PART_BYTES) {
+      const chunk = blob.slice(start, Math.min(start + MPU_PART_BYTES, total))
+      const res = await workerFetch(
+        `/assets/mpu/part?key=${encodeURIComponent(key)}&uploadId=${encodeURIComponent(uploadId)}&partNumber=${partNumber}`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: chunk },
+        { asTraveler }
+      )
+      const part = await res.json()
+      parts.push({ partNumber: part.partNumber, etag: part.etag })
+      if (onProgress) onProgress(Math.min(99, Math.round(((start + chunk.size) / total) * 100)))
+      partNumber += 1
+    }
+  } catch (err) {
+    // Reclaim the dangling multipart so it doesn't linger; then rethrow so the caller
+    // parks the blob in the upload queue and retries (through this same path).
+    try {
+      await workerFetch(
+        '/assets/mpu/abort',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, uploadId }) },
+        { asTraveler }
+      )
+    } catch { /* best-effort */ }
+    throw err
+  }
+  const done = await workerFetch(
+    '/assets/mpu/complete',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, uploadId, parts }) },
+    { asTraveler }
+  )
+  if (onProgress) onProgress(100)
+  return done.json() // { key, url, mime }
+}
+
+// The ONE upload entry the three video sites share (immediate import, the App drain,
+// PhotosView's drain) so they can't drift: pick single-POST for a small blob, multipart
+// for a large one. Photos are always small → single-POST unchanged. Returns { key, url, mime }.
+export async function uploadAssetBlob(kind, memoryId, blob, { asTraveler, onProgress } = {}) {
+  if (blob && blob.size > SINGLE_POST_MAX_BYTES) {
+    return uploadBlobMultipart(kind, memoryId, blob, { asTraveler, onProgress })
+  }
+  // Single POST. Keep the kind-aware content-type the per-site code used — a typeless
+  // video blob must still be labeled video/mp4 (Safari is picky about video MIME), not
+  // the generic octet-stream uploadBlob would fall back to.
+  const r = await workerFetch(
+    `/assets/${kind}/${encodeURIComponent(memoryId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': (blob && blob.type) || (kind === 'video' ? 'video/mp4' : 'application/octet-stream') },
+      body: blob,
+    },
+    { asTraveler }
+  )
+  return r.json()
+}
+
 // Trip cover photo. Reuses the exact Worker /assets route + R2 bucket
 // the memory photos use (the :memoryId path segment is opaque — we pass
 // the tripId). GET /assets/:key serves it unauthenticated so a plain
