@@ -197,13 +197,22 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
     try {
       const records = listAllLocalMemories(traveler)
       let ok = 0
+      let skipped = 0
       let failed = 0
       let firstError = null
       for (const m of records) {
         try {
           const r = await pushMemory(m)
+          // pushMemory: `null` = deliberately SKIPPED (a masked projection we must
+          // never push back, or the worker unconfigured) — NOT pushed, not a failure;
+          // a truthy value = pushed. A real failure THROWS (→ the catch below counts
+          // it failed); the `false` guard is defensive (pushMemory doesn't return
+          // false today). Counting a null skip as "pushed" was the lie (G6): the
+          // report claimed the family got memories that were correctly held back.
           if (r === false) {
             failed += 1
+          } else if (r == null) {
+            skipped += 1
           } else {
             ok += 1
           }
@@ -214,7 +223,7 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
       }
       setPushAllState({
         status: 'done',
-        message: `Pushed ${ok}/${records.length} memories${failed ? ` · ${failed} failed` : ''}${firstError ? ` · first error: ${firstError}` : ''}.`,
+        message: `Pushed ${ok} of ${records.length} memories${skipped ? ` · ${skipped} skipped` : ''}${failed ? ` · ${failed} failed` : ''}${firstError ? ` · first error: ${firstError}` : ''}.`,
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })
