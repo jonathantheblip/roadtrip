@@ -346,5 +346,10 @@ test('system prompt — never-invent-specifics rule is in the system message', a
     readerUserId: 'helen',
     tripId: null,
   })
-  assert.ok(/Never invent venues, hours, addresses/i.test(prompt))
+  // The rule shifted to a tool-backed framing (call find_places rather than name
+  // a venue from memory) — same intent, current wording (worker index.js ~4082).
+  assert.ok(
+    /Do NOT invent a venue, its hours, or its address/i.test(prompt),
+    'the chat prompt must forbid inventing venue specifics'
+  )
 })

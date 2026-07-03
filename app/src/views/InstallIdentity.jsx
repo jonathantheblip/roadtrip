@@ -19,6 +19,17 @@ function familyLabel(id, viewer) {
   return TRAVELERS[id]?.name || id
 }
 
+// True when the app is running as an installed PWA — standalone display mode, or
+// iOS Safari's navigator.standalone. Null-safe: returns false in any non-browser
+// context (SSR / node test) and never throws.
+export function isAppInstalled() {
+  if (typeof window === 'undefined') return false
+  return (
+    !!window.matchMedia?.('(display-mode: standalone)').matches ||
+    window.navigator?.standalone === true
+  )
+}
+
 export function InstallIdentity({ traveler, onClose }) {
   const a = APP_IDENTITY[traveler]
   const name = TRAVELERS[traveler]?.name || traveler
@@ -35,7 +46,7 @@ export function InstallIdentity({ traveler, onClose }) {
   const canAddToHomeScreen =
     typeof window !== 'undefined' &&
     !!window.matchMedia?.('(pointer: coarse)').matches &&
-    !(window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true)
+    !isAppInstalled()
 
   function pick(s) {
     setStickerState(s)
