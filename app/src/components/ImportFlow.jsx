@@ -50,6 +50,14 @@ const SMART_SKIP_MAX = 12
 // even if one is a between-stops shot.
 const TINY_BATCH = 2
 
+// A video that ENCODES above this can't upload in one POST: Cloudflare rejects a
+// request body over ~100MB before the Worker even runs, so the single-POST
+// /assets/video path (no chunking yet) fails mid-transfer — the silent "halfway"
+// failure a family member hit. We now catch it up front and say so honestly instead
+// of queuing a doomed, invisible retry. (Real large-video support = a chunked /
+// direct-to-R2 upload — a separate, larger task.)
+const VIDEO_MAX_UPLOAD_BYTES = 95 * 1024 * 1024
+
 export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComplete }) {
   const [phase, setPhase] = useState(PHASE.PREPARING)
   const [analysis, setAnalysis] = useState(null)
@@ -91,6 +99,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         // composer), so a video normally can't be picked on such a browser;
         // this guard is the backstop for a drag-dropped one.
         const videoItems = []
+        const tooLargeVideos = [] // encoded over the upload limit — surfaced, not silently dropped
         if (videoFiles.length > 0 && isVideoEncodeSupported()) {
           setPhase(PHASE.ENCODING)
           for (let vi = 0; vi < videoFiles.length; vi++) {
@@ -105,6 +114,19 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                 },
               })
               const capturedAt = await capturedAtPromise
+              // SIZE GUARD: a video encoded above the upload limit would fail its single
+              // POST mid-transfer (Cloudflare's ~100MB body cap) and then retry forever,
+              // invisibly. Skip it and REMEMBER it so the summary can say so honestly.
+              if (enc.blob && enc.blob.size > VIDEO_MAX_UPLOAD_BYTES) {
+                logUploadEvent({
+                  code: 'video-too-large',
+                  message: `encoded video ${(enc.blob.size / 1e6).toFixed(0)}MB exceeds ${(VIDEO_MAX_UPLOAD_BYTES / 1e6).toFixed(0)}MB upload limit`,
+                  fileMeta: { name: f?.name || 'video', type: f?.type || null, size: enc.blob.size },
+                  context: { phase: 'import-video-size-guard' },
+                })
+                tooLargeVideos.push({ name: f?.name || 'a video', bytes: enc.blob.size })
+                continue
+              }
               const id = itemId(f, 1000 + vi)
               videoItems.push({
                 id,
@@ -211,15 +233,22 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           duplicates,
           videos,
           excludedCount,
+          tooLarge: tooLargeVideos.length,
         }
-        const data = { payload, out, summary }
+        const data = { payload, out, summary, tooLargeVideos }
         if (cancelled) return
         setAnalysis(data)
 
-        if (payload.length === 0) {
+        if (payload.length === 0 && tooLargeVideos.length === 0) {
           // Nothing new (all duplicates / out of range) — bounce straight back
           // with a "nothing new" toast rather than an empty confirm screen.
           onComplete?.({ ok: 0, queued: 0, reattached: 0, failed: 0, nothingNew: true })
+          return
+        }
+        if (payload.length === 0) {
+          // ONLY too-large videos, nothing importable — show the honest notice
+          // (the confirm renders it) instead of a silent "nothing new".
+          setPhase(PHASE.CONFIRM)
           return
         }
 
@@ -228,7 +257,9 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         // → video summary" and stop before a real Worker upload. Inert in
         // production — the global is never set there.
         const forceConfirm = typeof window !== 'undefined' && !!window.__RT_IMPORT_FORCE_CONFIRM
-        if (!forceConfirm && decideClean(summary)) {
+        // A too-large video must never smart-skip: the family has to SEE that it
+        // didn't upload (the whole point of the fix), so any tooLarge forces the confirm.
+        if (!forceConfirm && tooLargeVideos.length === 0 && decideClean(summary)) {
           await doSave(data, () => cancelled)
         } else {
           setPhase(PHASE.CONFIRM)
@@ -473,6 +504,13 @@ const IMPORT_ROWS = [
     phrase: (n) => (n === 1 ? 'video, filed by time' : 'videos, filed by time'),
     note: 'matched by when they were taken',
   },
+  {
+    key: 'tooLarge',
+    icon: 'CalendarX',
+    phrase: (n) => (n === 1 ? 'video too large to sync' : 'videos too large to sync'),
+    note: 'over ~100MB — didn’t upload. Try a shorter clip (bigger-video support is coming)',
+    warn: true,
+  },
   { key: 'dupes', icon: 'Duplicate', phrase: 'already imported', note: 'we’ll skip these', skip: true },
   {
     key: 'outside',
@@ -495,12 +533,14 @@ function summaryToBatch(s = {}) {
     videos: s.videos || 0,
     dupes: s.duplicates || 0,
     outside: s.excludedCount || 0,
+    tooLarge: s.tooLarge || 0,
   }
 }
 
-function IconBadge({ name, skip, small }) {
+function IconBadge({ name, skip, warn, small }) {
   const Glyph = ICONS[name]
   const s = small ? 28 : 38
+  const tint = warn ? 'var(--danger, #8B2B1F)' : skip ? 'var(--muted)' : 'var(--accent)'
   return (
     <div
       style={{
@@ -511,10 +551,8 @@ function IconBadge({ name, skip, small }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: skip ? 'var(--muted)' : 'var(--accent)',
-        background: skip
-          ? 'color-mix(in srgb, var(--muted) 13%, transparent)'
-          : 'color-mix(in srgb, var(--accent) 13%, transparent)',
+        color: tint,
+        background: `color-mix(in srgb, ${tint} 13%, transparent)`,
       }}
     >
       <Glyph size={small ? 15 : 19} />
@@ -526,6 +564,7 @@ function ImportRow({ row, first }) {
   const phrase = typeof row.phrase === 'function' ? row.phrase(row.count) : row.phrase
   const foot = row.footnote
   const skip = row.skip
+  const warn = row.warn // a real problem (a video didn't upload) — not muted, not accent
   return (
     <div
       role="listitem"
@@ -538,7 +577,7 @@ function ImportRow({ row, first }) {
         borderTop: first ? 'none' : '1px solid var(--border)',
       }}
     >
-      <IconBadge name={row.icon} skip={skip} small={foot} />
+      <IconBadge name={row.icon} skip={skip} warn={warn} small={foot} />
       <div style={{ minWidth: 0 }}>
         <div
           style={{
@@ -547,7 +586,7 @@ function ImportRow({ row, first }) {
             fontWeight: 500,
             letterSpacing: '-0.006em',
             lineHeight: 1.2,
-            color: skip ? 'var(--muted)' : 'var(--text)',
+            color: warn ? 'var(--danger, #8B2B1F)' : skip ? 'var(--muted)' : 'var(--text)',
           }}
         >
           {phrase}
@@ -575,7 +614,7 @@ function ImportRow({ row, first }) {
           lineHeight: 1,
           fontVariantNumeric: 'tabular-nums',
           justifySelf: 'end',
-          color: skip ? 'var(--muted)' : 'var(--text)',
+          color: warn ? 'var(--danger, #8B2B1F)' : skip ? 'var(--muted)' : 'var(--text)',
           textDecoration: skip ? 'line-through' : 'none',
           textDecorationThickness: skip ? '1.5px' : undefined,
           opacity: skip ? 0.85 : 1,

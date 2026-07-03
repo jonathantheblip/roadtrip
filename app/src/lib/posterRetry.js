@@ -78,8 +78,12 @@ export async function uploadPosterOrQueue(memoryId, posterBlob, opts = {}, deps)
     const list = readMarkers().filter((p) => p.memoryId !== memoryId)
     list.push({ memoryId, posterIdbKey, asTraveler: opts.asTraveler || null, attempts: 0 })
     writeMarkers(list)
-  } catch {
-    /* idb unavailable → can't queue; the video keeps showing the fallback icon */
+  } catch (err) {
+    // idb unavailable (private mode / quota) → we can't persist the poster to retry.
+    // Don't swallow it silently: log it so it's traceable (the video itself uploaded
+    // and plays; only its still frame is missing). A durable localStorage-backed
+    // poster fallback is a follow-up (tracked with the large-video upload work).
+    console.warn(`posterRetry: could not queue poster for ${memoryId} (idb unavailable)`, err)
   }
   return null
 }
