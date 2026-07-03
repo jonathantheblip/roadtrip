@@ -36,6 +36,7 @@
 // finally to `createdAt`.
 
 import { maskForViewer, isSurprise } from './surprises.js'
+import { markDeleted, clearDeleted, isDeleted } from './deleteTombstones.js'
 
 const SHARED_KEY = 'rt_memories_shared_v1'
 const PRIVATE_KEY = (traveler) => `rt_memories_private_${traveler}_v1`
@@ -339,6 +340,12 @@ export function saveMemory({
 }
 
 export function deleteMemory(record) {
+  // Tombstone BEFORE the local removal — the fix for "deleted memory resurrects":
+  // a failed remote delete used to be swallowed, and the next pull re-added the
+  // memory (mergeFromRemote takes any remote row with no local copy). The tombstone
+  // survives a reload, so mergeFromRemote SKIPS this id (and re-fires the delete)
+  // until the server confirms it. scheduleMirror clears the tombstone on success.
+  markDeleted('memory', record.id)
   const key =
     record.visibility === 'private' ? PRIVATE_KEY(record.authorTraveler) : SHARED_KEY
   const list = readJson(key).filter((m) => m.id !== record.id)
@@ -560,7 +567,11 @@ function scheduleMirror(op) {
       try {
         const sync = await import('./workerSync.js')
         if (op.type === 'delete') {
-          await sync.deleteRemote(op.record)
+          const ok = await sync.deleteRemote(op.record)
+          // Confirmed on the server (true) or no worker to sync to (null) → the delete
+          // is settled; drop the tombstone. Only a genuine FAILURE (false) keeps it, so
+          // the next pull re-fires the delete and never re-adds the memory meanwhile.
+          if (ok !== false) clearDeleted('memory', op.record.id)
           return
         }
         // save — send the server-known base so a STALE push is refused (409)
@@ -600,6 +611,15 @@ export function mergeFromRemote(remoteRecords) {
   let added = 0
   for (const r of remoteRecords) {
     if (!r?.id) continue
+    // RESURRECTION GUARD: this memory was deleted locally but the remote delete hasn't
+    // confirmed. Never re-add it. If the server now reports it deleted (deletedAt), our
+    // delete landed → drop the tombstone; otherwise the server still holds it → re-fire
+    // the delete (self-healing) and skip. (deleteMemory + scheduleMirror set/clear it.)
+    if (isDeleted('memory', r.id)) {
+      if (r.deletedAt) clearDeleted('memory', r.id)
+      else scheduleMirror({ type: 'delete', record: r })
+      continue
+    }
     if (r.deletedAt) {
       // Tombstone — drop from whichever zone it lived in. We don't know
       // for certain whether the local copy was shared or private (the

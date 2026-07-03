@@ -385,9 +385,16 @@ export async function deleteRemote(memory) {
   if (!isWorkerConfigured()) return null
   if (!memory?.id) return false
   try {
+    // Authenticate the DELETE as the memory's AUTHOR — the worker's delete predicate
+    // is `... AND author_traveler = ?`, so a delete must run as the author to actually
+    // stamp deleted_at. For a normal delete-your-own-memory this is a no-op (author ==
+    // active traveler). It matters for the tombstone RE-FIRE (mergeFromRemote retries a
+    // failed delete on the next pull, which may run under a different active traveler):
+    // without this, a cross-author retry would 200-but-delete-0-rows and wrongly clear
+    // the tombstone → resurrection. Mirrors pushTrip/pushMemory's asTraveler resync.
     await workerFetch(`/memories/${encodeURIComponent(memory.id)}`, {
       method: 'DELETE',
-    })
+    }, { asTraveler: memory.authorTraveler || undefined })
     return true
   } catch (err) {
     console.warn('workerSync deleteRemote failed', err)

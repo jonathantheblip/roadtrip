@@ -9,6 +9,7 @@ import {
   count as unsyncedCountNow,
   subscribe as subscribeUnsynced,
 } from '../lib/tripSyncQueue'
+import { markDeleted, clearDeleted, deletedIds, withoutDeleted } from '../lib/deleteTombstones'
 
 // useTrips — single source of truth for the trip list.
 //
@@ -120,6 +121,11 @@ export function useTrips() {
           }
           merged = [...byId.values()]
         }
+        // RESURRECTION GUARD: drop any trip the family DELETED whose remote delete
+        // hasn't confirmed yet. The worker may still serve the stale row (its DELETE
+        // never landed), but a tombstoned id must never come back — the resync keeps
+        // retrying the delete, and this skip holds the line until the server confirms.
+        merged = withoutDeleted('trip', merged)
         writeCache(merged)
         setTrips(merged)
         setSource('worker')
@@ -215,35 +221,49 @@ export function useTrips() {
   // the id queued for the next attempt. Pure local read of the cache (not the
   // `trips` closure) so it always pushes the latest persisted state.
   const resyncPending = useCallback(async () => {
-    if (!isWorkerConfigured()) return { resynced: 0, remaining: pendingIds().length }
-    const entries = pendingEntries()
-    if (!entries.length) return { resynced: 0, remaining: 0 }
-    const cache = readCache() || []
+    const remainingCount = () => pendingIds().length + deletedIds('trip').length
+    if (!isWorkerConfigured()) return { resynced: 0, remaining: remainingCount() }
     let resynced = 0
-    for (const { id, author } of entries) {
-      const t = cache.find((x) => x.id === id)
-      if (!t || t.masked) {
-        // Trip gone locally, or a masked projection that must never be pushed —
-        // either way it's not ours to sync. Drop it from the queue.
-        markSynced(id)
-        continue
-      }
-      // A draft re-pushes fine: it carries draft:true, which the worker's getTrips
-      // read-filter hides from every other device and from Claude, so syncing the
-      // recovery row never leaks the author's private work-in-progress. This is the
-      // recovery net for a draft created offline (a cabin with no signal).
-      try {
-        // Push AS the editor who made the change (captured at mark time), not
-        // whoever is active now — so the worker's per-writer masking/clobber
-        // guards apply to the real author. Null author → active traveler (old rows).
-        await pushTrip(t, { asTraveler: author || undefined })
-        markSynced(id)
-        resynced += 1
-      } catch {
-        /* leave it queued; the next trigger retries */
+    // 1) Re-push pending EDITS (unsynced trip changes).
+    const entries = pendingEntries()
+    if (entries.length) {
+      const cache = readCache() || []
+      for (const { id, author } of entries) {
+        const t = cache.find((x) => x.id === id)
+        if (!t || t.masked) {
+          // Trip gone locally, or a masked projection that must never be pushed —
+          // either way it's not ours to sync. Drop it from the queue.
+          markSynced(id)
+          continue
+        }
+        // A draft re-pushes fine: it carries draft:true, which the worker's getTrips
+        // read-filter hides from every other device and from Claude, so syncing the
+        // recovery row never leaks the author's private work-in-progress. This is the
+        // recovery net for a draft created offline (a cabin with no signal).
+        try {
+          // Push AS the editor who made the change (captured at mark time), not
+          // whoever is active now — so the worker's per-writer masking/clobber
+          // guards apply to the real author. Null author → active traveler (old rows).
+          await pushTrip(t, { asTraveler: author || undefined })
+          markSynced(id)
+          resynced += 1
+        } catch {
+          /* leave it queued; the next trigger retries */
+        }
       }
     }
-    return { resynced, remaining: pendingIds().length }
+    // 2) Retry pending DELETES (tombstones) — a delete that never reached the family.
+    // Until each confirms, the pull-side guard (withoutDeleted) keeps the trip from
+    // resurrecting. deleteTrip is idempotent (a second DELETE of a gone row is fine).
+    for (const id of deletedIds('trip')) {
+      const gone = await deleteTrip(id)
+      if (gone !== false) {
+        clearDeleted('trip', id) // confirmed gone on the server
+        resynced += 1
+      }
+      /* else: keep the tombstone; the next trigger retries, pulls keep skipping it */
+    }
+    return { resynced, remaining: remainingCount() }
   }, [])
 
   // Reflect the unsynced-count so an indicator can show "N changes haven't
@@ -281,14 +301,30 @@ export function useTrips() {
   const saveTrip = upsertTrip
 
   const removeTrip = useCallback(async (id) => {
+    // Tombstone the id BEFORE removing it locally. This is the fix for the
+    // "deleted trip resurrects" bug: deleteTrip silently returned false on a network
+    // failure, removeTrip ignored it, and the next pull re-added the trip from the
+    // stale D1 row. Now the tombstone (a) survives a reload so it outlives a failed
+    // delete, (b) makes every pull SKIP this id (refresh's merge filters it), and
+    // (c) is retried by the resync — the trip stays gone until the server confirms it.
+    markDeleted('trip', id)
     setTrips((prev) => {
       const next = prev.filter((t) => t.id !== id)
       writeCache(next)
       return next
     })
-    if (isWorkerConfigured()) {
-      await deleteTrip(id)
+    if (!isWorkerConfigured()) {
+      clearDeleted('trip', id) // no worker → the local delete is the whole story
+      return { ok: true, synced: false, reason: 'unconfigured' }
     }
+    const gone = await deleteTrip(id)
+    if (gone === false) {
+      // The delete didn't reach the family. KEEP the tombstone: the resync retries it
+      // and every pull skips it, so the stale server row can't resurrect the trip.
+      return { ok: false, synced: false, error: 'delete not confirmed' }
+    }
+    clearDeleted('trip', id) // confirmed gone on the server
+    return { ok: true, synced: true }
   }, [])
 
   // The one seed action (Settings "Seed trips"). ADDITIVE-ONLY by design: it

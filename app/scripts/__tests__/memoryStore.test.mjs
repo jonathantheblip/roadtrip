@@ -32,9 +32,36 @@ const {
   backfillCapturedAt,
   mergeFromRemote,
 } = await import('../../src/lib/memoryStore.js')
+const { markDeleted, isDeleted } = await import('../../src/lib/deleteTombstones.js')
 
 beforeEach(() => {
   globalThis.localStorage.clear()
+})
+
+const remoteMem = (id, extra = {}) => ({
+  id, tripId: 't1', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+  updatedAt: '2026-05-23T10:00:00.000Z', ...extra,
+})
+
+test('mergeFromRemote: a tombstoned (locally-deleted) memory is NOT re-added — the resurrection guard', () => {
+  // Simulate: the family deleted m1 locally, but the remote delete never confirmed, so
+  // the server still serves it (no deletedAt). It must not come back.
+  markDeleted('memory', 'm1')
+  mergeFromRemote([remoteMem('m1')])
+  assert.deepEqual(listMemoriesForTrip('t1', 'helen').map((m) => m.id), [], 'the deleted memory does not resurrect')
+  assert.equal(isDeleted('memory', 'm1'), true, 'the tombstone stays until the server confirms the delete')
+})
+
+test('mergeFromRemote: a server-confirmed delete (deletedAt) CLEARS the tombstone', () => {
+  markDeleted('memory', 'm2')
+  mergeFromRemote([remoteMem('m2', { deletedAt: '2026-05-23T11:00:00.000Z' })])
+  assert.equal(isDeleted('memory', 'm2'), false, 'the delete landed on the server → tombstone cleared')
+  assert.deepEqual(listMemoriesForTrip('t1', 'helen'), [], 'still gone locally')
+})
+
+test('mergeFromRemote: an UN-tombstoned remote memory still merges normally (guard does not over-block)', () => {
+  mergeFromRemote([remoteMem('m3')])
+  assert.deepEqual(listMemoriesForTrip('t1', 'helen').map((m) => m.id), ['m3'], 'a genuinely new remote memory is added')
 })
 
 test('saveMemory promotes the earliest photoRef.capturedAt to memory.capturedAt when caller omits it', () => {
