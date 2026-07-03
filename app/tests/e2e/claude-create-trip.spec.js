@@ -666,4 +666,50 @@ test.describe('Claude-in-App — create_trip', () => {
       )
       .toBe(false)
   })
+
+  // E2 — sync-honesty: a delete_trip card whose REMOTE delete fails must route
+  // through the honest removeTrip (tombstone + local removal, retried later), not a
+  // blind {ok:true} that a later pull silently reverses. The card handler now reads
+  // removeTrip's { synced } instead of assuming success (same class as the SaveBadge
+  // fix). This proves the failed-delete self-heals rather than resurrecting.
+  test('E2: a delete_trip card whose remote delete FAILS is tombstoned, not silently reversed', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    mockIndexChat(page, [
+      replyWithCard(
+        { type: 'delete_trip', id: 'del-2', target: { tripId: 'volleyball-2026' }, title: 'Fun @ the Sun' },
+        'Here it is to confirm.'
+      ),
+    ])
+    // Make the remote DELETE fail (the row stays in D1 — the resurrection setup).
+    // Registered after mockIndexChat's /trips upsert route → this DELETE handler wins.
+    await page.route(/roadtrip-sync[^/]*\/trips\/[^/?]+$/, (route) =>
+      route.request().method() === 'DELETE'
+        ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"simulated delete failure"}' })
+        : route.fallback()
+    )
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'delete this trip')
+
+    const card = dialog.getByTestId('confirm-card-delete_trip')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.getByTestId('confirm-card-save').click()
+
+    // Gone locally AND tombstoned — the failed family-delete is remembered + retried,
+    // and every pull skips the id, so the stale server row can't resurrect the trip.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const tombs = JSON.parse(localStorage.getItem('rt_delete_tombstones_v1') || '{}')
+            const cache = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+            return {
+              tombstoned: (tombs.trip || []).some((e) => e.id === 'volleyball-2026'),
+              inCache: cache.some((t) => t.id === 'volleyball-2026'),
+            }
+          }),
+        { timeout: 5000 }
+      )
+      .toEqual({ tombstoned: true, inCache: false })
+  })
 })

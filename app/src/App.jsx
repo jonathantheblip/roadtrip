@@ -940,10 +940,14 @@ export default function App() {
       const id = card?.target?.tripId || trip?.id
       const target = id && allTrips.find((t) => t.id === id)
       if (!target) throw new Error('That trip is no longer here to delete.')
-      await tripsApi.removeTrip(target.id)
+      // removeTrip reports the HONEST per-item result: synced:false when the
+      // family delete hasn't landed yet (it's tombstoned + retried, never silently
+      // reversed). Don't claim a synced delete we didn't confirm — same class as the
+      // SaveBadge fix: read the result, never assume res.ok means "reached the family".
+      const res = await tripsApi.removeTrip(target.id)
       closeClaude()
       setView({ name: 'index' })
-      return { ok: true, deleted: true, tripId: target.id }
+      return { ok: true, deleted: true, tripId: target.id, synced: res?.synced !== false }
     }
     // Apply the edit to the trip the CARD TARGETS, not just the on-screen active
     // trip. A chat that created a trip "owns" it and can edit it from the general
