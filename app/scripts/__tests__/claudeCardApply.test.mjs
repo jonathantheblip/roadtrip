@@ -759,10 +759,10 @@ test('applyCardToTrip — record-day writes the day\'s RECORD, never its plan', 
     ],
   })
   const day2 = next.days.find((d) => d.n === 2)
-  assert.equal(day2.record.length, 2, 'live entries recorded, skipped row honored')
-  assert.equal(day2.record[0].name, 'Warmup drills')
-  assert.equal(day2.record[1].note, 'The diner by the arena.')
-  assert.equal(day2.record[0].id, 'rec-c-rec-1-0', 'entry id derives from the card (idempotent retries)')
+  assert.equal(day2.record.entries.length, 2, 'live entries recorded, skipped row honored')
+  assert.equal(day2.record.entries[0].name, 'Warmup drills')
+  assert.equal(day2.record.entries[1].note, 'The diner by the arena.')
+  assert.equal(day2.record.entries[0].id, 'rec-c-rec-1-0', 'entry id derives from the card (idempotent retries)')
   // The PLAN is untouched — the match is still on the schedule.
   assert.equal(day2.stops.length, 1)
   assert.equal(day2.stops[0].id, 'vb2-3')
@@ -796,7 +796,7 @@ test('applyCardToTrip — record-day re-save (retry) upserts, never duplicates',
   }
   const once = applyCardToTrip(trip, card)
   const twice = applyCardToTrip(once, card)
-  assert.equal(twice.days.find((d) => d.n === 3).record.length, 1)
+  assert.equal(twice.days.find((d) => d.n === 3).record.entries.length, 1)
 })
 
 test('applyCardToTrip — a SECOND recount (new card, new id) APPENDS to the day, never overwrites the first', () => {
@@ -815,7 +815,7 @@ test('applyCardToTrip — a SECOND recount (new card, new id) APPENDS to the day
   })
   const day2 = evening.days.find((d) => d.n === 2)
   assert.deepEqual(
-    day2.record.map((e) => e.name),
+    day2.record.entries.map((e) => e.name),
     ['Slow breakfast', 'Sunset walk'],
     'both recounts survive, in order'
   )

@@ -92,8 +92,11 @@ test('recounting the day → a record-day card → Save writes the RECORD, the p
     return all.find((t) => t.id === 'volleyball-2026') || null
   })
   const day = trip.days.find((d) => d.isoDate === '2026-05-23')
-  expect(day.record.map((e) => e.name)).toEqual(['Slow breakfast at the bungalow', 'Race Point Beach'])
-  expect(day.record[1].note).toBe('Rafa found a crab.')
+  // day.record is the OBJECT shape ({state, entries}) since the keep-flow shape
+  // evolution; the chat mouth writes entries beside a 'loose' state.
+  expect(day.record.entries.map((e) => e.name)).toEqual(['Slow breakfast at the bungalow', 'Race Point Beach'])
+  expect(day.record.entries[1].note).toBe('Rafa found a crab.')
+  expect(day.record.state).toBe('loose')
   expect(day.stops.length).toBe(FIXTURE_TRIP.days.find((d) => d.isoDate === '2026-05-23').stops.length)
 
   // And the home SHOWS it: close the chat, unfold the whole stay.

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import {
   normalizeRecordEntry,
   applyDayRecord,
+  readRecord,
   dayRecordOf,
   namedRecordEntries,
   dayHasRecord,
@@ -61,8 +62,9 @@ test('applyDayRecord: writes onto the day by ISO — the plan (stops) untouched,
   const e = normalizeRecordEntry({ name: 'Biked the dunes' }, { cardId: 'c1', index: 0 })
   const next = applyDayRecord(trip, { dayIso: '2026-07-03' }, [e])
   const day = next.days.find((d) => d.isoDate === '2026-07-03')
-  assert.equal(day.record.length, 1)
-  assert.equal(day.record[0].name, 'Biked the dunes')
+  assert.equal(dayRecordOf(day).length, 1)
+  assert.equal(dayRecordOf(day)[0].name, 'Biked the dunes')
+  assert.equal(readRecord(day).state, 'loose', 'a fresh record is loose until the keep flow keeps it')
   assert.deepEqual(day.stops, [], 'the plan stays honestly empty')
   assert.equal(JSON.stringify(trip), before, 'input trip not mutated')
   assert.equal(dayHasRecord(day), true)
@@ -75,7 +77,7 @@ test('applyDayRecord: a day the trip never wrote is CREATED, dated, in order, re
   const next = applyDayRecord(trip, { dayIso: '2026-07-02' }, [e])
   assert.deepEqual(next.days.map((d) => d.isoDate), ['2026-07-01', '2026-07-02', '2026-07-03'])
   assert.deepEqual(next.days.map((d) => d.n), [1, 2, 3], 'renumbered')
-  assert.equal(next.days[1].record[0].name, 'Did nothing, gloriously')
+  assert.equal(dayRecordOf(next.days[1])[0].name, 'Did nothing, gloriously')
   assert.deepEqual(next.days[1].stops, [], 'created day has an empty plan')
 })
 
@@ -85,21 +87,21 @@ test('applyDayRecord: re-saving the same card UPSERTS its rows — no duplicates
   const once = applyDayRecord(trip, { dayIso: '2026-07-03' }, [mk('Beach')])
   const twice = applyDayRecord(once, { dayIso: '2026-07-03' }, [mk('Beach, corrected')])
   const day = twice.days.find((d) => d.isoDate === '2026-07-03')
-  assert.equal(day.record.length, 1, 'same id → replaced, not appended')
-  assert.equal(day.record[0].name, 'Beach, corrected')
+  assert.equal(dayRecordOf(day).length, 1, 'same id → replaced, not appended')
+  assert.equal(dayRecordOf(day)[0].name, 'Beach, corrected')
 })
 
 test('applyDayRecord: dayN fallback works; a garbage target fails loud; D1 row shape honored', () => {
   const trip = fixtureTrip()
   const e = normalizeRecordEntry({ name: 'Check-in went long' }, { cardId: 'c4', index: 0 })
   const byN = applyDayRecord(trip, { dayN: 1 }, [e])
-  assert.equal(byN.days[0].record[0].name, 'Check-in went long')
+  assert.equal(dayRecordOf(byN.days[0])[0].name, 'Check-in went long')
   assert.throws(() => applyDayRecord(trip, {}, [e]), /dayIso or.*dayN required/)
   assert.throws(() => applyDayRecord(trip, { dayIso: 'not-a-date' }, [e]), /not found/)
   // D1 shape (.data.days)
   const d1 = { id: 'ptown', data: fixtureTrip() }
   const nextD1 = applyDayRecord(d1, { dayIso: '2026-07-03' }, [e])
-  assert.ok(nextD1.data.days.find((d) => d.isoDate === '2026-07-03').record.length === 1)
+  assert.ok(dayRecordOf(nextD1.data.days.find((d) => d.isoDate === '2026-07-03')).length === 1)
   assert.equal(dayRecordOf(nextD1.data.days[0]).length, 0)
 })
 
@@ -121,6 +123,57 @@ test('namedRecordEntries: the read faces see NAMED rows only — a half-typed ro
   assert.equal(dayHasRecord({ record: [{ id: 'x', name: '' }] }), false, 'only nameless rows → no record to show')
   assert.equal(dayHasRecord({}), false)
   assert.deepEqual(namedRecordEntries({}), [], 'no record → empty')
+})
+
+test('readRecord: coerces a legacy bare array to {state:loose, entries}; passes an object through', () => {
+  // The shape the chat mouth wrote before the keep flow (a bare array).
+  const legacy = readRecord({ record: [{ id: 'a', name: 'Beach' }] })
+  assert.equal(legacy.state, 'loose')
+  assert.equal(legacy.nothing, false)
+  assert.deepEqual(legacy.entries.map((e) => e.name), ['Beach'], 'legacy entries preserved')
+  // The new object shape passes through, defensively normalized.
+  const kept = readRecord({ record: { state: 'kept', keptBy: 'helen', keptAt: '21:14', entries: [{ id: 'b', name: 'Taffy' }] } })
+  assert.equal(kept.state, 'kept')
+  assert.equal(kept.keptBy, 'helen')
+  assert.deepEqual(kept.entries.map((e) => e.name), ['Taffy'])
+  // Absent / junk → an empty loose record, never a throw.
+  assert.deepEqual(readRecord({}).entries, [])
+  assert.equal(readRecord(undefined).state, 'loose')
+  assert.equal(readRecord({ record: { state: 'weird' } }).state, 'loose', 'unknown state → loose')
+})
+
+test('applyDayRecord: writes the OBJECT shape (not a bare array)', () => {
+  const trip = fixtureTrip()
+  const e = normalizeRecordEntry({ name: 'Biked the dunes' }, { cardId: 'c1', index: 0 })
+  const day = applyDayRecord(trip, { dayIso: '2026-07-03' }, [e]).days.find((d) => d.isoDate === '2026-07-03')
+  assert.ok(!Array.isArray(day.record), 'record is the object shape, not a bare array')
+  assert.equal(day.record.state, 'loose')
+  assert.deepEqual(day.record.entries.map((x) => x.name), ['Biked the dunes'])
+})
+
+test('applyDayRecord: a LEGACY flat-array record (live on the family trip) is UPGRADED on write — entries never lost', () => {
+  const trip = fixtureTrip()
+  // Simulate a record already written by 4d55231 as a bare array on day 07-03.
+  const d = trip.days.find((x) => x.isoDate === '2026-07-03')
+  d.record = [{ id: 'legacy-1', name: 'Biked the dunes', time: 'afternoon' }]
+  const before = JSON.stringify(trip)
+  const e = normalizeRecordEntry({ name: 'Taffy run' }, { cardId: 'c9', index: 0 })
+  const rec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [e]).days.find((x) => x.isoDate === '2026-07-03').record
+  assert.ok(!Array.isArray(rec), 'the legacy array was upgraded to the object shape')
+  assert.equal(rec.state, 'loose', 'a legacy record reads as loose')
+  assert.deepEqual(rec.entries.map((x) => x.name), ['Biked the dunes', 'Taffy run'], 'the legacy entry SURVIVED, the new one appended')
+  assert.equal(JSON.stringify(trip), before, 'the input trip (legacy bare array) is NEVER mutated in place')
+})
+
+test('applyDayRecord: a record-write PRESERVES a day already kept (never silently un-keeps it)', () => {
+  const trip = fixtureTrip()
+  const d = trip.days.find((x) => x.isoDate === '2026-07-03')
+  d.record = { state: 'kept', keptBy: 'helen', keptAt: '21:14', nothing: false, entries: [{ id: 'k1', name: 'Beach' }], skipped: [] }
+  const e = normalizeRecordEntry({ name: 'Late addition' }, { cardId: 'cA', index: 0 })
+  const rec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [e]).days.find((x) => x.isoDate === '2026-07-03').record
+  assert.equal(rec.state, 'kept', 'the day stays kept')
+  assert.equal(rec.keptBy, 'helen')
+  assert.deepEqual(rec.entries.map((x) => x.name), ['Beach', 'Late addition'])
 })
 
 test('recordEntryId: stable with a cardId, unique without', () => {

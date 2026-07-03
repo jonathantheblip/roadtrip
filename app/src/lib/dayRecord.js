@@ -61,8 +61,38 @@ export function normalizeRecordEntry(raw, { cardId, index, party, recordedBy } =
   }
 }
 
+// The Record's shape evolved for the keep flow (2026-07-02): a day's record
+// grew from a flat ARRAY of entries to an OBJECT that ALSO carries day-level
+// state — { state:'loose'|'kept', keptBy, keptAt, nothing, entries, skipped }.
+// This is the ONE normalizer every reader and writer routes through, so the two
+// shapes coexist forever: a LEGACY bare array (records written before this,
+// live on the family's active trip) reads as a loose, un-kept record and its
+// entries are NEVER lost. All of this lives in the trip's flexible data
+// (data_json); the worker treats that blob as opaque, so there is NO schema or
+// migration. `state` is 'loose' until the keep flow sets it 'kept'.
+export function readRecord(day) {
+  const r = day?.record
+  if (r && typeof r === 'object' && !Array.isArray(r)) {
+    return {
+      state: r.state === 'kept' ? 'kept' : 'loose',
+      keptBy: r.keptBy || null,
+      keptAt: r.keptAt || null,
+      nothing: r.nothing === true,
+      entries: Array.isArray(r.entries) ? r.entries : [],
+      skipped: Array.isArray(r.skipped) ? r.skipped : [],
+    }
+  }
+  // Legacy bare array (or absent) → a loose, un-kept record. Entries preserved.
+  return {
+    state: 'loose', keptBy: null, keptAt: null, nothing: false,
+    entries: Array.isArray(r) ? r : [],
+    skipped: [],
+  }
+}
+
+// The entries a reader iterates — shape-agnostic (legacy array OR the object).
 export function dayRecordOf(day) {
-  return Array.isArray(day?.record) ? day.record : []
+  return readRecord(day).entries
 }
 
 // The record entries a READER should see: named ones only. A record row
@@ -114,14 +144,17 @@ export function applyDayRecord(trip, target = {}, entries = []) {
     idx = days.findIndex((d) => d === newDay)
   }
 
-  const existing = dayRecordOf(days[idx]).slice()
+  const cur = readRecord(days[idx]) // object form — coerces a legacy bare array
+  const existing = cur.entries.slice()
   for (const e of entries) {
     if (!e) continue
     const at = existing.findIndex((x) => x?.id === e.id)
     if (at >= 0) existing[at] = e
     else existing.push(e)
   }
-  days[idx] = { ...days[idx], record: existing }
+  // Write the OBJECT shape, PRESERVING any day-level state (kept/keptBy/nothing)
+  // — a record-write must never silently un-keep a day the family kept.
+  days[idx] = { ...days[idx], record: { ...cur, entries: existing } }
 
   if (trip.data) return { ...trip, data: { ...trip.data, days } }
   return { ...trip, days }

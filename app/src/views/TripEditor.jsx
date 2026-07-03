@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { TRAVELER_ORDER, TRAVELERS } from '../data/travelers'
 import { homeVoice } from '../lib/homeVoice'
-import { recordEntryId, dayRecordOf } from '../lib/dayRecord'
+import { recordEntryId, dayRecordOf, readRecord } from '../lib/dayRecord'
 import { geocodeAddress } from '../lib/geocode'
 import { stopIsBase } from '../lib/photoMatch'
 import { suggestPitch, isAiAssistConfigured } from '../lib/aiAssist'
@@ -269,29 +269,39 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   // id up front so the debounced autosave is idempotent. A row lives in the
   // working copy until it earns a name; the read faces (namedRecordEntries)
   // hide the nameless, so a half-typed row never leaks onto the home.
+  //
+  // All three go through readRecord() so they write the OBJECT shape and
+  // preserve day-level state (kept/nothing) — and so a legacy bare-array record
+  // (written before the shape evolved, live on the family's trip) is upgraded
+  // in place, its entries never discarded.
   function addRecordEntry(di) {
     const days = clone(trip.days)
-    const d = days[di]
-    d.record = Array.isArray(d.record) ? d.record : []
-    d.record.push({
-      id: recordEntryId(null, d.record.length),
+    const rec = readRecord(days[di])
+    const entries = rec.entries.slice()
+    entries.push({
+      id: recordEntryId(null, entries.length),
       time: '', name: '', kind: '',
       for: [...(trip.travelers || TRAVELER_ORDER)],
       note: '', address: '', lat: null, lng: null,
       source: 'manual', recordedBy: traveler || null,
       recordedAt: new Date().toISOString(),
     })
+    days[di].record = { ...rec, entries }
     patchDays(days)
   }
   function updateRecordEntry(di, ri, p) {
     const days = clone(trip.days)
-    if (!Array.isArray(days[di].record) || !days[di].record[ri]) return
-    days[di].record[ri] = { ...days[di].record[ri], ...p }
+    const rec = readRecord(days[di])
+    if (!rec.entries[ri]) return
+    const entries = rec.entries.slice()
+    entries[ri] = { ...entries[ri], ...p }
+    days[di].record = { ...rec, entries }
     patchDays(days)
   }
   function removeRecordEntry(di, ri) {
     const days = clone(trip.days)
-    days[di].record = (days[di].record || []).filter((_, idx) => idx !== ri)
+    const rec = readRecord(days[di])
+    days[di].record = { ...rec, entries: rec.entries.filter((_, idx) => idx !== ri) }
     patchDays(days)
   }
 

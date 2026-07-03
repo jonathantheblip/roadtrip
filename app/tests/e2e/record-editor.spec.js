@@ -56,11 +56,13 @@ test('record mode writes day.record, leaves the plan byte-identical, and the hom
   await rec.getByRole('button', { name: /^Afternoon$/i }).last().click()
   await rec.getByLabel('A line, if you like').last().fill('The whole ride, wind at our backs.')
 
-  // Autosave (debounced) writes the record; the plan is never touched.
-  await expect.poll(async () => (await dayFromCache(page, '2026-05-23'))?.record?.map((e) => e.name) || [],
+  // Autosave (debounced) writes the record; the plan is never touched. Since the
+  // keep-flow shape evolution, day.record is the object shape ({state, entries}).
+  await expect.poll(async () => (await dayFromCache(page, '2026-05-23'))?.record?.entries?.map((e) => e.name) || [],
     { timeout: 5000 }).toContain('Biked the dunes')
   const day = await dayFromCache(page, '2026-05-23')
-  const entry = day.record.find((e) => e.name === 'Biked the dunes')
+  expect(day.record.state).toBe('loose')
+  const entry = day.record.entries.find((e) => e.name === 'Biked the dunes')
   expect(entry.time).toBe('Afternoon')
   expect(entry.note).toBe('The whole ride, wind at our backs.')
   expect(entry.source).toBe('manual')
@@ -92,15 +94,59 @@ test('a nameless record row stays in the working copy but never leaks onto the h
 
   // Add a row to day 1 but never name it — a half-typed thought.
   await rec.getByRole('button', { name: /Add what happened/i }).first().click()
-  // Give autosave a beat, then confirm the raw array kept the nameless row.
-  await expect.poll(async () => (await dayFromCache(page, '2026-05-22'))?.record?.length || 0,
+  // Give autosave a beat, then confirm the object's entries kept the nameless row.
+  await expect.poll(async () => (await dayFromCache(page, '2026-05-22'))?.record?.entries?.length || 0,
     { timeout: 5000 }).toBe(1)
   const day = await dayFromCache(page, '2026-05-22')
-  expect(day.record[0].name).toBe('')
+  expect(day.record.entries[0].name).toBe('')
 
   // The home must NOT show an empty record row for that day.
   await page.getByRole('button', { name: /Provincetown/ }).first().click()
   await expect(home).toBeVisible({ timeout: 10000 })
   await home.getByTestId('whole-stay-toggle').click()
   await expect(home.getByTestId('day-record')).toHaveCount(0)
+})
+
+test('the editor UPGRADES a legacy flat-array record in place — the family\'s existing entries survive', async ({ page }) => {
+  // A trip carrying a record in the OLD flat-array shape on day 2 — exactly what
+  // is live on the family's trip (written by the chat mouth before the keep-flow
+  // shape evolution). seedTripIntoCache persists it verbatim.
+  const LEGACY = {
+    ...STAY,
+    id: 'rec-legacy-stay',
+    days: STAY.days.map((d) =>
+      d.isoDate === '2026-05-23'
+        ? { ...d, record: [{ id: 'legacy-1', name: 'The old memory', time: 'morning', for: ['helen'] }] }
+        : d
+    ),
+  }
+  await seedTripIntoCache(page, LEGACY)
+  await page.goto('/?person=helen&trip=rec-legacy-stay&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+
+  await home.getByRole('button', { name: 'Change the plan' }).click()
+  await page.getByTestId('editor-mode-record').click()
+  const rec = page.getByTestId('record-mode')
+  await expect(rec).toBeVisible()
+  // Day 2's block already shows the coerced legacy entry, editable.
+  const inputs = rec.getByLabel('What happened', { exact: true })
+  await expect(inputs).toHaveCount(1) // the legacy entry
+  await expect(inputs.first()).toHaveValue('The old memory')
+  // Add a new entry to day 2 (the day carrying the legacy record); wait for it.
+  await rec.getByRole('button', { name: /Add what happened/i }).nth(1).click()
+  await expect(inputs).toHaveCount(2)
+  await inputs.last().fill('A new afternoon')
+
+  const readRecordBlob = () => page.evaluate(() => {
+    const all = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+    return all.find((t) => t.id === 'rec-legacy-stay')?.days?.find((d) => d.isoDate === '2026-05-23')?.record ?? null
+  })
+  // Poll until autosave has upgraded the record to the OBJECT shape with BOTH
+  // entries — the legacy one preserved, the new one appended (the whole point).
+  await expect.poll(async () => {
+    const r = await readRecordBlob()
+    return r && !Array.isArray(r) ? r.entries.map((e) => e.name) : null
+  }, { timeout: 8000 }).toEqual(['The old memory', 'A new afternoon'])
+  expect((await readRecordBlob()).state).toBe('loose')
 })
