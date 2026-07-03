@@ -793,6 +793,39 @@ export function updateMemoryCapturedAt(memoryId, isoOrNull) {
   return null
 }
 
+// Set / edit / clear a memory's caption in place (the album lightbox's "add a
+// caption" edit). A deliberate single-field override — mirrors updateMemoryCapturedAt:
+// patch the one field + re-mirror so other devices pick it up, and on a 409 re-apply
+// ONLY the caption onto the fresh server row (don't gap-fill). An empty caption clears
+// it (stored null → the read faces hide it). A masked projection is never a valid target.
+export function updateMemoryCaption(memoryId, caption) {
+  if (!memoryId) return null
+  const next = typeof caption === 'string' && caption.trim() ? caption.trim() : null
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    if (list[idx].masked) return list[idx]
+    const now = new Date().toISOString()
+    const patched = { ...list[idx], caption: next, updatedAt: now }
+    list[idx] = patched
+    writeJson(key, list)
+    scheduleMirror({
+      type: 'save',
+      record: patched,
+      reapply: (fresh) => ({ ...fresh, caption: next, updatedAt: new Date().toISOString() }),
+    })
+    return patched
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return null
+}
+
 // Re-file a memory to a different stop (used by the "sort to places" re-file when
 // the trip's implicit base appears AFTER photos were already imported). Patches the
 // single stopId field + re-mirrors so other devices pick up the move. Idempotent

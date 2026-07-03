@@ -308,6 +308,7 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           }
           onClose={() => setLightbox(null)}
           onCapturedAtChanged={refresh}
+          onCaptionChanged={refresh}
         />
       )}
 

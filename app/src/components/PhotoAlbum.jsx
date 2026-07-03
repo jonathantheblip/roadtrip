@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2, Pencil, Plus } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
-import { updateMemoryCapturedAt, removePhotoFromMemory } from '../lib/memoryStore'
+import { updateMemoryCapturedAt, updateMemoryCaption, removePhotoFromMemory } from '../lib/memoryStore'
 import { isWorkerConfigured } from '../lib/workerSync'
 import { ShareMomentSheet } from './ShareMomentSheet'
 import { classifySwipe } from '../lib/swipeClassify'
@@ -339,12 +339,14 @@ export function PhotoLightbox({
   onNext,
   onClose,
   onCapturedAtChanged,
+  onCaptionChanged,
   onDelete,
   traveler,
   showTripName = false,
 }) {
   const devMode = isDevModeEnabled()
   const [editingDate, setEditingDate] = useState(false)
+  const [editingCaption, setEditingCaption] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   // A real, synced memory can be shared out; a local-only photo (no memoryId)
@@ -359,6 +361,10 @@ export function PhotoLightbox({
   // "· uploaded". Letting the author fix it keeps the timeline true. Dev mode
   // keeps the affordance on any photo for diagnostics.
   const canEditDate = devMode || canDelete
+  // Only the AUTHOR adds/edits/clears the caption on their own photo (content, not
+  // metadata — so no dev-mode override, unlike the date). A caption is per-memory:
+  // on a multi-photo album memory it's shared by every frame, as it already displays.
+  const canEditCaption = canDelete
   function handleDelete() {
     const res = removePhotoFromMemory({
       memoryId: entry.memoryId,
@@ -373,6 +379,7 @@ export function PhotoLightbox({
   // different entry — otherwise prev/next would carry stale state forward.
   useEffect(() => {
     setEditingDate(false)
+    setEditingCaption(false)
     setShareOpen(false)
     setConfirmDelete(false)
   }, [entry?.memoryId, entry?.key])
@@ -594,20 +601,79 @@ export function PhotoLightbox({
             {entry.tripTitle}
           </div>
         )}
-        {entry.caption && (
-          <p
+        {editingCaption && canEditCaption ? (
+          <CaptionEditor
+            entry={entry}
+            onCancel={() => setEditingCaption(false)}
+            onSaved={() => {
+              setEditingCaption(false)
+              onCaptionChanged?.()
+            }}
+          />
+        ) : entry.caption ? (
+          canEditCaption ? (
+            <button
+              type="button"
+              data-testid="lightbox-caption"
+              aria-label="Edit caption"
+              onClick={() => setEditingCaption(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                border: 0,
+                padding: 0,
+                cursor: 'pointer',
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 15.5,
+                lineHeight: 1.4,
+                color: '#F2EBDA',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0 }}>{entry.caption}</span>
+              <Pencil size={13} style={{ flexShrink: 0, opacity: 0.55, marginTop: 3 }} aria-hidden="true" />
+            </button>
+          ) : (
+            <p
+              style={{
+                fontFamily: 'Fraunces, Georgia, serif',
+                fontSize: 15.5,
+                lineHeight: 1.4,
+                margin: 0,
+                color: '#F2EBDA',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {entry.caption}
+            </p>
+          )
+        ) : canEditCaption ? (
+          <button
+            type="button"
+            data-testid="lightbox-add-caption"
+            onClick={() => setEditingCaption(true)}
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'transparent',
+              border: 0,
+              padding: 0,
+              cursor: 'pointer',
               fontFamily: 'Fraunces, Georgia, serif',
-              fontSize: 15.5,
+              fontStyle: 'italic',
+              fontSize: 15,
               lineHeight: 1.4,
-              margin: 0,
-              color: '#F2EBDA',
-              whiteSpace: 'pre-wrap',
+              color: 'rgba(242,235,218,0.6)',
             }}
           >
-            {entry.caption}
-          </p>
-        )}
+            <Plus size={14} aria-hidden="true" /> Add a caption
+          </button>
+        ) : null}
         <div
           style={{
             marginTop: 8,
@@ -815,6 +881,60 @@ function CapturedAtEditor({ entry, onCancel, onSaved }) {
           {err}
         </span>
       )}
+    </div>
+  )
+}
+
+// Inline caption editor in the lightbox — the album's "add a few words" edit. A
+// textarea in the caption's own serif, Save/Cancel in the meta pill style. Persists
+// through updateMemoryCaption (single-field, self-healing sync); Save with an empty
+// box clears the caption. Author-gated by the caller (canEditCaption).
+function CaptionEditor({ entry, onCancel, onSaved }) {
+  const [draft, setDraft] = useState(entry.caption || '')
+  const [busy, setBusy] = useState(false)
+  function save() {
+    setBusy(true)
+    try {
+      updateMemoryCaption(entry.memoryId, draft)
+      onSaved?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div data-testid="lightbox-caption-editor">
+      <textarea
+        autoFocus
+        data-testid="lightbox-caption-input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        maxLength={280}
+        rows={2}
+        placeholder="Say something about this…"
+        aria-label="Caption"
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 15.5,
+          lineHeight: 1.4,
+          color: '#F2EBDA',
+          background: 'rgba(0,0,0,0.4)',
+          border: '1px solid rgba(255,255,255,0.25)',
+          borderRadius: 8,
+          padding: '8px 10px',
+          outline: 'none',
+          resize: 'vertical',
+        }}
+      />
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button type="button" data-testid="lightbox-caption-save" onClick={save} disabled={busy} style={pillButtonStyle()}>
+          Save
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy} style={pillButtonStyle()}>
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }

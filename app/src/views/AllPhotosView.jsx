@@ -345,6 +345,7 @@ export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
           onNext={lightbox.index < openList.length - 1 ? () => step(1) : null}
           onClose={closeLightbox}
           onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
+          onCaptionChanged={() => setMemoryTick((t) => t + 1)}
           onDelete={() => setMemoryTick((t) => t + 1)}
           traveler={traveler}
           showTripName
