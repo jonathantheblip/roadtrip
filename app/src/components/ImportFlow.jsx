@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Loader2, AlertCircle } from 'lucide-react'
+import { ChevronLeft, Loader2, AlertCircle, AlertTriangle, Clock, RotateCw, Scissors } from 'lucide-react'
 import { readExifForImport, filterByTripRange } from '../lib/photoBackfill'
 import { matchPhotosToStops } from '../lib/photoMatch'
 import { buildReconciliationDraft } from '../lib/reconcileDraft'
@@ -9,6 +9,7 @@ import { uploadBackfillPhotos } from '../lib/photoBackfillUpload'
 import { encodeVideo, isVideoEncodeSupported } from '../lib/videoPipeline'
 import { extractVideoCreationDate } from '../lib/videoMeta'
 import { logUploadEvent } from '../lib/uploadLog'
+import { videoCopy, fmtSize, fmtDur } from '../lib/videoCopy'
 import { PhotoBackfillTriage } from './PhotoBackfillTriage'
 
 // ImportFlow — the one importer's orchestrator (Stage 2). It sits in front
@@ -63,6 +64,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
   const [progress, setProgress] = useState({ done: 0, total: 0, currentName: null })
   const [encode, setEncode] = useState({ index: 0, total: 0, percent: 0 })
   const [error, setError] = useState(null)
+  const [retrying, setRetrying] = useState(() => new Set()) // names of couldn't-add clips being re-shrunk (#2 retry)
   // Guards the one-shot analyze effect from re-saving if React re-runs it.
   const savingRef = useRef(false)
 
@@ -225,6 +227,11 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           payload.push({
             kind: item.kind,
             file: item.file,
+            // Carry the shrunk blob through to upload. Without it uploadOrQueueVideo
+            // gets no blob → a render-only pending ref that's NEVER queued or
+            // uploaded (a bulk-imported video would show its poster locally and
+            // silently never save). undefined for photos (they read entry.file).
+            encoded: item.encoded,
             exif: item.exif,
             match: matchById.get(item.photo.id),
             reattachOf: dup?.reattach || null,
@@ -322,6 +329,60 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
     }
   }
 
+  // #2 retry — re-run the on-device shrink on each couldn't-add clip's ORIGINAL
+  // (still on the phone). A recovered clip folds into the import (files by time,
+  // earns its size chip); one that fails again stays honestly in the banner —
+  // never lost, never vanished. Too-long clips are NOT retried (they'd only fail
+  // the cap again — they hand off to the phone's trimmer instead).
+  async function retryFailedVideos() {
+    const data = analysis
+    const clips = data?.failedVideos || []
+    if (!clips.length || (retrying && retrying.size > 0)) return
+    setRetrying(new Set(clips.map((c) => c.name)))
+    const recovered = []
+    const stillFailed = []
+    for (const clip of clips) {
+      try {
+        const capturedAt = await extractVideoCreationDate(clip.file).catch(() => null)
+        const enc = await encodeVideo(clip.file)
+        if (enc.blob && enc.blob.size > VIDEO_MAX_UPLOAD_BYTES) {
+          stillFailed.push(clip)
+          continue
+        }
+        recovered.push({
+          kind: 'video',
+          file: clip.file,
+          encoded: { blob: enc.blob, posterBlob: enc.posterBlob || null, mime: 'video/mp4', width: enc.width, height: enc.height, durationMs: enc.durationMs },
+          exif: { capturedAt, lat: null, lng: null },
+          match: undefined,
+          reattachOf: null,
+          stopId: null,
+          interstitial: null,
+        })
+      } catch {
+        stillFailed.push(clip)
+      }
+    }
+    setRetrying(new Set())
+    if (!recovered.length) {
+      setAnalysis({ ...data, failedVideos: stillFailed })
+      return
+    }
+    const addedBytes = recovered.reduce((s, r) => s + (r.encoded?.blob?.size || 0), 0)
+    setAnalysis({
+      ...data,
+      payload: [...data.payload, ...recovered],
+      summary: {
+        ...data.summary,
+        willImport: (data.summary.willImport || 0) + recovered.length,
+        videos: (data.summary.videos || 0) + recovered.length,
+        videosBytes: (data.summary.videosBytes || 0) + addedBytes,
+        failed: stillFailed.length,
+      },
+      failedVideos: stillFailed,
+    })
+  }
+
   // "Review in detail" hands the photos to the full reconcile editor. (Videos
   // never reconcile — they file by time — so once video lands they'll be saved
   // by-time on entering detail; photo-only for now.)
@@ -390,6 +451,13 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
       <ConfirmSummary
         batch={summaryToBatch(analysis?.summary)}
         count={analysis?.summary?.willImport || 0}
+        traveler={traveler}
+        videos={analysis?.summary?.videos || 0}
+        videosBytes={analysis?.summary?.videosBytes || 0}
+        failed={analysis?.summary?.failed || 0}
+        tooLongVideos={analysis?.tooLongVideos || []}
+        retrying={retrying}
+        onRetry={retryFailedVideos}
         onImport={() => doSave(analysis, () => false)}
         onReview={() => setPhase(PHASE.DETAIL)}
         onCancel={onCancel}
@@ -607,17 +675,11 @@ function ImportRow({ row, first }) {
           {phrase}
         </div>
         {!foot && (
-          <div
-            style={{
-              fontFamily: SANS,
-              fontSize: 12.5,
-              fontWeight: 400,
-              marginTop: 2,
-              lineHeight: 1.25,
-              color: 'var(--muted)',
-            }}
-          >
-            {row.note}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 2 }}>
+            <span style={{ fontFamily: SANS, fontSize: 12.5, fontWeight: 400, lineHeight: 1.25, color: 'var(--muted)' }}>
+              {row.note}
+            </span>
+            {row.sizeChip}
           </div>
         )}
       </div>
@@ -641,14 +703,154 @@ function ImportRow({ row, first }) {
   )
 }
 
-function ConfirmSummary({ batch = {}, count, onImport, onReview, onCancel }) {
-  const rows = IMPORT_ROWS.map((r) => ({ ...r, count: batch[r.key] || 0 })).filter((r) => r.count > 0)
+// A calm, neutral MONO size chip — the proof value (#2). Data, not a trophy.
+function SizeChip({ children }) {
+  return (
+    <span
+      style={{
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: 11,
+        fontWeight: 500,
+        color: 'var(--muted)',
+        background: 'color-mix(in srgb, var(--text) 6%, transparent)',
+        border: '1px solid var(--border)',
+        borderRadius: 999,
+        padding: '1px 8px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+// A warm AMBER notice — couldn't-add + too-long. NEVER red. The amber is the app's
+// per-person gold (--kept), tinted, so it's warm and theme/dark-mode safe by
+// construction; the title stays --text so it's always readable.
+function AmberBanner({ icon: Icon, title, body, cta, ctaBusy, ctaBusyLabel, onCta, help, helpText, hideLabel }) {
+  const [open, setOpen] = useState(false)
+  const line = 'color-mix(in srgb, var(--kept) 34%, transparent)'
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 12,
+        padding: '13px 14px',
+        borderRadius: 14,
+        marginBottom: 12,
+        background: 'color-mix(in srgb, var(--kept) 13%, transparent)',
+        border: `1px solid ${line}`,
+      }}
+    >
+      <span style={{ flexShrink: 0, color: 'var(--kept)', marginTop: 1, lineHeight: 0 }}>
+        <Icon size={19} />
+      </span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontFamily: SANS, fontSize: 14.5, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
+          {title}
+        </div>
+        {body && <div style={{ fontFamily: SANS, fontSize: 12.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>{body}</div>}
+        {open && helpText && (
+          <div style={{ fontFamily: SANS, fontSize: 12.5, color: 'var(--muted)', marginTop: 9, lineHeight: 1.5, paddingTop: 9, borderTop: `1px solid ${line}` }}>
+            {helpText}
+          </div>
+        )}
+        {(cta || help) && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            {cta && (
+              <button
+                type="button"
+                onClick={onCta}
+                disabled={ctaBusy}
+                style={{ border: 'none', cursor: ctaBusy ? 'default' : 'pointer', borderRadius: 999, padding: '7px 14px', background: 'var(--kept)', color: '#20160a', fontFamily: SANS, fontWeight: 600, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: ctaBusy ? 0.7 : 1 }}
+              >
+                {ctaBusy ? (
+                  <>
+                    <Loader2 size={13} className="spin" /> {ctaBusyLabel}
+                  </>
+                ) : (
+                  <>
+                    <RotateCw size={13} /> {cta}
+                  </>
+                )}
+              </button>
+            )}
+            {help && (
+              <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                style={{ border: `1px solid ${line}`, cursor: 'pointer', borderRadius: 999, padding: '7px 13px', background: 'transparent', color: 'var(--kept)', fontFamily: SANS, fontWeight: 600, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Scissors size={13} /> {open ? hideLabel : help}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ConfirmSummary({
+  batch = {},
+  count,
+  traveler,
+  videos = 0,
+  videosBytes = 0,
+  failed = 0,
+  tooLongVideos = [],
+  retrying,
+  onRetry,
+  onImport,
+  onReview,
+  onCancel,
+}) {
+  const c = videoCopy(traveler)
+  const isRafa = traveler === 'rafa'
+  const rows = IMPORT_ROWS.map((r) => {
+    const base = { ...r, count: batch[r.key] || 0 }
+    // The proof chip (#2) rides the "video, filed by time" row's note.
+    if (r.key === 'videos' && videosBytes > 0) {
+      base.sizeChip = <SizeChip>{videos === 1 ? fmtSize(videosBytes) : `${fmtSize(videosBytes)} in all`}</SizeChip>
+    }
+    return base
+  }).filter((r) => r.count > 0)
   const n = count ?? 0
+  const busy = !!(retrying && retrying.size > 0)
+  // Rafa NEVER sees a failure/too-long banner — his lens folds them into a gentle
+  // "still saving"; the honest notice surfaces to a parent's lens instead.
+  const showFail = !isRafa && failed > 0
+  const showTooLong = !isRafa && tooLongVideos.length > 0
 
   return (
     <div data-testid="import-confirm">
       {/* manifest — scrolls above the fixed action bar */}
       <div style={{ padding: '2px 22px 200px' }}>
+        {/* too-long: a gentle boundary + trim hand-off (#4) */}
+        {showTooLong &&
+          tooLongVideos.map((clip, i) => (
+            <AmberBanner
+              key={`long-${i}`}
+              icon={Clock}
+              title={c.tooLong(fmtDur(clip.durationMs))}
+              body={c.tooLongBody}
+              help={c.tooLongCta}
+              helpText={c.tooLongHelp}
+              hideLabel={c.hide}
+            />
+          ))}
+        {/* couldn't-add: one warm banner, celebrate the rest, retry attached (#2) */}
+        {showFail && (
+          <AmberBanner
+            icon={AlertTriangle}
+            title={videos > 0 ? c.failMulti(videos, failed) : c.failSolo}
+            body={c.failBody}
+            cta={c.failRetry}
+            ctaBusy={busy}
+            ctaBusyLabel={c.retrying}
+            onCta={onRetry}
+          />
+        )}
         <div className="smallcaps" style={{ fontSize: 9.5, color: 'var(--muted)', padding: '4px 0 2px' }}>
           How these will file
         </div>
