@@ -11,6 +11,8 @@
 // to write once the asset URL is back. We never re-encode on retry —
 // the blob is already optimal at queue time.
 
+import { logUploadEvent } from './uploadLog.js'
+
 const DB_NAME = 'roadtrip-upload-queue'
 const DB_VERSION = 1
 const STORE = 'pending'
@@ -114,6 +116,77 @@ async function update(id, patch) {
   }
 }
 
+// ─── self-heal: drop items that can never succeed ───────────────────
+//
+// A queued VIDEO is a legitimate, storable clip ONLY if it is a real SHRUNK
+// file, and the on-import encoder ALWAYS outputs a `video/mp4` blob. So the
+// only doomed videos are those that never went through the shrinker: a RAW
+// container (e.g. video/quicktime — a stranded .mov from an older build) or an
+// item with no blob at all. Those can't be stored and would otherwise retry
+// forever, so we purge them. Photos are always tiny + legitimate; never touched.
+//
+// CRITICAL: we NEVER delete a valid `video/mp4` on SIZE. The shrinker has no
+// duration cap yet, so a long home video legitimately encodes to a LARGE mp4 —
+// and a large-but-valid clip that's only in the queue because its upload failed
+// is the FAMILY'S ONLY COPY. Deleting it on size would be permanent data loss
+// (a 6-min recital → ~91MB valid mp4 → gone). Bounding size is the upload
+// firewall's job (guarantee #1), and the firewall REFUSES (non-destructive) —
+// it never deletes the sole copy. So the ONLY survivors here are valid mp4s (and
+// photos): zero false positives against real encoder output. Pure + exported so
+// it's unit-testable without a real IndexedDB.
+export function isDoomedVideoItem(item) {
+  if (!item || item.kind !== 'video') return false
+  const b = item.blob
+  if (!b) return true // nothing to upload — dead weight
+  if (b.type !== 'video/mp4') return true // raw container (e.g. video/quicktime) — never shrunk
+  return false // a valid mp4 is KEPT regardless of size (size is the firewall's job, not a delete)
+}
+
+// After this many failed attempts a (non-doomed) item is considered STUCK and
+// reported for the honest "clip couldn't upload" surface (guarantee #2). We do
+// NOT abandon it — a legit clip that failed during an outage must still upload
+// when the network returns; abandoning would strand real family memories. So the
+// threshold only drives the honest report, never a permanent skip. (Genuinely
+// un-storable items are handled by healQueue, which removes them outright.)
+export const STUCK_AFTER_ATTEMPTS = 6
+
+export function isStuckItem(item) {
+  return (item?.attempts || 0) >= STUCK_AFTER_ATTEMPTS
+}
+
+// Scan the queue and remove every doomed item (see isDoomedVideoItem). Each
+// removal is logged to the dev upload log so a purge is traceable, never a
+// silent disappearance. Returns the purged records' metadata. Best-effort: a
+// removal that throws is left for the next heal. Called at the top of every
+// drain so no caller can forget it.
+export async function healQueue() {
+  let items
+  try {
+    items = await list()
+  } catch {
+    return []
+  }
+  const purged = []
+  for (const item of items) {
+    if (!isDoomedVideoItem(item)) continue
+    try {
+      await remove(item.id)
+      const size = item.blob?.size ?? null
+      const type = item.blob?.type ?? null
+      purged.push({ id: item.id, size, type })
+      logUploadEvent({
+        code: 'purged-raw-leftover',
+        message: `dropped un-shrunk queued video (${size ?? '?'} bytes, ${type || 'no-type'}) — can never be stored`,
+        fileMeta: { size, type },
+        context: { phase: 'queue-heal', id: item.id, attempts: item.attempts ?? 0 },
+      })
+    } catch {
+      /* leave it for the next heal pass */
+    }
+  }
+  return purged
+}
+
 // Drain pass — attempt every queued item in order. `runner` takes
 // the queued record and returns a Promise. On success the item is
 // removed; on failure the attempts counter increments and the next
@@ -141,23 +214,32 @@ export async function drain(runner) {
     throw new Error('drain: runner function required')
   }
   if (draining) {
-    return { drained: 0, remaining: await count(), failures: [], skipped: true }
+    return { drained: 0, remaining: await count(), failures: [], stuck: [], purged: 0, skipped: true }
   }
   draining = true
   try {
+    // Self-heal FIRST: drop doomed raw leftovers so they neither retry forever
+    // nor (now that multipart works) succeed at storing a raw giant.
+    const purged = await healQueue()
     const items = await list()
     // FIFO so the photo Helen took first goes up first.
     items.sort((a, b) => (a.queuedAt || 0) - (b.queuedAt || 0))
     let drained = 0
     const failures = []
+    const stuck = []
     for (const item of items) {
       try {
         await runner(item)
         await remove(item.id)
         drained += 1
       } catch (err) {
+        // Retry ALWAYS (offline-safe): a legit clip that failed during an outage
+        // must still go up when the network returns — never abandoned. But once
+        // it has failed enough times, report it as stuck so guarantee #2 can be
+        // honest ("a clip couldn't upload") instead of failing in silence.
+        const attempts = (item.attempts || 0) + 1
         await update(item.id, {
-          attempts: (item.attempts || 0) + 1,
+          attempts,
           lastError: err?.message || String(err),
           lastErrorCode: err?.code || item.lastErrorCode || null,
         })
@@ -166,10 +248,13 @@ export async function drain(runner) {
           error: err?.message || String(err),
           code: err?.code || null,
         })
+        if (attempts >= STUCK_AFTER_ATTEMPTS) {
+          stuck.push({ id: item.id, attempts, code: err?.code || null })
+        }
       }
     }
     const remaining = await count()
-    return { drained, remaining, failures }
+    return { drained, remaining, failures, stuck, purged: purged.length }
   } finally {
     draining = false
   }
