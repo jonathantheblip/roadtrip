@@ -174,25 +174,31 @@ export function SurprisesView({ trip, trips, traveler, tripsApi, onClose }) {
 
   function doReveal(s) {
     setJustRevealed(s)
-    setTimeout(() => {
-      if (s.isTrip && s._trip && tripsApi) {
-        tripsApi.upsertTrip({ ...s._trip, surprise: { ...s._trip.surprise, revealed: new Date().toISOString() } })
-      } else if (s.isStop && s._stopRef && tripsApi) {
-        const { tripId, dayIso, stopId } = s._stopRef
-        const target = (trips || []).find((t) => t.id === tripId) || trip
-        if (target) {
-          const days = (target.days || []).map((d) => {
-            if (dayIso && d.isoDate !== dayIso) return d
-            return { ...d, stops: (d.stops || []).map((st) => (st.id === stopId ? { ...st, surprise: { ...st.surprise, revealed: new Date().toISOString() } } : st)) }
-          })
-          tripsApi.upsertTrip({ ...target, days })
-        }
-      } else {
-        revealSurprise(s.id)
+    // Save the reveal NOW — it used to be deferred inside the 1.7s celebration
+    // timeout, a window where closing the app lost the reveal before it was even
+    // saved locally (the recipient would then never see it, while the author saw
+    // "Revealed!"). The local write lands immediately and the family-push self-heals
+    // (upsertTrip queues + resyncs on a flaky network), so the celebration is honest
+    // in the same optimistic-then-self-healing sense as a trip edit's "Saved".
+    if (s.isTrip && s._trip && tripsApi) {
+      tripsApi.upsertTrip({ ...s._trip, surprise: { ...s._trip.surprise, revealed: new Date().toISOString() } })
+    } else if (s.isStop && s._stopRef && tripsApi) {
+      const { tripId, dayIso, stopId } = s._stopRef
+      const target = (trips || []).find((t) => t.id === tripId) || trip
+      if (target) {
+        const days = (target.days || []).map((d) => {
+          if (dayIso && d.isoDate !== dayIso) return d
+          return { ...d, stops: (d.stops || []).map((st) => (st.id === stopId ? { ...st, surprise: { ...st.surprise, revealed: new Date().toISOString() } } : st)) }
+        })
+        tripsApi.upsertTrip({ ...target, days })
       }
-      setJustRevealed(null)
-      setTick((n) => n + 1)
-    }, 1700)
+    } else {
+      revealSurprise(s.id)
+    }
+    setTick((n) => n + 1)
+    // The timeout is now ONLY the celebration animation duration (the reveal is
+    // already saved above), so a slow or failed push can't strand it.
+    setTimeout(() => setJustRevealed(null), 1700)
   }
 
   function onCreate(payload) {

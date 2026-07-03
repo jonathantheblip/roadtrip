@@ -187,7 +187,16 @@ export function useTrips() {
       return { ok: true, synced: false, reason: 'draft' }
     }
     try {
-      await pushTrip(trip)
+      const reached = await pushTrip(trip)
+      if (reached === false) {
+        // pushTrip REFUSED without throwing — a masked/surprise projection (3b) is a
+        // per-recipient stand-in that is never authoritative and must never overwrite
+        // the author's real row, so the worker (and pushTrip) decline to persist it. It
+        // did NOT reach the family: report honestly (synced:false), and do NOT mark it
+        // unsynced — a retry would be refused forever. (This case used to fall through to
+        // markSynced + {synced:true}, a lie: the badge said "synced" when nothing shipped.)
+        return { ok: false, synced: false, reason: 'refused' }
+      }
       markSynced(trip.id) // reached the family — clear any prior unsynced flag
       return { ok: true, synced: true }
     } catch (err) {
