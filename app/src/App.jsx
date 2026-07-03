@@ -53,7 +53,7 @@ import { fetchStoredWeave, getWeaveSeen, markWeaveSeen, fetchWeaveBook } from '.
 import { useTrips } from './hooks/useTrips'
 import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
-import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
+import { mergeCoverStops, maskTripsForViewer, maskTripForViewer, isTripMaskedFrom } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover } from './lib/workerSync'
 import { keepDay, applyDayRecord, dayRecordIsKept } from './lib/dayRecord'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
@@ -940,6 +940,14 @@ export default function App() {
       const id = card?.target?.tripId || trip?.id
       const target = id && allTrips.find((t) => t.id === id)
       if (!target) throw new Error('That trip is no longer here to delete.')
+      // A surprise trip hidden from THIS viewer: the worker refuses to delete it (they
+      // only ever saw the cover) with a non-leaking 200 the client can't tell from
+      // success → it would resurrect on the next pull. `allTrips` is RAW (unmasked), so
+      // test the masked-from condition itself (the same one the worker uses), not the
+      // projection's masked flag. Fail loud — neutral copy so we don't reveal the secret.
+      if (isTripMaskedFrom(target, traveler) || target.masked) {
+        throw new Error("That trip can't be deleted from here.")
+      }
       // removeTrip reports the HONEST per-item result: synced:false when the
       // family delete hasn't landed yet (it's tombstoned + retried, never silently
       // reversed). Don't claim a synced delete we didn't confirm — same class as the

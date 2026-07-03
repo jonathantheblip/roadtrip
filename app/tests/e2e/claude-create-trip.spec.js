@@ -712,4 +712,48 @@ test.describe('Claude-in-App — create_trip', () => {
       )
       .toEqual({ tombstoned: true, inCache: false })
   })
+
+  // E3 — sync-honesty: a delete_trip card for a surprise HIDDEN from the viewer must
+  // fail loud, not fire a delete the worker silently no-op's. The worker refuses a
+  // masked-from delete with a non-leaking 200 {deleted:0} the client can't tell from
+  // success → it clears the tombstone and the trip resurrects on the next pull. The
+  // card handler now refuses up front (isTripMaskedFrom), so nothing is deleted.
+  test('E3: a delete_trip card for a trip HIDDEN from the viewer fails loud (no silent no-op → resurrection)', async ({ page }) => {
+    await seedTripIntoCache(page, FIXTURE_TRIP)
+    // A surprise trip authored by jonathan, hidden from helen (the persona). The client
+    // masks it to a stand-in; the worker would refuse its delete with a non-leaking 200.
+    const HIDDEN = {
+      id: 'secret-from-helen', title: 'Secret trip', status: 'planning',
+      dateRange: 'Aug 1 – 5, 2026', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-05',
+      travelers: ['jonathan', 'helen'],
+      days: [{ n: 1, isoDate: '2026-08-01', stops: [] }],
+      surprise: { author: 'jonathan', hideFrom: ['helen'], reveal: { type: 'manual' }, conceal: 'cover', cover: { title: 'A trip', loc: '' } },
+    }
+    await page.addInitScript((t) => {
+      const arr = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+      if (!arr.some((x) => x.id === t.id)) arr.push(t)
+      localStorage.setItem('rt_trips_cache_v1', JSON.stringify(arr))
+    }, HIDDEN)
+    mockIndexChat(page, [
+      replyWithCard(
+        { type: 'delete_trip', id: 'del-3', target: { tripId: 'secret-from-helen' }, title: 'A trip' },
+        'Here it is to confirm.'
+      ),
+    ])
+    await page.goto(`/?person=${PERSONA}&nosw=1`)
+    const dialog = await openIndexChat(page)
+    await sendMessage(dialog, 'delete that trip')
+
+    const card = dialog.getByTestId('confirm-card-delete_trip')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.getByTestId('confirm-card-save').click()
+
+    // Fails loud (an error note), and the hidden trip is STILL in cache — it was
+    // never fired at the worker (which would 200-no-op it → resurrection).
+    await expect(dialog.getByTestId('confirm-card-error')).toBeVisible({ timeout: 5000 })
+    const stillThere = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]').some((t) => t.id === 'secret-from-helen')
+    )
+    expect(stillThere, 'the hidden trip must NOT be deleted').toBe(true)
+  })
 })

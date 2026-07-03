@@ -17,6 +17,7 @@ import {
   workerFetch,
 } from '../lib/workerSync'
 import { enrolledTravelers, isAdult, defaultDeviceLabel, hasSession } from '../lib/auth'
+import { isTripMaskedFrom } from '../lib/surprises'
 import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
 import {
   clearUploadLog,
@@ -423,8 +424,14 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
           before this, only DRAFTS could be deleted). Two-tap confirm so a stray
           press can't lose the family's trip. Soft-delete on the worker, so it's
           recoverable in D1 if needed — but the app offers no un-delete, hence the
-          honest copy. Drafts keep their own delete (the Drafts section above). */}
-      {onDeleteTrip && !trip.draft && (
+          honest copy. Drafts keep their own delete (the Drafts section above).
+          A surprise trip hidden from THIS viewer must not offer a delete door: the
+          worker refuses it but returns a non-leaking 200 the client can't tell from a
+          real delete (→ the trip would resurrect on the next pull). The trip passed in
+          may be RAW (active trip) or a stand-in projection, so test both the masked-from
+          condition (raw) and the projection flag. Mirrors the worker's isTripMaskedFrom
+          refusal + the masked-content-quiets-edit-doors pattern. */}
+      {onDeleteTrip && !trip.draft && !trip.masked && !isTripMaskedFrom(trip, traveler) && (
         <section className="px-6 py-8 border-b surface-rule">
           <div className="flex items-center gap-2 mb-3">
             <Trash2 size={14} />
