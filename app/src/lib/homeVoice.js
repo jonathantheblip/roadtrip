@@ -22,6 +22,14 @@ const BASE = {
   photosGather: 'Photos will gather here as you go',
   agendaEmptyKicker: 'Nothing planned — and that’s allowed',
   addSomething: 'Add something',
+  // THE RECORD · settle card (keep the day)
+  settleKick: 'The day, ready to keep',
+  settleCta: 'Keep the day',
+  settleNothingKick: 'A quiet one?',
+  settleNothingSub: 'We stayed put, gloriously.',
+  settleNothingCta: 'Keep it',
+  settleKeptKick: 'Today, kept',
+  settleKeptSub: 'Tonight’s story writes itself from this.',
 }
 
 // Per-lens overrides (only the lines that differ from the warm base). Jonathan's
@@ -35,6 +43,11 @@ const OVERRIDES = {
     weaveDuring: 'The day’s story shows up here once there’s a bit worth telling.',
     nearbyLine: 'A few things worth heading out for',
     agendaEmptyKicker: 'Nothing planned today — take it easy',
+    settleKick: 'The record — drafted',
+    settleCta: 'Sign off on the day',
+    settleNothingSub: 'Stayed put. Zero regrets.',
+    settleKeptKick: 'Today, on the record',
+    settleKeptSub: 'Signed. The day stands.',
   },
   aurelia: {
     weaveKicker: 'the weave',
@@ -46,6 +59,11 @@ const OVERRIDES = {
     nearbyLine: 'stuff we could go do',
     agendaEmptyKicker: 'nothing planned — and that’s kinda the vibe',
     addSomething: 'add something',
+    settleKick: 'keep today?',
+    settleCta: 'keep it',
+    settleNothingSub: 'we did nothing (elite)',
+    settleKeptKick: 'today, kept',
+    settleKeptSub: 'woven while you slept.',
   },
 }
 
@@ -69,5 +87,12 @@ export function homeVoice(traveler) {
     photosGather: g('photosGather'),
     agendaEmptyKicker: g('agendaEmptyKicker'),
     addSomething: g('addSomething'),
+    settleKick: g('settleKick'),
+    settleCta: g('settleCta'),
+    settleNothingKick: g('settleNothingKick'),
+    settleNothingSub: g('settleNothingSub'),
+    settleNothingCta: g('settleNothingCta'),
+    settleKeptKick: g('settleKeptKick'),
+    settleKeptSub: g('settleKeptSub'),
   }
 }

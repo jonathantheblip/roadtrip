@@ -36,7 +36,7 @@ import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
 import { tripHasMaskedContent } from '../lib/surprises'
-import { namedRecordEntries } from '../lib/dayRecord'
+import { namedRecordEntries, dayRecordIsKept, dayRecordKeptBy } from '../lib/dayRecord'
 import { PartsOutline, StopRow, RecordRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -130,7 +130,7 @@ function nothingDayLineFor(isoDate) {
 
 export function LivingHeartHome({
   trip, traveler, nowReadout, whoAround, weaveReady, bookHasPages,
-  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenEditor, onOpenAllPhotos, onOpenActivities, onOpenStop,
+  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenEditor, onOpenAllPhotos, onOpenActivities, onOpenStop, onKeepDay,
 }) {
   const [weave, setWeave] = useState(null)
   const [heroErr, setHeroErr] = useState(false)
@@ -172,6 +172,27 @@ export function LivingHeartHome({
   const legTz = legCtx.tz
   const todayIso = legCtx.todayIso
   const di = useMemo(() => dayInfo(trip, todayIso), [trip, todayIso])
+
+  // THE RECORD · the settle card (keep the day) — the design's centerpiece. The
+  // invitation lives in the day's-story slot, EVENINGS only (a day isn't ready to
+  // keep until it's mostly over) and only while the trip is LIVE (today in-window).
+  // A kept day shows its gold confirmation any time. keptIso is optimistic so the
+  // card flips to "kept" the instant you tap, before the trip round-trips.
+  const [keptIso, setKeptIso] = useState(null)
+  const todayDay = useMemo(() => (trip?.days || []).find((d) => d?.isoDate === todayIso) || null, [trip, todayIso])
+  const todayRecorded = useMemo(() => (todayDay ? namedRecordEntries(todayDay) : []), [todayDay])
+  const todayKept = (todayDay && dayRecordIsKept(todayDay)) || keptIso === todayIso
+  const todayKeptBy = keptIso === todayIso ? traveler : (todayDay ? dayRecordKeptBy(todayDay) : null)
+  const isEveningNow = nowMinutesInZone(legTz) >= 17 * 60 // >= 5pm local/leg time
+  const settleState = !di.dayX ? null // only while the trip is live (today = day N)
+    : todayKept ? 'kept'
+    : !isEveningNow ? null
+    : todayRecorded.length > 0 ? 'keep'
+    : 'nothing'
+  function handleKeep(opts = {}) {
+    setKeptIso(todayIso)
+    if (onKeepDay) onKeepDay(todayIso, opts)
+  }
   // A complex/composite trip (a city break, flights + timed things) is still the
   // ONE living-heart home, shape-aware (FAMILY_TRIPS_VISION §11): it leads with the
   // PART it's in now and surfaces the next timed thing just-in-time (its ticket).
@@ -437,6 +458,20 @@ export function LivingHeartHome({
           <div style={{ marginBottom: 16 }}>
             <ContextCard orientation={orientation} lc={v.lc} />
           </div>
+        )}
+
+        {/* THE RECORD · settle card — keep today (or a nothing-day) → gold. Sits
+            in the day's-story slot, evenings only, while the trip is live. Never
+            in the after-keepsake home (parity with the arrival/clock/context
+            blocks; guards a corrupt-date trip whose stops all sit in the past). */}
+        {settleState && !isAfter && (
+          <SettleCard
+            state={settleState}
+            entries={todayRecorded}
+            keptBy={todayKeptBy}
+            v={v}
+            onKeep={handleKeep}
+          />
         )}
 
         {/* THE DAY'S STORY — always reachable (the Weave). Populated when woven;
@@ -711,6 +746,56 @@ export function LivingHeartHome({
 // filtered (the base is where you ARE, not an agenda item — same rule as the
 // collapsed face); flights show inline on their day. Nothing here is capped:
 // the +N-more accordion is the collapsed glance face's rule only (01#3).
+// THE RECORD · the settle card — the design's centerpiece: keep the day → it
+// wears gold. Three honest states: 'keep' (today has a record → keep it),
+// 'nothing' (a quiet day → "we stayed put"), 'kept' (already kept → the gold
+// confirmation). Framed in the day's-story slot with the --kept gold thread.
+function SettleCard({ state, entries = [], keptBy, v, onKeep }) {
+  const kept = state === 'kept'
+  const nothing = state === 'nothing'
+  return (
+    <div
+      data-testid="settle-card"
+      data-settle-state={state}
+      style={{
+        background: 'color-mix(in srgb, var(--kept) 12%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--kept) 38%, transparent)',
+        borderRadius: 'min(var(--radius, 16px), 16px)', padding: '14px 16px', marginBottom: 16,
+      }}
+    >
+      <div style={{ ...MONO, fontSize: 9, color: 'var(--kept)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--kept)' }} aria-hidden="true" />
+        {v.lc(kept ? v.settleKeptKick : nothing ? v.settleNothingKick : v.settleKick)}{kept ? ' ✓' : ''}
+      </div>
+      {kept ? (
+        <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14, color: 'var(--muted)', marginTop: 7, lineHeight: 1.45 }}>
+          {v.lc(keptBy ? `Kept by ${TRAVELERS[keptBy]?.name || keptBy}. ${v.settleKeptSub}` : v.settleKeptSub)}
+        </div>
+      ) : (
+        <>
+          {nothing ? (
+            <div style={{ ...DISPLAY, fontStyle: 'var(--display-italic, normal)', fontSize: 18, color: 'var(--text)', marginTop: 7 }}>{v.lc(v.settleNothingSub)}</div>
+          ) : (
+            <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14, color: 'var(--text)', marginTop: 7, lineHeight: 1.45 }}>
+              {entries.slice(0, 4).map((e) => e.name).join(' · ')}
+            </div>
+          )}
+          <button
+            type="button" data-testid="settle-keep" onClick={() => onKeep({ nothing })}
+            style={{
+              marginTop: 12, minHeight: 40, padding: '9px 18px', borderRadius: 'min(var(--radius, 14px), 14px)',
+              background: 'var(--kept)', color: '#1c1408', border: 0, cursor: 'pointer',
+              fontFamily: 'Inter Tight, -apple-system, system-ui, sans-serif', fontWeight: 600, fontSize: 14,
+            }}
+          >
+            {v.lc(nothing ? v.settleNothingCta : v.settleCta)}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
   return (
     <div data-testid="whole-stay" style={{ marginTop: 6 }}>
@@ -727,18 +812,28 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
         // quiet "as it happened" kicker. (Provisional placement — the
         // Record design pass owns the final read face.)
         const recorded = namedRecordEntries(d)
+        const kept = dayRecordIsKept(d)
         const open = stops.length === 0
         return (
           <div
             key={`${iso || 'd'}-${i}`} data-testid="whole-stay-day"
+            data-kept={kept ? '1' : undefined}
             style={{
-              padding: '10px 0 10px 10px', opacity: isPast ? 0.55 : 1,
+              // A KEPT day keeps its ink — only LOOSE past days fully recede (the
+              // design's --rec-dim: kept 0.88 vs loose 0.55).
+              padding: '10px 0 10px 10px', opacity: isPast ? (kept ? 0.88 : 0.55) : 1,
               borderLeft: isToday ? '2px solid var(--accent)' : '2px solid transparent',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {kept && <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--kept)', flexShrink: 0 }} />}
               <span style={{ ...MONO, fontSize: 9.5, fontWeight: 600, color: 'var(--text)' }}>{dayLabel(d)}</span>
-              {isPast && <span aria-label="done" style={{ fontSize: 10, color: 'var(--muted)' }}>✓</span>}
+              {kept && (
+                <span style={{ ...MONO, fontSize: 7.5, color: 'var(--kept)', background: 'color-mix(in srgb, var(--kept) 14%, transparent)', border: '1px solid color-mix(in srgb, var(--kept) 40%, transparent)', borderRadius: 999, padding: '2px 7px', fontWeight: 600 }}>
+                  {v.lc('Kept')}
+                </span>
+              )}
+              {isPast && !kept && <span aria-label="done" style={{ fontSize: 10, color: 'var(--muted)' }}>✓</span>}
               {isToday && <span style={{ ...MONO, fontSize: 8.5, color: 'var(--accent-text)' }}>{v.lc('Today')}</span>}
               {!open && <span style={{ ...MONO, fontSize: 8.5, color: 'var(--muted)' }}>{stops.length} {stops.length === 1 ? 'stop' : 'stops'}</span>}
               {onEditDay && !open && (

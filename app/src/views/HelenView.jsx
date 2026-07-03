@@ -34,6 +34,7 @@ export function HelenView({
   onOpenSurprises,
   onCompose,
   onOpenEditor,
+  onKeepDay,
   weaveReady,
   bookHasPages,
   surpriseRevealCue,
@@ -60,6 +61,7 @@ export function HelenView({
         onOpenSurprises={onOpenSurprises}
         onCompose={onCompose}
         onOpenEditor={onOpenEditor}
+        onKeepDay={onKeepDay}
         onOpenAllPhotos={onOpenAllPhotos}
         onOpenActivities={onOpenActivities}
         onOpenStop={onOpenStop}

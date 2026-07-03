@@ -108,19 +108,18 @@ export function dayHasRecord(day) {
   return namedRecordEntries(day).length > 0
 }
 
-// Write entries onto the day named by ISO date (preferred — stable across
-// renumbering) or by day number. The day is CREATED if the trip hasn't
-// written it yet (a hangout trip's open day exists only on the date grid):
-// inserted in date order among the DATED days, dateless days keep their
-// manual order, day numbers renumbered — the same rules TripEditor's
-// focus-day creation follows. Entries UPSERT by id (idempotent re-saves);
-// new entries append in told order. Pure: returns the next trip snapshot.
-export function applyDayRecord(trip, target = {}, entries = []) {
-  if (!trip) throw new Error('applyDayRecord: trip required')
+// Find the day named by target (dayIso preferred — stable across renumbering —
+// else dayN). The day is CREATED if the trip hasn't written it yet (a hangout
+// trip's open day exists only on the date grid): inserted in date order among
+// the DATED days, dateless days keep their manual order, day numbers renumbered
+// — the same rules TripEditor's focus-day creation follows. Returns { days, idx }
+// where `days` is a fresh shallow-cloned array so a caller can reassign days[idx]
+// purely. Shared by applyDayRecord + keepDay so day-finding lives in ONE place.
+function findOrCreateDay(trip, target = {}) {
   const dayIso = (target.dayIso || '').slice(0, 10)
   const dayN = target.dayN
   if (!dayIso && typeof dayN !== 'number') {
-    throw new Error('applyDayRecord: target.dayIso or target.dayN required')
+    throw new Error('dayRecord: target.dayIso or target.dayN required')
   }
   const srcDays = trip.data?.days || trip.days || []
   const days = srcDays.map((d) => ({ ...d }))
@@ -131,7 +130,7 @@ export function applyDayRecord(trip, target = {}, entries = []) {
 
   if (idx < 0) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dayIso)) {
-      throw new Error(`applyDayRecord: day ${dayIso || dayN} not found in trip`)
+      throw new Error(`dayRecord: day ${dayIso || dayN} not found in trip`)
     }
     const newDay = {
       n: 0, isoDate: dayIso, date: humanDate(dayIso), title: '',
@@ -143,7 +142,22 @@ export function applyDayRecord(trip, target = {}, entries = []) {
     days.forEach((d, i) => { d.n = i + 1 })
     idx = days.findIndex((d) => d === newDay)
   }
+  return { days, idx }
+}
 
+// Reattach the days array to the trip at the right level (seed root vs D1 .data).
+function commitDays(trip, days) {
+  if (trip.data) return { ...trip, data: { ...trip.data, days } }
+  return { ...trip, days }
+}
+
+// Write entries onto a day's record (creating the day if needed). Entries UPSERT
+// by id (idempotent re-saves); new entries append in told order. Preserves any
+// day-level state (kept/keptBy/nothing) — a record-write must never silently
+// un-keep a day the family kept. Pure: returns the next trip snapshot.
+export function applyDayRecord(trip, target = {}, entries = []) {
+  if (!trip) throw new Error('applyDayRecord: trip required')
+  const { days, idx } = findOrCreateDay(trip, target)
   const cur = readRecord(days[idx]) // object form — coerces a legacy bare array
   const existing = cur.entries.slice()
   for (const e of entries) {
@@ -152,10 +166,42 @@ export function applyDayRecord(trip, target = {}, entries = []) {
     if (at >= 0) existing[at] = e
     else existing.push(e)
   }
-  // Write the OBJECT shape, PRESERVING any day-level state (kept/keptBy/nothing)
-  // — a record-write must never silently un-keep a day the family kept.
   days[idx] = { ...days[idx], record: { ...cur, entries: existing } }
+  return commitDays(trip, days)
+}
 
-  if (trip.data) return { ...trip, data: { ...trip.data, days } }
-  return { ...trip, days }
+// KEEP a day — the settle action, the design's centerpiece: the day wears gold.
+// Marks the record state='kept' with who + when, PRESERVING its entries (never
+// discards them, never touches day.stops). A nothing-day (nothing:true) is a
+// valid keep with no entries ("we stayed put, gloriously"). The FIRST keeper's
+// timestamp wins (kept once, added-to after — contract in the design's 02).
+// Creates the day if a hangout trip never wrote it. Pure.
+export function keepDay(trip, target = {}, { keptBy = null, nothing = false } = {}) {
+  if (!trip) throw new Error('keepDay: trip required')
+  const { days, idx } = findOrCreateDay(trip, target)
+  const cur = readRecord(days[idx])
+  days[idx] = {
+    ...days[idx],
+    record: {
+      ...cur,
+      state: 'kept',
+      keptBy: cur.keptBy || keptBy || null,
+      keptAt: cur.keptAt || new Date().toISOString(),
+      // First keeper settles the day — a nothing-day stays a nothing-day even if
+      // a later (cross-device) re-keep passes nothing:false, same as keptBy/keptAt.
+      nothing: cur.nothing === true || nothing === true,
+    },
+  }
+  return commitDays(trip, days)
+}
+
+// Day-level record state readers (shape-agnostic via readRecord).
+export function dayRecordIsKept(day) {
+  return readRecord(day).state === 'kept'
+}
+export function dayRecordIsNothing(day) {
+  return readRecord(day).nothing === true
+}
+export function dayRecordKeptBy(day) {
+  return readRecord(day).keptBy || null
 }

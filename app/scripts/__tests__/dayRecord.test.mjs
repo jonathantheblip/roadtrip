@@ -8,10 +8,13 @@ import assert from 'node:assert/strict'
 import {
   normalizeRecordEntry,
   applyDayRecord,
+  keepDay,
   readRecord,
   dayRecordOf,
   namedRecordEntries,
   dayHasRecord,
+  dayRecordIsKept,
+  dayRecordIsNothing,
   recordEntryId,
 } from '../../src/lib/dayRecord.js'
 
@@ -174,6 +177,59 @@ test('applyDayRecord: a record-write PRESERVES a day already kept (never silentl
   assert.equal(rec.state, 'kept', 'the day stays kept')
   assert.equal(rec.keptBy, 'helen')
   assert.deepEqual(rec.entries.map((x) => x.name), ['Beach', 'Late addition'])
+})
+
+test('keepDay: marks a day kept with who + when, PRESERVING its entries; never touches stops', () => {
+  const trip = fixtureTrip()
+  const withRec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'Biked the dunes' }, { cardId: 'c1', index: 0 }),
+  ])
+  const before = JSON.stringify(withRec)
+  const kept = keepDay(withRec, { dayIso: '2026-07-03' }, { keptBy: 'helen' })
+  const day = kept.days.find((d) => d.isoDate === '2026-07-03')
+  assert.equal(dayRecordIsKept(day), true)
+  assert.equal(day.record.state, 'kept')
+  assert.equal(day.record.keptBy, 'helen')
+  assert.ok(day.record.keptAt, 'a keep stamps when')
+  assert.deepEqual(dayRecordOf(day).map((e) => e.name), ['Biked the dunes'], 'entries survive the keep')
+  assert.deepEqual(day.stops, [], 'the plan is never touched')
+  assert.equal(JSON.stringify(withRec), before, 'input trip not mutated')
+})
+
+test('keepDay: a NOTHING-day keeps with no entries ("we stayed put, gloriously")', () => {
+  const trip = fixtureTrip() // 07-02 exists only on the calendar
+  const kept = keepDay(trip, { dayIso: '2026-07-02' }, { keptBy: 'jonathan', nothing: true })
+  const day = kept.days.find((d) => d.isoDate === '2026-07-02')
+  assert.equal(dayRecordIsKept(day), true)
+  assert.equal(dayRecordIsNothing(day), true)
+  assert.deepEqual(dayRecordOf(day), [], 'a nothing-day has no entries')
+  assert.deepEqual(day.stops, [], 'created day has an empty plan')
+})
+
+test('keepDay: the FIRST keeper settles the day — a re-keep preserves the original keptBy/keptAt', () => {
+  const trip = fixtureTrip()
+  const first = keepDay(trip, { dayIso: '2026-07-03' }, { keptBy: 'helen' })
+  const at1 = first.days.find((d) => d.isoDate === '2026-07-03').record.keptAt
+  const second = keepDay(first, { dayIso: '2026-07-03' }, { keptBy: 'jonathan' })
+  const rec = second.days.find((d) => d.isoDate === '2026-07-03').record
+  assert.equal(rec.keptBy, 'helen', 'first keeper wins')
+  assert.equal(rec.keptAt, at1, 'original timestamp preserved')
+  // A nothing-day stays nothing even if a later re-keep passes nothing:false.
+  const nd = keepDay(fixtureTrip(), { dayIso: '2026-07-02' }, { nothing: true })
+  const nd2 = keepDay(nd, { dayIso: '2026-07-02' }, { nothing: false })
+  assert.equal(dayRecordIsNothing(nd2.days.find((d) => d.isoDate === '2026-07-02')), true, 'nothing-flag survives a re-keep')
+})
+
+test('keepDay: a record-write AFTER a keep leaves the day kept (kept once, added-to after)', () => {
+  const trip = fixtureTrip()
+  const kept = keepDay(trip, { dayIso: '2026-07-03' }, { keptBy: 'helen' })
+  const added = applyDayRecord(kept, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'One more thing' }, { cardId: 'cX', index: 0 }),
+  ])
+  const day = added.days.find((d) => d.isoDate === '2026-07-03')
+  assert.equal(dayRecordIsKept(day), true, 'still kept after a later add')
+  assert.equal(day.record.keptBy, 'helen')
+  assert.deepEqual(dayRecordOf(day).map((e) => e.name), ['One more thing'])
 })
 
 test('recordEntryId: stable with a cardId, unique without', () => {

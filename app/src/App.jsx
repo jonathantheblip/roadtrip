@@ -55,6 +55,7 @@ import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover } from './lib/workerSync'
+import { keepDay } from './lib/dayRecord'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
@@ -988,6 +989,22 @@ export default function App() {
   // has a lodging address but no coords (an older AI/screenshot trip). Geocode +
   // persist via the same upsert path the hero uses; on success the trip prop
   // updates and the tray fetches. Returns { ok } so the button can show an error.
+  // Keep a day — the Record's settle action (the design's centerpiece: the day
+  // wears gold). Marks the day's record 'kept' (or a nothing-day) and persists
+  // via the trips API, reading the FRESHEST store copy to narrow the clobber
+  // window (the trip blob is still last-writer-wins — no optimistic-concurrency
+  // guard; same pattern as onLocateStay). upsertTrip writes the local cache
+  // before the push, so a failed family-push keeps locally and auto-resyncs —
+  // the card's optimistic "kept" is honest for this device. Never touches the
+  // plan; keepDay preserves the day's entries.
+  async function onKeepDay(dayIso, opts = {}) {
+    if (!trip || !dayIso) return { ok: false }
+    const current = allTrips.find((t) => t.id === trip.id) || trip
+    const next = keepDay(current, { dayIso }, { keptBy: traveler || null, nothing: !!opts.nothing })
+    await tripsApi.upsertTrip(next)
+    return { ok: true }
+  }
+
   async function onLocateStay(trip) {
     if (!trip) return { ok: false }
     const located = await locateTripBestEffort(trip)
@@ -1271,6 +1288,8 @@ export default function App() {
         openEditor(null, opts && typeof opts.focusDayIso === 'string' ? { ...opts, from: 'trip' } : { from: 'trip' }),
       onOpenSurprises: openSurprises,
       onCompose: openCompose, // "Share a moment" — designed home-band entry (was ⋯-only)
+      onKeepDay, // the Record's settle action — keep today (or a nothing-day) → gold
+
       weaveReady,
       bookHasPages,
       surpriseRevealCue,
