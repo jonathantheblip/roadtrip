@@ -1908,8 +1908,15 @@ async function uploadMultipartPart(env, traveler, url, request, cors) {
     return json({ error: 'bad request' }, 400, cors)
   }
   if (!ownsKey(key, traveler)) return json({ error: 'forbidden' }, 403, cors)
+  // BUFFER the part to a known-length ArrayBuffer before uploadPart. R2 in production
+  // needs the length up front for a multipart part; a raw length-less request.body
+  // stream can silently fail there (miniflare is lenient, which is how it passed tests
+  // but a real large-video upload got stuck). Parts are ≤48MB (client cap), safely under
+  // the Worker's ~128MB memory + the ~100MB request-body limit.
+  const buf = await request.arrayBuffer()
+  if (!buf || buf.byteLength === 0) return json({ error: 'empty part' }, 400, cors)
   const mp = env.ASSETS.resumeMultipartUpload(key, uploadId)
-  const part = await mp.uploadPart(partNumber, request.body)
+  const part = await mp.uploadPart(partNumber, buf)
   return json({ partNumber: part.partNumber, etag: part.etag }, 200, cors)
 }
 

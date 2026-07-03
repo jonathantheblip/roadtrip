@@ -420,10 +420,13 @@ export async function uploadBlob(kind, memoryId, blob, { asTraveler } = {}) {
 
 // Cloudflare caps a single request body at ~100MB — a bigger blob (a longer video)
 // is cut off mid-POST and the client retries it forever, invisibly. Anything over
-// this goes through the multipart route below instead. 90MB keeps a margin under the
-// cap AND is a valid R2 part size (non-last parts must be equal and ≥5MB).
-const SINGLE_POST_MAX_BYTES = 90 * 1024 * 1024
-const MPU_PART_BYTES = 90 * 1024 * 1024
+// SINGLE_POST_MAX goes through the multipart route below instead. Parts are 48MB — a
+// GENEROUS margin under the ~100MB request cap AND under the Worker's ~128MB memory
+// (the worker buffers each part to know its length for R2), and a valid R2 part size
+// (non-last parts equal + ≥5MB). Was 90MB, which sat at the edge of both limits and
+// stranded a real 168MB video; 48MB keeps every request comfortably small.
+const SINGLE_POST_MAX_BYTES = 48 * 1024 * 1024
+const MPU_PART_BYTES = 48 * 1024 * 1024
 
 // Upload a large blob in parts through the Worker's R2 multipart endpoints (no new
 // secret): create → part (×N) → complete. Aborts a half-done upload on failure so it
