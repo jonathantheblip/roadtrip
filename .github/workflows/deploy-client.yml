@@ -57,10 +57,24 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: app/package-lock.json
+          cache-dependency-path: |
+            app/package-lock.json
+            worker/package-lock.json
       - name: Install app deps
         working-directory: app
         run: npm ci
+      # The app's node --test unit suite reaches into worker/src (buildClaudeSystemPrompt,
+      # leaveWhen, tripHero) which top-level-imports @cf-wasm/photon — so it needs the
+      # worker's RUNTIME deps present. --omit=dev skips wrangler/vitest (not needed to import).
+      - name: Install worker runtime deps (unit suite imports worker/src)
+        working-directory: worker
+        run: npm ci --omit=dev
+      # ── GATE: the app's fast unit suite (node --test). Runs BEFORE the ~30-min e2e so a
+      #    cheap unit regression fails in seconds, not half an hour. Previously UNGATED —
+      #    only the e2e suite gated a deploy, so a red unit test could ship indefinitely.
+      - name: Unit suite (node --test)
+        working-directory: app
+        run: npm test
       - name: Install Playwright browsers (chromium + webkit)
         working-directory: app
         run: npx playwright install chromium webkit
