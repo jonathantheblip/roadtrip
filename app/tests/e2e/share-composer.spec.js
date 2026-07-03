@@ -72,6 +72,48 @@ test('compose two photos → arrange → Share → a link + the chosen layout is
   expect(errors, errors.join(' | ')).toHaveLength(0)
 })
 
+// Bug E — a share that FAILS then succeeds on retry must not leave a duplicate.
+// The album memory is saved to D1 before the /share mint; a 409 (an unrevealed
+// surprise slipped in) used to leave that saved copy and the retry minted a NEW
+// one (fresh random id) → duplicates piled up per retry. The fix reuses the id
+// (saveMemory upserts), so a retry updates the one album, never duplicates it.
+test('retry after a 409 does NOT duplicate the album memory (Bug E)', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await seedAndOpen(page, [sharedPhoto('p1', 'first'), sharedPhoto('p2', 'second')])
+
+  // Override /share (registered last → wins): first mint 409s like an unrevealed
+  // surprise, the retry succeeds.
+  let shareCalls = 0
+  await page.route(/workers\.dev\/share\b/, async (route) => {
+    shareCalls += 1
+    if (shareCalls === 1) {
+      await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'masked' }) })
+    } else {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'ok-tok', url: 'https://share.test/m/ok-tok' }) })
+    }
+  })
+
+  await page.getByRole('button', { name: 'Select photo' }).nth(0).click()
+  await page.getByRole('button', { name: 'Select photo' }).nth(0).click()
+  await page.getByRole('button', { name: /Next . Arrange/i }).click()
+  await page.getByLabel('Caption').fill('Retry dedup')
+
+  // First attempt surfaces the surprise error.
+  await page.getByRole('button', { name: /Share this moment/i }).click()
+  await expect(page.getByText(/One of these is a surprise/i)).toBeVisible()
+
+  // Retry from the error state → succeeds.
+  await page.getByRole('button', { name: /Share this moment/i }).click()
+  await expect(page.getByText(/Shared to the family/i)).toBeVisible()
+
+  // Exactly ONE composed album memory carries the caption — the retry upserted
+  // the same id; before the fix a second (duplicate) memory appeared.
+  const dupes = (await sharedMemories(page)).filter((m) => m.caption === 'Retry dedup')
+  expect(dupes.length, 'exactly one album memory, not one-per-retry').toBe(1)
+  expect(errors, errors.join(' | ')).toHaveLength(0)
+})
+
 test('surprise + private photos are NOT offered for composing (safety guard)', async ({ page }) => {
   await seedAndOpen(page, [
     sharedPhoto('ok1', 'visible'),

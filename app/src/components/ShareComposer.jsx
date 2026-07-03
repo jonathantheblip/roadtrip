@@ -161,6 +161,12 @@ export function ShareComposer({ trip, traveler, onClose }) {
   const [qTick, setQTick] = useState(0) // bumped on upload-queue changes → re-read refs
   const fileInputRef = useRef(null)
   const objectUrlsRef = useRef([]) // pending-import blob: urls, revoked on unmount
+  // The id of the composed album memory, minted on the FIRST share attempt and
+  // REUSED on every retry within this composition. saveMemory upserts by id, so
+  // reusing it means a failed share (e.g. a 409 on an unrevealed surprise) that
+  // the user retries UPDATES the one album memory instead of minting a duplicate
+  // (new random id) each time. Null again only on a fresh composer mount.
+  const savedRef = useRef(null)
   // E4 — voice clips + note slips added this session, ordered into the selection.
   const [extras, setExtras] = useState([])
   const [recording, setRecording] = useState(false)
@@ -298,6 +304,10 @@ export function ShareComposer({ trip, traveler, onClose }) {
       const photoRefs = sel.filter((p) => pieceKind(p) === 'photo' || pieceKind(p) === 'video').map((p) => currentRef(p)).filter(Boolean)
       const hasExtras = sel.some((p) => pieceKind(p) === 'voice' || pieceKind(p) === 'note')
       const saved = saveMemory({
+        // Reuse the id from a prior attempt in this composition (upsert), so a
+        // retry after a failed /share updates the SAME album memory rather than
+        // creating a duplicate. undefined on the first attempt → a fresh id.
+        id: savedRef.current || undefined,
         tripId,
         stopId: null, // a trip-level composed memory (no single stop)
         authorTraveler: traveler,
@@ -305,10 +315,14 @@ export function ShareComposer({ trip, traveler, onClose }) {
         kind: 'photo',
         caption: caption.trim() || undefined,
         photoRefs,
-        ...(hasExtras ? { pieces: orderedPieces } : {}),
+        // Explicit null (not absent) when there are no extras: on a re-save of the
+        // same id, an ABSENT pieces would preserve-on-undefined and resurrect a
+        // note the user removed between attempts. null clears it honestly.
+        pieces: hasExtras ? orderedPieces : null,
       })
       const id = saved?.id
       if (!id) throw new Error('save failed')
+      savedRef.current = id
       // Make sure the album row has reached the family D1 BEFORE minting the
       // link — POST /share resolves the memory from D1, so a not-yet-synced
       // album would 404. pushMemory is idempotent and re-uploads nothing (every
@@ -527,7 +541,7 @@ export function ShareComposer({ trip, traveler, onClose }) {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 9 }}>
-                <button onClick={() => setStep('select')} disabled={step === 'working'} style={{ flex: '0 0 auto', padding: '15px 18px', borderRadius: 999, border: '1px solid var(--line-bold)', background: 'transparent', color: 'var(--muted)', cursor: step === 'working' ? 'default' : 'pointer', fontFamily: 'var(--font-body)', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>‹ Back</button>
+                <button onClick={() => { setErrMsg(''); setStep('select') }} disabled={step === 'working'} style={{ flex: '0 0 auto', padding: '15px 18px', borderRadius: 999, border: '1px solid var(--line-bold)', background: 'transparent', color: 'var(--muted)', cursor: step === 'working' ? 'default' : 'pointer', fontFamily: 'var(--font-body)', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>‹ Back</button>
                 <button disabled={step === 'working' || !allReady} onClick={share} style={{ ...primaryBtn(step !== 'working' && allReady), flex: 1 }}>
                   <Share2 size={15} /> {step === 'working' ? 'Making the link…' : !allReady ? `Uploading ${pendingSel.length}…` : 'Share this moment'}
                 </button>
