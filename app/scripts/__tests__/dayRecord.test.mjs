@@ -12,6 +12,8 @@ import {
   readRecord,
   dayRecordOf,
   namedRecordEntries,
+  readableRecordEntries,
+  isDraftEntry,
   dayHasRecord,
   dayRecordIsKept,
   dayRecordIsNothing,
@@ -235,4 +237,35 @@ test('keepDay: a record-write AFTER a keep leaves the day kept (kept once, added
 test('recordEntryId: stable with a cardId, unique without', () => {
   assert.equal(recordEntryId('c-x', 2), 'rec-c-x-2')
   assert.notEqual(recordEntryId(null, 0), recordEntryId(null, 0))
+})
+
+test('isDraftEntry: an evidence pin with no name is a draft; a named or manual row is not', () => {
+  assert.ok(isDraftEntry({ name: '', source: 'evidence', guess: 'near the water' }), 'evidence + unnamed → draft')
+  assert.ok(isDraftEntry({ name: '', src: 'evidence' }), 'the richer-shape src field is honored too')
+  assert.equal(isDraftEntry({ name: 'Race Point', source: 'evidence' }), false, 'a NAMED evidence entry graduated to a memory')
+  assert.equal(isDraftEntry({ name: '', source: 'manual' }), false, 'a half-typed MANUAL editor row is not a draft (stays hidden)')
+  assert.equal(isDraftEntry({ name: '', source: 'chat' }), false, 'a nameless chat row is not a draft')
+  assert.equal(isDraftEntry(null), false)
+})
+
+test('readableRecordEntries: shows named memories AND evidence drafts, hides half-typed manual rows', () => {
+  const day = {
+    record: {
+      state: 'loose',
+      entries: [
+        { id: 'a', name: 'Race Point Beach', source: 'chat' },       // named memory
+        { id: 'b', name: '', source: 'evidence', guess: 'the pier' }, // evidence draft
+        { id: 'c', name: '', source: 'manual' },                      // half-typed editor row
+      ],
+    },
+  }
+  assert.deepEqual(readableRecordEntries(day).map((e) => e.id), ['a', 'b'], 'named + draft render; the manual working row does not')
+  assert.deepEqual(namedRecordEntries(day).map((e) => e.id), ['a'], 'namedRecordEntries stays named-only (for the Weave / photo filing)')
+})
+
+test('dayHasRecord: true when a day carries only an evidence draft (a kept hangout day)', () => {
+  const draftOnly = { record: { state: 'kept', entries: [{ id: 'b', name: '', source: 'evidence', guess: 'the beach' }] } }
+  assert.equal(dayHasRecord(draftOnly), true, 'a kept day of unnamed pins still has a record')
+  const manualOnly = { record: { state: 'loose', entries: [{ id: 'c', name: '', source: 'manual' }] } }
+  assert.equal(dayHasRecord(manualOnly), false, 'a lone half-typed row is not yet a record')
 })

@@ -177,12 +177,70 @@ export function buildDayEvidence(memories, isoDate, opts = {}) {
   return { isoDate, pins, locatedCount: located.length }
 }
 
+// A pin's span in the record's time-in-words voice (design: chips read "11–1",
+// "around 4"). Bare 12-hour clock, no minutes/meridiem — memory, not a schedule.
+// A collapsed span (one instant, or EXIF-less photos sharing the memory date) reads
+// "around N". Local to `tz` (the leg's zone) so "evening" means the family's evening.
+function hourInTz(ms, tz) {
+  const d = new Date(ms)
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz || undefined, hour: '2-digit', hour12: false }).formatToParts(d)
+    const h = Number(parts.find((p) => p.type === 'hour')?.value)
+    if (Number.isFinite(h)) return h % 24
+  } catch {
+    // unknown zone → device-local
+  }
+  return d.getHours()
+}
+export function spanWords(span, { tz } = {}) {
+  if (!span || !Number.isFinite(span.startMs) || !Number.isFinite(span.endMs)) return ''
+  const to12 = (h24) => ((h24 + 11) % 12) + 1
+  const a = to12(hourInTz(span.startMs, tz))
+  const b = to12(hourInTz(span.endMs, tz))
+  return a === b ? `around ${a}` : `${a}–${b}`
+}
+
 // The settle card's evidence gate (design 02): RICH when there are ≥2 pins OR the
 // day carries ≥6 photos at all (a substantive day, even if the photos didn't cluster
 // into places). Everything else is THIN — the card flips to the nothing-day tap.
-// photoCount is the day's TOTAL photos (located or not) — the caller knows it
+// photoCount is THIS day's TOTAL photos (located or not) — the caller knows it
 // (LivingHeartHome's todayCount); locatedCount alone would undercount a day of
 // GPS-less shots. No photos and no pins → still 'thin' (an honest quiet day).
 export function evidenceLevel({ pinCount = 0, photoCount = 0 } = {}) {
   return pinCount >= 2 || photoCount >= 6 ? 'rich' : 'thin'
+}
+
+// Convert evidence pins into DRAFT record entries — the settle card persists these
+// when a rich-evidence day is kept, so a kept hangout day carries its places even if
+// nobody named them (design 02: "leaving rows unnamed and keeping anyway is valid —
+// they stay drafts inside a kept day"). A draft is UNNAMED by construction (name:'')
+// with source:'evidence' — dayRecord.isDraftEntry recognizes exactly that, so a draft
+// renders (dashed) while a half-typed MANUAL editor row stays hidden. The pin id
+// becomes the entry id: within ONE clustering pass it is unique, and the SAME photo
+// set re-clusters to the SAME id (a same-session re-tap upserts, no dupe). It hashes
+// the member photo set, so a DIFFERENT subset (another device, or the set grown by a
+// later photo) yields a different id — hence the keep flow settles a day ONCE
+// (onKeepDay's already-kept guard); true cross-device pin merge on partial sets is a
+// downstream concern, not promised here. `who` is the SUGGESTION (photo authors),
+// falling back to the party — asserted only when a person confirms it. `guess` is the
+// machine label, kept for honesty (never a name). `span`/`photos` ride along.
+export function pinsToDraftEntries(pins, { party = [], tz } = {}) {
+  if (!Array.isArray(pins)) return []
+  return pins.map((pin, i) => ({
+    id: pin.id,
+    time: spanWords(pin.span, { tz }),
+    name: '', // UNNAMED → a draft (isDraftEntry)
+    kind: '',
+    for: Array.isArray(pin.who) && pin.who.length ? pin.who : party,
+    note: '',
+    address: '',
+    lat: pin.centroid?.lat ?? null,
+    lng: pin.centroid?.lng ?? null,
+    source: 'evidence',
+    guess: pin.guess || null,
+    span: pin.span || null,
+    photos: Array.isArray(pin.memoryIds) ? pin.memoryIds : [],
+    photoCount: pin.count || 0,
+    order: i,
+  }))
 }

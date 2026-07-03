@@ -13,7 +13,7 @@
 // sits in the living heart's padded content column, so its cards carry no extra
 // horizontal margin (the column pads them).
 import { partsWithDays, partPlaceLabel } from '../lib/tripParts.js'
-import { namedRecordEntries } from '../lib/dayRecord.js'
+import { readableRecordEntries, isDraftEntry } from '../lib/dayRecord.js'
 import { humanDateRange } from '../lib/createTripCard.js'
 import { AvatarStack } from '../components/Avatar'
 
@@ -93,8 +93,39 @@ export function StopRow({ stop, onOpen, first, looseTime = false }) {
 // is reserved for a KEPT day, which arrives with the keep flow.) Read-only.
 export function RecordRow({ entry, first }) {
   const time = (entry?.time || '').trim()
+  const rowStyle = { borderTop: first ? 'none' : '1px solid var(--border)', padding: '10px 0', display: 'flex', gap: 11, alignItems: 'flex-start' }
+  // A DRAFT (an evidence pin nobody named yet) reads DASHED + mono — a machine guess,
+  // never wearing a human name (honesty rule #1). Distinct from a kept serif memory.
+  if (isDraftEntry(entry)) {
+    const guess = (entry.guess || '').trim()
+    const n = entry.photoCount || (Array.isArray(entry.photos) ? entry.photos.length : 0)
+    const meta = [time, n ? `${n} photo${n === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+    return (
+      <div style={rowStyle} data-testid="record-draft-row">
+        <span
+          aria-hidden="true"
+          style={{ width: 7, height: 7, borderRadius: 7, border: '1.5px dashed var(--muted)', background: 'transparent', flexShrink: 0, marginTop: 8 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: MONO, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)', lineHeight: 1.3, overflowWrap: 'break-word' }}>
+            {guess || 'A spot'}
+          </div>
+          {meta && (
+            <div style={{ fontFamily: MONO, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)', marginTop: 3, opacity: 0.85 }}>
+              {meta}
+            </div>
+          )}
+          {Array.isArray(entry.for) && entry.for.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <AvatarStack ids={entry.for} size={15} gap={-4} />
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
   return (
-    <div style={{ borderTop: first ? 'none' : '1px solid var(--border)', padding: '10px 0', display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+    <div style={rowStyle}>
       <span
         aria-hidden="true"
         style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--accent-text, var(--accent))', flexShrink: 0, marginTop: 8 }}
@@ -130,7 +161,7 @@ function DayRow({ day, onOpenStop }) {
   // shown on the composite plan too: "Saved ✓ then invisible" would be a
   // lying surface. Renders only when a record exists — composite trips
   // without records are byte-identical.
-  const recorded = namedRecordEntries(day)
+  const recorded = readableRecordEntries(day)
   return (
     <div data-testid="parts-trip-day" data-loose={loose ? '1' : undefined} style={{ padding: '10px 0' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>

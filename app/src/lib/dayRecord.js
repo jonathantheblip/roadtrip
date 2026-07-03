@@ -104,8 +104,26 @@ export function namedRecordEntries(day) {
   return dayRecordOf(day).filter((e) => (e?.name || '').trim())
 }
 
+// An entry is a DRAFT when a machine drafted it from a photo cluster and no person
+// has named it yet (name:''). It renders DASHED with its machine guess (never a
+// human name — honesty rule #1). A nameless MANUAL editor working row is NOT a draft
+// (no evidence source) and stays hidden; naming a draft in the settle sheet sets its
+// name so it graduates to a memory (keeping `guess` for honesty). `src` is checked
+// too for the design's richer entry shape (05) landing later.
+export function isDraftEntry(e) {
+  return !!e && !(e?.name || '').trim() && (e?.source === 'evidence' || e?.src === 'evidence')
+}
+
+// The record entries a READER should see once evidence is in play: named memories
+// AND evidence drafts. Distinct from namedRecordEntries (named-only), which the
+// Weave narration and photo-name filing still use — a draft has no name to narrate
+// or file under. A half-typed MANUAL row remains hidden (isDraftEntry excludes it).
+export function readableRecordEntries(day) {
+  return dayRecordOf(day).filter((e) => (e?.name || '').trim() || isDraftEntry(e))
+}
+
 export function dayHasRecord(day) {
-  return namedRecordEntries(day).length > 0
+  return readableRecordEntries(day).length > 0
 }
 
 // Find the day named by target (dayIso preferred — stable across renumbering —

@@ -27,6 +27,7 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
 import { sunTimes } from '../lib/sunTimes'
+import { buildDayEvidence, evidenceLevel, pinsToDraftEntries, spanWords } from '../lib/evidence'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
 import { useNowTick } from '../hooks/useNowTick'
@@ -36,7 +37,7 @@ import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
 import { tripHasMaskedContent } from '../lib/surprises'
-import { namedRecordEntries, dayRecordIsKept, dayRecordKeptBy } from '../lib/dayRecord'
+import { namedRecordEntries, readableRecordEntries, dayRecordIsKept, dayRecordKeptBy } from '../lib/dayRecord'
 import { PartsOutline, StopRow, RecordRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -183,16 +184,8 @@ export function LivingHeartHome({
   const todayRecorded = useMemo(() => (todayDay ? namedRecordEntries(todayDay) : []), [todayDay])
   const todayKept = (todayDay && dayRecordIsKept(todayDay)) || keptIso === todayIso
   const todayKeptBy = keptIso === todayIso ? traveler : (todayDay ? dayRecordKeptBy(todayDay) : null)
-  const isEveningNow = nowMinutesInZone(legTz) >= 17 * 60 // >= 5pm local/leg time
-  const settleState = !di.dayX ? null // only while the trip is live (today = day N)
-    : todayKept ? 'kept'
-    : !isEveningNow ? null
-    : todayRecorded.length > 0 ? 'keep'
-    : 'nothing'
-  function handleKeep(opts = {}) {
-    setKeptIso(todayIso)
-    if (onKeepDay) onKeepDay(todayIso, opts)
-  }
+  // settleState / the golden-hour trigger / handleKeep live below, once today's
+  // photos + sun are computed — the settle card drafts the day from that evidence.
   // A complex/composite trip (a city break, flights + timed things) is still the
   // ONE living-heart home, shape-aware (FAMILY_TRIPS_VISION §11): it leads with the
   // PART it's in now and surfaces the next timed thing just-in-time (its ticket).
@@ -296,6 +289,39 @@ export function LivingHeartHome({
     const s = start.getTime()
     return mems.filter((m) => toEpochMs(m.createdAt) >= s).length
   }, [mems])
+
+  // THE RECORD · the settle card's evidence + trigger (needs today's photos + sun,
+  // both computed just above). The day silently drafts itself into PINS through the
+  // day (evidence.js); after golden hour, a rich-evidence day (≥2 pins or ≥6 photos)
+  // offers itself back to keep — even with nothing named. See the keptIso comment
+  // above for the invitation contract (evenings only, live trip only, never nags).
+  const evidence = useMemo(() => buildDayEvidence(mems, todayIso, { tz: legTz }), [mems, todayIso, legTz])
+  // photoCount = the day's total photos, located or not (todayCount is device-local;
+  // it equals the leg-local day today because every live trip's legTz is null — when
+  // legs carry a tz, recompute this leg-local so evLevel can't claim 'rich' on a day
+  // with no leg-local evidence). The empty-pins rich case renders an honest count line.
+  const evLevel = evidenceLevel({ pinCount: evidence.pins.length, photoCount: Math.max(evidence.locatedCount, todayCount) })
+  // Evening = past 5pm leg-time — the shipped, stable "the day's mostly over" gate.
+  // (The design's "after golden hour" is the FEELING; a hard golden-hour floor would
+  // actually DELAY the card past ~7:50pm — later than it's useful — and is coords-
+  // fragile, so golden-hour precision is a deferred refinement, not a gate.)
+  const isEveningNow = nowMinutesInZone(legTz) >= 17 * 60
+  const settleState = !di.dayX ? null // only while the trip is live (today = day N)
+    : todayKept ? 'kept'
+    : !isEveningNow ? null
+    : (todayRecorded.length > 0 || evLevel === 'rich') ? 'keep'
+    : 'nothing'
+  function handleKeep(opts = {}) {
+    setKeptIso(todayIso)
+    // A rich-evidence keep with nothing named yet persists the pins as DRAFTS, so
+    // the kept day carries its places (design 02). A nothing-day or an already-named
+    // day keeps no drafts. The party is the who-fallback for author-less pins.
+    const party = trip.travelers?.length ? trip.travelers : (trip.data?.travelers || [])
+    const drafts = !opts.nothing && todayRecorded.length === 0 && evidence.pins.length
+      ? pinsToDraftEntries(evidence.pins, { party, tz: legTz })
+      : []
+    if (onKeepDay) onKeepDay(todayIso, { ...opts, drafts })
+  }
   // Per-stop memory count, so an agenda row can show "N ENTRIES" (a stop that
   // already has memories) — the same signal the old broadsheet "plan" carried.
   const memCountByStop = useMemo(() => {
@@ -468,6 +494,9 @@ export function LivingHeartHome({
           <SettleCard
             state={settleState}
             entries={todayRecorded}
+            pins={evidence.pins}
+            photoCount={Math.max(evidence.locatedCount, todayCount)}
+            tz={legTz}
             keptBy={todayKeptBy}
             v={v}
             onKeep={handleKeep}
@@ -750,9 +779,16 @@ export function LivingHeartHome({
 // wears gold. Three honest states: 'keep' (today has a record → keep it),
 // 'nothing' (a quiet day → "we stayed put"), 'kept' (already kept → the gold
 // confirmation). Framed in the day's-story slot with the --kept gold thread.
-function SettleCard({ state, entries = [], keptBy, v, onKeep }) {
+function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy, v, onKeep }) {
   const kept = state === 'kept'
   const nothing = state === 'nothing'
+  // A rich-evidence keep with nothing named yet: the day drafted itself into pins.
+  // Show them as honest DASHED guesses (never a name) — the "nearly free" magic.
+  const showPins = !kept && !nothing && entries.length === 0 && pins.length > 0
+  // Rich by PHOTO COUNT but nothing clustered (≥6 GPS-less shots — a screenshot/AI
+  // stay, or photos without EXIF): a full day with no places to draw. Say so
+  // honestly (a real count) rather than render a blank body.
+  const showPhotoCount = !kept && !nothing && entries.length === 0 && pins.length === 0 && photoCount > 0
   return (
     <div
       data-testid="settle-card"
@@ -775,6 +811,35 @@ function SettleCard({ state, entries = [], keptBy, v, onKeep }) {
         <>
           {nothing ? (
             <div style={{ ...DISPLAY, fontStyle: 'var(--display-italic, normal)', fontSize: 18, color: 'var(--text)', marginTop: 7 }}>{v.lc(v.settleNothingSub)}</div>
+          ) : showPins ? (
+            <>
+              <div style={{ ...DISPLAY, fontStyle: 'var(--display-italic, normal)', fontSize: 18, color: 'var(--text)', marginTop: 7 }}>
+                {v.lc(`${pins.length} place${pins.length === 1 ? '' : 's'} today`)}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                {pins.slice(0, 4).map((pin) => {
+                  const words = spanWords(pin.span, { tz })
+                  return (
+                    <span
+                      key={pin.id}
+                      data-testid="settle-pin-chip"
+                      style={{
+                        ...MONO, fontSize: 9.5, letterSpacing: '0.05em', color: 'var(--muted)',
+                        border: '1px dashed color-mix(in srgb, var(--muted) 55%, transparent)',
+                        borderRadius: 999, padding: '3px 9px', maxWidth: '100%', overflow: 'hidden',
+                        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {(pin.guess || 'a spot')}{words ? ` · ${words}` : ''}
+                    </span>
+                  )
+                })}
+              </div>
+            </>
+          ) : showPhotoCount ? (
+            <div style={{ ...DISPLAY, fontStyle: 'var(--display-italic, normal)', fontSize: 18, color: 'var(--text)', marginTop: 7 }}>
+              {v.lc(`A full day — ${photoCount} photo${photoCount === 1 ? '' : 's'}`)}
+            </div>
           ) : (
             <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14, color: 'var(--text)', marginTop: 7, lineHeight: 1.45 }}>
               {entries.slice(0, 4).map((e) => e.name).join(' · ')}
@@ -811,7 +876,7 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
         // record renders where the nothing-line would have been, under a
         // quiet "as it happened" kicker. (Provisional placement — the
         // Record design pass owns the final read face.)
-        const recorded = namedRecordEntries(d)
+        const recorded = readableRecordEntries(d)
         const kept = dayRecordIsKept(d)
         const open = stops.length === 0
         return (

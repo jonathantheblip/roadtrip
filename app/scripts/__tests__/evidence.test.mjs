@@ -16,9 +16,12 @@ import {
   clusterPhotos,
   buildDayEvidence,
   evidenceLevel,
+  spanWords,
+  pinsToDraftEntries,
   EVIDENCE_DEFAULTS,
 } from '../../src/lib/evidence.js'
 import { haversineMeters } from '../../src/lib/photoMatch.js'
+import { isDraftEntry } from '../../src/lib/dayRecord.js'
 
 // A day in Provincetown, times in UTC (attributed with tz:'UTC'). 0.001° lat ≈ 111m;
 // 0.01° lat ≈ 1113m.
@@ -222,4 +225,36 @@ test('buildDayEvidence: composes located count + pins for the settle card', () =
 test('EVIDENCE_DEFAULTS: the tuning gates are the design’s ~200m / ~90min', () => {
   assert.equal(EVIDENCE_DEFAULTS.radiusMeters, 200)
   assert.equal(EVIDENCE_DEFAULTS.gapMinutes, 90)
+})
+
+test('spanWords: a bare 12-hour range or "around N", local to the leg', () => {
+  const span = (a, b) => ({ startMs: Date.parse(T(a)), endMs: Date.parse(T(b)) })
+  assert.equal(spanWords(span('11:00', '13:00'), UTC), '11–1', 'morning-till-one reads as a range')
+  assert.equal(spanWords(span('16:00', '16:40'), UTC), 'around 4', 'one hour bucket → "around 4"')
+  assert.equal(spanWords(span('16:00', '16:00'), UTC), 'around 4', 'a collapsed span (EXIF-less) is one moment')
+  assert.equal(spanWords(null), '', 'no span → no words')
+})
+
+test('pinsToDraftEntries: a pin becomes an UNNAMED draft entry the read face recognizes', () => {
+  const pins = clusterPhotos(photosForDay([
+    mem('m1', 'helen', [ref(BEACH, '15:00', { locationLabel: 'Race Point' })]),
+    mem('m2', 'jonathan', [ref(BEACH_N, '16:00', { locationLabel: 'Race Point' })]),
+  ], ISO, UTC), UTC)
+  const [d] = pinsToDraftEntries(pins, { party: ['jonathan', 'helen'], tz: 'UTC' })
+  assert.equal(d.name, '', 'a draft is UNNAMED by construction')
+  assert.equal(d.source, 'evidence')
+  assert.ok(isDraftEntry(d), 'isDraftEntry recognizes an evidence draft')
+  assert.equal(d.id, pins[0].id, 'the stable pin id is the entry id → re-keeping upserts, never duplicates')
+  assert.equal(d.guess, 'Race Point', 'the machine guess rides along (never a name)')
+  assert.deepEqual(d.for, ['helen', 'jonathan'], 'who = the pin’s suggested authors')
+  assert.equal(d.photoCount, 2)
+  assert.equal(d.time, '3–4', 'the span in words (15:00–16:00 UTC → 3–4)')
+})
+
+test('pinsToDraftEntries: empty who falls back to the whole party (the honest hangout default)', () => {
+  const pins = clusterPhotos(photosForDay([
+    { id: 'm1', photoRefs: [ref(BEACH, '15:00')] }, // no author
+  ], ISO, UTC), UTC)
+  const [d] = pinsToDraftEntries(pins, { party: ['jonathan', 'helen', 'aurelia', 'rafa'], tz: 'UTC' })
+  assert.deepEqual(d.for, ['jonathan', 'helen', 'aurelia', 'rafa'], 'no photo author → the party is the suggestion')
 })
