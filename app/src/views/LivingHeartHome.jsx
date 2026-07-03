@@ -38,7 +38,7 @@ import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
 import { tripHasMaskedContent } from '../lib/surprises'
-import { namedRecordEntries, readableRecordEntries, dayRecordIsKept, dayRecordKeptBy } from '../lib/dayRecord'
+import { namedRecordEntries, readableRecordEntries, dayRecordIsKept, dayRecordIsNothing, dayRecordKeptBy } from '../lib/dayRecord'
 import { PartsOutline, StopRow, RecordRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -910,27 +910,44 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
         // Record design pass owns the final read face.)
         const recorded = readableRecordEntries(d)
         const kept = dayRecordIsKept(d)
+        const nothingKept = kept && dayRecordIsNothing(d) // "we stayed put" — a valid keep
+        const loosePast = isPast && !kept && recorded.length > 0 // has content, not yet settled
         const open = stops.length === 0
         return (
           <div
             key={`${iso || 'd'}-${i}`} data-testid="whole-stay-day"
             data-kept={kept ? '1' : undefined}
             style={{
-              // A KEPT day keeps its ink — only LOOSE past days fully recede (the
-              // design's --rec-dim: kept 0.88 vs loose 0.55).
-              padding: '10px 0 10px 10px', opacity: isPast ? (kept ? 0.88 : 0.55) : 1,
+              // A KEPT day keeps its ink; a LOOSE past day (has record, unsettled)
+              // recedes to the design's --rec-dim-loose (0.60); a plain done past
+              // day stays at the old 0.55 (design 03: kept 0.88 · loose 0.60).
+              padding: '10px 0 10px 10px', opacity: isPast ? (kept ? 0.88 : (loosePast ? 0.60 : 0.55)) : 1,
               borderLeft: isToday ? '2px solid var(--accent)' : '2px solid transparent',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {kept && <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--kept)', flexShrink: 0 }} />}
+              {/* The two-tense mark (design 03): a KEPT day wears a gold dot; a
+                  LOOSE past day (content, not yet settled) a dashed ring. */}
+              {kept ? (
+                <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--kept)', flexShrink: 0 }} />
+              ) : loosePast ? (
+                <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 7, border: '1.5px dashed var(--muted)', background: 'transparent', flexShrink: 0 }} />
+              ) : null}
               <span style={{ ...MONO, fontSize: 9.5, fontWeight: 600, color: 'var(--text)' }}>{dayLabel(d)}</span>
-              {kept && (
+              {nothingKept ? (
+                <span style={{ ...MONO, fontSize: 7.5, color: 'var(--kept)', background: 'color-mix(in srgb, var(--kept) 14%, transparent)', border: '1px solid color-mix(in srgb, var(--kept) 40%, transparent)', borderRadius: 999, padding: '2px 7px', fontWeight: 600 }}>
+                  {v.lc('A nothing day')}
+                </span>
+              ) : kept ? (
                 <span style={{ ...MONO, fontSize: 7.5, color: 'var(--kept)', background: 'color-mix(in srgb, var(--kept) 14%, transparent)', border: '1px solid color-mix(in srgb, var(--kept) 40%, transparent)', borderRadius: 999, padding: '2px 7px', fontWeight: 600 }}>
                   {v.lc('Kept')}
                 </span>
-              )}
-              {isPast && !kept && <span aria-label="done" style={{ fontSize: 10, color: 'var(--muted)' }}>✓</span>}
+              ) : loosePast ? (
+                <span style={{ ...MONO, fontSize: 7.5, color: 'var(--muted)', border: '1px dashed color-mix(in srgb, var(--muted) 45%, transparent)', borderRadius: 999, padding: '2px 7px', fontWeight: 600 }}>
+                  {v.lc('Still loose')}
+                </span>
+              ) : null}
+              {isPast && !kept && !loosePast && <span aria-label="done" style={{ fontSize: 10, color: 'var(--muted)' }}>✓</span>}
               {isToday && <span style={{ ...MONO, fontSize: 8.5, color: 'var(--accent-text)' }}>{v.lc('Today')}</span>}
               {!open && <span style={{ ...MONO, fontSize: 8.5, color: 'var(--muted)' }}>{stops.length} {stops.length === 1 ? 'stop' : 'stops'}</span>}
               {onEditDay && !open && (
@@ -944,8 +961,10 @@ function WholeStay({ days, todayIso, upcoming, onOpenStop, onEditDay, v }) {
             </div>
             {open && recorded.length === 0 ? (
               <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: 'var(--muted)', marginTop: 5 }}>
-                {v.lc(nothingDayLineFor(iso))}
-                {onEditDay && iso && (
+                {/* A kept nothing-day reads the settled line ("we stayed put"), not the
+                    plan's empty prompt — and it's settled, so no "Add something". */}
+                {v.lc(nothingKept ? v.settleNothingSub : nothingDayLineFor(iso))}
+                {!nothingKept && onEditDay && iso && (
                   <button
                     type="button" onClick={() => onEditDay(iso)} aria-label={`Add something — ${dayLabel(d)}`}
                     style={{ ...MONO, fontStyle: 'normal', fontSize: 9, color: 'var(--accent-text)', background: 'transparent', border: 0, cursor: 'pointer', padding: '4px 0 4px 8px', display: 'inline-flex', alignItems: 'center', gap: 3 }}
