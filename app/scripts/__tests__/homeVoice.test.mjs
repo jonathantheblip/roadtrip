@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { homeVoice } from '../../src/lib/homeVoice.js'
+import { homeVoice, BASE } from '../../src/lib/homeVoice.js'
 
 test('homeVoice: Helen is the warm base — no overrides, not lowercased', () => {
   const v = homeVoice('helen')
@@ -42,4 +42,15 @@ test('homeVoice: an unknown lens falls back to the warm base', () => {
   assert.equal(v.low, false)
   assert.equal(v.weaveKicker, 'The Weave')
   assert.equal(v.agendaEmptyKicker, 'Nothing planned — and that’s allowed')
+})
+
+test('homeVoice: the return is COMPLETE — every BASE field resolves for every lens (no undefined render)', () => {
+  // The return is an explicit allowlist, not a spread. A field added to BASE but
+  // forgotten in the return renders `undefined` on screen (the R4c settle-sheet bug).
+  for (const lens of ['helen', 'jonathan', 'aurelia', 'someone']) {
+    const v = homeVoice(lens)
+    for (const k of Object.keys(BASE)) {
+      assert.notEqual(v[k], undefined, `homeVoice('${lens}').${k} is missing from the return allowlist`)
+    }
+  }
 })

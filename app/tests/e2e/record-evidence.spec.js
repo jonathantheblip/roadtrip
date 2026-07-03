@@ -92,6 +92,59 @@ test('a hangout day drafts itself from photos → the settle card shows pins, ke
   await expect(page.getByTestId('record-draft-row').first()).toBeVisible({ timeout: 4000 })
 })
 
+test('the settle sheet names a pin → it graduates to a memory; an un-named pin stays a draft', async ({ page }) => {
+  await pinEvening(page)
+  await seedTripIntoCache(page, STAY)
+  await seedMemoriesIntoCache(page, [
+    locatedMem('m-beach-1', { lat: 42.0500, lng: -70.2400, at: '2026-05-23T15:00:00.000Z', label: 'Race Point' }),
+    locatedMem('m-beach-2', { lat: 42.0505, lng: -70.2400, at: '2026-05-23T15:20:00.000Z', label: 'Race Point' }),
+    locatedMem('m-shop-1', { lat: 42.0600, lng: -70.2400, at: '2026-05-23T18:00:00.000Z', label: '' }),
+  ])
+  await page.goto('/?person=helen&trip=evi-stay&nosw=1')
+  const home = page.getByTestId('living-heart-home')
+  await expect(home).toBeVisible({ timeout: 10000 })
+
+  // Open the sheet from the card and name the first pin (the beach), leave the shop blank.
+  await home.getByTestId('settle-lookover').click()
+  const sheet = page.getByTestId('settle-sheet')
+  await expect(sheet).toBeVisible()
+  const inputs = sheet.getByTestId('sheet-name-input')
+  await expect(inputs).toHaveCount(2)
+  await inputs.first().fill('Race Point Beach')
+  await sheet.getByTestId('sheet-keep').click()
+
+  await expect.poll(() => readRecord(page, 'evi-stay', '2026-05-23'), { timeout: 4000 }).not.toBeNull()
+  const rec = await readRecord(page, 'evi-stay', '2026-05-23')
+  expect(rec.state).toBe('kept')
+  const named = rec.entries.filter((e) => e.name)
+  const drafts = rec.entries.filter((e) => !e.name)
+  expect(named.map((e) => e.name)).toEqual(['Race Point Beach']) // the named pin is a memory
+  expect(named[0].source).toBe('evidence') // provenance kept
+  expect(drafts.length).toBe(1) // the un-named shop pin stays an honest draft
+})
+
+test('the settle sheet keeps with ALL pins left blank → the day keeps its unnamed drafts, not nothing', async ({ page }) => {
+  await pinEvening(page)
+  await seedTripIntoCache(page, STAY)
+  await seedMemoriesIntoCache(page, [
+    locatedMem('m-beach-1', { lat: 42.0500, lng: -70.2400, at: '2026-05-23T15:00:00.000Z', label: 'Race Point' }),
+    locatedMem('m-beach-2', { lat: 42.0505, lng: -70.2400, at: '2026-05-23T15:20:00.000Z', label: 'Race Point' }),
+    locatedMem('m-shop-1', { lat: 42.0600, lng: -70.2400, at: '2026-05-23T18:00:00.000Z', label: '' }),
+  ])
+  await page.goto('/?person=helen&trip=evi-stay&nosw=1')
+  await expect(page.getByTestId('living-heart-home')).toBeVisible({ timeout: 10000 })
+  await page.getByTestId('settle-lookover').click()
+  const sheet = page.getByTestId('settle-sheet')
+  await expect(sheet).toBeVisible()
+  await sheet.getByTestId('sheet-keep').click() // keep without naming anything
+
+  await expect.poll(() => readRecord(page, 'evi-stay', '2026-05-23'), { timeout: 4000 }).not.toBeNull()
+  const rec = await readRecord(page, 'evi-stay', '2026-05-23')
+  expect(rec.state).toBe('kept')
+  expect(rec.entries.length).toBe(2) // both pins persisted as honest drafts
+  expect(rec.entries.every((e) => e.name === '' && e.source === 'evidence')).toBe(true)
+})
+
 test('a full day of GPS-less photos (≥6) offers to keep with an honest count, not a blank body', async ({ page }) => {
   await pinEvening(page)
   await seedTripIntoCache(page, STAY)

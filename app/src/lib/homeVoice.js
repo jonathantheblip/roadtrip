@@ -10,8 +10,10 @@
 // display string. A lens without an override falls back to the warm base, so a
 // line is never missing.
 
-// The warm base (Helen's voice — the copy the home shipped with).
-const BASE = {
+// The warm base (Helen's voice — the copy the home shipped with). Exported so a
+// unit test can assert homeVoice's return allowlist stays COMPLETE — a field added
+// here but forgotten in the return renders `undefined` on screen (that bit R4c).
+export const BASE = {
   weaveKicker: 'The Weave',
   weaveStoryKicker: 'The story so far',
   weaveDuring: 'The day’s story appears here once the day has a little in it.',
@@ -30,6 +32,14 @@ const BASE = {
   settleNothingCta: 'Keep it',
   settleKeptKick: 'Today, kept',
   settleKeptSub: 'Tonight’s story writes itself from this.',
+  // THE RECORD · settle SHEET (name the drafted pins). Per-lens nuance is R6.
+  sheetLookOver: 'Look it over',
+  sheetTitle: 'The record',
+  sheetIntro: 'Drafted from the day’s photos. Fix what’s wrong, name what’s nameless, skip what you like.',
+  sheetNameHint: 'Name this place',
+  sheetKeepGuess: 'Keep the guess',
+  sheetAddMissed: 'Something the photos missed',
+  sheetFooter: 'The plan isn’t touched.',
 }
 
 // Per-lens overrides (only the lines that differ from the warm base). Jonathan's
@@ -48,6 +58,9 @@ const OVERRIDES = {
     settleNothingSub: 'Stayed put. Zero regrets.',
     settleKeptKick: 'Today, on the record',
     settleKeptSub: 'Signed. The day stands.',
+    sheetLookOver: 'Review the draft',
+    sheetIntro: 'Drafted from the day’s photos. Fix what’s wrong, name what’s nameless, skip the rest.',
+    sheetNameHint: 'Name it',
   },
   aurelia: {
     weaveKicker: 'the weave',
@@ -94,5 +107,12 @@ export function homeVoice(traveler) {
     settleNothingCta: g('settleNothingCta'),
     settleKeptKick: g('settleKeptKick'),
     settleKeptSub: g('settleKeptSub'),
+    sheetLookOver: g('sheetLookOver'),
+    sheetTitle: g('sheetTitle'),
+    sheetIntro: g('sheetIntro'),
+    sheetNameHint: g('sheetNameHint'),
+    sheetKeepGuess: g('sheetKeepGuess'),
+    sheetAddMissed: g('sheetAddMissed'),
+    sheetFooter: g('sheetFooter'),
   }
 }

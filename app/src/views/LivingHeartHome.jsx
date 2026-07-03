@@ -28,6 +28,7 @@ import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
 import { sunTimes } from '../lib/sunTimes'
 import { buildDayEvidence, evidenceLevel, pinsToDraftEntries, spanWords } from '../lib/evidence'
+import SettleSheet from './SettleSheet'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
 import { useNowTick } from '../hooks/useNowTick'
@@ -180,6 +181,7 @@ export function LivingHeartHome({
   // A kept day shows its gold confirmation any time. keptIso is optimistic so the
   // card flips to "kept" the instant you tap, before the trip round-trips.
   const [keptIso, setKeptIso] = useState(null)
+  const [sheetOpen, setSheetOpen] = useState(false) // the settle sheet (name the pins)
   const todayDay = useMemo(() => (trip?.days || []).find((d) => d?.isoDate === todayIso) || null, [trip, todayIso])
   const todayRecorded = useMemo(() => (todayDay ? namedRecordEntries(todayDay) : []), [todayDay])
   const todayKept = (todayDay && dayRecordIsKept(todayDay)) || keptIso === todayIso
@@ -311,16 +313,19 @@ export function LivingHeartHome({
     : !isEveningNow ? null
     : (todayRecorded.length > 0 || evLevel === 'rich') ? 'keep'
     : 'nothing'
+  const party = trip.travelers?.length ? trip.travelers : (trip.data?.travelers || [])
   function handleKeep(opts = {}) {
     setKeptIso(todayIso)
-    // A rich-evidence keep with nothing named yet persists the pins as DRAFTS, so
-    // the kept day carries its places (design 02). A nothing-day or an already-named
-    // day keeps no drafts. The party is the who-fallback for author-less pins.
-    const party = trip.travelers?.length ? trip.travelers : (trip.data?.travelers || [])
-    const drafts = !opts.nothing && todayRecorded.length === 0 && evidence.pins.length
-      ? pinsToDraftEntries(evidence.pins, { party, tz: legTz })
-      : []
-    if (onKeepDay) onKeepDay(todayIso, { ...opts, drafts })
+    // The settle SHEET provides its own drafts (named where a person named a pin). The
+    // quick "keep today" builds unnamed drafts from the pins. A nothing-day or an
+    // already-named day keeps no drafts. `party` is the who-fallback for author-less pins.
+    const drafts = opts.drafts != null
+      ? opts.drafts
+      : (!opts.nothing && todayRecorded.length === 0 && evidence.pins.length
+          ? pinsToDraftEntries(evidence.pins, { party, tz: legTz })
+          : [])
+    if (onKeepDay) onKeepDay(todayIso, { nothing: opts.nothing, drafts })
+    setSheetOpen(false)
   }
   // Per-stop memory count, so an agenda row can show "N ENTRIES" (a stop that
   // already has memories) — the same signal the old broadsheet "plan" carried.
@@ -500,6 +505,19 @@ export function LivingHeartHome({
             keptBy={todayKeptBy}
             v={v}
             onKeep={handleKeep}
+            onLookOver={() => setSheetOpen(true)}
+          />
+        )}
+        {sheetOpen && settleState === 'keep' && (
+          <SettleSheet
+            dayLabel={todayDay?.date || ''}
+            pins={evidence.pins}
+            namedEntries={todayRecorded}
+            party={party}
+            tz={legTz}
+            v={v}
+            onKeep={handleKeep}
+            onClose={() => setSheetOpen(false)}
           />
         )}
 
@@ -779,7 +797,7 @@ export function LivingHeartHome({
 // wears gold. Three honest states: 'keep' (today has a record → keep it),
 // 'nothing' (a quiet day → "we stayed put"), 'kept' (already kept → the gold
 // confirmation). Framed in the day's-story slot with the --kept gold thread.
-function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy, v, onKeep }) {
+function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy, v, onKeep, onLookOver }) {
   const kept = state === 'kept'
   const nothing = state === 'nothing'
   // A rich-evidence keep with nothing named yet: the day drafted itself into pins.
@@ -845,16 +863,30 @@ function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy
               {entries.slice(0, 4).map((e) => e.name).join(' · ')}
             </div>
           )}
-          <button
-            type="button" data-testid="settle-keep" onClick={() => onKeep({ nothing })}
-            style={{
-              marginTop: 12, minHeight: 40, padding: '9px 18px', borderRadius: 'min(var(--radius, 14px), 14px)',
-              background: 'var(--kept)', color: '#1c1408', border: 0, cursor: 'pointer',
-              fontFamily: 'Inter Tight, -apple-system, system-ui, sans-serif', fontWeight: 600, fontSize: 14,
-            }}
-          >
-            {v.lc(nothing ? v.settleNothingCta : v.settleCta)}
-          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 12 }}>
+            <button
+              type="button" data-testid="settle-keep" onClick={() => onKeep({ nothing })}
+              style={{
+                minHeight: 40, padding: '9px 18px', borderRadius: 'min(var(--radius, 14px), 14px)',
+                background: 'var(--kept)', color: '#1c1408', border: 0, cursor: 'pointer',
+                fontFamily: 'Inter Tight, -apple-system, system-ui, sans-serif', fontWeight: 600, fontSize: 14,
+              }}
+            >
+              {v.lc(nothing ? v.settleNothingCta : v.settleCta)}
+            </button>
+            {showPins && onLookOver && (
+              <button
+                type="button" data-testid="settle-lookover" onClick={onLookOver}
+                style={{
+                  minHeight: 40, padding: '9px 14px', borderRadius: 'min(var(--radius, 14px), 14px)',
+                  background: 'transparent', color: 'var(--kept)', border: 0, cursor: 'pointer',
+                  fontFamily: 'Inter Tight, -apple-system, system-ui, sans-serif', fontWeight: 600, fontSize: 13.5,
+                }}
+              >
+                {v.lc(v.sheetLookOver)} ›
+              </button>
+            )}
+          </div>
         </>
       )}
     </div>
