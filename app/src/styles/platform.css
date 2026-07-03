@@ -14,8 +14,53 @@
    Caprasimo / Archivo retained for legacy `.f-news` / `.f-dm` /
    `.f-cap` / `.f-arc` utility classes — they alias to the Design
    families below so existing markup picks up the new look without a
-   sweeping rename. */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,500;1,9..144,600&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+   sweeping rename.
+
+   SELF-HOSTED (2026-07-03) — was a runtime Google Fonts @import; a CDN hiccup
+   once failed every visual baseline (whole-page fallback-font diffs) and put
+   trip-wifi typography at a CDN's mercy. Vendored the same way as Instrument
+   Serif / Fredoka below. Each family is a VARIABLE woff2 (one file per family/
+   style covers its whole weight range) — Google serves the SAME variable file
+   for every weight the old @import requested, so these are byte-identical to
+   what the CDN fetched → no rendering change. latin subset only (the used
+   content is latin; anything outside falls back to the family's stack, same as
+   Instrument Serif / Fredoka). Weight ranges mirror the old @import exactly
+   (Fraunces normal 400–900 / italic 400–600, Inter Tight 400–700, JetBrains
+   Mono 400–600). OFL-1.1; licenses at
+   ./fonts/{Fraunces,Inter_Tight,JetBrains_Mono}-OFL.txt. Vite fingerprints the
+   woff2 + rebases these relative urls. */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('./fonts/fraunces-latin-variable-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('./fonts/fraunces-latin-variable-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter Tight';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./fonts/inter-tight-latin-variable.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono-latin-variable.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 /* ---- Self-hosted display fonts ----------------------------------------
    Instrument Serif (Aurelia's lens, redesign 2026-06-05). SELF-HOSTED
