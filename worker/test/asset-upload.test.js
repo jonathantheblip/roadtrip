@@ -84,4 +84,20 @@ describe('asset upload route', () => {
     })
     expect(res.status).toBe(404)
   })
+
+  it('POST /assets with an EMPTY body fails loud (400) — no 0-byte asset reported as stored', async () => {
+    // A 0-byte body (a failed/aborted local encode, an empty File) used to return
+    // 200 {key,url}: the client recorded a synced r2 ref that NEVER re-queued, so the
+    // family later saw a broken/blank tile while the sync pill read "done". Now it
+    // 400s (mirrors /transcribe's empty-audio guard) so the upload stays queued.
+    // NON-VACUOUS: before the size guard this returned 200 with a key.
+    const res = await postAsset('/assets/photo/mem_empty_test', {
+      body: new Uint8Array([]), // 0 bytes
+      contentType: 'image/jpeg',
+    })
+    expect(res.status, 'an empty upload must fail loud, not report success').toBe(400)
+    // The phantom empty object was cleaned up, not left behind as a broken tile.
+    const listed = await env.ASSETS.list({ prefix: 'jonathan/mem_empty_test/' })
+    expect(listed.objects.length, 'no empty object should remain in R2').toBe(0)
+  })
 })

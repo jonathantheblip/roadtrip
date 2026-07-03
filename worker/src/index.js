@@ -1830,9 +1830,20 @@ async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
   const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
   const key = `${traveler}/${memoryId}/${kind}-${rand}`
   const contentType = request.headers.get('Content-Type') || 'application/octet-stream'
-  await env.ASSETS.put(key, request.body, {
+  const obj = await env.ASSETS.put(key, request.body, {
     httpMetadata: { contentType },
   })
+  // A 0-byte body (a failed/aborted local encode, an empty File) would otherwise
+  // be reported as a durably-stored asset: the client records it as a synced r2
+  // ref and NEVER re-queues it, so the family later sees a broken/blank tile while
+  // the sync pill read "done". Fail loud instead — same stance as /transcribe's
+  // empty-audio guard — so the client keeps the upload queued and retries. (Genuine
+  // R2 write ERRORS already throw → the outer catch 500s → the client re-queues;
+  // this closes only the empty-body no-op-as-success gap.)
+  if (!obj || obj.size === 0) {
+    try { await env.ASSETS.delete(key) } catch { /* best-effort cleanup of the empty object */ }
+    return json({ error: 'empty asset' }, 400, cors)
+  }
   return json({
     key,
     url: assetUrl(key, workerOrigin(env, url)),
