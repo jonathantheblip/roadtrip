@@ -13,6 +13,7 @@ import { beforeEach, describe, it, expect } from 'vitest'
 import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
 import { seedSession } from './helpers/auth.js'
+import { buildBeatsServer, beatSignature } from '../src/weaveGen.js'
 
 const TOKENS = { jonathan: 'tok-j', helen: 'tok-h', rafa: 'tok-r' }
 const authEnv = () => ({ ...env })
@@ -38,6 +39,25 @@ async function seedHiddenMemory({ tripId, stopId, marker, hideFrom = ['rafa'], r
     `INSERT INTO memories (id, trip_id, stop_id, author_traveler, visibility, kind, text, created_at, updated_at, hide_from_json, revealed_at)
      VALUES (?, ?, ?, 'jonathan', 'shared', 'text', ?, 1000, 1000, ?, ?)`
   ).bind(`mem-${marker}`, tripId, stopId, `secret note ${marker}`, JSON.stringify(hideFrom), revealedAt).run()
+}
+
+// A plain, non-hidden shared memory — for the freshness-check tests below
+// (no surprise/masking involved, just "did the beats change").
+async function seedPlainMemory({ tripId, stopId, marker, id = `mem-${marker}` }) {
+  await env.DB.prepare(
+    `INSERT INTO memories (id, trip_id, stop_id, author_traveler, visibility, kind, text, created_at, updated_at)
+     VALUES (?, ?, ?, 'jonathan', 'shared', 'text', ?, 1000, 1000)`
+  ).bind(id, tripId, stopId, `note ${marker}`).run()
+}
+
+// A stored weave carrying an EXPLICIT beat_signature — for the freshness-check
+// tests, which need to control whether it matches the day's current beats.
+async function seedWeaveWithSignature({ tripId, dayIso, marker, signature }) {
+  const id = `${tripId}::${dayIso}`
+  await env.DB.prepare(
+    `INSERT INTO weaves (id, trip_id, day_iso, title, opening, closing, stat, beats_json, beat_signature, generated_at, updated_at, kept_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, 1000, 1000, NULL)`
+  ).bind(id, tripId, dayIso, `Title ${marker}`, `Opening mentions ${marker}.`, `Closing ${marker}.`, signature).run()
 }
 
 async function weaveRowExists(id) {
@@ -176,6 +196,54 @@ describe('stale-weave serve guard — GET /weave/latest', () => {
     const res = await getLatest('?trip_id=orphan&day=2026-08-01')
     expect(res.status).toBe(200)
     expect(JSON.stringify(await res.json())).toContain('ORPHAN')
+  })
+
+  it('FRESHNESS: a beat_signature matching the day\'s CURRENT memories still serves 200', async () => {
+    await seedTrip({
+      id: 'fresh', title: 'A trip', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-01',
+      days: [{ isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }],
+    })
+    await seedPlainMemory({ tripId: 'fresh', stopId: 's1', marker: 'a' })
+    const day = { isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }
+    const memories = [{ stopId: 's1', authorTraveler: 'jonathan', kind: 'text', text: 'note a' }]
+    const sig = beatSignature(buildBeatsServer(day, memories))
+    await seedWeaveWithSignature({ tripId: 'fresh', dayIso: '2026-08-01', marker: 'FRESH', signature: sig })
+    const res = await getLatest('?trip_id=fresh&day=2026-08-01')
+    expect(res.status).toBe(200)
+    expect(JSON.stringify(await res.json())).toContain('FRESH')
+  })
+
+  it('FRESHNESS: a beat_signature that no longer matches (a NEW memory landed since) serves 204', async () => {
+    await seedTrip({
+      id: 'stale', title: 'A trip', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-01',
+      days: [{ isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }],
+    })
+    // The weave was written when the day had ONE memory (helen's).
+    const dayBefore = { isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }
+    const before = [{ stopId: 's1', authorTraveler: 'helen', kind: 'text', text: 'note h' }]
+    const staleSig = beatSignature(buildBeatsServer(dayBefore, before))
+    await seedWeaveWithSignature({ tripId: 'stale', dayIso: '2026-08-01', marker: 'STALE', signature: staleSig })
+    // Since then, a SECOND family member's memory landed on the same day —
+    // the real-world "someone added a photo mid-day" case.
+    await seedPlainMemory({ tripId: 'stale', stopId: 's1', marker: 'helen-orig', id: 'mem-h' })
+    await seedPlainMemory({ tripId: 'stale', stopId: 's1', marker: 'jonathan-new', id: 'mem-j' })
+    const res = await getLatest('?trip_id=stale&day=2026-08-01')
+    expect(res.status).toBe(204)
+    // The row itself must still physically exist — this is a serve-time
+    // withhold-and-regenerate signal, not a deletion.
+    expect(await weaveRowExists('stale::2026-08-01')).toBe(true)
+  })
+
+  it('FRESHNESS: a row with NO stored signature (legacy/unknown) is served as-is, never treated as stale', async () => {
+    await seedTrip({
+      id: 'nosig', title: 'A trip', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-01',
+      days: [{ isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }],
+    })
+    await seedPlainMemory({ tripId: 'nosig', stopId: 's1', marker: 'a' })
+    await seedWeave({ tripId: 'nosig', dayIso: '2026-08-01', marker: 'NOSIG' }) // beat_signature: NULL
+    const res = await getLatest('?trip_id=nosig&day=2026-08-01')
+    expect(res.status).toBe(200)
+    expect(JSON.stringify(await res.json())).toContain('NOSIG')
   })
 })
 

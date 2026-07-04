@@ -25,7 +25,7 @@ import {
   callRoutesDistance,
   straightLineMinutes,
 } from './leaveWhen.js'
-import { runNightlyWeave, beatSignature, regenerateStoredWeaves, secretWeaveDaySet } from './weaveGen.js'
+import { runNightlyWeave, buildBeatsServer, beatSignature, regenerateStoredWeaves, secretWeaveDaySet } from './weaveGen.js'
 import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, preserveHiddenParts, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
@@ -3230,6 +3230,59 @@ async function getStoredWeave(env, url, cors) {
   // to the freshest day whose weave isn't being withheld for a surprise.
   const row = rows.find((r) => !secret.isSecretDay(r.day_iso))
   if (!row) return new Response(null, { status: 204, headers: cors })
+
+  // SAME-DAY FRESHNESS: the nightly cron already self-throttles via a
+  // beat-signature comparison (runNightlyWeave, above) before re-calling
+  // Claude — but that check only ever runs once a night. A photo/agenda
+  // change made mid-day (after last night's run) was invisible here: this
+  // route served the stored row forever, unconditionally. Re-derive the
+  // SAME signature from the day's CURRENT shared memories and compare it
+  // against what's stored; a mismatch means real facts changed since this
+  // row was written, so serve 204 — the client already falls back to
+  // building the weave itself from its own current beats whenever `title`
+  // is absent (TheWeave.jsx computes those BEFORE checking the stored
+  // weave), so this reuses that path with zero new client code. On any
+  // ambiguity (trip/day unresolvable) fail toward serving the stored row —
+  // staleness is a UX nit, not a privacy leak, so favor availability here
+  // (the inverse of the surprise guard above, which fails closed on purpose).
+  // A row with NO stored signature (predates this check, or a row a test/
+  // maintenance path wrote without one) can't be compared at all — skip
+  // rather than treat "unknown" as "stale" (which would force every such
+  // row to regenerate the moment this ships).
+  if (row.beat_signature != null) {
+    try {
+      const tripRow = await env.DB.prepare(
+        `SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL`
+      ).bind(tripId).first()
+      const trip = tripRow?.data_json ? JSON.parse(tripRow.data_json) : null
+      const day = trip?.days?.find((d) => d.isoDate === row.day_iso)
+      if (day) {
+        const memRows = await env.DB.prepare(
+          `SELECT id, trip_id, stop_id, author_traveler, kind, text, caption, transcript, updated_at
+             FROM memories
+            WHERE deleted_at IS NULL AND visibility = 'shared' AND trip_id = ?
+              AND (hide_from_json IS NULL OR revealed_at IS NOT NULL)`
+        ).bind(tripId).all()
+        const memories = (memRows.results || []).map((r) => ({
+          id: r.id,
+          stopId: r.stop_id,
+          authorTraveler: r.author_traveler,
+          kind: r.kind,
+          text: r.text,
+          caption: r.caption,
+          transcript: r.transcript,
+          updatedAt: r.updated_at,
+        }))
+        const currentSig = beatSignature(buildBeatsServer(day, memories))
+        if (currentSig !== row.beat_signature) {
+          return new Response(null, { status: 204, headers: cors })
+        }
+      }
+    } catch {
+      // Parse failure or unexpected shape — serve the stored row rather than
+      // risk a false-positive regen churn.
+    }
+  }
 
   return json(
     {
