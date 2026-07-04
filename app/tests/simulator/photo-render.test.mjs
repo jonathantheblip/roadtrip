@@ -70,6 +70,7 @@ import {
   waitForDriverReady,
   newSimulatorSession,
   assertSimulatorBooted,
+  enterSeededTrip,
 } from './_driver.mjs'
 import { dateStableTripSeed } from './_seed.mjs'
 import { resolvePersona } from '../e2e/_fixtures/persona.js'
@@ -148,6 +149,9 @@ test('full-res photo renders non-black on iOS Simulator Safari', async (t) => {
   }, SEED_TRIP, PERSONA)
 
   await browser.url(BASE_URL + `/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
+  // Robust to fixture date-rot: open the trip via its card if we landed on the
+  // trips index (aged fixture archived → App.jsx stripped ?trip=); no-op if live.
+  await enterSeededTrip(browser, 'volleyball-2026')
 
   // JS-level clicks (see header): pointer clicks hit the sticky header.
   const clickByTestId = async (testid) => {

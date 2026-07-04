@@ -124,3 +124,44 @@ export async function assertSimulatorBooted() {
     )
   }
 }
+
+// Land inside the seeded trip, robust to fixture DATE-ROT.
+//
+// The sim specs cold-load `/?person=X&trip=<id>`. App.jsx only keeps that `?trip=`
+// (landing straight on the trip view) when the trip is "live" — today inside its
+// window. A fixture trip whose dates have aged into the past ARCHIVES, so App.jsx
+// strips `?trip=` and drops to the trips INDEX, where the per-persona entry points
+// (`helen-photos-entry`, the Weave button, etc.) don't exist and every sim spec
+// times out at its first `waitForExist`. The date-shifted seed (_seed.mjs) is meant
+// to prevent this, but a worker-configured build re-pulls trips over the seeded
+// cache on boot, restoring the archived dates.
+//
+// This helper makes the tier immune to all of that: if we're on the index, TAP the
+// trip's card (`trip-hero-<id>`) to open it — archived trips open fine via the card,
+// just not via cold-load. If we're already on the trip view (live trip → no card),
+// it's a no-op. Polls because a cold sim Safari can be slow to paint. Call it right
+// after the `?trip=` navigation, before waiting for the spec's own entry point.
+export async function enterSeededTrip(browser, tripId, { timeoutMs = 15000 } = {}) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const state = await browser.execute((id) => {
+      // Already on the trip view? Any persona home renders a *-photos-entry.
+      if (document.querySelector('[data-testid$="-photos-entry"]')) return 'in-trip'
+      // On the trips index — tap the trip's card to open it.
+      const card = document.querySelector(`[data-testid="trip-hero-${id}"]`)
+      if (card) {
+        card.click()
+        return 'tapped'
+      }
+      return 'waiting'
+    }, tripId)
+    if (state === 'in-trip') return state
+    if (state === 'tapped') {
+      // Give the trip view a beat to mount before the caller's waitForExist.
+      await new Promise((r) => setTimeout(r, 800))
+      return state
+    }
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  return 'timeout'
+}

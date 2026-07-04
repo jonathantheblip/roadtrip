@@ -32,6 +32,7 @@ import {
   waitForDriverReady,
   newSimulatorSession,
   assertSimulatorBooted,
+  enterSeededTrip,
 } from './_driver.mjs'
 import { dateStableTripSeed } from './_seed.mjs'
 import { resolvePersona } from '../e2e/_fixtures/persona.js'
@@ -88,6 +89,9 @@ test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', as
   )
 
   await browser.url(BASE_URL + `/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
+  // Robust to fixture date-rot: open the trip via its card if we landed on the
+  // trips index (aged fixture archived → App.jsx stripped ?trip=); no-op if live.
+  await enterSeededTrip(browser, 'volleyball-2026')
 
   // Wait for React hydration before we touch IDB.
   await browser.$('[data-testid="helen-photos-entry"]').then((el) =>

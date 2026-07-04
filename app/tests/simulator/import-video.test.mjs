@@ -29,6 +29,7 @@ import {
   waitForDriverReady,
   newSimulatorSession,
   assertSimulatorBooted,
+  enterSeededTrip,
 } from './_driver.mjs'
 import { resolvePersona } from '../e2e/_fixtures/persona.js'
 import { dateStableTripSeed } from './_seed.mjs'
@@ -98,6 +99,9 @@ test('importer encodes a picked video on iOS Simulator Safari and files it by ti
   }, SEED_TRIP, PERSONA)
 
   await browser.url(BASE_URL + `/?person=${PERSONA}&trip=volleyball-2026&nosw=1`)
+  // Robust to fixture date-rot: if the (now-aged) fixture archived and App.jsx
+  // dropped us on the trips index, tap the trip card to open it; no-op if live.
+  await enterSeededTrip(browser, 'volleyball-2026')
 
   // NOTE: window.__RT_IMPORT_FORCE_CONFIRM is set INSIDE the inject below, right
   // before the change fires — setting it here (post-navigation) didn't survive

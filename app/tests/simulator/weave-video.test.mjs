@@ -21,6 +21,7 @@ import {
   waitForDriverReady,
   newSimulatorSession,
   assertSimulatorBooted,
+  enterSeededTrip,
 } from './_driver.mjs'
 import { dateStableTripSeed } from './_seed.mjs'
 
@@ -70,6 +71,9 @@ test('Weave keepsake encodes to MP4 and triggers share sheet on iOS Simulator', 
   }, SEED_TRIP)
 
   await browser.url(BASE_URL + `/?person=jonathan&trip=volleyball-2026&nosw=1`)
+  // Robust to fixture date-rot: open the trip via its card if we landed on the
+  // trips index (aged fixture archived → App.jsx stripped ?trip=); no-op if live.
+  await enterSeededTrip(browser, 'volleyball-2026')
 
   // Mock navigator.share so the test can capture the result without the
   // OS sheet appearing. The mock records the shared file type.
