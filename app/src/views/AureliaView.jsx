@@ -2,6 +2,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 import { LivingHeartHome } from './LivingHeartHome'
 import { LookBackStrip } from '../components/LookBackStrip'
 import { tripPhase } from '../lib/tripPhase'
+import { homeVoice } from '../lib/homeVoice'
 
 // Aurelia — "Her roll." Redesign increment 3 (2026-06-05): the big
 // LIGHT→DARK inversion. Was a rose-paper scrapbook; now a near-black
@@ -21,6 +22,7 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
   // after (its keepsake state) — it reads straight from props. Her film-roll keepsake
   // is retired; her "note from Dad" + photos/show-me entries stay; Things-to-do drops after.
   const after = tripPhase(trip) === 'after'
+  const { lc } = homeVoice(traveler)
   return (
     <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', paddingBottom: 120, position: 'relative' }}>
       {trip.travelerNotes?.aurelia && (
@@ -47,8 +49,8 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
         onOpenStop={onOpenStop}
       />
       <LookBackStrip trips={pastTrips} onPlay={onPlayPastTrip} />
-      <AureliaPhotosBlock trip={trip} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onShowMe={onShowMe} />
-      {!after && <AureliaThingsToDo trip={trip} onOpenActivities={onOpenActivities} />}
+      <AureliaPhotosBlock trip={trip} onOpenPhotos={onOpenPhotos} onOpenAllPhotos={onOpenAllPhotos} onShowMe={onShowMe} lc={lc} />
+      {!after && <AureliaThingsToDo trip={trip} onOpenActivities={onOpenActivities} lc={lc} />}
     </div>
   )
 
@@ -253,7 +255,7 @@ function shade(hex, pct) {
 // all-trips, and the "Show me, me" face recognizer). Used on the stay home,
 // where the postcard roll + day list are shed; the route/after layout renders
 // the same JSX inline (do-not-lose, kept identical).
-function AureliaPhotosBlock({ onOpenPhotos, onOpenAllPhotos, onShowMe }) {
+function AureliaPhotosBlock({ onOpenPhotos, onOpenAllPhotos, onShowMe, lc = (s) => s }) {
   if (!onOpenPhotos) return null
   return (
     <div style={{ padding: '12px 18px 0' }}>
@@ -265,8 +267,8 @@ function AureliaPhotosBlock({ onOpenPhotos, onOpenAllPhotos, onShowMe }) {
       >
         <FilmFrame tint="#5C4A52" height={132}>
           <div style={{ position: 'relative', padding: '0 18px 16px 26px' }}>
-            <Eyebrow color="var(--accent-text)">★ THE PHOTO ALBUM</Eyebrow>
-            <div style={{ fontFamily: SERIF, fontSize: 26, fontStyle: 'italic', color: '#fff', marginTop: 4, lineHeight: 1.05 }}>every frame, this trip →</div>
+            <Eyebrow color="var(--accent-text)">{lc('★ THE PHOTO ALBUM')}</Eyebrow>
+            <div style={{ fontFamily: SERIF, fontSize: 26, fontStyle: 'italic', color: '#fff', marginTop: 4, lineHeight: 1.05 }}>{lc('every frame, this trip →')}</div>
           </div>
         </FilmFrame>
       </button>
@@ -277,7 +279,7 @@ function AureliaPhotosBlock({ onOpenPhotos, onOpenAllPhotos, onShowMe }) {
           onClick={onOpenAllPhotos}
           style={{ width: '100%', padding: '9px 14px', marginTop: 8, borderRadius: 'var(--radius)', border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent-text)', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
         >
-          <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>✨ Every trip&rsquo;s photos</span>
+          <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>{lc('✨ Every trip’s photos')}</span>
           <span style={{ fontSize: 14 }}>→</span>
         </button>
       )}
@@ -288,7 +290,7 @@ function AureliaPhotosBlock({ onOpenPhotos, onOpenAllPhotos, onShowMe }) {
           onClick={() => onShowMe('aurelia')}
           style={{ width: '100%', padding: '9px 14px', marginTop: 8, borderRadius: 'var(--radius)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
         >
-          <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>📸 Show me, me — by face</span>
+          <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>{lc('📸 Show me, me — by face')}</span>
           <span style={{ fontSize: 14 }}>→</span>
         </button>
       )}
@@ -298,7 +300,7 @@ function AureliaPhotosBlock({ onOpenPhotos, onOpenAllPhotos, onShowMe }) {
 
 // AureliaThingsToDo — the activities pill. On a stay the "We could" tab also
 // hosts this; kept reachable in-view.
-function AureliaThingsToDo({ trip, onOpenActivities }) {
+function AureliaThingsToDo({ trip, onOpenActivities, lc = (s) => s }) {
   if (!(hasActivitiesForTrip(trip.id) && onOpenActivities)) return null
   return (
     <div style={{ padding: '8px 18px 0' }}>
@@ -307,7 +309,7 @@ function AureliaThingsToDo({ trip, onOpenActivities }) {
         onClick={onOpenActivities}
         style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent-text)', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
       >
-        <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>✨ {getActivitiesForTrip(trip.id, trip).length} things to do</span>
+        <span style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', fontWeight: 400 }}>{lc(`✨ ${getActivitiesForTrip(trip.id, trip).length} things to do`)}</span>
         <span style={{ fontSize: 16 }}>→</span>
       </button>
     </div>
