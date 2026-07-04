@@ -50,10 +50,12 @@ test.describe('NewTripComposite — the manual bigger-trip builder', () => {
 
     await page.getByRole('button', { name: /^Create trip$/i }).click()
 
-    // Lands in the editor, which reflects the composite shape (read-only).
+    // Lands in the editor, which reflects the composite shape — EDITABLE now
+    // (the parts section is no longer read-only; same aria-label convention
+    // as the builder above, just the editor's own PartBlock rows).
     await expect(page.getByText(/The parts · 2/i)).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('Three nights in Rome')).toBeVisible()
-    await expect(page.getByText('A Tuscan villa')).toBeVisible()
+    await expect(page.getByLabel('Part 1 title')).toHaveValue('Three nights in Rome')
+    await expect(page.getByLabel('Part 2 title')).toHaveValue('A Tuscan villa')
 
     // The saved draft carries 2 parts and a trip window auto-derived from them.
     const saved = await page.evaluate(() =>

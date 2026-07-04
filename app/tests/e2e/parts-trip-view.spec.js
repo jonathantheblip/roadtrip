@@ -97,7 +97,7 @@ test.describe('Composite trips on the living heart — real timed parts', () => 
     }
   })
 
-  test('the editor shows the parts (read-only) for a composite draft', async ({ page }) => {
+  test('the editor shows the parts (now editable) for a composite draft', async ({ page }) => {
     const draft = { ...COMPOSITE, draft: true, overview: 'Rome, then Florence.' }
     await seedTripIntoCache(page, draft)
     await page.goto('/?person=jonathan&nosw=1')
@@ -106,10 +106,10 @@ test.describe('Composite trips on the living heart — real timed parts', () => 
     if (await back.isVisible().catch(() => false)) await back.click()
     // The draft surfaces in the index "Drafts" section; open it in the editor.
     await page.getByRole('button', { name: /Edit draft/i }).first().click({ timeout: 10_000 })
-    // The editor's read-only parts section reflects the trip's shape.
+    // The editor's parts section reflects the trip's shape, editable.
     await expect(page.getByText(/The parts · 2/i)).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('Three days in Rome')).toBeVisible()
-    await expect(page.getByText('Two days in Florence')).toBeVisible()
+    await expect(page.getByLabel('Part 1 title')).toHaveValue('Three days in Rome')
+    await expect(page.getByLabel('Part 2 title')).toHaveValue('Two days in Florence')
   })
 
   test('Rafa keeps his storybook view — not the living heart', async ({ page }) => {

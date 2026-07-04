@@ -17,8 +17,7 @@ import { VoiceRecorder } from '../components/VoiceRecorder'
 import { newTripId } from '../utils/ids'
 import { tripCompleteness } from '../lib/tripComplete'
 import { isStayTrip } from '../lib/tripShape'
-import { hasExplicitParts, getParts, partPlaceLabel } from '../lib/tripParts'
-import { humanDateRange } from '../lib/createTripCard'
+import { hasExplicitParts, partPlaceLabel, isCompositeTrip, PART_TYPES, legGeocodeQuery } from '../lib/tripParts'
 
 // Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
 // pulled in when a trip actually has a located lodging (Phase 2).
@@ -264,6 +263,94 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
     patchDays(days)
   }
 
+  // ── Parts (legs) mutations ───────────────────────────────────────────
+  // Parts are a high-level view ABOVE the days (tripParts.js) — a part's
+  // date window is how partsWithDays derives which days belong to it, but no
+  // day object carries a partId, so adding/removing/reordering a part never
+  // touches trip.days (the day-by-day stays independently editable, as the
+  // section intro says). Every mutator uses setTrip's FUNCTIONAL form (reads
+  // the freshest `cur`, not the outer `trip` closure) because updatePartPlace
+  // below fires a second, delayed update (the geocode result) after the
+  // first (the typed text) — a closure over the render-time `trip` would let
+  // the second call clobber whatever the first one (or an intervening edit)
+  // had just written.
+  function addPart() {
+    setTrip((cur) => {
+      const parts = [...(cur.parts || [])]
+      // Collision-safe id, mirroring cardToTrip's dedup guard: prefer the
+      // positional id, walk past any that's already taken (an AI-authored
+      // trip can carry ids in any pattern).
+      const seen = new Set(parts.map((p) => p?.id).filter(Boolean))
+      let n = parts.length + 1
+      let id = `${cur.id}-part-${n}`
+      while (seen.has(id)) { n += 1; id = `${cur.id}-part-${n}` }
+      parts.push({ id, type: 'city', title: '', place: '', dateStart: null, dateEnd: null, days: [] })
+      return { ...cur, parts }
+    })
+    scheduleSave()
+  }
+  function updatePart(i, p) {
+    setTrip((cur) => ({
+      ...cur,
+      parts: (cur.parts || []).map((row, idx) => (idx === i ? { ...row, ...p } : row)),
+    }))
+    scheduleSave()
+  }
+  function movePart(i, dir) {
+    setTrip((cur) => {
+      const parts = cur.parts || []
+      const j = i + dir
+      if (j < 0 || j >= parts.length) return cur
+      const next = [...parts]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return { ...cur, parts: next }
+    })
+    scheduleSave()
+  }
+  function removePart(i) {
+    // Never down to zero — an empty parts[] would fail hasExplicitParts and
+    // the WHOLE section (including "Add a part") would vanish with it,
+    // stranding the trip with no way back in from here. Mirrors
+    // NewTripComposite's own removePart guard — and, like it, the check runs
+    // INSIDE the functional updater (not against the outer `trip` closure) so
+    // it can't be fooled by two rapid clicks racing ahead of a re-render.
+    setTrip((cur) => {
+      const parts = cur.parts || []
+      if (parts.length <= 1) return cur
+      return { ...cur, parts: parts.filter((_, idx) => idx !== i) }
+    })
+    scheduleSave()
+  }
+  // A place edit re-geocodes the leg (keeping legGeocodeQuery current on
+  // change, per the standing plan) — the leg's canonical `coords` slot is
+  // always re-derived fresh rather than trying to preserve/patch whatever
+  // shape (string or the AI's {name,lat,lng} object) the place used to be.
+  // Resolves the target part by ITS ID (falling back to the index it was
+  // called with, for the rare id-less part) rather than trusting the index
+  // alone: this fires on blur, after an async geocode round-trip, so if the
+  // user reordered parts in that window a positional index could now name a
+  // different row. Every other mutator above is a direct, synchronous click
+  // handler with no such gap, so a plain index is fine there.
+  function updatePartByIdentity(partId, index, patchObj) {
+    setTrip((cur) => {
+      const parts = cur.parts || []
+      const idx = partId ? parts.findIndex((p) => p?.id === partId) : index
+      if (idx < 0 || idx >= parts.length) return cur
+      return { ...cur, parts: parts.map((row, i) => (i === idx ? { ...row, ...patchObj } : row)) }
+    })
+    scheduleSave()
+  }
+  async function updatePartPlace(part, index, text) {
+    updatePartByIdentity(part?.id, index, { place: text })
+    // Carry the leg's own locale through (if it has one, from the B4 tz/
+    // currency/locale populator) so a re-geocode keeps the same country
+    // disambiguation a bare place-name lookup can't provide on its own.
+    const q = legGeocodeQuery({ place: text, locale: part?.locale })
+    if (!q) return
+    const hit = await geocodeAddress(q)
+    if (hit) updatePartByIdentity(part?.id, index, { coords: hit })
+  }
+
   // ── Record (what actually happened) mutations ───────────────────────
   // These write day.record ONLY — never day.stops. The plan is the future,
   // the record is the past, and the design's hard rule is they never cross
@@ -447,8 +534,12 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
         />
         {/* Road-trip-only: a stay has no start→end cities (they feed the drive-home
             scaffolding a stay sheds). Shown only for a route — and never with a
-            false required marker (the publish gate doesn't check either city). */}
-        {!stay && (
+            false required marker (the publish gate doesn't check either city).
+            A COMPOSITE trip ALSO sheds this: it doesn't have one drive-home pair,
+            it has legs, each with its own place (edited below) — showing a bare
+            "Start city / End city" for a 3-city trip was the hunt's "TripEditor
+            treats a composite as a road trip" finding. */}
+        {!stay && !isCompositeTrip(trip) && (
           <Row>
             <Text label="Start city" value={trip.startCity} onChange={(v) => patch({ startCity: v })} placeholder="Belmont, MA" />
             <Text label="End city" value={trip.endCity} onChange={(v) => patch({ endCity: v })} placeholder="Southern Vermont" />
@@ -459,31 +550,33 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
         <Text label="Shared album URL" value={trip.sharedAlbumURL} onChange={(v) => patch({ sharedAlbumURL: v })} placeholder="https://www.icloud.com/sharedalbum/…" />
       </Section>
 
-      {/* ── The parts (composite trip) — read-only shape ───────────────
-          A trip created by the concierge with distinct legs carries explicit
-          parts[]. Show them here so the editor reflects the trip's real shape;
-          the day-by-day below stays the editable source of truth (days live
-          flat in trip.days, parts are a high-level view — see tripParts.js).
-          Legacy trips have no explicit parts → this section never renders. */}
+      {/* ── The parts (composite trip) — editable legs ──────────────────
+          A trip created by the concierge (or the "bigger trip" builder) with
+          distinct legs carries explicit parts[]. Editing here never touches
+          trip.days — a part's date window is only how partsWithDays (read-
+          time) decides which days fall under it; the day-by-day below stays
+          the independently-editable source of truth. Legacy trips have no
+          explicit parts → this section never renders (unchanged, G5). */}
       {hasExplicitParts(trip) && (
-        <Section title={`The parts · ${getParts(trip).length}`}>
+        <Section
+          title={`The parts · ${trip.parts.length}`}
+          action={<IconBtn onClick={addPart} label="Add a part"><Plus size={14} /> Add a part</IconBtn>}
+        >
           <p className="f-news-i text-sm opacity-70" style={{ marginBottom: 8 }}>
-            The high-level shape of this trip. Edit the day-by-day below.
+            The legs of this trip. Editing here never touches the day-by-day below.
           </p>
-          {getParts(trip).map((p, pi) => {
-            const when = humanDateRange(p.dateStart, p.dateEnd)
-            return (
-              <div key={p.id || pi} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '5px 0', borderTop: pi ? '1px solid var(--border)' : 'none' }}>
-                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', minWidth: 46 }}>
-                  {p.type || 'stay'}
-                </span>
-                <span style={{ flex: 1, color: 'var(--text)' }}>{p.title || partPlaceLabel(p) || 'A part'}</span>
-                {when && when !== 'TBD' && (
-                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{when}</span>
-                )}
-              </div>
-            )
-          })}
+          {trip.parts.map((p, pi) => (
+            <PartBlock
+              key={p.id || pi}
+              part={p}
+              index={pi}
+              count={trip.parts.length}
+              onUpdate={(patchObj) => updatePart(pi, patchObj)}
+              onUpdatePlace={(text) => updatePartPlace(p, pi, text)}
+              onMove={(dir) => movePart(pi, dir)}
+              onRemove={() => removePart(pi)}
+            />
+          ))}
         </Section>
       )}
 
@@ -690,6 +783,90 @@ function DayBlock(props) {
           />
         ))}
       </div>
+    </div>
+  )
+}
+
+// ── Part (leg) block ──────────────────────────────────────────────────
+const PART_TYPE_LABEL = {
+  stay: 'Stay', city: 'City', drive: 'Drive', flight: 'Flight',
+  event: 'Event', train: 'Train', ferry: 'Ferry', cruise: 'Cruise',
+}
+function PartBlock({ part, index, count, onUpdate, onUpdatePlace, onMove, onRemove }) {
+  // The place FIELD always shows/writes a plain string — partPlaceLabel reads
+  // whichever shape (string or the AI's {name,lat,lng} object) is currently
+  // there, so an old object-place leg displays correctly the first time this
+  // renders; the moment it's edited (onUpdatePlace) it becomes a string +
+  // its own re-geocoded `coords`, same as every leg the manual builder makes.
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <p className="smallcaps f-dm text-[11px] opacity-70">Part {index + 1}</p>
+        <div className="flex" style={{ gap: 4 }}>
+          <IconBtn onClick={() => onMove(-1)} label={`Move part ${index + 1} up`} disabled={index === 0}><ArrowUp size={13} /></IconBtn>
+          <IconBtn onClick={() => onMove(1)} label={`Move part ${index + 1} down`} disabled={index === count - 1}><ArrowDown size={13} /></IconBtn>
+          <IconBtn onClick={onRemove} label={`Remove part ${index + 1}`} danger disabled={count <= 1}><Trash2 size={13} /></IconBtn>
+        </div>
+      </div>
+      <Row>
+        <label className="flex flex-col" style={{ gap: 6 }}>
+          <Lbl label="Type" />
+          <select
+            aria-label={`Part ${index + 1} type`}
+            value={PART_TYPES.includes(part.type) ? part.type : 'stay'}
+            onChange={(e) => onUpdate({ type: e.target.value })}
+            className="memory-textarea"
+            style={{ minHeight: 'auto', padding: 10, fontSize: 14 }}
+          >
+            {PART_TYPES.map((t) => <option key={t} value={t}>{PART_TYPE_LABEL[t]}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col" style={{ gap: 6 }}>
+          <Lbl label="Title" />
+          <input
+            aria-label={`Part ${index + 1} title`}
+            value={part.title || ''}
+            onChange={(e) => onUpdate({ title: e.target.value })}
+            placeholder="Three nights in Rome"
+            className="memory-textarea"
+            style={{ minHeight: 'auto', padding: 10, fontSize: 14 }}
+          />
+        </label>
+      </Row>
+      <label className="flex flex-col" style={{ gap: 6 }}>
+        <Lbl label="Place" />
+        <input
+          aria-label={`Part ${index + 1} place`}
+          value={partPlaceLabel(part)}
+          onChange={(e) => onUpdate({ place: e.target.value })}
+          onBlur={(e) => onUpdatePlace(e.target.value)}
+          placeholder="Rome — optional"
+          className="memory-textarea"
+          style={{ minHeight: 'auto', padding: 10, fontSize: 14 }}
+        />
+      </label>
+      <Row>
+        <label className="flex flex-col" style={{ gap: 6 }}>
+          <Lbl label="Start date" />
+          <input
+            type="date" aria-label={`Part ${index + 1} start date`}
+            value={part.dateStart || ''}
+            onChange={(e) => onUpdate({ dateStart: e.target.value || null })}
+            className="memory-textarea"
+            style={{ minHeight: 'auto', padding: 10, fontSize: 14 }}
+          />
+        </label>
+        <label className="flex flex-col" style={{ gap: 6 }}>
+          <Lbl label="End date" />
+          <input
+            type="date" aria-label={`Part ${index + 1} end date`}
+            value={part.dateEnd || ''}
+            onChange={(e) => onUpdate({ dateEnd: e.target.value || null })}
+            className="memory-textarea"
+            style={{ minHeight: 'auto', padding: 10, fontSize: 14 }}
+          />
+        </label>
+      </Row>
     </div>
   )
 }
