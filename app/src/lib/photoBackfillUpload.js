@@ -239,6 +239,17 @@ async function uploadOrQueueNewPhoto({
   }
 }
 
+// URL.createObjectURL throws on a malformed/detached blob — rare, but this is
+// the render-only fallback for a video that ALREADY failed its real upload;
+// a second throw here has nothing left to fall back to.
+function safeObjectUrl(blob) {
+  try {
+    return URL.createObjectURL(blob)
+  } catch {
+    return null
+  }
+}
+
 // Upload one already-encoded video (ImportFlow runs the WebCodecs encode in
 // PREPARE), returning the photoRef to persist. Mirrors the photo path's
 // offline-safe shape: try the Worker's /assets/video route, else park the
@@ -283,12 +294,18 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
       }
     }
     const src = posterBlob || blob
+    // safeObjectUrl: createObjectURL can throw on a malformed/detached blob.
+    // This is called from INSIDE the outer try/catch's own catch block (the
+    // "nothing else to fall back to" path) — an unguarded throw here would
+    // escape uploadOrQueueVideo entirely and skip the enqueue() below, so the
+    // whole video's attempt (and its retry) never happens. Same "never worse
+    // than session-url-only" degrade as the saveAsset try/catch just above.
     const ref = {
       ...baseRef,
       storage: 'pending',
       ...(posterIdbKey ? { posterKey: posterIdbKey } : {}),
-      ...(posterBlob ? { posterUrl: URL.createObjectURL(posterBlob) } : {}),
-      ...(src ? { url: URL.createObjectURL(src) } : {}),
+      ...(posterBlob ? { posterUrl: safeObjectUrl(posterBlob) } : {}),
+      ...(src ? { url: safeObjectUrl(src) } : {}),
     }
     return { ref, posterIdbKey }
   }

@@ -62,6 +62,7 @@ import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } 
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import { removeAsset } from './lib/memAssets'
 import { applyInstallIdentity } from './lib/appInstall'
+import { importToastProps as bulkImportToastProps } from './lib/importToast'
 import './styles/platform.css'
 
 // Read `?url=` (and optional `&action=import`) at boot — the
@@ -2030,14 +2031,4 @@ export default function App() {
       {bulkImportToast && <ImportToast {...bulkImportToast} />}
     </>
   )
-}
-
-// Map the bulk-import results → <ImportToast> props (mirrors PhotosView's quiet,
-// count-first acknowledgement so the two import entries read identically).
-function bulkImportToastProps(r) {
-  if (!r) return null
-  if (r.nothingNew) return { message: 'Nothing new to import' }
-  if (r.ok > 0) return { count: r.ok, noun: r.ok === 1 ? 'photo' : 'photos', syncing: r.queued || 0 }
-  if (r.reattached > 0) return { message: `${r.reattached} re-attached` }
-  return { message: 'Nothing new to import' }
 }

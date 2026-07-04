@@ -15,6 +15,7 @@ import { uploadPosterOrQueue } from '../lib/posterRetry'
 import { removeAsset } from '../lib/memAssets'
 import { saveMemory } from '../lib/memoryStore'
 import { isVideoEncodeSupported } from '../lib/videoPipeline'
+import { importToastProps } from '../lib/importToast'
 
 // Photos-by-event view. Punchlist 3 Item 4 — Helen's primary surface
 // for the trip's photo archive, grouped by Stop/event.
@@ -430,21 +431,6 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
       {toast && <ImportToast {...toast} />}
     </div>
   )
-}
-
-// Map the upload results → <ImportToast> props (the design's quiet, count-first
-// voice). The common case is "N photos added [· M syncing]"; re-attach and the
-// nothing-new case get a plain message line.
-function importToastProps(r) {
-  if (!r) return null
-  if (r.nothingNew) return { message: 'Nothing new to import' }
-  if (r.ok > 0) {
-    return { count: r.ok, noun: r.ok === 1 ? 'photo' : 'photos', syncing: r.queued || 0 }
-  }
-  if (r.reattached > 0) {
-    return { message: `${r.reattached} re-attached` }
-  }
-  return { message: 'Nothing new to import' }
 }
 
 // Sync pill — the outbox surface in the Photos header (#2/#4). Neutral while
