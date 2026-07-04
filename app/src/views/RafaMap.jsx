@@ -5,6 +5,7 @@ import { listMemoriesForTrip } from '../lib/memoryStore'
 import { flattenPhotoEntries } from '../lib/photoEntries'
 import { RafaSound } from '../lib/rafaSound'
 import { isStayTrip, stayLabel } from '../lib/tripShape'
+import { isCompositeTrip, deriveCurrentLeg, partPlaceLabel } from '../lib/tripParts'
 import { presenceFamily, Bubble, Reveal } from './RafaWhosAround'
 import { sendWave } from '../lib/waves'
 
@@ -246,7 +247,15 @@ export function RafaMap({ trip, traveler = 'rafa', people = [], now, onClose }) 
 
   // A STAY with no planned stops has no road to wind — show the place itself as
   // the destination instead of a degenerate empty road (family-trips shift).
-  if (isStayTrip(trip) && stops.length === 0) {
+  // A composite (multi-city) trip with no stops YET is the same shape of gap —
+  // it fell through to the road-map below with zero stops to draw a road
+  // through. Shows the CURRENT leg's place (deriveCurrentLeg — the same
+  // "where we are now" resolver the adult views use), not the whole trip, so
+  // it still reads as "here" once the family moves to the next city.
+  const composite = isCompositeTrip(trip)
+  const curLeg = composite ? deriveCurrentLeg(trip).part : null
+  const legPlace = curLeg ? partPlaceLabel(curLeg) || curLeg.title : null
+  if ((isStayTrip(trip) || (composite && legPlace)) && stops.length === 0) {
     return (
       <div data-testid="rafa-map" style={{ position: 'fixed', inset: 0, zIndex: 60, overflow: 'hidden', fontFamily: FREDOKA,
         background: `radial-gradient(120% 90% at 30% 0%, ${shade(c.bg, 16)}, ${c.bg} 70%)`,
@@ -256,7 +265,7 @@ export function RafaMap({ trip, traveler = 'rafa', people = [], now, onClose }) 
           <ChevronLeft size={30} />
         </button>
         <div style={{ fontSize: 120, lineHeight: 1 }}>🏡</div>
-        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 38, color: c.ink, textAlign: 'center', lineHeight: 1.05 }}>{stayLabel(trip)}!</div>
+        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 38, color: c.ink, textAlign: 'center', lineHeight: 1.05 }}>{composite ? legPlace : stayLabel(trip)}!</div>
         <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 20, color: shade(c.ink, -50), textAlign: 'center', maxWidth: 420, lineHeight: 1.3 }}>
           Our home base! Take pictures and they’ll show up here. 📸
         </div>

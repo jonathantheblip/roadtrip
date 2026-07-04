@@ -5,6 +5,7 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 import { WeaveReady } from '../components/EntryCues'
 import { todayLocalIso } from '../lib/localDate'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
+import { isCompositeTrip, deriveCurrentLeg, partPlaceLabel } from '../lib/tripParts'
 import { readableRecordEntries, entryStamps } from '../lib/dayRecord'
 import { flightSegments } from '../lib/flightSegments'
 import { VoiceRecorder } from '../components/VoiceRecorder'
@@ -113,6 +114,16 @@ export function RafaView({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, 
   const stay = isStayTrip(trip)
   const stayName = stayLabel(trip)
   const nights = stayNights(trip)
+  // A composite (multi-city) trip has the same gap on a day with no featured
+  // stop (a "loose" day between real plans, or before any stop's been added
+  // yet) — `featured` resolves to nothing and the hero card was blank. Falls
+  // back to the CURRENT leg's place (deriveCurrentLeg — the same "where we
+  // are now" resolver the adult views use), matching the stay's own "the
+  // place becomes the hero" pattern. Only engages when there's truly nothing
+  // else to feature — a composite trip WITH a stop for today keeps that stop.
+  const composite = isCompositeTrip(trip)
+  const curLeg = composite ? deriveCurrentLeg(trip).part : null
+  const legPlace = curLeg ? partPlaceLabel(curLeg) || curLeg.title : null
   // On a stay the place is the hero, so the day's stops (a dinner out, a surprise
   // cover/teaser) ALL show as cards below — nothing dropped. On a route the
   // featured stop is the hero, so the others exclude it (unchanged).
@@ -427,6 +438,27 @@ export function RafaView({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, 
             </div>
           )}
         </button>
+      ) : legPlace ? (
+        <div
+          data-testid="rafa-leg-place-card"
+          style={{
+            width: 'calc(100% - 28px)',
+            margin: '10px 14px 0',
+            padding: 18,
+            background: 'var(--accent)',
+            color: 'var(--accent-ink)',
+            borderRadius: 28,
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: `0 8px 0 ${shade('#FFB12E', -45)}, 0 14px 24px -8px rgba(0,0,0,0.4)`,
+          }}
+        >
+          <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: 'rgba(255,255,255,0.16)' }} />
+          <div style={{ fontSize: 44, position: 'relative', lineHeight: 1 }}>📍</div>
+          <div style={{ fontFamily: FREDOKA, fontSize: 26, fontWeight: 700, lineHeight: 1.02, marginTop: 10, position: 'relative' }}>
+            {legPlace}!
+          </div>
+        </div>
       ) : null}
 
       {/* Two chunky alt cards — sticker blue + green (the resolved palette) */}

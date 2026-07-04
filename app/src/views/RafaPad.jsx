@@ -6,6 +6,7 @@ import { RafaGames } from './RafaGames'
 import { RafaSound } from '../lib/rafaSound'
 import { WeaveReady, SurpriseReveal } from '../components/EntryCues'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
+import { isCompositeTrip, deriveCurrentLeg, partPlaceLabel } from '../lib/tripParts'
 import { flightSegments } from '../lib/flightSegments'
 
 // RafaPad — Rafa's iPad "command center" home (design_handoff_rafa_adventure_map).
@@ -61,6 +62,15 @@ export function RafaPad({
   const stay = isStayTrip(trip)
   const stayName = stayLabel(trip)
   const nights = stayNights(trip)
+  // A composite (multi-city) trip has the same gap: no "exciting stop" concept
+  // spans a whole multi-leg trip evenly, and it isn't a stay either, so it got
+  // no place tile at all. Show the CURRENT leg's place instead (deriveCurrentLeg
+  // — same "where we are now" resolver the adult views use); additive, so real
+  // stop tiles still fill the rest of the grid. No nights count (a leg's own
+  // date window isn't "nights at a place" the way a stay's is).
+  const composite = isCompositeTrip(trip)
+  const curLeg = composite ? deriveCurrentLeg(trip).part : null
+  const legPlace = curLeg ? partPlaceLabel(curLeg) || curLeg.title : null
 
   const bigDefs = {
     games: { label: 'My games', emo: '🎮', tint: ST[2], onClick: () => setGamesOpen(true) },
@@ -88,8 +98,10 @@ export function RafaPad({
     ...(featured ? [{ kind: 'tell', label: 'Tell a story', tint: ST[3], onClick: () => onOpenStop(featured.day, featured.id) }] : []),
     { kind: 'map', onClick: () => setMapOpen(true) },
     // On a STAY, add the place as its own hero tile (🏡 Our cabin · N nights) —
-    // additive, so the map tile + any real stops still show.
+    // additive, so the map tile + any real stops still show. A composite trip
+    // gets the same tile, naming the CURRENT leg instead of the whole trip.
     ...(stay ? [{ kind: 'place', label: stayName, nights, onClick: () => setMapOpen(true) }] : []),
+    ...(!stay && legPlace ? [{ kind: 'place', label: legPlace, onClick: () => setMapOpen(true) }] : []),
     ...highlights.map((s) => ({ kind: 'stop', label: s.name, emo: emojiFor(s), tint: pickTint(s.id), onClick: () => onOpenStop(s.day, s.id) })),
   ].slice(0, 8)
   const slotPos = [[3, 1], [4, 1], [3, 2], [4, 2], [1, 3], [2, 3], [1, 4], [2, 4]]
