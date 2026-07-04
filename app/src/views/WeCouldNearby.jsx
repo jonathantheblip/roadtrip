@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, Star, X, Footprints, Car, Send } from 'lucide-react'
 import { isStayTrip, stayPlaceCoords, stayLabel, stayGeocodeQuery } from '../lib/tripShape'
 import { isCompositeTrip, deriveCurrentLeg, currentPartCoords, partPlaceLabel, legGeocodeQuery } from '../lib/tripParts'
-import { searchNearby, formatDistance } from '../lib/placesNearby'
+import { searchNearby, formatDistanceLocale } from '../lib/placesNearby'
+import { isMetricLocale, formatTemp } from '../lib/units'
 import { sunTimes } from '../lib/sunTimes'
 import { TRAVELERS, TRAVELER_DOT, TRAVELER_ORDER } from '../data/travelers'
 import {
@@ -91,13 +92,18 @@ export function WeCouldNearby({ trip, traveler, onPropose, onLocate, onLocateLeg
   const isStay = isStayTrip(trip)
   const isComposite = isCompositeTrip(trip)
   const now = useNowTick()
-  const legCtx = useMemo(() => (isComposite ? deriveCurrentLeg(trip, now) : null), [isComposite, trip, now])
+  // deriveCurrentLeg is safe on ANY trip (LivingHeartHome's precedent) — a
+  // plain stay's `part` resolves to null and locale/currency fall back to the
+  // trip-level field, so an abroad STAY (not just a composite leg) still gets
+  // its own measurement system below.
+  const legCtx = useMemo(() => deriveCurrentLeg(trip, now), [trip, now])
   const coords = useMemo(
     () => (isComposite ? currentPartCoords(trip, legCtx?.todayIso) : stayPlaceCoords(trip)),
     [isComposite, trip, legCtx?.todayIso]
   )
   const enabled = (isStay || isComposite) && !!coords
   const big = traveler === 'rafa'
+  const metric = isMetricLocale(legCtx?.locale)
 
   const [status, setStatus] = useState('idle') // idle | loading | ready | error
   const [tray, setTray] = useState([])
@@ -180,7 +186,7 @@ export function WeCouldNearby({ trip, traveler, onPropose, onLocate, onLocateLeg
 
   return (
     <section data-testid="wecould-nearby" style={{ padding: '4px 14px 4px' }}>
-      <ConditionsStrip placeName={placeName} coords={coords} conditions={conditions} />
+      <ConditionsStrip placeName={placeName} coords={coords} conditions={conditions} metric={metric} />
 
       {status === 'ready' && !catFilter && conditionReason && <ConditionReason text={conditionReason} />}
 
@@ -221,6 +227,7 @@ export function WeCouldNearby({ trip, traveler, onPropose, onLocate, onLocateLeg
                 key={card.id}
                 card={card}
                 traveler={traveler}
+                metric={metric}
                 onPin={() => onPin(card.id)}
                 onHide={() => onHide(card.id)}
                 onPropose={onPropose ? () => onPropose(toSpotSnapshot(card)) : undefined}
@@ -237,7 +244,7 @@ export function WeCouldNearby({ trip, traveler, onPropose, onLocate, onLocateLeg
 // sunset, a free on-device calc), and — when the worker has it — REAL weather and
 // tide (slice 7). Honest: weather/tide show only when actually present; on a
 // landlocked or offline place they simply aren't there (no fabricated values).
-function ConditionsStrip({ placeName, coords, conditions }) {
+function ConditionsStrip({ placeName, coords, conditions, metric }) {
   const sun = useMemo(
     () => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null),
     [coords?.lat, coords?.lng],
@@ -264,7 +271,7 @@ function ConditionsStrip({ placeName, coords, conditions }) {
         </div>
         {w && (
           <div data-testid="wecould-weather" style={{ ...META, marginTop: 6, fontSize: 11, letterSpacing: '0.04em', textTransform: 'none' }}>
-            <span aria-hidden="true">{w.icon}</span> {w.tempF}°F · {w.label}
+            <span aria-hidden="true">{w.icon}</span> {formatTemp(w.tempF, metric)} · {w.label}
             {Number.isFinite(w.precipProbPct) && w.precipProbPct >= 30 ? ` · ${w.precipProbPct}% rain` : ''}
           </div>
         )}
@@ -494,7 +501,7 @@ function KeepButton({ pinned, name, onPin, accentFill }) {
   )
 }
 
-function NearbyCard({ card, traveler, onPin, onHide, onPropose }) {
+function NearbyCard({ card, traveler, metric, onPin, onHide, onPropose }) {
   const travel = estimateTravel(card.distanceMeters)
   const href = mapsHref(card, traveler)
   return (
@@ -561,7 +568,7 @@ function NearbyCard({ card, traveler, onPin, onHide, onPropose }) {
               ~{travel.minutes} min
             </span>
           )}
-          {Number.isFinite(card.distanceMeters) && <span>· {formatDistance(card.distanceMeters)}</span>}
+          {Number.isFinite(card.distanceMeters) && <span>· {formatDistanceLocale(card.distanceMeters, metric)}</span>}
           {typeof card.openNow === 'boolean' && <OpenPill open={card.openNow} />}
         </div>
 

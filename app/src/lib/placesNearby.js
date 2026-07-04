@@ -54,14 +54,9 @@ export async function searchNearby({ query, location, radius, limit }) {
   return res.json()
 }
 
-// Format a distance in meters as a short human label. Walks the
-// metric → imperial line the family uses — under 0.1 mi shows feet so
-// "two blocks away" reads right.
-export function formatDistance(meters) {
-  if (!Number.isFinite(meters)) return ''
-  const feet = meters * 3.28084
-  const miles = meters / 1609.344
-  if (feet < 528) return `${Math.round(feet / 10) * 10} ft`
-  if (miles < 10) return `${miles.toFixed(1)} mi`
-  return `${Math.round(miles)} mi`
-}
+// Distance formatting (formatDistance / formatDistanceMetric /
+// formatDistanceLocale) lives in lib/units.js — it's pure (no worker/auth
+// imports), which keeps it unit-testable under plain `node --test`; this file
+// re-exports so existing callers importing from 'lib/placesNearby' don't need
+// to change.
+export { formatDistance, formatDistanceMetric, formatDistanceLocale } from './units.js'

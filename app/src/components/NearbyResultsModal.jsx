@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MapPin, Phone, Navigation, X, RotateCw, AlertCircle } from 'lucide-react'
 import { TRAVELERS } from '../data/travelers'
-import { searchNearby, formatDistance } from '../lib/placesNearby'
+import { searchNearby, formatDistanceLocale } from '../lib/placesNearby'
 
 // "Where's the nearest one?" modal.
 //
@@ -25,6 +25,7 @@ export function NearbyResultsModal({
   homeBase,
   traveler,
   onClose,
+  metric = false,
 }) {
   const [originMode, setOriginMode] = useState('here') // 'here' | 'home'
   const [hereCoords, setHereCoords] = useState(null)
@@ -233,7 +234,7 @@ export function NearbyResultsModal({
             }}
           >
             {results.map((r) => (
-              <ResultRow key={r.placeId || `${r.lat},${r.lng}`} result={r} traveler={traveler} />
+              <ResultRow key={r.placeId || `${r.lat},${r.lng}`} result={r} traveler={traveler} metric={metric} />
             ))}
           </ul>
         )}
@@ -332,7 +333,7 @@ function Pill({ active, onClick, label, icon }) {
   )
 }
 
-function ResultRow({ result, traveler }) {
+function ResultRow({ result, traveler, metric }) {
   const mapsUrl = mapsLinkFor(result, traveler)
   const telHref = result.phone ? `tel:${String(result.phone).replace(/[^\d+]/g, '')}` : null
   const openLabel = TRAVELERS[traveler]?.maps === 'waze' ? 'Waze' : 'Maps'
@@ -384,7 +385,7 @@ function ResultRow({ result, traveler }) {
             color: 'var(--muted)',
           }}
         >
-          <span>{formatDistance(result.distanceMeters)}</span>
+          <span>{formatDistanceLocale(result.distanceMeters, metric)}</span>
           {result.openNow === false && (
             <span style={{ color: 'var(--accent-text)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
               <AlertCircle size={10} /> Closed now
