@@ -6,6 +6,7 @@
 // way it drops off the pending queue.
 import { test, expect } from '@playwright/test'
 import { seedTripIntoCache, seedMemoriesIntoCache, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
+import { expectNoSeriousA11y } from './_fixtures/axe.js'
 
 test.use({ timezoneId: 'UTC' })
 
@@ -113,6 +114,10 @@ test('editor Record mode: a parent attaches a pending note onto a named entry (a
       }, TRIP_ID)
     )
     .toBe('Pizza place — A frog came to dinner!')
+
+  // The record tab's gold text was raw --kept on a --kept-tinted background
+  // (axe: 3.03 vs the 4.5:1 floor) — fixed to anchor on --text; guard it here.
+  await expectNoSeriousA11y(page)
 })
 
 test('editor Record mode: "Keep as a loose note" dismisses the queue without touching any entry', async ({ page }) => {

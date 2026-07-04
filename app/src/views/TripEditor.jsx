@@ -859,7 +859,13 @@ function ModeTabs({ mode, onChange, v }) {
           fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.13em',
           textTransform: 'uppercase', fontWeight: 600,
           background: on ? (gold ? 'color-mix(in srgb, var(--kept) 15%, transparent)' : 'var(--card)') : 'transparent',
-          color: on ? (gold ? 'var(--kept)' : 'var(--text)') : 'var(--muted)',
+          // The record tab's text was raw var(--kept) on its own 15%-tinted
+          // background — both anchored to the same hue, so contrast between
+          // them stays low no matter which theme's --kept shade renders (axe:
+          // 3.03 vs the 4.5:1 floor). Anchoring the text to --text (which the
+          // theme already guarantees is legible on --card/--bg) instead of the
+          // decorative accent fixes it while still reading gold.
+          color: on ? (gold ? 'color-mix(in srgb, var(--kept) 55%, var(--text))' : 'var(--text)') : 'var(--muted)',
           border: `1px solid ${on ? (gold ? 'color-mix(in srgb, var(--kept) 42%, transparent)' : 'var(--border)') : 'transparent'}`,
         }}
       >
