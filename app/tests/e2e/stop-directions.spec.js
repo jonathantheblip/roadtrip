@@ -112,6 +112,31 @@ test('an "Arrive"/"Depart" stop on a stay shows NO "Getting there" — a normal 
   await expect(page.getByRole('button', { name: /Getting there/i })).toBeVisible({ timeout: 10000 })
 })
 
+// Sibling gap in the SAME fix family, caught in the 2026-07-04 audit: the
+// "Scenic route" button (scenicMapsLink) never went through lodgingAwareStop
+// at all — an arrival/departure stop with waypoints would send the scenic
+// route to the stop's own (often vague/bare-city) address while the direct
+// "Open in Waze/Maps" button right next to it correctly pointed at the stay.
+test('the "Scenic route" button ALSO uses the lodging address for an Arrive stop — not the bare city', async ({ page }) => {
+  const withWaypoints = JSON.parse(JSON.stringify(STAY))
+  withWaypoints.id = 'stay-directions-scenic'
+  withWaypoints.days[0].stops[0].waypoints = [{ name: 'Scenic overlook', address: 'Route 6, Provincetown, MA' }]
+  await seedTripIntoCache(page, withWaypoints)
+
+  await page.goto(`/?person=jonathan&trip=${withWaypoints.id}&nosw=1`)
+  await page.getByRole('button', { name: /^Arrive$/i }).click()
+  const scenic = page.getByRole('link', { name: /Scenic route/i })
+  await expect(scenic).toBeVisible({ timeout: 10000 })
+  const href = await scenic.getAttribute('href')
+  // Positive proof of the fix: the destination is the FULL lodging address.
+  // (URLSearchParams encodes spaces as `+`, not `%20` — decode both forms.
+  // A bare-city destination would have no street number, so the full
+  // address appearing at all is sufficient; it can't appear by falling back
+  // to the stop's own vaguer address.)
+  const decoded = decodeURIComponent(href).replace(/\+/g, ' ')
+  expect(decoded).toContain('690 Commercial St #4d, Provincetown, MA')
+})
+
 // The review's catch on the catch (2026-07-02): a FLIGHT stop is also kind
 // arrival/departure — but its place is the AIRPORT. It must keep its OWN
 // address on the maps button (never the lodging substitution) AND keep

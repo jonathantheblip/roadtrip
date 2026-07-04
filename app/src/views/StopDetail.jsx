@@ -145,8 +145,10 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay,
             // Waze can't chain two intermediate waypoints from a URL, and
             // Apple Maps can't chain any at all. Surfaces alongside the
             // direct-route button so anyone in a hurry can still go straight
-            // there.
-            const scenic = scenicMapsLink(stop)
+            // there. Same lodging substitution as the button above — an
+            // arrival/departure stop's own (often vague) address shouldn't
+            // give the scenic route a worse destination than the direct one.
+            const scenic = scenicMapsLink(lodgingAwareStop(trip, stop))
             if (!scenic) return null
             const count = stop.waypoints?.length || 0
             return (
