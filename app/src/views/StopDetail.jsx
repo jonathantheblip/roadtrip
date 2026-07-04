@@ -5,6 +5,7 @@ import { tripHomeBase } from '../data/trips'
 import { mapsLink, scenicMapsLink } from '../lib/mapsLink'
 import { isStayTrip, stayPlaceCoords } from '../lib/tripShape'
 import { isCompositeTrip, deriveCurrentLeg, currentPartCoords } from '../lib/tripParts'
+import { flightSegments } from '../lib/flightSegments'
 import { FlightStatus } from './FlightStatus'
 import { DayChips } from './DayChips'
 import { ThreadedMemories } from '../components/ThreadedMemories'
@@ -28,8 +29,10 @@ function lodgingAwareStop(trip, stop) {
   // A FLIGHT stop is also kind arrival/departure — but its place is the
   // AIRPORT, not the stay (FlightStatus keys live tracking off exactly
   // flightNumber + these kinds). Substituting the lodging address would
-  // point "directions" at the Airbnb when the family needs LGA.
-  if (stop?.flightNumber) return stop
+  // point "directions" at the Airbnb when the family needs LGA. Checked via
+  // flightSegments so a MODERN multi-segment stop (no legacy flightNumber)
+  // is caught too, not just the legacy flat-field shape.
+  if (flightSegments(stop).length) return stop
   if (isLodgingKind && isStayTrip(trip) && trip?.lodging?.address) {
     return { ...stop, address: trip.lodging.address }
   }
@@ -74,7 +77,7 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay,
   // leave-by planning is the modal's highest-value use on a flights-to-family
   // stay.
   const lodgingKind =
-    !stop?.flightNumber &&
+    !flightSegments(stop).length &&
     (stop?.kind === 'lodging' || stop?.kind === 'arrival' || stop?.kind === 'departure')
   const canLeaveWhen =
     !!gettingThereOrigin &&
@@ -276,7 +279,7 @@ export function StopDetail({ trip, day, stop, traveler, dark, onBack, onOpenDay,
         </section>
       )}
 
-      {stop.flightNumber && (
+      {flightSegments(stop).length > 0 && (
         <section className="px-6 py-6 border-b surface-rule">
           <FlightStatus
             stop={stop}

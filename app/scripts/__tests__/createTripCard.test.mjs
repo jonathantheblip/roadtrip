@@ -256,6 +256,41 @@ test('cardToTrip tolerates an empty / missing trip block', () => {
   assert.equal(trip.days.length, 0)
 })
 
+test('cardToTrip carries an AI-authored flight (segments/layovers) through onto the stop', () => {
+  const card = structuredClone(SAMPLE_CARD)
+  card.trip.days[0].stops[0].flight = {
+    segments: [
+      { flightNo: 'DL100', from: { code: 'BOS' }, to: { code: 'FRA' }, dep: { date: '2026-08-01', local: '9:35 PM' }, arr: { date: '2026-08-02', local: '11:05 AM' } },
+      { flightNo: 'DL200', from: { code: 'FRA' }, to: { code: 'FCO' }, dep: { date: '2026-08-02', local: '12:45 PM' }, arr: { date: '2026-08-02', local: '2:20 PM' } },
+    ],
+    layovers: [{ code: 'FRA', mins: 100 }],
+  }
+  const trip = cardToTrip(card)
+  const flight = trip.days[0].stops[0].flight
+  assert.equal(flight.segments.length, 2)
+  assert.equal(flight.segments[0].flightNo, 'DL100')
+  assert.deepEqual(flight.layovers, [{ code: 'FRA', mins: 100 }])
+})
+
+test('cardToTrip never adds a `flight` key when the card stop has none — a plain stop stays plain', () => {
+  const trip = cardToTrip(SAMPLE_CARD)
+  assert.ok(!('flight' in trip.days[0].stops[0]), 'no flight field manufactured out of nothing')
+})
+
+test('cardToTrip drops a malformed (non-object) `flight` rather than carrying garbage through', () => {
+  const card = structuredClone(SAMPLE_CARD)
+  card.trip.days[0].stops[0].flight = 'DL100'
+  const trip = cardToTrip(card)
+  assert.ok(!('flight' in trip.days[0].stops[0]))
+})
+
+test('cardToTrip drops an ARRAY `flight` too — typeof [] === "object" is not a valid flight shape', () => {
+  const card = structuredClone(SAMPLE_CARD)
+  card.trip.days[0].stops[0].flight = [1, 2, 3]
+  const trip = cardToTrip(card)
+  assert.ok(!('flight' in trip.days[0].stops[0]))
+})
+
 // ─── cardToTrip slug-collision (existingIds) ────────────────────────
 
 test('cardToTrip keeps the derived id when it does not collide', () => {

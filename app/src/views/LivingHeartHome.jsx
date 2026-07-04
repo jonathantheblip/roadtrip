@@ -26,6 +26,7 @@ import { WeaveReady } from '../components/EntryCues'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
+import { flightSegments, flightSummaryLine } from '../lib/flightSegments'
 import { sunTimes } from '../lib/sunTimes'
 import { buildDayEvidence, evidenceLevel, pinsToDraftEntries, spanWords } from '../lib/evidence'
 import SettleSheet from './SettleSheet'
@@ -368,8 +369,8 @@ export function LivingHeartHome({
   const agenda = useMemo(() => {
     const days = trip?.days || []
     let day = days.find((d) => d.isoDate === todayIso)
-    if (!day && upcoming) day = days.find((d) => (d.stops || []).some((s) => s.kind !== 'lodging' && !s.flightNumber))
-    const stops = (day?.stops || []).filter((s) => s.kind !== 'lodging' && !s.flightNumber)
+    if (!day && upcoming) day = days.find((d) => (d.stops || []).some((s) => s.kind !== 'lodging' && !flightSegments(s).length))
+    const stops = (day?.stops || []).filter((s) => s.kind !== 'lodging' && !flightSegments(s).length)
     return { day, stops } // FULL list — the render shows a few and HONESTLY discloses the rest
   }, [trip, upcoming, todayIso])
   const hasAgenda = agenda.stops.length > 0 && !!onOpenStop
@@ -558,17 +559,15 @@ export function LivingHeartHome({
                 style={{ width: 52, height: 52, borderRadius: 8, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
             ) : (
               <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 8, background: 'var(--bg2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                {nextThing.stop.flightNumber ? <Plane size={16} style={{ color: 'var(--accent-text)' }} /> : <Ticket size={16} style={{ color: 'var(--accent-text)' }} />}
+                {flightSegments(nextThing.stop).length ? <Plane size={16} style={{ color: 'var(--accent-text)' }} /> : <Ticket size={16} style={{ color: 'var(--accent-text)' }} />}
               </span>
             )}
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ ...MONO, fontSize: 9, color: 'var(--accent-text)', display: 'block' }}>{v.lc(nextWhen ? `Next up · ${nextWhen}` : 'Next up')}</span>
               <span style={{ fontSize: 14.5, color: 'var(--text)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nextThing.stop.name}</span>
-              {(nextThing.stop.flightNumber || nextThing.stop.note) && (
+              {(flightSegments(nextThing.stop).length > 0 || nextThing.stop.note) && (
                 <span style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {nextThing.stop.flightNumber
-                    ? `${nextThing.stop.flightNumber}${nextThing.stop.flightOrigin ? ` · ${nextThing.stop.flightOrigin}→${nextThing.stop.flightDest || ''}` : ''}`
-                    : nextThing.stop.note}
+                  {flightSegments(nextThing.stop).length > 0 ? flightSummaryLine(nextThing.stop) : nextThing.stop.note}
                 </span>
               )}
             </span>
@@ -663,14 +662,14 @@ export function LivingHeartHome({
               {arrival && onOpenStop && (
                 <button
                   type="button" onClick={() => onOpenStop(arrival.day.n, arrival.stop.id)}
-                  aria-label={`Flight ${arrival.stop.flightNumber || ''}`.trim()}
+                  aria-label={`Flight ${flightSegments(arrival.stop)[0]?.flightNo || ''}`.trim()}
                   style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', cursor: 'pointer', background: 'var(--card)', border: 0, padding: '11px 13px', color: 'var(--text)' }}
                 >
                   <Plane size={15} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ ...MONO, fontSize: 9, color: 'var(--muted)', display: 'block' }}>{v.lc('Flight')}</span>
                     <span style={{ fontSize: 13.5, color: 'var(--text)', display: 'block', marginTop: 2 }}>
-                      {arrival.stop.flightNumber || 'Flight'}{arrival.stop.flightOrigin ? ` · ${arrival.stop.flightOrigin}→${arrival.stop.flightDest || ''}` : ''}
+                      {flightSummaryLine(arrival.stop) || 'Flight'}
                     </span>
                   </span>
                   <ChevronRight size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />

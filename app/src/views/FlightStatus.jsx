@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Plane, RefreshCw, ExternalLink } from 'lucide-react'
 import { getFlightStatus, flightAwareUrl, formatStatusLabel } from '../lib/flightStatus'
+import { flightSegments, flightLayovers, isMultiSegmentFlight, segmentDayDelta, flightSummaryLine } from '../lib/flightSegments'
 
 // Two render modes:
 //   variant="pill"   → compact inline pill (used inside stop cards)
@@ -10,7 +11,16 @@ import { getFlightStatus, flightAwareUrl, formatStatusLabel } from '../lib/fligh
 // `framing` controls the title:
 //   "their"  → "Jonathan's flight" (Helen / Aurelia / Rafa)
 //   "your"   → "Your flight" (Jonathan)
+//
+// A CONNECTION (design 03 §5: "legs with their own zones… layovers are
+// explicit") skips live tracking entirely — FlightAware is keyed on one
+// flightNumber/flightDate pair, so it stays exactly what it's always been:
+// a SINGLE flight's live status. A multi-segment stop instead renders the
+// static itinerary — each segment its own time + airport, honest "+N day",
+// layovers between — which is the data actually on hand for a connection.
+// A single-segment (or legacy flat-field) stop is BYTE-IDENTICAL to before.
 export function FlightStatus({ stop, variant = 'pill', framing = 'their', traveler = null }) {
+  const multi = isMultiSegmentFlight(stop)
   const [data, setData] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [fetchedAt, setFetchedAt] = useState(null)
@@ -24,6 +34,7 @@ export function FlightStatus({ stop, variant = 'pill', framing = 'their', travel
   }, [stop.flightNumber, stop.flightDate])
 
   useEffect(() => {
+    if (multi || !stop.flightNumber) return
     let cancel = false
     ;(async () => {
       const next = await getFlightStatus(stop.flightNumber, stop.flightDate)
@@ -35,7 +46,14 @@ export function FlightStatus({ stop, variant = 'pill', framing = 'their', travel
     return () => {
       cancel = true
     }
-  }, [stop.flightNumber, stop.flightDate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [multi, stop.flightNumber, stop.flightDate])
+
+  if (multi) {
+    return variant === 'pill'
+      ? <ConnectionPill stop={stop} />
+      : <ConnectionPanel stop={stop} framing={framing} />
+  }
 
   const statusLabel = formatStatusLabel(data) || 'SCHEDULED'
   const fallbackUrl = flightAwareUrl(stop.flightNumber)
@@ -63,6 +81,76 @@ export function FlightStatus({ stop, variant = 'pill', framing = 'their', travel
       onRefresh={refresh}
       fallbackUrl={fallbackUrl}
     />
+  )
+}
+
+// The compact inline pill for a connection — no live tracking, just the
+// condensed itinerary line ("9:35 PM BOS → 2:20 PM FCO +1 Sun · 1 stop FRA").
+function ConnectionPill({ stop }) {
+  return (
+    <span
+      className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
+      style={{
+        background: 'rgba(128, 128, 128, 0.12)',
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 10,
+        letterSpacing: '0.18em',
+        textTransform: 'uppercase',
+      }}
+    >
+      <Plane size={11} />
+      <span>{flightSummaryLine(stop)}</span>
+    </span>
+  )
+}
+
+// The full panel for a connection — "In The Plan" (design 03 §5): each
+// segment its own time + zone, layovers explicit, no collapsed clock.
+function ConnectionPanel({ stop, framing }) {
+  const segs = flightSegments(stop)
+  const layovers = flightLayovers(stop)
+  const heading = framing === 'your' ? 'Your flight' : 'The flight'
+  return (
+    <div className="embed-panel">
+      <div className="flex items-center gap-2 mb-2">
+        <Plane size={14} />
+        <p className="smallcaps f-dm text-[11px] opacity-70">{heading}</p>
+        <p className="f-mono text-[10px] opacity-50" style={{ marginLeft: 'auto' }}>
+          {segs.length - 1} STOP{segs.length - 1 === 1 ? '' : 'S'}
+        </p>
+      </div>
+      {segs.map((seg, i) => {
+        const delta = segmentDayDelta(seg)
+        return (
+          <div key={i}>
+            <div className="flex items-baseline justify-between" style={{ marginTop: i ? 10 : 0 }}>
+              <p className="f-news text-lg tt-tight leading-tight">
+                {seg.flightNo}
+                {seg.from.code && (
+                  <>
+                    <span className="opacity-50" style={{ margin: '0 8px' }}>·</span>
+                    {seg.from.code}
+                    <span className="opacity-50" style={{ margin: '0 6px' }}>→</span>
+                    {seg.to.code}
+                  </>
+                )}
+              </p>
+            </div>
+            <p className="f-dm text-[12px] opacity-70 mt-1">
+              {seg.dep.local && `Departs ${seg.dep.local}`}
+              {seg.dep.local && seg.arr.local && ' · '}
+              {seg.arr.local && `Lands ${seg.arr.local}${delta ? ` +${delta}` : ''}`}
+              {!seg.dep.local && !seg.arr.local && 'Time not entered yet'}
+            </p>
+            {i < layovers.length && layovers[i]?.code && (
+              <p className="f-mono text-[10px] opacity-50 mt-2" style={{ textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Layover {layovers[i].code}{Number.isFinite(layovers[i].mins) ? ` · ${Math.floor(layovers[i].mins / 60)}h${layovers[i].mins % 60 ? `${layovers[i].mins % 60}m` : ''}` : ''}
+              </p>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -215,7 +303,7 @@ function PanelBody({
 export function findArrivalStop(trip) {
   for (const day of trip.days || []) {
     for (const stop of day.stops || []) {
-      if (stop.flightNumber && (stop.kind === 'arrival' || stop.kind === 'departure')) {
+      if (flightSegments(stop).length && (stop.kind === 'arrival' || stop.kind === 'departure')) {
         return { stop, day }
       }
     }

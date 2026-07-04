@@ -6,6 +6,7 @@ import { RafaGames } from './RafaGames'
 import { RafaSound } from '../lib/rafaSound'
 import { WeaveReady, SurpriseReveal } from '../components/EntryCues'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
+import { flightSegments } from '../lib/flightSegments'
 
 // RafaPad — Rafa's iPad "command center" home (design_handoff_rafa_adventure_map).
 // Landscape 4×4 quadrant of chunky candy tiles: two BIG tiles (My games / Show
@@ -211,6 +212,9 @@ function tripCountdown(trip, destStop) {
 }
 
 function emojiFor(stop) {
+  // A real flight (flightNumber or the modern segments[] shape) wins over the
+  // keyword guess below — see RafaView's twin emojiFor for the same fix.
+  if (flightSegments(stop).length) return '✈️'
   const t = `${stop.name} ${stop.kind || ''}`.toLowerCase()
   if (/monster|truck|rocket|axiom|space/.test(t)) return '🚀'
   if (/lion king|theater|show|broadway|circus/.test(t)) return '🎭'

@@ -4448,6 +4448,10 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId, clien
     lines.push('- TRANSIT: driving segments worth naming (scenic routes, rest stops)')
     lines.push('')
     lines.push(
+      'FLIGHTS — for a LOGISTICS stop that IS a flight, ALSO add a `flight` object: `{ "segments": [{ "flightNo": "DL100", "from": {"code":"BOS"}, "to": {"code":"FRA"}, "dep": {"date":"2026-08-01","local":"9:35 PM"}, "arr": {"date":"2026-08-02","local":"11:05 AM"} }], "layovers": [] }`. Airport codes only (IATA, e.g. "BOS"/"FCO") — never a city name. Each segment\'s `dep`/`arr` are the REAL local date + clock time at THAT end (a red-eye landing the next calendar day gets its own later `arr.date` — never invented, never the departure date repeated). A CONNECTING flight (a layover) gets one entry per segment IN ORDER plus one layover between each pair: `"layovers": [{ "code": "FRA", "mins": 100 }]` (one fewer than segments). A NON-STOP flight is a single-element `segments` array and an empty `layovers`. OMIT the whole `flight` object when you do not know real flight numbers/times — do not invent a flight number or a schedule; a plain LOGISTICS stop with only a name/time is honest and always fine.'
+    )
+    lines.push('')
+    lines.push(
       'TRIP SHAPE — set `trip.shape` to the kind of trip this is, reading the user\'s intent even from loose, casual wording: `"stay"` for a trip anchored at ONE place they settle into (a cabin, a beach house, Grandma\'s, a city they base in) — INCLUDING low-key "just be there" trips however vaguely they phrase it ("chill", "lazy weekend", "hang out", "hangout", "relax", "nothing planned", "take it easy", "low-key", "just want to relax"); `"route"` for a ROAD TRIP that moves through 2+ overnight places with driving between them. The reader\'s words do NOT need to be precise — YOU categorize precisely. OMIT `shape` only when you genuinely cannot tell; a real road trip must never be labeled a stay. (A stay sheds road-trip scaffolding — the drive ticker, the "nearest gas/food" queue; a route keeps it.)'
     )
     lines.push('')

@@ -201,6 +201,12 @@ export function cardToTrip(card, { existingId = null, existingIds = null, author
           lng: null,
           driveFromPrevious: s.driveFromPrevious || null,
           source: 'claude',
+          // Optional flight segments (design 03 §5) — carried through raw;
+          // flightSegments() (lib/flightSegments.js) defensively normalizes
+          // on every read, so a malformed AI-authored `flight` object can
+          // never crash a reader. Omitted entirely when the AI didn't emit
+          // one — a plain LOGISTICS stop stays a plain stop.
+          ...(s.flight && typeof s.flight === 'object' && !Array.isArray(s.flight) ? { flight: s.flight } : {}),
         }))
       return {
         n,

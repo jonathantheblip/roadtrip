@@ -6,6 +6,7 @@ import { WeaveReady } from '../components/EntryCues'
 import { todayLocalIso } from '../lib/localDate'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { readableRecordEntries, entryStamps } from '../lib/dayRecord'
+import { flightSegments } from '../lib/flightSegments'
 import { VoiceRecorder } from '../components/VoiceRecorder'
 import { saveMemory } from '../lib/memoryStore'
 import { saveAsset, makeAssetKey } from '../lib/memAssets'
@@ -819,6 +820,11 @@ export function RafaView({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, 
 }
 
 function emojiFor(stop) {
+  // A real flight (flightNumber or the modern segments[] shape) wins over the
+  // keyword guess below — that guess was the ONLY signal before, so a stop
+  // that happened to mention "flight"/"airport" in its own name (but wasn't
+  // actually a flight) could match it just as easily as a real one.
+  if (flightSegments(stop).length) return '✈️'
   const t = `${stop.name} ${stop.kind || ''}`.toLowerCase()
   if (/monster|truck|rocket|axiom|space/.test(t)) return '🚀'
   if (/lion king|theater|show|broadway/.test(t)) return '🎭'

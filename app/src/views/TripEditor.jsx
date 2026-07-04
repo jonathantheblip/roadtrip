@@ -18,6 +18,7 @@ import { newTripId } from '../utils/ids'
 import { tripCompleteness } from '../lib/tripComplete'
 import { isStayTrip } from '../lib/tripShape'
 import { hasExplicitParts, partPlaceLabel, isCompositeTrip, PART_TYPES, legGeocodeQuery } from '../lib/tripParts'
+import { flightSegments, flightLayovers, emptyFlightSegment } from '../lib/flightSegments'
 
 // Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
 // pulled in when a trip actually has a located lodging (Phase 2).
@@ -191,8 +192,18 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
     scheduleSave()
   }, [scheduleSave])
 
-  const patchDays = useCallback((days) => {
-    setTrip((cur) => ({ ...cur, days }))
+  // Accepts either a plain next-days array OR an updater `(currentDays) =>
+  // nextDays` — the updater form reads the FRESHEST days at apply time (via
+  // setTrip's own functional updater) rather than whatever `trip.days` the
+  // calling mutator captured via closure. Load-bearing for any mutator that
+  // can fire twice in quick succession before a render lands in between
+  // (e.g. FlightEditor's segment fields, each a separate onChange) — a
+  // closure-read mutator would silently drop the first of two rapid edits.
+  const patchDays = useCallback((daysOrFn) => {
+    setTrip((cur) => ({
+      ...cur,
+      days: typeof daysOrFn === 'function' ? daysOrFn(cur.days) : daysOrFn,
+    }))
     scheduleSave()
   }, [scheduleSave])
 
@@ -207,60 +218,76 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
 
   // ── Day / stop mutations ────────────────────────────────────────────
   function addDay() {
-    const days = [...(trip.days || [])]
-    days.push({
-      n: days.length + 1, isoDate: '', date: '', title: '',
-      drive: { from: '', to: '', hours: '', miles: 0 },
-      lodging: '', stops: [],
+    patchDays((cur) => {
+      const days = [...(cur || [])]
+      days.push({
+        n: days.length + 1, isoDate: '', date: '', title: '',
+        drive: { from: '', to: '', hours: '', miles: 0 },
+        lodging: '', stops: [],
+      })
+      return days
     })
-    patchDays(days)
   }
   function updateDay(i, p) {
-    const days = trip.days.map((d, idx) => (idx === i ? { ...d, ...p } : d))
-    patchDays(days)
+    patchDays((cur) => cur.map((d, idx) => (idx === i ? { ...d, ...p } : d)))
   }
   function moveDay(i, dir) {
-    const j = i + dir
-    if (j < 0 || j >= trip.days.length) return
-    const days = [...trip.days]
-    ;[days[i], days[j]] = [days[j], days[i]]
-    days.forEach((d, idx) => { d.n = idx + 1 })
-    patchDays(days)
+    patchDays((cur) => {
+      const j = i + dir
+      if (j < 0 || j >= cur.length) return cur
+      const days = [...cur]
+      ;[days[i], days[j]] = [days[j], days[i]]
+      days.forEach((d, idx) => { d.n = idx + 1 })
+      return days
+    })
   }
   function removeDay(i) {
-    const days = trip.days.filter((_, idx) => idx !== i)
-    days.forEach((d, idx) => { d.n = idx + 1 })
-    patchDays(days)
+    patchDays((cur) => {
+      const days = cur.filter((_, idx) => idx !== i)
+      days.forEach((d, idx) => { d.n = idx + 1 })
+      return days
+    })
   }
   function addStop(di) {
-    const days = clone(trip.days)
-    days[di].stops = days[di].stops || []
-    days[di].stops.push({
-      id: `stop_${newTripId().slice(5, 17)}`,
-      time: '', name: '', kind: 'sights',
-      for: [...(trip.travelers || TRAVELER_ORDER)],
-      note: '', address: '', lat: null, lng: null,
-      url: '', reservation: '', confirmation: '', phone: '',
+    patchDays((cur) => {
+      const days = clone(cur)
+      days[di].stops = days[di].stops || []
+      days[di].stops.push({
+        id: `stop_${newTripId().slice(5, 17)}`,
+        time: '', name: '', kind: 'sights',
+        // tripRef.current, not the outer `trip` closure — this callback can
+        // run after a LATER render than the one that defined addStop, and
+        // tripRef is updated synchronously every render (unlike the closure).
+        for: [...(tripRef.current.travelers || TRAVELER_ORDER)],
+        note: '', address: '', lat: null, lng: null,
+        url: '', reservation: '', confirmation: '', phone: '',
+      })
+      return days
     })
-    patchDays(days)
   }
   function updateStop(di, si, p) {
-    const days = clone(trip.days)
-    days[di].stops[si] = { ...days[di].stops[si], ...p }
-    patchDays(days)
+    patchDays((cur) => {
+      const days = clone(cur)
+      days[di].stops[si] = { ...days[di].stops[si], ...p }
+      return days
+    })
   }
   function moveStop(di, si, dir) {
-    const sj = si + dir
-    const stops = trip.days[di].stops
-    if (sj < 0 || sj >= stops.length) return
-    const days = clone(trip.days)
-    ;[days[di].stops[si], days[di].stops[sj]] = [days[di].stops[sj], days[di].stops[si]]
-    patchDays(days)
+    patchDays((cur) => {
+      const stops = cur[di].stops
+      const sj = si + dir
+      if (sj < 0 || sj >= stops.length) return cur
+      const days = clone(cur)
+      ;[days[di].stops[si], days[di].stops[sj]] = [days[di].stops[sj], days[di].stops[si]]
+      return days
+    })
   }
   function removeStop(di, si) {
-    const days = clone(trip.days)
-    days[di].stops = days[di].stops.filter((_, idx) => idx !== si)
-    patchDays(days)
+    patchDays((cur) => {
+      const days = clone(cur)
+      days[di].stops = days[di].stops.filter((_, idx) => idx !== si)
+      return days
+    })
   }
 
   // ── Parts (legs) mutations ───────────────────────────────────────────
@@ -364,34 +391,42 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   // (written before the shape evolved, live on the family's trip) is upgraded
   // in place, its entries never discarded.
   function addRecordEntry(di) {
-    const days = clone(trip.days)
-    const rec = readRecord(days[di])
-    const entries = rec.entries.slice()
-    entries.push({
-      id: recordEntryId(null, entries.length),
-      time: '', name: '', kind: '',
-      for: [...(trip.travelers || TRAVELER_ORDER)],
-      note: '', address: '', lat: null, lng: null,
-      source: 'manual', recordedBy: traveler || null,
-      recordedAt: new Date().toISOString(),
+    patchDays((cur) => {
+      const days = clone(cur)
+      const rec = readRecord(days[di])
+      const entries = rec.entries.slice()
+      entries.push({
+        id: recordEntryId(null, entries.length),
+        time: '', name: '', kind: '',
+        // tripRef.current, not the outer `trip` closure — same rationale as
+        // addStop's identical fix just above.
+        for: [...(tripRef.current.travelers || TRAVELER_ORDER)],
+        note: '', address: '', lat: null, lng: null,
+        source: 'manual', recordedBy: traveler || null,
+        recordedAt: new Date().toISOString(),
+      })
+      days[di].record = { ...rec, entries }
+      return days
     })
-    days[di].record = { ...rec, entries }
-    patchDays(days)
   }
   function updateRecordEntry(di, ri, p) {
-    const days = clone(trip.days)
-    const rec = readRecord(days[di])
-    if (!rec.entries[ri]) return
-    const entries = rec.entries.slice()
-    entries[ri] = { ...entries[ri], ...p }
-    days[di].record = { ...rec, entries }
-    patchDays(days)
+    patchDays((cur) => {
+      const days = clone(cur)
+      const rec = readRecord(days[di])
+      if (!rec.entries[ri]) return cur
+      const entries = rec.entries.slice()
+      entries[ri] = { ...entries[ri], ...p }
+      days[di].record = { ...rec, entries }
+      return days
+    })
   }
   function removeRecordEntry(di, ri) {
-    const days = clone(trip.days)
-    const rec = readRecord(days[di])
-    days[di].record = { ...rec, entries: rec.entries.filter((_, idx) => idx !== ri) }
-    patchDays(days)
+    patchDays((cur) => {
+      const days = clone(cur)
+      const rec = readRecord(days[di])
+      days[di].record = { ...rec, entries: rec.entries.filter((_, idx) => idx !== ri) }
+      return days
+    })
   }
 
   // A PARENT places (or dismisses) one of Rafa's "tell about today" pending notes
@@ -1003,6 +1038,8 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
         <Text label="Phone" value={stop.phone} onChange={(v) => onUpdate({ phone: v })} placeholder="781-530-7888" />
       </div>
 
+      <FlightEditor stop={stop} onUpdate={onUpdate} />
+
       <div style={{ marginTop: 8 }}>
         <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} style={{ display: 'none' }} />
         <IconBtn onClick={() => fileRef.current?.click()} label="Add a photo to this stop">
@@ -1011,6 +1048,123 @@ function StopBlock({ stop, index, count, traveler, tripId, travelers, onUpdate, 
       </div>
 
       {recording && <VoiceRecorder onCancel={() => setRecording(false)} onStop={onVoiceStop} />}
+    </div>
+  )
+}
+
+// ── Flight segments (design 03 §5: "legs with their own zones… layovers are
+// explicit") — the FIRST real editing UI for flight info of any kind; before
+// this a stop's flightNumber/flightOrigin/flightDest/flightDate/
+// scheduledArrivalLocal could only be set by hand-editing a seed fixture.
+// Reads/writes exclusively through flightSegments(stop) — a LEGACY flat-
+// field stop displays its one synthesized segment immediately; the moment
+// it's edited at all, the write lands in the modern `stop.flight.segments[]`
+// shape (never the legacy fields again), same "adopt-on-edit" pattern
+// PartBlock's place field uses. Removing the last segment clears BOTH
+// shapes at once so "remove flight" is honest regardless of which one a
+// stop started in.
+function FlightEditor({ stop, onUpdate }) {
+  const segs = flightSegments(stop)
+  const layovers = flightLayovers(stop)
+
+  function writeSegments(nextSegs, nextLayovers) {
+    onUpdate({ flight: { segments: nextSegs, layovers: nextLayovers ?? layovers } })
+  }
+  function addSegment() {
+    writeSegments([...segs, emptyFlightSegment()], segs.length ? [...layovers, { code: '', mins: null }] : layovers)
+  }
+  function updateSegment(i, patch) {
+    writeSegments(segs.map((s, idx) => (idx === i ? { ...s, ...patch } : s)))
+  }
+  function removeSegment(i) {
+    const nextSegs = segs.filter((_, idx) => idx !== i)
+    if (nextSegs.length === 0) {
+      // Clear BOTH shapes — a legacy stop's flightNumber etc. must not silently
+      // resurrect the "removed" flight the next time flightSegments reads it.
+      onUpdate({
+        flight: undefined, flightNumber: undefined, flightOrigin: undefined,
+        flightDest: undefined, flightDate: undefined, scheduledArrivalLocal: undefined,
+      })
+      return
+    }
+    // Every layover touching the removed segment is now meaningless: the ONE
+    // before it (segs[i-1]→segs[i]) when i isn't first, and the ONE after it
+    // (segs[i]→segs[i+1]) when i isn't last. Removing an END segment drops
+    // exactly one (the old behavior); removing a MIDDLE segment of 3+ drops
+    // BOTH — there's no way to synthesize what, if anything, connects the two
+    // survivors now touching for the first time, so the user re-enters it.
+    const drop = new Set()
+    if (i > 0) drop.add(i - 1)
+    if (i < segs.length - 1) drop.add(i)
+    writeSegments(nextSegs, layovers.filter((_, idx) => !drop.has(idx)))
+  }
+  function updateLayover(i, patch) {
+    const next = [...layovers]
+    while (next.length <= i) next.push({ code: '', mins: null })
+    next[i] = { ...next[i], ...patch }
+    writeSegments(segs, next)
+  }
+
+  return (
+    <div style={{ marginTop: 8, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+      <p className="smallcaps f-dm text-[11px] opacity-70 mb-2">Flight</p>
+      {segs.map((seg, i) => (
+        <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+            <p className="f-dm text-[10px] opacity-60">{segs.length > 1 ? `Segment ${i + 1}` : 'Flight details'}</p>
+            <IconBtn onClick={() => removeSegment(i)} label={`Remove ${segs.length > 1 ? `segment ${i + 1}` : 'flight info'}`} danger>
+              <Trash2 size={12} />
+            </IconBtn>
+          </div>
+          <Row>
+            <Text label="Flight #" value={seg.flightNo} onChange={(v) => updateSegment(i, { flightNo: v })} placeholder="DL4961" />
+            <div />
+          </Row>
+          <Row>
+            <Text label="From (airport code)" value={seg.from.code} onChange={(v) => updateSegment(i, { from: { ...seg.from, code: v.toUpperCase() } })} placeholder="BOS" />
+            <Text label="To (airport code)" value={seg.to.code} onChange={(v) => updateSegment(i, { to: { ...seg.to, code: v.toUpperCase() } })} placeholder="FCO" />
+          </Row>
+          <Row>
+            <DateField label="Departs (date)" value={seg.dep.date} onChange={(v) => updateSegment(i, { dep: { ...seg.dep, date: v } })} />
+            <Text label="Departs (local time)" value={seg.dep.local} onChange={(v) => updateSegment(i, { dep: { ...seg.dep, local: v } })} placeholder="9:35 PM" />
+          </Row>
+          <Row>
+            <DateField label="Arrives (date)" value={seg.arr.date} onChange={(v) => updateSegment(i, { arr: { ...seg.arr, date: v } })} />
+            <Text label="Arrives (local time)" value={seg.arr.local} onChange={(v) => updateSegment(i, { arr: { ...seg.arr, local: v } })} placeholder="11:05 AM" />
+          </Row>
+        </div>
+      ))}
+      {/* Layovers — one between each pair of segments (layovers.length === segs.length - 1). */}
+      {segs.length > 1 && (
+        <div style={{ marginTop: -2, marginBottom: 8 }}>
+          {segs.slice(0, -1).map((_, i) => (
+            <Row key={i}>
+              <Text
+                label={`Layover ${i + 1} airport`}
+                value={layovers[i]?.code || ''}
+                onChange={(v) => updateLayover(i, { code: v.toUpperCase() })}
+                placeholder="FRA"
+              />
+              <Text
+                label={`Layover ${i + 1} minutes`}
+                value={Number.isFinite(layovers[i]?.mins) ? String(layovers[i].mins) : ''}
+                onChange={(v) => updateLayover(i, { mins: v.trim() === '' ? null : Number(v) })}
+                placeholder="100"
+              />
+            </Row>
+          ))}
+        </div>
+      )}
+      {segs.length > 0 && (
+        <IconBtn onClick={addSegment} label="Add a connection">
+          <Plus size={12} /> {segs.length > 1 ? 'Add another connection' : 'Add a connection'}
+        </IconBtn>
+      )}
+      {segs.length === 0 && (
+        <IconBtn onClick={addSegment} label="Add flight info">
+          <Plus size={12} /> Add flight info
+        </IconBtn>
+      )}
     </div>
   )
 }
