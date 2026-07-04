@@ -143,6 +143,15 @@ The current contradiction is the bug to kill:
 
 ## 7. HONEST CURRENT STATE (what's shipped, and why it falls short)
 
+> ⚠ **STALE as of 2026-07-04 — the state below is a snapshot from BEFORE the recenter overhaul (§8-11)
+> shipped.** The overhaul this section says is still needed is now **COMPLETE**: the 4-tab living-heart
+> shell (§10/§11), the full slices 1–8 roadmap (recentered home, "We could…" tray, propose→decide,
+> real conditions, "Who's around" shared presence incl. Rafa's diorama + bidirectional waves) all SHIPPED +
+> DEPLOYED — see `memory/recenter-on-family-trips.md` for the full ship log. Since then: the Record (three
+> tenses — plan/now/what-actually-happened, incl. Rafa's stamp + tell-about-today), per-user skins, share-out,
+> editable composite legs, and multi-leg flights have ALSO shipped (see `CARRYOVER_FEATURES_QUEUE.md` and
+> `memory/` for the current state — this section is kept for historical context, not as a live status).
+
 Two slices have shipped toward this, both **GPS/photo-based** and **neither touching the live rail
 or live location** — i.e. still the road-trip engine:
 
@@ -191,6 +200,11 @@ build plan for the overhaul is scoped separately, against this north star.
 
 ## 10. WHERE THE BUILD IS NOW (decided 2026-06-21 — a pointer that ages; verify against `memory/recenter-on-family-trips`)
 
+> ⚠ **STALE as of 2026-07-04 — "being built" below is done.** The 4-tab shell, every roadmap slice (1–8),
+> and Rafa's phone+iPad "who's around" + bidirectional waves are SHIPPED + LIVE. Current work is the `#7`
+> features queue (editable legs ✅, multi-leg flights ✅, metric units + Aurelia lowercase remaining) — see
+> `CARRYOVER_FEATURES_QUEUE.md` for the live pointer.
+
 The recenter is being **built**, not just planned. The shape is settled:
 
 - **The home is a four-tab shell — "We could… · Now · Photos · Look back"** (from Jonathan's `/design:user-research`
@@ -222,9 +236,13 @@ forks. What changes by trip is not *which* home but *what the living heart surfa
   heart*, but it "needs to look a little different… it'll need to surface the right **just-in-time information**
   — perhaps **screenshots of tickets, routing information, timeliness**, etc." So the agenda/now-surface becomes
   **time-aware + document-aware**: the next timed thing, its ticket/boarding-pass image, where to be and when,
-  what's imminent. (These trips currently still render `PartsTripView`, a separate parts view — **folding them
-  into the shape-aware living heart is the open work**, not a second home.) Build for this; don't shunt complex
-  trips to their own surface.
+  what's imminent. **[✅ DONE, updated 2026-07-04 — the separate `PartsTripView` is RETIRED; a composite trip
+  now flows through the SAME shape-aware living heart (leads with the current leg + a just-in-time "Next up"
+  ticket, the full plan folds in below via `PartsOutline`).** The leg data model (per-leg tz/currency/locale,
+  the journey rail, per-leg geocoding) shipped, and — as of this session — a composite trip's legs are
+  editable in TripEditor and can carry real multi-segment (connecting) flights with their own zones/layovers/
+  "+N day" honesty, per the design's own §5 spec (`app/docs/design/hangout-first-handoff/03-scaling-the-home.md`).
+  Ticket/boarding-pass IMAGE attachment is not yet built — see `CARRYOVER_FEATURES_QUEUE.md` for current state.**
 
 The principle for ALL home/nav work: **don't ask "what trip shape is this, which home?" — there is one home;
 ask "what does *this* trip need surfaced *right now*?"**

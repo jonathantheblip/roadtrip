@@ -213,8 +213,18 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-06-03. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-04. Update as these resolve.
 
+- **[RESOLVED 2026-07-04] An orphaned local WIP commit sat unpushed on `main` for days, invisible to a fresh
+  window.** `c2bf3ef` ("additive day-level stamps model for #8") was built in a prior session, never pushed,
+  and local `main` had drifted from `origin/main` — a fresh window reading only `origin/main` would never
+  have seen it, and it encoded a design decision (day-level stamp granularity) that turned out to be the
+  WRONG one once Jonathan was asked and picked per-entry instead. Fixed: the real per-entry feature shipped
+  (`f51f52f`), the stale commit was confirmed unreferenced anywhere and dropped (`git branch -f main
+  origin/main`). **Watch for recurrence:** an uncommitted or unpushed local commit on ANY branch is exactly
+  the "knowledge that lives only in a closed window" failure this file exists to prevent (§0) — a session
+  ending mid-build should either push (if gated green) or name the exact uncommitted/unpushed state in its
+  carryover (§5.0.1), never leave it silently on disk for a future window to stumble on or miss.
 - **[RESOLVED 2026-06-03] The master product spec is now version-controlled.** Committed as
   [MASTER_SPEC.md](MASTER_SPEC.md) (durable §0–§2/§5 authoritative; §3/§4 a verify-don't-trust snapshot),
   linked from §0 and CLAUDE.md. The "every window depends on a re-pasted doc" risk is closed.
