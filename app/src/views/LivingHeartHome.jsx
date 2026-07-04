@@ -244,9 +244,15 @@ export function LivingHeartHome({
   const nextThing = useMemo(() => {
     if (!isComplex) return null
     // "Now" for the just-in-time ticket ticks on LEG time (nowMinutesInZone falls
-    // back to device time when the leg has no tz — byte-identical today).
+    // back to device time when the leg has no tz — byte-identical today). `now`
+    // itself must be a dependency: nowMinutesInZone(legTz) is read FRESH inside
+    // this callback every time, but without `now` in the array the memo never
+    // re-runs the callback as the minutes tick — it only recomputes on a day
+    // rollover or a leg change, so "Next up" could sit on an already-passed stop
+    // for the rest of the day. useNowTick ticks every minute + on foreground, so
+    // adding it here is what actually makes the ticket live.
     return nextTimedStop(trip, { todayIso, nowMinutes: nowMinutesInZone(legTz) })
-  }, [isComplex, trip, todayIso, legTz])
+  }, [isComplex, trip, todayIso, legTz, now])
   const nextWhen = useMemo(() => {
     if (!nextThing) return ''
     const dayPart = nextThing.iso === todayIso ? 'Today'
