@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { TRIPS as SEED_TRIPS } from '../data/trips'
 import { pullTrips, pushTrip, deleteTrip, isWorkerConfigured, getActiveTraveler } from '../lib/workerSync'
 import {
@@ -30,9 +30,13 @@ import { markDeleted, clearDeleted, deletedIds, withoutDeleted } from '../lib/de
 //   • removeTrip(id), seed() helper for the Settings button.
 
 const CACHE_KEY = 'rt_trips_cache_v1'
-// How often to re-attempt pushing trip edits that haven't reached the family.
+// The one sync heartbeat: how often to re-attempt pushing trip edits that
+// haven't reached the family, AND how often to re-pull so another device's
+// edit shows up here without waiting for this device to foreground/reload.
 // Short enough that a stranded edit clears within seconds of reconnect (the
-// `online` event is unreliable on iOS), but not a tight loop.
+// `online` event is unreliable on iOS), but not a tight loop. Matches the
+// existing polling ceiling elsewhere in this codebase (presence.js/
+// proposals.js both already poll at this same cadence).
 const TRIP_RESYNC_INTERVAL_MS = 20000
 
 function readCache() {
@@ -84,12 +88,22 @@ export function useTrips() {
   // How many trip edits haven't reached the family yet (for an honest "syncing…"
   // cue). Driven by lib/tripSyncQueue, which survives reloads.
   const [unsyncedCount, setUnsyncedCount] = useState(() => unsyncedCountNow())
+  // Re-entrancy guard: mount, 'online', visibilitychange, AND the periodic
+  // heartbeat can all fire refresh() close together (e.g. a device coming
+  // online right as the interval ticks) — the merge itself is idempotent
+  // either way, but there's no reason to fire two overlapping pulls. Lives
+  // INSIDE refresh (not the lifecycle effect) so every trigger shares this
+  // same guard automatically; a direct pullTrips() caller (seed()) is
+  // unaffected.
+  const refreshingRef = useRef(false)
 
   const refresh = useCallback(async () => {
     if (!isWorkerConfigured()) {
       // Stays on cache/seed — no network attempt.
       return
     }
+    if (refreshingRef.current) return
+    refreshingRef.current = true
     setLoading(true)
     setError(null)
     try {
@@ -143,13 +157,10 @@ export function useTrips() {
       console.warn('useTrips refresh failed', err)
       setError(err?.message || String(err))
     } finally {
+      refreshingRef.current = false
       setLoading(false)
     }
   }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
 
   // The single create/update path. Both the manual-add form and the
   // trip editor go through this — one function, one schema, one set of
@@ -270,14 +281,23 @@ export function useTrips() {
   // reached the family yet."
   useEffect(() => subscribeUnsynced(setUnsyncedCount), [])
 
-  // Self-healing lifecycle: attempt a resync on cold load (pick up edits
-  // stranded by a prior session), when the network returns, when the app comes
-  // back to the foreground, and on a short interval (the iOS `online` event is
-  // unreliable). Mirrors the photo upload-queue drain triggers in App.jsx.
+  // Self-healing lifecycle: attempt a resync AND a re-pull on cold load (pick
+  // up edits stranded by a prior session, and another device's edits made
+  // while this one was away), when the network returns, when the app comes
+  // back to the foreground, and on a short interval (the iOS `online` event
+  // is unreliable). Mirrors the photo upload-queue drain triggers in
+  // App.jsx. The pull half is what makes a SECOND device's agenda edit show
+  // up here without waiting for this device to foreground or reload —
+  // refresh()'s own clobber/draft/resurrection guards already protect any
+  // edit this device hasn't pushed yet, so pulling on the same heartbeat as
+  // the push-resync is safe.
   useEffect(() => {
     let stopped = false
     const attempt = () => {
-      if (!stopped) resyncPending()
+      if (!stopped) {
+        resyncPending()
+        refresh()
+      }
     }
     attempt()
     const onOnline = () => attempt()
@@ -293,7 +313,7 @@ export function useTrips() {
       document.removeEventListener('visibilitychange', onVis)
       clearInterval(iv)
     }
-  }, [resyncPending])
+  }, [resyncPending, refresh])
 
   // Back-compat aliases — existing callers (Settings album URL, App
   // create handler) keep working without learning a new name.
