@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import { Plus, Clock, Settings as SettingsIcon, Pencil, Trash2, FileText, Eye } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Plus, Clock, Settings as SettingsIcon, Pencil, Trash2, FileText, Eye, Loader } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { isTripPublishable } from '../lib/tripComplete'
 import { effectiveStatus } from '../data/trips'
@@ -10,6 +10,7 @@ import { hasExplicitHero } from '../lib/tripHero'
 import { stayLabel } from '../lib/tripShape'
 import { heroRotationExtras, pickRotatingHero } from '../lib/heroRotation'
 import { AvatarStack } from '../components/Avatar'
+import { count as pendingDeleteCount, subscribe as subscribePendingDeletes } from '../lib/deleteTombstones'
 
 // Trip index — the platform's home. Direct port of the Design bundle's
 // HomeScreen (screens-supporting.jsx#HomeScreen). Per traveler theme
@@ -27,6 +28,14 @@ import { AvatarStack } from '../components/Avatar'
 export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenTrip, onNewTrip, onEditDraft, onDeleteDraft, onRestoreDraft, onResurfaceReplay, onOpenSettings, onSetHero }) {
   // Which draft is mid-delete (two-tap confirm, mirrors Settings → Drafts).
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  // A delete that hasn't reached the family yet (offline, or the worker's
+  // masked-refusal guard) stays gone LOCALLY but is tombstoned until the
+  // server confirms (deleteTombstones.js) — this is the honest, visible half
+  // of that self-healing: the index a family member lands on right after
+  // deleting a trip is the one place that's always open regardless of which
+  // trip it was, so it's the natural home for "it's still confirming."
+  const [pendingDeletes, setPendingDeletes] = useState(() => pendingDeleteCount())
+  useEffect(() => subscribePendingDeletes(setPendingDeletes), [])
   // "Looking back": one resurfaced past moment (a completed-trip day with
   // photos), rotating daily. Null when there's nothing to look back on.
   const resurface = useMemo(() => pickResurface(trips, traveler), [trips, traveler])
@@ -174,6 +183,24 @@ export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenT
         >
           An archive, and a planning surface for what comes next.
         </div>
+        {pendingDeletes > 0 && (
+          <div
+            data-testid="pending-deletes-note"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              marginTop: 8,
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 10.5,
+              letterSpacing: '0.03em',
+              color: 'var(--muted)',
+            }}
+          >
+            <Loader size={11} className="rt-spin" aria-hidden="true" />
+            {pendingDeletes === 1 ? 'A delete is still confirming…' : `${pendingDeletes} deletes are still confirming…`}
+          </div>
+        )}
       </div>
 
       {/* DRAFTS — the author's own unpublished trips. Surfaced here (not just

@@ -48,3 +48,44 @@ test('a trip delete that fails remotely is TOMBSTONED, not silently reversed', a
     )
     .toEqual({ tombstoned: true, inCache: false })
 })
+
+// Sibling gap (2026-07-04 audit): the worker's masked-trip delete guard never
+// 4xx's a REFUSED delete (that would leak "this trip is a secret" to a caller
+// who only ever saw the cover) — it answers HTTP 200 with `deleted: 0`
+// instead. Before this fix, deleteTrip read only `res.ok` (true for this
+// response) and reported the delete as confirmed — clearing the tombstone
+// for a trip the server never actually removed. Same tombstone/no-resurrect
+// proof as above, but for the MASKED-REFUSAL network shape, not a hard failure.
+test('a trip delete the worker silently REFUSES (masked-trip guard) is also TOMBSTONED, not treated as confirmed', async ({ page }) => {
+  await seedTripIntoCache(page, TRIP)
+  await page.route(/roadtrip-sync[^/]*\/trips\/[^/?]+$/, (route) =>
+    route.request().method() === 'DELETE'
+      ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, id: 'del-trip', deleted: 0 }) })
+      : route.fallback()
+  )
+  await page.goto('/?person=helen&trip=del-trip&nosw=1')
+  await expect(page.getByTestId('living-heart-home')).toBeVisible({ timeout: 10000 })
+
+  await openTopMenuItem(page, /Settings/i)
+  await page.getByTestId('delete-trip').click()
+  const [resp] = await Promise.all([
+    page.waitForResponse((r) => /\/trips\/del-trip$/.test(r.url()) && r.request().method() === 'DELETE'),
+    page.getByTestId('delete-trip-confirm').click(),
+  ])
+  expect(resp.status()).toBe(200)
+  // A bare `.poll()` can catch a MOMENTARY tombstoned:true right after
+  // markDeleted and pass on a stale sample even if the buggy code's
+  // clearDeleted runs moments later — wait past the response for the in-page
+  // promise chain (res.json() → deleteTrip's return → removeTrip's
+  // continuation) to fully settle before reading the steady-state.
+  await page.waitForTimeout(300)
+  const state = await page.evaluate(() => {
+    const tombs = JSON.parse(localStorage.getItem('rt_delete_tombstones_v1') || '{}')
+    const cache = JSON.parse(localStorage.getItem('rt_trips_cache_v1') || '[]')
+    return {
+      tombstoned: (tombs.trip || []).some((e) => e.id === 'del-trip'),
+      inCache: cache.some((t) => t.id === 'del-trip'),
+    }
+  })
+  expect(state).toEqual({ tombstoned: true, inCache: false })
+})

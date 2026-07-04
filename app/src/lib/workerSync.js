@@ -577,7 +577,15 @@ export async function pushTrip(trip, { asTraveler } = {}) {
 export async function deleteTrip(id) {
   if (!isWorkerConfigured()) return false
   try {
-    await workerFetch(`/trips/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const res = await workerFetch(`/trips/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    // The worker's masked-trip guard doesn't 4xx a delete it refuses (that would
+    // leak "this is a secret" to the caller) — it returns HTTP 200 with
+    // `deleted: 0` instead (worker/src/index.js's deleteTrip). A bare `res.ok`
+    // check would read that as a success and clear the tombstone for a trip
+    // that's still sitting there. Only THIS masked-refusal shape carries
+    // `deleted`; a real delete's response omits the field entirely.
+    const data = await res.json().catch(() => null)
+    if (data && data.deleted === 0) return false
     return true
   } catch (err) {
     console.warn('workerSync deleteTrip failed', err)
