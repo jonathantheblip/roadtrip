@@ -13,7 +13,7 @@
 // sits in the living heart's padded content column, so its cards carry no extra
 // horizontal margin (the column pads them).
 import { partsWithDays, partPlaceLabel } from '../lib/tripParts.js'
-import { readableRecordEntries, isDraftEntry } from '../lib/dayRecord.js'
+import { readableRecordEntries, isDraftEntry, entryStamps } from '../lib/dayRecord.js'
 import { humanDateRange } from '../lib/createTripCard.js'
 import { AvatarStack } from '../components/Avatar'
 
@@ -91,6 +91,20 @@ export function StopRow({ stop, onOpen, first, looseTime = false }) {
 // beneath ("late morning, till one"). A small marker dot in the record accent
 // stands where the plan has none. (Design 02 "Named row" / 03 read faces; gold
 // is reserved for a KEPT day, which arrives with the keep flow.) Read-only.
+// Rafa's stamps (design 03/04) — inline glyphs after the line, "for everyone."
+// A small, quiet addition; absent entirely on any entry nobody's stamped.
+function StampGlyphs({ entry }) {
+  const stamps = entryStamps(entry)
+  if (!stamps.length) return null
+  return (
+    <span aria-label="Rafa stamped this" style={{ marginLeft: 6 }}>
+      {stamps.map((s, i) => (
+        <span key={i} style={{ fontSize: 13 }}>{s.glyph}</span>
+      ))}
+    </span>
+  )
+}
+
 export function RecordRow({ entry, first }) {
   const time = (entry?.time || '').trim()
   const rowStyle = { borderTop: first ? 'none' : '1px solid var(--border)', padding: '10px 0', display: 'flex', gap: 11, alignItems: 'flex-start' }
@@ -108,7 +122,7 @@ export function RecordRow({ entry, first }) {
         />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: MONO, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)', lineHeight: 1.3, overflowWrap: 'break-word' }}>
-            {guess || 'A spot'}
+            {guess || 'A spot'}<StampGlyphs entry={entry} />
           </div>
           {meta && (
             <div style={{ fontFamily: MONO, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)', marginTop: 3, opacity: 0.85 }}>
@@ -132,7 +146,7 @@ export function RecordRow({ entry, first }) {
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: SERIF, fontSize: 15.5, fontWeight: 600, lineHeight: 1.2, color: 'var(--text)', letterSpacing: '-0.01em' }}>
-          {entry.name}
+          {entry.name}<StampGlyphs entry={entry} />
         </div>
         {time && (
           <div style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 12, color: 'var(--muted)', marginTop: 1, lineHeight: 1.35 }}>

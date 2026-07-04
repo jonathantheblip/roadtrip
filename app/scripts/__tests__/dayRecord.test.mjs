@@ -18,6 +18,11 @@ import {
   dayRecordIsKept,
   dayRecordIsNothing,
   recordEntryId,
+  addEntryStamp,
+  entryStamps,
+  queuePendingNote,
+  pendingNoteIds,
+  resolvePendingNote,
 } from '../../src/lib/dayRecord.js'
 
 function fixtureTrip() {
@@ -268,4 +273,117 @@ test('dayHasRecord: true when a day carries only an evidence draft (a kept hango
   assert.equal(dayHasRecord(draftOnly), true, 'a kept day of unnamed pins still has a record')
   const manualOnly = { record: { state: 'loose', entries: [{ id: 'c', name: '', source: 'manual' }] } }
   assert.equal(dayHasRecord(manualOnly), false, 'a lone half-typed row is not yet a record')
+})
+
+test('readRecord: pending defaults to [] on both the object shape and a legacy bare array', () => {
+  assert.deepEqual(readRecord({ record: [{ id: 'a', name: 'Beach' }] }).pending, [])
+  assert.deepEqual(readRecord({ record: { state: 'kept', entries: [] } }).pending, [])
+  assert.deepEqual(readRecord({ record: { entries: [], pending: ['mem_1'] } }).pending, ['mem_1'])
+  assert.deepEqual(readRecord({}).pending, [])
+})
+
+// ── Rafa's stamp (per-entry, design 05: entries[].stamps) ──────────────────
+
+test('addEntryStamp: appends {by,glyph,at} to the ONE entry, everything else untouched', () => {
+  const trip = fixtureTrip()
+  const withRec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'Race Point Beach' }, { cardId: 'c1', index: 0 }),
+    normalizeRecordEntry({ name: 'Taffy run' }, { cardId: 'c2', index: 0 }),
+  ])
+  const beachId = withRec.days.find((d) => d.isoDate === '2026-07-03').record.entries[0].id
+  const before = JSON.stringify(withRec)
+  const stamped = addEntryStamp(withRec, { dayIso: '2026-07-03' }, beachId, { by: 'rafa', glyph: '🐸' })
+  const day = stamped.days.find((d) => d.isoDate === '2026-07-03')
+  assert.deepEqual(entryStamps(day.record.entries[0]).map((s) => s.glyph), ['🐸'])
+  assert.equal(entryStamps(day.record.entries[0])[0].by, 'rafa')
+  assert.ok(entryStamps(day.record.entries[0])[0].at, 'stamped with a timestamp')
+  assert.deepEqual(entryStamps(day.record.entries[1]), [], 'the OTHER entry carries no stamp')
+  assert.equal(day.record.entries[0].name, 'Race Point Beach', 'the entry itself is otherwise unchanged')
+  assert.equal(JSON.stringify(withRec), before, 'input trip not mutated')
+})
+
+test('addEntryStamp: a duplicate (same kid + glyph) on the same entry is a no-op — no pile-up', () => {
+  const trip = fixtureTrip()
+  const withRec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'Beach' }, { cardId: 'c1', index: 0 }),
+  ])
+  const id = withRec.days.find((d) => d.isoDate === '2026-07-03').record.entries[0].id
+  const once = addEntryStamp(withRec, { dayIso: '2026-07-03' }, id, { glyph: '🐸' })
+  const twice = addEntryStamp(once, { dayIso: '2026-07-03' }, id, { glyph: '🐸' })
+  const day = twice.days.find((d) => d.isoDate === '2026-07-03')
+  assert.equal(entryStamps(day.record.entries[0]).length, 1, 'the double-tap did not pile up')
+  // A DIFFERENT glyph from the same kid is a distinct, additional stamp.
+  const different = addEntryStamp(twice, { dayIso: '2026-07-03' }, id, { glyph: '⭐' })
+  assert.equal(entryStamps(different.days.find((d) => d.isoDate === '2026-07-03').record.entries[0]).length, 2)
+})
+
+test('addEntryStamp: never CREATES a day, and a vanished entry is a silent no-op', () => {
+  const trip = fixtureTrip()
+  const before = JSON.stringify(trip)
+  // 07-02 exists only on the calendar (not yet written) — stamping must not create it.
+  const untouched = addEntryStamp(trip, { dayIso: '2026-07-02' }, 'whatever', { glyph: '🐸' })
+  assert.equal(untouched.days.length, 2, 'no day was created')
+  assert.equal(JSON.stringify(untouched), before, 'byte-identical — a true no-op')
+  // A real day, but an entry id that isn't there (a stale tap racing an edit/removal).
+  const withRec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'Beach' }, { cardId: 'c1', index: 0 }),
+  ])
+  const stillFine = addEntryStamp(withRec, { dayIso: '2026-07-03' }, 'ghost-id', { glyph: '🐸' })
+  assert.equal(JSON.stringify(stillFine), JSON.stringify(withRec), 'no-op, not a throw')
+  assert.throws(() => addEntryStamp(null, { dayIso: '2026-07-03' }, 'x', { glyph: '🐸' }), /trip required/)
+})
+
+// ── Rafa's "tell about today" pending-note queue ────────────────────────────
+
+test('queuePendingNote: queues a memory id (creating the day if needed), dedupes, never touches entries', () => {
+  const trip = fixtureTrip()
+  const queued = queuePendingNote(trip, { dayIso: '2026-07-02' }, 'mem_abc')
+  const day = queued.days.find((d) => d.isoDate === '2026-07-02')
+  assert.deepEqual(pendingNoteIds(day), ['mem_abc'])
+  assert.deepEqual(dayRecordOf(day), [], 'queuing a note never writes an entry')
+  const again = queuePendingNote(queued, { dayIso: '2026-07-02' }, 'mem_abc')
+  assert.deepEqual(pendingNoteIds(again.days.find((d) => d.isoDate === '2026-07-02')), ['mem_abc'], 'duplicate id is a no-op')
+  const two = queuePendingNote(again, { dayIso: '2026-07-02' }, 'mem_def')
+  assert.deepEqual(pendingNoteIds(two.days.find((d) => d.isoDate === '2026-07-02')), ['mem_abc', 'mem_def'])
+})
+
+test('resolvePendingNote: placed onto an entry APPENDS the transcript (never overwrites a note) and drops the queue id', () => {
+  const trip = fixtureTrip()
+  const withRec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'Dinner', note: 'Pizza place' }, { cardId: 'c1', index: 0 }),
+  ])
+  const entryId = withRec.days.find((d) => d.isoDate === '2026-07-03').record.entries[0].id
+  const queued = queuePendingNote(withRec, { dayIso: '2026-07-03' }, 'mem_abc')
+  const placed = resolvePendingNote(queued, { dayIso: '2026-07-03' }, 'mem_abc', entryId, 'A frog came to dinner!')
+  const day = placed.days.find((d) => d.isoDate === '2026-07-03')
+  assert.equal(day.record.entries[0].note, 'Pizza place — A frog came to dinner!', 'appended, not overwritten')
+  assert.deepEqual(pendingNoteIds(day), [], 'resolved id drops off the queue')
+})
+
+test('resolvePendingNote: no entryId leaves it a loose voice memory — dismissed from the queue, no entry touched', () => {
+  const trip = fixtureTrip()
+  const withRec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'Dinner' }, { cardId: 'c1', index: 0 }),
+  ])
+  const queued = queuePendingNote(withRec, { dayIso: '2026-07-03' }, 'mem_abc')
+  const before = JSON.stringify(queued.days.find((d) => d.isoDate === '2026-07-03').record.entries)
+  const dismissed = resolvePendingNote(queued, { dayIso: '2026-07-03' }, 'mem_abc')
+  const day = dismissed.days.find((d) => d.isoDate === '2026-07-03')
+  assert.deepEqual(pendingNoteIds(day), [])
+  assert.equal(JSON.stringify(day.record.entries), before, 'entries untouched — the memory just stays a loose voice memory')
+})
+
+test('resolvePendingNote: an unknown/already-resolved id, or a since-vanished entry, is a no-op', () => {
+  const trip = fixtureTrip()
+  const withRec = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    normalizeRecordEntry({ name: 'Dinner' }, { cardId: 'c1', index: 0 }),
+  ])
+  const before = JSON.stringify(withRec)
+  const noop = resolvePendingNote(withRec, { dayIso: '2026-07-03' }, 'never-queued', null)
+  assert.equal(JSON.stringify(noop), before, 'nothing to resolve — byte-identical')
+  const queued = queuePendingNote(withRec, { dayIso: '2026-07-03' }, 'mem_abc')
+  const ghostEntry = resolvePendingNote(queued, { dayIso: '2026-07-03' }, 'mem_abc', 'ghost-entry-id', 'said something')
+  const day = ghostEntry.days.find((d) => d.isoDate === '2026-07-03')
+  assert.deepEqual(pendingNoteIds(day), [], 'still resolves off the queue even though the target entry vanished')
+  assert.equal(day.record.entries[0].note, '', 'no entry to attach to — nothing corrupted')
 })

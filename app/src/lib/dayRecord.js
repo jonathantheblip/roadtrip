@@ -80,6 +80,11 @@ export function readRecord(day) {
       nothing: r.nothing === true,
       entries: Array.isArray(r.entries) ? r.entries : [],
       skipped: Array.isArray(r.skipped) ? r.skipped : [],
+      // Rafa's "tell about today" queue (design 04/05): memory ids awaiting a
+      // parent's placement. Holds POINTERS only — the audio/transcript is a
+      // normal voice Memory (memoryStore.js), so this needs no new Memory
+      // field and no D1 schema. Additive-only; absent on legacy records.
+      pending: Array.isArray(r.pending) ? r.pending : [],
     }
   }
   // Legacy bare array (or absent) → a loose, un-kept record. Entries preserved.
@@ -87,6 +92,7 @@ export function readRecord(day) {
     state: 'loose', keptBy: null, keptAt: null, nothing: false,
     entries: Array.isArray(r) ? r : [],
     skipped: [],
+    pending: [],
   }
 }
 
@@ -124,6 +130,49 @@ export function readableRecordEntries(day) {
 
 export function dayHasRecord(day) {
   return readableRecordEntries(day).length > 0
+}
+
+// An entry's stamps, shape-agnostic (empty on any entry that predates this).
+export function entryStamps(entry) {
+  return Array.isArray(entry?.stamps) ? entry.stamps : []
+}
+
+// Rafa's stamp — the ONE additive contribution a kid can make to a RECORD ENTRY
+// (design 04: "sees all, breaks nothing"; the canonical shape is design 05's
+// entries[].stamps: [{by,glyph}]). Appends {by, glyph, at} to the entry's stamps
+// and NOTHING else — additive-only enforced HERE at the model, not just the kid
+// UI: no remove fn exists anywhere in this module. A duplicate (same kid + glyph
+// on the same entry) is a no-op so a double-tap doesn't pile up. Looks the day up
+// directly (does NOT go through findOrCreateDay) — stamping must never CREATE a
+// day; if the day or the entry has vanished out from under a stale render (an
+// edit landed mid-tap), this is a silent no-op, matching "his surface never
+// errors." Pure: returns the next trip snapshot, or the same trip unchanged.
+export function addEntryStamp(trip, target = {}, entryId, stamp = {}) {
+  if (!trip) throw new Error('addEntryStamp: trip required')
+  const by = stamp.by || 'rafa'
+  const glyph = typeof stamp.glyph === 'string' ? stamp.glyph.trim() : ''
+  if (!glyph || !entryId) return trip
+  const dayIso = (target.dayIso || '').slice(0, 10)
+  const dayN = target.dayN
+  const srcDays = trip.data?.days || trip.days || []
+  let idx = -1
+  if (dayIso) idx = srcDays.findIndex((d) => d?.isoDate === dayIso)
+  if (idx < 0 && typeof dayN === 'number') idx = srcDays.findIndex((d) => d?.n === dayN)
+  if (idx < 0) return trip // no such day (yet) — nothing to stamp
+
+  const days = srcDays.map((d, i) => (i === idx ? { ...d } : d))
+  const cur = readRecord(days[idx])
+  const ei = cur.entries.findIndex((e) => e?.id === entryId)
+  if (ei < 0) return trip // the entry vanished/renamed under a stale tap
+
+  const entry = cur.entries[ei]
+  const stamps = entryStamps(entry)
+  if (stamps.some((s) => s?.by === by && s?.glyph === glyph)) return trip
+
+  const entries = cur.entries.slice()
+  entries[ei] = { ...entry, stamps: [...stamps, { by, glyph, at: new Date().toISOString() }] }
+  days[idx] = { ...days[idx], record: { ...cur, entries } }
+  return commitDays(trip, days)
 }
 
 // Find the day named by target (dayIso preferred — stable across renumbering —
@@ -222,4 +271,60 @@ export function dayRecordIsNothing(day) {
 }
 export function dayRecordKeptBy(day) {
   return readRecord(day).keptBy || null
+}
+
+// Rafa's OTHER additive contribution (design 04): "tell about today." The mic
+// records a voice memo that becomes a normal Memory (memoryStore.js — same
+// audio/transcript sync every voice memo already uses, so this needs NO new
+// Memory field and NO D1 schema). This queue holds only the memory's id,
+// pending a PARENT's placement — his words are "never auto-published into the
+// record" until then. Creates the day if a hangout trip never wrote it (telling
+// about today IS writing today's record). A duplicate id is a no-op.
+export function queuePendingNote(trip, target = {}, memId) {
+  if (!trip) throw new Error('queuePendingNote: trip required')
+  if (!memId) return trip
+  const { days, idx } = findOrCreateDay(trip, target)
+  const cur = readRecord(days[idx])
+  if (cur.pending.includes(memId)) return trip
+  days[idx] = { ...days[idx], record: { ...cur, pending: [...cur.pending, memId] } }
+  return commitDays(trip, days)
+}
+
+// The day's still-unplaced pending note memory ids. Shape-agnostic; empty on
+// any day that predates this or carries none.
+export function pendingNoteIds(day) {
+  return readRecord(day).pending
+}
+
+// A PARENT resolves a pending note — the only function in this module that can
+// (Rafa's side has no delete/edit of his own). `entryId` + `transcript` both set
+// → APPENDS the transcript onto that entry's note (never overwrites one, `—`
+// separated); `entryId` omitted/null → the note is simply dismissed from the
+// queue and stays what it always was, an ordinary voice Memory ("a loose voice
+// memory"). Either way the id drops off `pending`. A vanished/already-resolved
+// id, or an entryId that no longer exists, is a no-op (not a throw) — this runs
+// off a parent's UI action, and the world may have moved since it rendered.
+export function resolvePendingNote(trip, target = {}, memId, entryId = null, transcript = '') {
+  if (!trip) throw new Error('resolvePendingNote: trip required')
+  if (!memId) return trip
+  const { days, idx } = findOrCreateDay(trip, target)
+  const cur = readRecord(days[idx])
+  if (!cur.pending.includes(memId)) return trip
+
+  let entries = cur.entries
+  const text = (transcript || '').trim()
+  if (entryId && text) {
+    const ei = cur.entries.findIndex((e) => e?.id === entryId)
+    if (ei >= 0) {
+      entries = cur.entries.slice()
+      const e = entries[ei]
+      const sep = (e.note || '').trim() ? ' — ' : ''
+      entries[ei] = { ...e, note: `${e.note || ''}${sep}${text}` }
+    }
+  }
+  days[idx] = {
+    ...days[idx],
+    record: { ...cur, entries, pending: cur.pending.filter((id) => id !== memId) },
+  }
+  return commitDays(trip, days)
 }

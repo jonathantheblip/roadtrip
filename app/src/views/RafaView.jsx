@@ -5,6 +5,15 @@ import { hasActivitiesForTrip, getActivitiesForTrip } from '../data/sideActiviti
 import { WeaveReady } from '../components/EntryCues'
 import { todayLocalIso } from '../lib/localDate'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
+import { readableRecordEntries, entryStamps } from '../lib/dayRecord'
+import { VoiceRecorder } from '../components/VoiceRecorder'
+import { saveMemory } from '../lib/memoryStore'
+import { saveAsset, makeAssetKey } from '../lib/memAssets'
+import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
+
+// Rafa's sticker palette for the stamp (design 04) — five big glyphs, matching
+// the design's own running example (🐸 "the frog at dinner").
+const STAMP_GLYPHS = ['🐸', '⭐', '🎉', '🏆', '❤️']
 
 // Rafa — "Mission." Redesign increment 4 (2026-06-05): big, bright,
 // rounded mission deck for a 4-year-old. Was oxblood + Fraunces; now warm
@@ -25,7 +34,13 @@ const ST = ['#FFB12E', '#3DA5E0', '#4CC36E', '#FF6B4D', '#C77DFF']
 // --accent-ink — the C1/Stage-2 fill-ink rule applied to the stickers.
 const CANDY_INK = '#1B1108'
 
-export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onOpenWeave, weaveReady, whoAround }) {
+export function RafaView({ trip, traveler = 'rafa', onOpenStop, onOpenSettings, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onOpenWeave, weaveReady, whoAround, onStampEntry, onQueuePendingNote }) {
+  // "Tell about today" (design 04) — the mic overlay + a brief post-save
+  // confirmation. Saving/transcribing is async but the confirmation is
+  // optimistic (matches ThreadedMemories.handleVoiceStop): the bubble/note
+  // appears immediately, the transcript fills in once Whisper returns.
+  const [telling, setTelling] = useState(false)
+  const [justTold, setJustTold] = useState(false)
   // Which day's mission is on screen. Default to today-if-in-trip,
   // else day 1. Lets a 3-day weekend show three different missions
   // instead of one summary card that doesn't change.
@@ -37,6 +52,46 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
     return onToday?.n || trip.days[0]?.n || 1
   })
   const day = trip.days.find((d) => d.n === activeDayN) || trip.days[0]
+  // The active day's record entries — what he can stamp (design 04: his stamp
+  // lands "on the entry, for everyone"). Empty on a day nobody's recorded yet,
+  // so the whole STAMP TODAY! section below is hidden rather than a dead ask.
+  const recordEntries = day ? readableRecordEntries(day) : []
+
+  async function handleTellStop(payload) {
+    setTelling(false)
+    if (!payload || !day?.isoDate) return
+    const { blob, durationSeconds, mime } = payload
+    const audioKey = makeAssetKey('audio')
+    await saveAsset('audio', audioKey, blob, mime)
+    // A stopId-less, day-level voice memory (memoryStore.js already supports a
+    // null stopId — nothing downstream requires one). Its OWN sync (R2 upload +
+    // Whisper transcription) is the existing voice-Memory pipeline, unchanged —
+    // "tell about today" adds no new Memory field and no D1 schema. The trip-side
+    // pending queue (dayRecord.js) holds only this memory's id.
+    const initial = saveMemory({
+      tripId: trip.id,
+      stopId: null,
+      authorTraveler: traveler,
+      visibility: 'shared',
+      kind: 'voice',
+      audioRef: { storage: 'idb', key: audioKey },
+      durationSeconds,
+      transcriptionStatus: isWhisperConfigured() ? 'pending' : 'skipped',
+    })
+    setJustTold(true)
+    setTimeout(() => setJustTold(false), 3500)
+    onQueuePendingNote?.(day.isoDate, initial.id)
+
+    if (!isWhisperConfigured()) return
+    const out = await transcribeWithStatus(blob)
+    saveMemory({
+      ...initial,
+      kind: 'voice',
+      transcript: out.transcript || null,
+      transcriptLang: out.language || null,
+      transcriptionStatus: out.status,
+    })
+  }
   // Stops Rafa cares about on the active day. Fall back to all
   // rafa-tagged stops on that day (if `for` isn't set, treat the
   // whole day as fair game).
@@ -616,6 +671,149 @@ export function RafaView({ trip, onOpenStop, onOpenSettings, onOpenActivities, o
         </div>
       </div>
       )}
+
+      {/* STAMP TODAY! — design 04: his ONE additive contribution that lands
+          "on the entry, for everyone." Hidden entirely when nobody's recorded
+          anything yet (never a dead ask on an unrecorded hangout day). */}
+      {recordEntries.length > 0 && (
+        <div style={{ padding: '22px 14px 0' }}>
+          <div
+            style={{
+              fontFamily: FREDOKA,
+              fontWeight: 700,
+              fontSize: 20,
+              color: 'var(--accent-text)',
+              marginBottom: 10,
+            }}
+          >
+            STAMP TODAY! 🎨
+          </div>
+          {recordEntries.map((entry) => {
+            const stamps = entryStamps(entry)
+            return (
+              <div
+                key={entry.id}
+                data-testid="rafa-stamp-entry"
+                style={{
+                  background: 'var(--card)',
+                  borderRadius: 22,
+                  padding: '14px 16px',
+                  marginBottom: 10,
+                }}
+              >
+                <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 17, color: 'var(--text)' }}>
+                  {entry.name || entry.guess || 'Something today'}
+                </div>
+                {stamps.length > 0 && (
+                  <div style={{ display: 'flex', gap: 4, marginTop: 6 }} aria-label="Stamped already">
+                    {stamps.map((s, i) => (
+                      <span key={i} style={{ fontSize: 18 }}>{s.glyph}</span>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  {STAMP_GLYPHS.map((glyph, i) => (
+                    <button
+                      key={glyph}
+                      type="button"
+                      aria-label={`Stamp with ${glyph}`}
+                      onClick={() => onStampEntry?.(day.isoDate, entry.id, glyph)}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: ST[i % ST.length],
+                        fontSize: 22,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: `0 4px 0 ${shade(ST[i % ST.length], -45)}`,
+                        touchAction: 'manipulation',
+                      }}
+                    >
+                      {glyph}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+          <div
+            style={{
+              fontFamily: FREDOKA,
+              fontWeight: 500,
+              fontSize: 12,
+              color: 'var(--muted)',
+              letterSpacing: '0.04em',
+              textAlign: 'center',
+              marginTop: 4,
+            }}
+          >
+            YOUR STAMP GOES ON THE DAY FOR EVERYONE!
+          </div>
+        </div>
+      )}
+
+      {/* TELL ABOUT TODAY — design 04's OTHER additive contribution: a giant mic,
+          day-level (not tied to a stop, so it never needs `featured`). Never
+          auto-published — the transcript lands as a pending note for a parent
+          to place onto an entry, or it stays a loose voice memory. */}
+      <div style={{ padding: '22px 14px 0' }}>
+        <button
+          type="button"
+          data-testid="rafa-tell-about-today"
+          onClick={() => setTelling(true)}
+          style={{
+            width: '100%',
+            minHeight: 86,
+            borderRadius: 32,
+            background: ST[4],
+            color: CANDY_INK,
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 14,
+            boxShadow: `0 8px 0 ${shade(ST[4], -45)}, 0 14px 24px -8px rgba(0,0,0,0.4)`,
+            fontFamily: FREDOKA,
+            fontSize: 24,
+            fontWeight: 700,
+          }}
+        >
+          <span
+            style={{
+              width: 54,
+              height: 54,
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.26)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Mic size={28} />
+          </span>
+          TELL ABOUT TODAY
+        </button>
+        <div
+          style={{
+            fontFamily: FREDOKA,
+            fontWeight: 500,
+            fontSize: 12,
+            color: 'var(--muted)',
+            letterSpacing: '0.04em',
+            textAlign: 'center',
+            marginTop: 10,
+          }}
+        >
+          {justTold ? 'SAVED FOR MAMA TO PLACE ✓' : 'HOLD AND TALK · IT WILL BE SAVED FOR LATER'}
+        </div>
+      </div>
+
+      {telling && <VoiceRecorder onCancel={() => setTelling(false)} onStop={handleTellStop} />}
     </div>
   )
 }

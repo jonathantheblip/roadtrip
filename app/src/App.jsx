@@ -55,7 +55,7 @@ import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer, isTripMaskedFrom } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover, uploadAssetBlob } from './lib/workerSync'
-import { keepDay, applyDayRecord, dayRecordIsKept } from './lib/dayRecord'
+import { keepDay, applyDayRecord, dayRecordIsKept, addEntryStamp, queuePendingNote } from './lib/dayRecord'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
@@ -1020,6 +1020,30 @@ export default function App() {
     return { ok: true }
   }
 
+  // Rafa's stamp (design 04) — additive-only, lands "on the entry, for everyone."
+  // Reads the freshest store copy so a race with another edit narrows the clobber
+  // window (same pattern as onKeepDay/onLocateStay); addEntryStamp itself is a
+  // silent no-op if the entry vanished/renamed under the tap, so this never errors
+  // on Rafa's surface.
+  async function onStampEntry(dayIso, entryId, glyph) {
+    if (!trip || !dayIso || !entryId) return { ok: false }
+    const current = allTrips.find((t) => t.id === trip.id) || trip
+    const next = addEntryStamp(current, { dayIso }, entryId, { by: traveler || 'rafa', glyph })
+    await tripsApi.upsertTrip(next)
+    return { ok: true }
+  }
+
+  // Rafa's "tell about today" — the mic saves its OWN voice Memory (RafaView owns
+  // that save + transcription, same as ThreadedMemories); this just queues the
+  // resulting memory id for a parent to place. Trip-data-only, mirrors onKeepDay.
+  async function onQueuePendingNote(dayIso, memId) {
+    if (!trip || !dayIso || !memId) return { ok: false }
+    const current = allTrips.find((t) => t.id === trip.id) || trip
+    const next = queuePendingNote(current, { dayIso }, memId)
+    await tripsApi.upsertTrip(next)
+    return { ok: true }
+  }
+
   async function onLocateStay(trip) {
     if (!trip) return { ok: false }
     const located = await locateTripBestEffort(trip)
@@ -1304,6 +1328,8 @@ export default function App() {
       onOpenSurprises: openSurprises,
       onCompose: openCompose, // "Share a moment" — designed home-band entry (was ⋯-only)
       onKeepDay, // the Record's settle action — keep today (or a nothing-day) → gold
+      onStampEntry, // Rafa's stamp — additive, on the entry, for everyone
+      onQueuePendingNote, // Rafa's "tell about today" — queues a memory id for a parent to place
 
       weaveReady,
       bookHasPages,

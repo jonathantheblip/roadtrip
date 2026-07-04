@@ -1,18 +1,18 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, Mic, Sparkles,
-  MapPin, Image as ImageIcon, Check, Loader, AlertTriangle, Eye, Lock,
+  MapPin, Image as ImageIcon, Check, Loader, AlertTriangle, Eye, Lock, Play,
 } from 'lucide-react'
 import { TRAVELER_ORDER, TRAVELERS } from '../data/travelers'
 import { homeVoice } from '../lib/homeVoice'
-import { recordEntryId, dayRecordOf, readRecord } from '../lib/dayRecord'
+import { recordEntryId, dayRecordOf, readRecord, pendingNoteIds, resolvePendingNote } from '../lib/dayRecord'
 import { geocodeAddress } from '../lib/geocode'
 import { stopIsBase } from '../lib/photoMatch'
 import { suggestPitch, isAiAssistConfigured } from '../lib/aiAssist'
 import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { uploadTripCover } from '../lib/workerSync'
-import { saveAsset, makeAssetKey } from '../lib/memAssets'
-import { saveMemory, listMemoriesForStop } from '../lib/memoryStore'
+import { saveAsset, makeAssetKey, loadAsset } from '../lib/memAssets'
+import { saveMemory, listMemoriesForStop, listMemoriesForTrip } from '../lib/memoryStore'
 import { VoiceRecorder } from '../components/VoiceRecorder'
 import { newTripId } from '../utils/ids'
 import { tripCompleteness } from '../lib/tripComplete'
@@ -307,6 +307,19 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
     patchDays(days)
   }
 
+  // A PARENT places (or dismisses) one of Rafa's "tell about today" pending notes
+  // (design 04) — entryId+transcript set appends onto that entry's note; entryId
+  // omitted leaves it a loose voice memory. Reuses the tested pure resolver
+  // (dayRecord.js) rather than re-deriving the append/dequeue logic here.
+  function placePendingNote(dayIso, memId, entryId, transcript) {
+    const next = resolvePendingNote(trip, { dayIso }, memId, entryId, transcript)
+    // resolvePendingNote → commitDays returns days at .data.days for a D1-shaped
+    // trip, .days for the flat shape this editor actually carries (clone(incoming)
+    // never wraps in .data) — read robustly rather than assume the flat case, so a
+    // future D1-shaped `trip` can't silently patch `days: undefined` and wipe stops.
+    patchDays(next.data?.days || next.days)
+  }
+
   async function publish() {
     if (!comp.ok) return
     setTrip((cur) => ({ ...cur, draft: false }))
@@ -407,11 +420,13 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
       {mode === 'record' ? (
         <RecordMode
           trip={trip}
+          traveler={traveler}
           travelers={trip.travelers || TRAVELER_ORDER}
           v={v}
           onAdd={addRecordEntry}
           onUpdate={updateRecordEntry}
           onRemove={removeRecordEntry}
+          onPlacePending={placePendingNote}
         />
       ) : (
         <>
@@ -865,8 +880,17 @@ function ModeTabs({ mode, onChange, v }) {
 // Mouth three — "type it." The editor's record tense: what actually happened,
 // day by day. Writes day.record only; the plan/lodging/trip sections are
 // hidden here so the two tenses never blur. (02-capture-arc.md.)
-function RecordMode({ trip, travelers, v, onAdd, onUpdate, onRemove }) {
+function RecordMode({ trip, traveler, travelers, v, onAdd, onUpdate, onRemove, onPlacePending }) {
   const days = trip.days || []
+  // Rafa's pending "tell about today" notes are ordinary voice Memories
+  // (memoryStore.js) — the record only queues their ids (dayRecord.js's
+  // pending array). Fetched once per trip/traveler; a day looks its own up
+  // by id below rather than re-querying per row.
+  const memoriesById = useMemo(() => {
+    const map = new Map()
+    for (const m of listMemoriesForTrip(trip.id, traveler)) map.set(m.id, m)
+    return map
+  }, [trip.id, traveler])
   return (
     <div data-testid="record-mode">
       <Section title={v.lc('Record the day')}>
@@ -886,6 +910,8 @@ function RecordMode({ trip, travelers, v, onAdd, onUpdate, onRemove }) {
             onAdd={() => onAdd(di)}
             onUpdate={(ri, p) => onUpdate(di, ri, p)}
             onRemove={(ri) => onRemove(di, ri)}
+            memoriesById={memoriesById}
+            onPlacePending={(memId, entryId, transcript) => onPlacePending(d.isoDate, memId, entryId, transcript)}
           />
         ))}
       </Section>
@@ -898,10 +924,12 @@ function RecordMode({ trip, travelers, v, onAdd, onUpdate, onRemove }) {
   )
 }
 
-function RecordDayBlock({ day, index, travelers, v, onAdd, onUpdate, onRemove }) {
+function RecordDayBlock({ day, index, travelers, v, onAdd, onUpdate, onRemove, memoriesById, onPlacePending }) {
   // The editor edits the RAW array (dayRecordOf) — nameless rows are legit
   // working state here; the read faces (namedRecordEntries) hide them.
   const entries = dayRecordOf(day)
+  const namedEntries = entries.filter((e) => (e?.name || '').trim())
+  const pendingIds = pendingNoteIds(day)
   const label = day.date || humanDate(day.isoDate) || ''
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
@@ -921,6 +949,107 @@ function RecordDayBlock({ day, index, travelers, v, onAdd, onUpdate, onRemove })
       ))}
       <div style={{ marginTop: entries.length ? 12 : 0 }}>
         <IconBtn onClick={onAdd} label="Add what happened"><Plus size={13} /> {v.lc('Add what happened')}</IconBtn>
+      </div>
+      {pendingIds.length > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--border)' }} data-testid="pending-from-rafa">
+          <p className="smallcaps f-dm text-[11px]" style={{ opacity: 0.7, marginBottom: 8 }}>
+            {v.lc('Pending from Rafa')}
+          </p>
+          {pendingIds.map((memId) => (
+            <PendingNoteRow
+              key={memId}
+              memId={memId}
+              memory={memoriesById.get(memId)}
+              namedEntries={namedEntries}
+              v={v}
+              onPlace={onPlacePending}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// A parent resolves ONE of Rafa's pending "tell about today" notes (design 04):
+// attach its transcript onto a named entry, or leave it a loose voice memory —
+// the only two moves; his side has no delete/edit of its own. The audio plays
+// straight from the Memory (R2 if synced, else the author's own IDB — same
+// fallback ThreadedMemories' VoiceBubble uses) so a parent can hear it even
+// before Whisper's transcript lands.
+function PendingNoteRow({ memId, memory, namedEntries, v, onPlace }) {
+  const [entryId, setEntryId] = useState('')
+  const [audioUrl, setAudioUrl] = useState(null)
+  useEffect(() => {
+    let active = true
+    let created = null
+    if (memory?.audioRef?.url) {
+      setAudioUrl(memory.audioRef.url)
+    } else if (memory?.audioRef?.key) {
+      loadAsset('audio', memory.audioRef.key).then((blob) => {
+        if (!active || !blob) return
+        created = URL.createObjectURL(blob)
+        setAudioUrl(created)
+      })
+    }
+    return () => {
+      active = false
+      if (created) URL.revokeObjectURL(created)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memory?.audioRef?.key, memory?.audioRef?.url])
+
+  const transcript = (memory?.transcript || '').trim()
+  const transcribing = !transcript && memory?.transcriptionStatus === 'pending'
+  return (
+    <div style={{ border: '1px dashed var(--border)', borderRadius: 10, padding: 10, marginBottom: 8 }} data-testid="pending-rafa-note">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          type="button"
+          aria-label="Play Rafa's recording"
+          disabled={!audioUrl}
+          onClick={() => audioUrl && new Audio(audioUrl).play().catch(() => {})}
+          style={{
+            width: 26, height: 26, borderRadius: '50%', border: 'none', flexShrink: 0,
+            background: 'var(--accent)', color: '#fff',
+            cursor: audioUrl ? 'pointer' : 'default', opacity: audioUrl ? 1 : 0.5,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Play size={11} fill="currentColor" />
+        </button>
+        <p className="f-news-i text-sm" style={{ flex: 1, margin: 0, fontStyle: transcript ? 'italic' : 'normal' }}>
+          {transcript || (transcribing ? v.lc('Transcribing…') : v.lc('(play to hear it)'))}
+        </p>
+      </div>
+      {namedEntries.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            aria-label="Attach to which entry"
+            value={entryId}
+            onChange={(e) => setEntryId(e.target.value)}
+            className="f-dm text-xs"
+            style={{ borderRadius: 6, border: '1px solid var(--border)', padding: '4px 6px', background: 'var(--card)', color: 'var(--text)' }}
+          >
+            <option value="">{v.lc('Attach to…')}</option>
+            {namedEntries.map((e) => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+          <IconBtn disabled={!entryId} onClick={() => onPlace(memId, entryId, transcript)} label="Attach">
+            {v.lc('Attach')}
+          </IconBtn>
+        </div>
+      )}
+      <div style={{ marginTop: 6 }}>
+        <button
+          type="button"
+          onClick={() => onPlace(memId, null, '')}
+          className="f-dm text-xs"
+          style={{ background: 'transparent', border: 'none', color: 'var(--muted)', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+        >
+          {v.lc('Keep as a loose note')}
+        </button>
       </div>
     </div>
   )
