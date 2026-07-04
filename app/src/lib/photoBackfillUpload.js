@@ -256,6 +256,11 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     width: enc.width,
     height: enc.height,
     durationMs: enc.durationMs,
+    // The shrunk byte size — the design's "proof" value (#2). Persisted on the
+    // ref (not just local) so the saved-tile size chip shows for every viewer and
+    // survives the worker round-trip, exactly like width/height/durationMs. Rides
+    // through the queue's item.ref → the drain re-save keeps it (no re-encode).
+    bytes: Number.isFinite(blob?.size) ? blob.size : null,
     capturedAt,
   }
   // Build the offline/render-only pending ref. The video TILE renders the

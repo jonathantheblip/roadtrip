@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2, Pencil, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2, Pencil, Plus, Loader2, CloudOff } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
+import { videoCopy, fmtSize, fmtDur } from '../lib/videoCopy'
 import { updateMemoryCapturedAt, updateMemoryCaption, removePhotoFromMemory } from '../lib/memoryStore'
 import { isWorkerConfigured } from '../lib/workerSync'
 import { ShareMomentSheet } from './ShareMomentSheet'
@@ -53,9 +54,25 @@ const TILE_THUMB_WIDTH = 600
 // cross-trip view needs the trip context), and the dev-mode capture-
 // date editor that persists into memory.capturedAt via memoryStore.
 
-export function PhotoTile({ entry, onOpen, faces }) {
+export function PhotoTile({ entry, onOpen, faces, traveler, uploadState, onRetryStuck }) {
   const posterColor = TRAVELER_DOT[entry.author] || 'var(--accent)'
   const [imgFailed, setImgFailed] = useState(false)
+  // Foolproof-video honesty (#2/#4): a saved clip shows its shrunk size (bottom-
+  // left) + length (top-right); a not-yet-uploaded clip shows an honest in-flight
+  // state driven by the real outbox — never reads as "done". `uploadState` is the
+  // live queue signal ('uploading' | 'stuck') the owning view passes per memory;
+  // `entry.pending` is the ref's own "not on R2 yet" flag (a fallback when the
+  // queue map hasn't loaded). Rafa NEVER meets an amber "stuck" — any non-saved
+  // state folds to a gentle "saving…" (the honest state surfaces to a parent lens).
+  const vcopy = videoCopy(traveler)
+  const isRafa = traveler === 'rafa'
+  let vstate = 'saved'
+  if (entry.isVideo) {
+    if (uploadState === 'stuck') vstate = 'stuck'
+    else if (uploadState === 'uploading' || entry.pending) vstate = 'uploading'
+  }
+  const rafaSaving = isRafa && entry.isVideo && vstate !== 'saved'
+  const showStuck = vstate === 'stuck' && !isRafa
   const isFirstInMemory = (entry.photoIndexInMemory || 0) === 0
   const memoryCount = entry.photoCountInMemory || 1
   // A video tile renders the poster still (entry.url is the .mp4) + a play
@@ -154,7 +171,7 @@ export function PhotoTile({ entry, onOpen, faces }) {
             <ImageIcon size={20} />
           </div>
         ) : null /* offscreen or no url — the sage-stripe skeleton on the parent shows through */}
-        {entry.isVideo && (
+        {entry.isVideo && !showStuck && !rafaSaving && (
           <span
             data-testid="tile-video-badge"
             aria-label="Video"
@@ -183,6 +200,105 @@ export function PhotoTile({ entry, onOpen, faces }) {
               <Play size={16} fill="currentColor" />
             </span>
           </span>
+        )}
+        {/* ── Foolproof-video tile states (#2/#4) ── */}
+        {/* soft veil while a clip is in-flight or stuck — the poster stays visible
+            but reads clearly as "not finished" (never a bare saved tile). */}
+        {entry.isVideo && vstate !== 'saved' && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              background: showStuck
+                ? 'color-mix(in srgb, var(--kept) 22%, rgba(8,10,9,0.42))'
+                : 'rgba(8,10,9,0.32)',
+            }}
+          />
+        )}
+        {/* length — top-right, every video state */}
+        {entry.isVideo && entry.durationMs > 0 && (
+          <span data-testid="tile-video-duration" style={{ position: 'absolute', top: 6, right: 6, pointerEvents: 'none' }}>
+            <TileChip>{fmtDur(entry.durationMs)}</TileChip>
+          </span>
+        )}
+        {/* saved → the size chip (the locked proof), bottom-left */}
+        {entry.isVideo && vstate === 'saved' && entry.videoBytes != null && (
+          <span data-testid="tile-video-size" style={{ position: 'absolute', left: 6, bottom: 6, pointerEvents: 'none' }}>
+            <TileChip>{fmtSize(entry.videoBytes)}</TileChip>
+          </span>
+        )}
+        {/* on its way — neutral, honest (Rafa gets the centered "saving…" instead) */}
+        {entry.isVideo && vstate === 'uploading' && !rafaSaving && (
+          <span
+            data-testid="tile-video-uploading"
+            style={{
+              position: 'absolute',
+              left: 6,
+              bottom: 6,
+              pointerEvents: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'rgba(8,10,9,0.62)',
+              color: '#F2EBDA',
+              borderRadius: 8,
+              padding: '3px 7px',
+            }}
+          >
+            <Loader2 size={11} className="spin" />
+            <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9.5, letterSpacing: '0.03em', fontWeight: 600 }}>
+              {vcopy.tileWay}
+            </span>
+          </span>
+        )}
+        {/* stuck (rare, non-Rafa) — amber, honest, tap to send it now. A plain
+            onClick overlay (not a nested <button>/role) so it never trips the
+            axe nested-interactive gate; the sync pill is the keyboard retry path. */}
+        {showStuck && (
+          <div
+            data-testid="tile-video-stuck"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRetryStuck?.()
+            }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: 6,
+              textAlign: 'center',
+            }}
+          >
+            <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--kept)', color: '#20160a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CloudOff size={18} />
+            </span>
+            <span style={{ fontFamily: 'Inter Tight, system-ui, sans-serif', fontSize: 11, fontWeight: 700, color: '#F2EBDA' }}>{vcopy.tileStuck}</span>
+            {vcopy.tileStuckCta && (
+              <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 8, letterSpacing: '0.04em', color: 'rgba(242,235,218,0.85)' }}>{vcopy.tileStuckCta}</span>
+            )}
+          </div>
+        )}
+        {/* amber corner mark so a stuck clip is flagged before you read it */}
+        {showStuck && (
+          <span aria-hidden="true" style={{ position: 'absolute', top: 7, left: 7, width: 9, height: 9, borderRadius: 9, background: 'var(--kept)', boxShadow: '0 0 0 2px rgba(8,10,9,0.4)' }} />
+        )}
+        {/* Rafa — any non-saved state is a gentle centered "saving…", never amber */}
+        {rafaSaving && (
+          <div
+            data-testid="tile-video-rafa-saving"
+            aria-hidden="true"
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#fff' }}
+          >
+            <Loader2 size={20} className="spin" />
+            <span style={{ fontFamily: "'Fredoka', 'Inter Tight', system-ui, sans-serif", fontWeight: 600, fontSize: 12 }}>{vcopy.tileWay}</span>
+          </div>
         )}
         <span
           aria-label={`Posted by ${TRAVELERS[entry.author]?.name || entry.author}`}
@@ -324,6 +440,30 @@ export function PhotoTile({ entry, onOpen, faces }) {
         </div>
       </div>
     </button>
+  )
+}
+
+// A small chip over the tile poster — the neutral mono size proof (bottom-left)
+// and the clip length (top-right). White-on-dark scrim so it reads on any first
+// frame; the size is a REAL stored size (#2), never an estimate.
+function TileChip({ children }) {
+  return (
+    <span
+      style={{
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: '0.02em',
+        lineHeight: 1.2,
+        color: '#F2EBDA',
+        background: 'rgba(8,10,9,0.62)',
+        borderRadius: 6,
+        padding: '2px 6px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
   )
 }
 

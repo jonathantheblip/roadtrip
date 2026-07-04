@@ -471,6 +471,32 @@ test('flattenPhotoEntries detects a video by posterUrl alone (cross-device ref m
   assert.equal(entries[0].posterUrl, 'u://p')
 })
 
+// ─── Foolproof video import (#2/#4): the saved-tile proof rides the entry ───
+
+test('flattenPhotoEntries surfaces a video ref\'s shrunk bytes + length + pending state onto the entry (drives the saved-tile chips)', () => {
+  const entries = flattenPhotoEntries([
+    // A synced clip: carries its shrunk size + length; not pending → the tile
+    // shows the size chip (proof) + duration, no in-flight state.
+    photoMem({ id: 'saved', tripId: 't', stopId: 's', refs: [{ url: 'u://v.mp4', mime: 'video/mp4', storage: 'r2', bytes: 7_500_000, durationMs: 42_000 }] }),
+    // A not-yet-uploaded clip: storage 'pending' → the tile reads "on its way"
+    // (never "saved"); size/length still ride so they're ready when it lands.
+    photoMem({ id: 'pending', tripId: 't', stopId: 's', refs: [{ url: 'u://v2.mp4', mime: 'video/mp4', storage: 'pending', bytes: 3_100_000, durationMs: 12_000, posterUrl: 'u://p2' }] }),
+    // A plain photo carries none of these — the chips must never render for it.
+    photoMem({ id: 'pic', tripId: 't', stopId: 's', refs: [{ url: 'u://photo.jpg', mime: 'image/jpeg', storage: 'r2' }] }),
+  ])
+  const byMem = Object.fromEntries(entries.map((e) => [e.memoryId, e]))
+  assert.equal(byMem.saved.videoBytes, 7_500_000)
+  assert.equal(byMem.saved.durationMs, 42_000)
+  assert.equal(byMem.saved.pending, false)
+  assert.equal(byMem.pending.videoBytes, 3_100_000)
+  assert.equal(byMem.pending.durationMs, 12_000)
+  assert.equal(byMem.pending.pending, true, 'a pending video ref reads as not-yet-backed-up')
+  // A photo: no size/length proof, never pending-as-video.
+  assert.equal(byMem.pic.videoBytes, null)
+  assert.equal(byMem.pic.durationMs, null)
+  assert.equal(byMem.pic.pending, false)
+})
+
 // ─── Composed share-moments: each photo shows once in the library grid ───
 
 test('groupByStop collapses a composed moment that re-uses existing photos (each photo once, the original tile wins)', () => {

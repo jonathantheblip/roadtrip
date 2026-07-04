@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Image as ImageIcon, ImagePlus, RefreshCw, MapPin } from 'lucide-react'
+import { ChevronLeft, Image as ImageIcon, ImagePlus, RefreshCw, CloudOff, MapPin } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
@@ -8,7 +8,8 @@ import { useFaceTags } from '../lib/useFaceTags'
 import { tripImplicitBase } from '../lib/photoMatch'
 import { refileTripToPlaces } from '../lib/refilePlaces'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
-import { count as queueCount, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
+import { listQueueStates, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
+import { videoCopy } from '../lib/videoCopy'
 import { isWorkerConfigured, uploadAssetBlob } from '../lib/workerSync'
 import { uploadPosterOrQueue } from '../lib/posterRetry'
 import { removeAsset } from '../lib/memAssets'
@@ -143,16 +144,17 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
     }
   }
 
-  // Sync pill: live count from the IndexedDB queue. Subscribes so a
-  // save anywhere in the app updates this view without polling.
-  const [queueSize, setQueueSize] = useState(0)
+  // Sync pill + tile states: live outbox snapshot from the IndexedDB queue.
+  // Subscribes so a save/drain anywhere in the app updates this view without
+  // polling. One read feeds both surfaces (#2/#4 foolproof-video honesty).
+  const [queueStates, setQueueStates] = useState([])
   const [draining, setDraining] = useState(false)
   useEffect(() => {
     let cancelled = false
     function refresh() {
-      queueCount()
-        .then((n) => {
-          if (!cancelled) setQueueSize(n)
+      listQueueStates()
+        .then((s) => {
+          if (!cancelled) setQueueStates(s)
         })
         .catch(() => {})
     }
@@ -163,6 +165,17 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
       unsub()
     }
   }, [])
+  // Per-memory state map for the saved tiles (on-its-way vs stuck), + the
+  // uploading/stuck split for the pill. `stuck` = exceeded the retry budget
+  // (isStuckItem); everything else queued is simply on its way.
+  const queueStateById = useMemo(() => {
+    const m = new Map()
+    for (const s of queueStates) m.set(s.id, s.stuck ? 'stuck' : 'uploading')
+    return m
+  }, [queueStates])
+  const stuckCount = useMemo(() => queueStates.filter((s) => s.stuck).length, [queueStates])
+  const queueSize = queueStates.length
+  const uploadingCount = queueSize - stuckCount
 
   function openLightbox(entry, list) {
     const index = list.findIndex((e) => e === entry)
@@ -313,7 +326,13 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
               : `${photoEntries.length} photo${photoEntries.length === 1 ? '' : 's'} across ${groups.length} ${groups.length === 1 ? 'stop' : 'stops'}.`}
           </div>
           {queueSize > 0 && (
-            <SyncPill count={queueSize} draining={draining} onTap={triggerDrain} />
+            <SyncPill
+              traveler={traveler}
+              uploading={uploadingCount}
+              stuck={stuckCount}
+              draining={draining}
+              onTap={triggerDrain}
+            />
           )}
         </div>
       </header>
@@ -383,6 +402,9 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
                 key={group.stopKey}
                 group={group}
                 faceTags={faceTags}
+                traveler={traveler}
+                queueStateById={queueStateById}
+                onRetryStuck={triggerDrain}
                 onOpen={(entry) => openLightbox(entry, group.entries)}
               />
             ))
@@ -425,21 +447,36 @@ function importToastProps(r) {
   return { message: 'Nothing new to import' }
 }
 
-function SyncPill({ count, draining, onTap }) {
+// Sync pill — the outbox surface in the Photos header (#2/#4). Neutral while
+// clips are on their way; AMBER (the app's per-person gold, --kept — never red)
+// when one is genuinely stuck. Per-person voice (videoCopy pill deck); a tap
+// drains the queue now. Stuck wins the label — an amber "1 stuck" is the state
+// that needs a nudge, so it's shown ahead of the calmer uploading count.
+function SyncPill({ traveler, uploading = 0, stuck = 0, draining, onTap }) {
+  const c = videoCopy(traveler)
+  const isRafa = traveler === 'rafa'
+  // Rafa NEVER sees an amber "stuck" — his outbox reads a gentle "saving…" for
+  // everything (uploading + stuck folded); the honest stuck state surfaces on a
+  // parent's lens (the shared per-device queue), never as a scary pill for him.
+  const amber = stuck > 0 && !isRafa
+  const label = isRafa ? c.pillWay(uploading + stuck) : stuck > 0 ? c.pillStuck(stuck) : c.pillWay(uploading)
   return (
     <button
       type="button"
       data-testid="sync-pill"
+      data-stuck={amber ? '1' : '0'}
       onClick={onTap}
-      title="Pending uploads — tap to retry now"
+      title={amber ? 'A clip is stuck — tap to send it now' : 'Pending uploads — tap to send now'}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         gap: 5,
         padding: '4px 10px',
         borderRadius: 14,
-        border: '1px solid var(--accent)',
-        background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+        border: `1px solid ${amber ? 'color-mix(in srgb, var(--kept) 45%, transparent)' : 'var(--accent)'}`,
+        background: amber
+          ? 'color-mix(in srgb, var(--kept) 15%, transparent)'
+          : 'color-mix(in srgb, var(--accent) 12%, transparent)',
         color: 'var(--text)',
         cursor: 'pointer',
         fontFamily: 'JetBrains Mono, monospace',
@@ -448,14 +485,18 @@ function SyncPill({ count, draining, onTap }) {
         textTransform: 'uppercase',
       }}
     >
-      <RefreshCw
-        size={11}
-        style={{
-          animation: draining ? 'pulseShimmer 1s linear infinite' : 'none',
-          color: 'var(--accent-text)',
-        }}
-      />
-      {count} syncing
+      {amber ? (
+        <CloudOff size={11} style={{ color: 'var(--kept)' }} />
+      ) : (
+        <RefreshCw
+          size={11}
+          style={{
+            animation: draining ? 'pulseShimmer 1s linear infinite' : 'none',
+            color: 'var(--accent-text)',
+          }}
+        />
+      )}
+      {label}
     </button>
   )
 }
@@ -555,7 +596,7 @@ function EmptyState() {
   )
 }
 
-function StopGroup({ group, onOpen, faceTags }) {
+function StopGroup({ group, onOpen, faceTags, traveler, queueStateById, onRetryStuck }) {
   // Partition the stop's entries into contiguous runs by memoryId.
   // Two memories captured at the same stop used to flow into one
   // CSS grid, so tile 5's "1/4" badge looked like a numbering
@@ -637,7 +678,15 @@ function StopGroup({ group, onOpen, faceTags }) {
             }}
           >
             {run.entries.map((entry) => (
-              <PhotoTile key={entry.key} entry={entry} faces={faceTags?.[entry.key]} onOpen={() => onOpen(entry)} />
+              <PhotoTile
+                key={entry.key}
+                entry={entry}
+                faces={faceTags?.[entry.key]}
+                traveler={traveler}
+                uploadState={queueStateById?.get(entry.memoryId)}
+                onRetryStuck={onRetryStuck}
+                onOpen={() => onOpen(entry)}
+              />
             ))}
           </div>
         ))}

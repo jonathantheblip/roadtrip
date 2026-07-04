@@ -1856,6 +1856,20 @@ function isUnshrunkVideo(kind, contentType) {
   return kind === 'video' && baseMime(contentType) !== VIDEO_MIME
 }
 
+// Storage firewall (#4) — the SIZE backstop. On-device, clips are capped at 3:00
+// (videoPipeline MAX_VIDEO_DURATION_MS), so a shrunk mp4 has a bounded size; the
+// Worker is the authoritative door that refuses a pathologically large one (a
+// hand-rolled request, a future encode bug) — REFUSE, never delete the device's
+// queued copy. The default is generous so a legit ≤3:00 720p clip is NEVER
+// rejected (a length-capped 720p encode doesn't approach it); VIDEO_MAX_STORED_BYTES
+// overrides it, so a test can set a tiny threshold and exercise the ceiling with
+// small fixtures.
+const VIDEO_MAX_STORED_BYTES_DEFAULT = 512 * 1024 * 1024 // 512MB
+function videoSizeCeiling(env) {
+  const n = Number(env?.VIDEO_MAX_STORED_BYTES)
+  return Number.isFinite(n) && n > 0 ? n : VIDEO_MAX_STORED_BYTES_DEFAULT
+}
+
 async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
   // The random suffix is the unguessable part of a PUBLICLY-served R2 key (GET
   // /assets/:key is pre-auth), so it must be cryptographically random — not
@@ -1869,6 +1883,13 @@ async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
   if (isUnshrunkVideo(kind, contentType)) {
     return json({ error: 'unshrunk-video', detail: 'a video must be an encoded video/mp4' }, 415, cors)
   }
+  // Storage firewall (#4): a video has a bounded size (3:00 cap). The AUTHORITATIVE
+  // ceiling check is on obj.size below (what actually got stored) — independent of
+  // the optional/spoofable Content-Length. Non-video kinds are unbounded (ceiling =
+  // Infinity). (CF caps a single POST body at ~100MB, well under the default 512MB
+  // ceiling, so this only bites a video sent with a tiny injected test ceiling; big
+  // real clips go through the multipart door, which enforces the same ceiling.)
+  const ceiling = kind === 'video' ? videoSizeCeiling(env) : Infinity
   const obj = await env.ASSETS.put(key, request.body, {
     httpMetadata: { contentType },
   })
@@ -1882,6 +1903,13 @@ async function uploadAsset(env, traveler, kind, memoryId, request, url, cors) {
   if (!obj || obj.size === 0) {
     try { await env.ASSETS.delete(key) } catch { /* best-effort cleanup of the empty object */ }
     return json({ error: 'empty asset' }, 400, cors)
+  }
+  // Authoritative size backstop (#4): what actually got stored, independent of the
+  // optional/spoofable Content-Length above. Over the ceiling → clean up + refuse;
+  // the device keeps its queued copy (same non-destructive stance as the empty guard).
+  if (obj.size > ceiling) {
+    try { await env.ASSETS.delete(key) } catch { /* best-effort cleanup */ }
+    return json({ error: 'video-too-large', detail: `video exceeds the ${ceiling}-byte storage ceiling` }, 413, cors)
   }
   return json({
     key,
@@ -1965,6 +1993,14 @@ async function completeMultipartUpload(env, traveler, request, url, cors) {
   if (!obj || obj.size === 0) {
     try { await env.ASSETS.delete(key) } catch { /* best-effort cleanup */ }
     return json({ error: 'empty asset' }, 400, cors)
+  }
+  // Storage firewall (#4): the assembled size is only knowable now (parts arrived
+  // separately). A video over the ceiling → delete the just-stitched object +
+  // refuse, so the device keeps its queued copy and never records a bogus success.
+  const mpuCeiling = videoSizeCeiling(env)
+  if (baseMime(obj.httpMetadata?.contentType) === VIDEO_MIME && obj.size > mpuCeiling) {
+    try { await env.ASSETS.delete(key) } catch { /* best-effort cleanup */ }
+    return json({ error: 'video-too-large', detail: `assembled video exceeds the ${mpuCeiling}-byte storage ceiling` }, 413, cors)
   }
   return json({
     key,

@@ -172,5 +172,7 @@ test('sync-pill renders when IDB queue is populated on iOS Simulator Safari', as
   }
 
   const pillText = await syncPill.getText()
-  assert.match(pillText, /1\s+syncing/i, `unexpected sync-pill text: ${pillText}`)
+  // Per-person pill copy (foolproof-video L5): "1 uploading" (helen default),
+  // "1 queued" (jonathan), Rafa's "saving…" — tolerant across the sim persona.
+  assert.match(pillText, /(?:1\s+(?:uploading|queued))|saving/i, `unexpected sync-pill text: ${pillText}`)
 })

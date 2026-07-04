@@ -22,6 +22,13 @@
 const MP4_TO_UNIX_EPOCH_SECONDS = 2_082_844_800
 
 export async function extractVideoCreationDate(file) {
+  // Test seam (PROD-INERT): the synthetic-encode path (videoPipeline's
+  // __RT_VIDEO_ENCODE_STUB) hands over a fake file with no real mvhd/Keys atom, so
+  // honor a capturedAt on that SAME global — otherwise a dateless clip is dropped
+  // by the importer's trip-range filter and the headless upload path can't run.
+  // Never set in any shipped surface.
+  const stub = typeof window !== 'undefined' ? window.__RT_VIDEO_ENCODE_STUB : null
+  if (stub && typeof stub.capturedAt === 'string') return stub.capturedAt
   if (!file) return null
   try {
     const moov = await locateTopLevelAtom(file, 'moov')

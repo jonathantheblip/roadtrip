@@ -74,7 +74,9 @@ test.describe('Photos upload — offline auto-drain (importer)', () => {
 
     // Sync pill in the album header now shows 1 item pending.
     await expect(page.getByTestId('sync-pill')).toBeVisible()
-    await expect(page.getByTestId('sync-pill')).toContainText(/1 syncing/i)
+    // Per-person pill copy (foolproof-video L5): "1 uploading"/"1 queued"/"saving…"
+    // by lens (was the generic "1 syncing"); tolerant across the persona sweep.
+    await expect(page.getByTestId('sync-pill')).toContainText(/(?:1\s+(?:uploading|queued))|saving/i)
     expect(assetCalls).toBeGreaterThanOrEqual(1) // initial attempt
     const callsBeforeDrain = assetCalls
 
@@ -194,7 +196,9 @@ test.describe('Photos upload — offline auto-drain (importer)', () => {
     await page.getByTestId(`${PERSONA}-photos-entry`).click()
     await page.getByTestId('import-file-input').setInputFiles([redPhotoFile('outage.png')])
     await expect(page.getByTestId('sync-pill')).toBeVisible()
-    await expect(page.getByTestId('sync-pill')).toContainText(/1 syncing/i)
+    // Per-person pill copy (foolproof-video L5): "1 uploading"/"1 queued"/"saving…"
+    // by lens (was the generic "1 syncing"); tolerant across the persona sweep.
+    await expect(page.getByTestId('sync-pill')).toContainText(/(?:1\s+(?:uploading|queued))|saving/i)
     const callsBeforeDrain = assetCalls
 
     // Reconnect, then fire BOTH drain entry points back-to-back.

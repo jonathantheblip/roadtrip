@@ -82,7 +82,8 @@ test.describe('Upload attribution — drains as the author, not the active perso
     await page.getByTestId('import-file-input').setInputFiles(IMPORT_FILES)
     await expect(page.getByTestId('import-confirm')).toBeVisible({ timeout: 10000 })
     await page.getByTestId('import-confirm-go').click()
-    await expect(page.getByTestId('sync-pill')).toContainText(/3 syncing/i, { timeout: 12000 })
+    // Per-person pill copy (foolproof-video L5); aurelia reads "3 uploading" — tolerant across lenses.
+    await expect(page.getByTestId('sync-pill')).toContainText(/(?:3\s+(?:uploading|queued))|saving/i, { timeout: 12000 })
 
     // Signal returns BEFORE Jonathan takes over, so his drain succeeds + clears.
     assetStatus = 200

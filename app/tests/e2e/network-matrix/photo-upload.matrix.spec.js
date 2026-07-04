@@ -94,7 +94,8 @@ test('offline import + online again drains the queue', async ({ page, browserNam
     await openImporterAndPick(page)
     // Landed on the album with a pending pill — not an error screen.
     await expect(page.getByTestId('sync-pill')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('sync-pill')).toContainText(/1 syncing/i)
+    // Per-person pill copy (foolproof-video L5) — tolerant across the persona sweep.
+    await expect(page.getByTestId('sync-pill')).toContainText(/(?:1\s+(?:uploading|queued))|saving/i)
   })
   await step('reconnect + foreground → queue drains to zero', async () => {
     online = true

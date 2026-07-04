@@ -112,6 +112,16 @@ export function flattenPhotoEntries(memories) {
         // a <video>; posterUrl is the renderable still (null for plain photos).
         isVideo,
         posterUrl,
+        // Video proof (#2/#4, foolproof import): the shrunk byte size + the clip
+        // length ride the ref so the saved tile can show the size chip (bottom-
+        // left) + duration (top-right). Null for photos / legacy videos with no
+        // stored bytes (the chip just doesn't render — never a fake size).
+        videoBytes: Number.isFinite(ref?.bytes) ? ref.bytes : null,
+        durationMs: Number.isFinite(ref?.durationMs) ? ref.durationMs : null,
+        // Not yet on R2 — a pending video ref is in the device outbox (on its way
+        // or, rarely, stuck). The tile cross-references the live queue for the
+        // stuck/uploading distinction; this is the "not backed up yet" flag.
+        pending: ref?.storage === 'pending',
         url,
         // The stored-object key (R2). Identity for cross-memory dedup: a
         // composed share-moment re-uses the SAME key as the photos it was built

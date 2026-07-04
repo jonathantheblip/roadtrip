@@ -328,6 +328,7 @@ export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
               <TripSection
                 key={tripSec.tripId}
                 tripSec={tripSec}
+                traveler={traveler}
                 onOpen={openLightbox}
                 sectionRef={(el) => (sectionRefs.current[tripSec.tripId] = el)}
               />
@@ -384,7 +385,7 @@ function EmptyState() {
   )
 }
 
-function TripSection({ tripSec, onOpen, sectionRef }) {
+function TripSection({ tripSec, onOpen, sectionRef, traveler }) {
   return (
     <section
       ref={sectionRef}
@@ -429,6 +430,7 @@ function TripSection({ tripSec, onOpen, sectionRef }) {
           key={`${tripSec.tripId}::${stop.stopKey}`}
           tripTitle={tripSec.tripTitle}
           group={stop}
+          traveler={traveler}
           onOpen={onOpen}
         />
       ))}
@@ -442,7 +444,7 @@ function TripSection({ tripSec, onOpen, sectionRef }) {
 // repeat it. Could be merged with StopGroup if we add a prop for
 // the eyebrow content, but the small render duplication is easier
 // to read than threading flags through.
-function StopGroupForAllPhotos({ tripTitle, group, onOpen }) {
+function StopGroupForAllPhotos({ tripTitle, group, onOpen, traveler }) {
   const memoryRuns = []
   for (const entry of group.entries) {
     const last = memoryRuns[memoryRuns.length - 1]
@@ -510,6 +512,7 @@ function StopGroupForAllPhotos({ tripTitle, group, onOpen }) {
               <PhotoTile
                 key={entry.key}
                 entry={entry}
+                traveler={traveler}
                 onOpen={() => onOpen(entry)}
               />
             ))}

@@ -28,13 +28,13 @@ function authEnv() {
   return { ...env, DB: env.DB, FAMILY_TOKEN_JONATHAN: TOKEN }
 }
 
-async function postAsset(path, { body, contentType, token = TOKEN } = {}) {
+async function postAsset(path, { body, contentType, token = TOKEN, env: envOverride } = {}) {
   const headers = { Origin: 'http://localhost:5173' }
   if (token) headers.Authorization = `Bearer ${token}`
   if (contentType) headers['Content-Type'] = contentType
   const req = new Request('https://worker.test' + path, { method: 'POST', headers, body })
   const ctx = createExecutionContext()
-  const res = await worker.fetch(req, authEnv(), ctx)
+  const res = await worker.fetch(req, { ...authEnv(), ...(envOverride || {}) }, ctx)
   await waitOnExecutionContext(ctx)
   return res
 }
@@ -114,6 +114,35 @@ describe('asset upload route', () => {
     const listed = await env.ASSETS.list({ prefix: 'jonathan/mem_empty_test/' })
     expect(listed.objects.length, 'no empty object should remain in R2').toBe(0)
   })
+
+  it('POST /assets/video/:id over the size ceiling is REFUSED (413) — storage firewall #4, nothing stored', async () => {
+    // Clips are 3:00-capped on-device, so a shrunk mp4 is size-bounded; the Worker
+    // is the authoritative backstop against a pathologically large one (a hand-rolled
+    // request / future encode bug). Inject a tiny ceiling so a small fixture trips it.
+    // NON-VACUOUS: the identical bytes under the generous default ceiling store fine
+    // (the routed-video test above returns 200).
+    const bytes = new Uint8Array(64).fill(0x6d) // 64 bytes > the injected 10-byte ceiling
+    const res = await postAsset('/assets/video/mem_big_over', {
+      body: bytes,
+      contentType: 'video/mp4',
+      env: { VIDEO_MAX_STORED_BYTES: '10' },
+    })
+    expect(res.status, 'an over-ceiling video must be refused, never stored').toBe(413)
+    const listed = await env.ASSETS.list({ prefix: 'jonathan/mem_big_over/' })
+    expect(listed.objects.length, 'nothing stored for a refused over-ceiling video').toBe(0)
+  })
+
+  it('the size ceiling is VIDEO-ONLY — a photo over the same threshold still stores (working path, G5)', async () => {
+    // The ceiling exists because a video is length-bounded; photos are not gated by
+    // it. A 64-byte photo with the tiny video ceiling injected must still 200, or the
+    // backstop would be a silent photo-import regression.
+    const res = await postAsset('/assets/photo/mem_photo_big', {
+      body: new Uint8Array(64).fill(0xff),
+      contentType: 'image/jpeg',
+      env: { VIDEO_MAX_STORED_BYTES: '10' },
+    })
+    expect(res.status, 'the video ceiling must not touch photos').toBe(200)
+  })
 })
 
 // Multipart upload (large videos over CF's ~100MB single-POST cap): create → part(s)
@@ -126,13 +155,13 @@ describe('multipart asset upload', () => {
     await seedSession(env.DB, TOKEN, 'jonathan')
   })
 
-  async function mpu(step, { method = 'POST', body, json: isJson = false, query = '', token = TOKEN } = {}) {
+  async function mpu(step, { method = 'POST', body, json: isJson = false, query = '', token = TOKEN, env: envOverride } = {}) {
     const headers = { Origin: 'http://localhost:5173' }
     if (token) headers.Authorization = `Bearer ${token}`
     if (isJson) headers['Content-Type'] = 'application/json'
     const req = new Request('https://worker.test/assets/mpu/' + step + query, { method, headers, body })
     const ctx = createExecutionContext()
-    const res = await worker.fetch(req, authEnv(), ctx)
+    const res = await worker.fetch(req, { ...authEnv(), ...(envOverride || {}) }, ctx)
     await waitOnExecutionContext(ctx)
     return res
   }
@@ -187,5 +216,32 @@ describe('multipart asset upload', () => {
   it('create with a bad kind is rejected (400)', async () => {
     const res = await mpu('create', { json: true, body: JSON.stringify({ kind: 'bogus', memoryId: 'm' }) })
     expect(res.status).toBe(400)
+  })
+
+  it('complete over the size ceiling is REFUSED (413) + the stitched object is deleted — storage firewall #4', async () => {
+    // The assembled size is only knowable at complete (parts arrive separately), so
+    // the ceiling is enforced there: the just-stitched object is deleted and the
+    // client keeps its queued copy (never records a bogus success). Inject a tiny
+    // ceiling; the ~5MB stitch trips it. NON-VACUOUS: the same stitch under the
+    // default ceiling 200s (the create→parts→complete test above).
+    const tiny = { VIDEO_MAX_STORED_BYTES: '10' }
+    const { key, uploadId } = await (await mpu('create', {
+      json: true,
+      body: JSON.stringify({ kind: 'video', memoryId: 'mem_mpu_over', contentType: 'video/mp4' }),
+      env: tiny,
+    })).json()
+    const partA = new Uint8Array(5 * 1024 * 1024).fill(0x41)
+    const partB = new Uint8Array([0x42, 0x42, 0x42])
+    const q = (n) => `?key=${encodeURIComponent(key)}&uploadId=${encodeURIComponent(uploadId)}&partNumber=${n}`
+    const p1 = await (await mpu('part', { method: 'PUT', body: partA, query: q(1), env: tiny })).json()
+    const p2 = await (await mpu('part', { method: 'PUT', body: partB, query: q(2), env: tiny })).json()
+    const compRes = await mpu('complete', {
+      json: true,
+      body: JSON.stringify({ key, uploadId, parts: [p1, p2] }),
+      env: tiny,
+    })
+    expect(compRes.status, 'an over-ceiling assembled video must be refused').toBe(413)
+    const stored = await env.ASSETS.get(key)
+    expect(stored, 'the over-ceiling stitched object is deleted, not left behind').toBeNull()
   })
 })

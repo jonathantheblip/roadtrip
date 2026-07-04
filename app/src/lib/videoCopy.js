@@ -125,8 +125,11 @@ const COPY = {
     tileWay: 'saving…',
     tileStuck: 'saving…', // never a scary state for Rafa
     tileStuckCta: null,
-    pillWay: (n) => (n > 1 ? `saving ${n} movies…` : 'saving your movie…'),
-    pillStuck: (n) => (n > 1 ? `saving ${n} movies…` : 'saving your movie…'),
+    // The header pill counts EVERY queued item (photos AND videos), so Rafa's copy
+    // stays kind-neutral — it must not call his photos "movies". Gentle + honest,
+    // never amber (SyncPill folds his uploading+stuck into this one calm line).
+    pillWay: (n) => (n > 1 ? `saving ${n}…` : 'saving…'),
+    pillStuck: (n) => (n > 1 ? `saving ${n}…` : 'saving…'),
     pillDone: 'all saved!',
   },
 }

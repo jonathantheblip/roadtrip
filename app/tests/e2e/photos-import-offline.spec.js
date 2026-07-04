@@ -128,7 +128,10 @@ test.describe('Importer Stage 2 — offline import survives to upload', () => {
     // Back on the album (no done screen — the smart-skip feel). The sync pill
     // shows all three photos pending; the upload was genuinely attempted.
     await expect(page.getByTestId('sync-pill')).toBeVisible({ timeout: 12000 })
-    await expect(page.getByTestId('sync-pill')).toContainText(/3 syncing/i)
+    // Per-person pill copy (foolproof-video L5): "3 uploading"/"3 queued"/"saving…"
+    // by lens (was the generic "3 syncing"); tolerant across the RT_PERSONA sweep,
+    // matching its sibling offline specs.
+    await expect(page.getByTestId('sync-pill')).toContainText(/(?:3\s+(?:uploading|queued))|saving/i)
     expect(assetCalls).toBeGreaterThan(attemptsBeforeSave)
 
     // Even before the drain, the interstitial renders under its between-stops

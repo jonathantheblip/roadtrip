@@ -154,6 +154,26 @@ export function isStuckItem(item) {
   return (item?.attempts || 0) >= STUCK_AFTER_ATTEMPTS
 }
 
+// A snapshot of every queued item's honest upload state, keyed for the surfaces
+// that render it: the saved tile (per-memory on-its-way vs stuck) and the sync
+// pill (uploading vs stuck counts). `id` is the memoryId (the queue key), so a
+// tile can look itself up. Best-effort: an unreadable queue reports empty (the
+// tiles fall back to "saved", the pill hides) rather than throwing into render.
+export async function listQueueStates() {
+  let items
+  try {
+    items = await list()
+  } catch {
+    return []
+  }
+  return items.map((it) => ({
+    id: it.id,
+    kind: it.kind,
+    attempts: it.attempts || 0,
+    stuck: isStuckItem(it),
+  }))
+}
+
 // Scan the queue and remove every doomed item (see isDoomedVideoItem). Each
 // removal is logged to the dev upload log so a purge is traceable, never a
 // silent disappearance. Returns the purged records' metadata. Best-effort: a

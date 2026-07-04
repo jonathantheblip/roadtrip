@@ -51,6 +51,18 @@ export function isVideoEncodeSupported() {
 //   posterBlob is a tiny JPEG of the first frame so the queue tile has
 //   something to render before the upload lands.
 export async function encodeVideo(file, { onProgress, signal } = {}) {
+  // ── Test seam (PROD-INERT) ────────────────────────────────────────────────
+  // Playwright's bundled WebKit + Chromium can't run the real WebCodecs encode to
+  // completion, so the importer's whole video path (pick → shrink → file → queue →
+  // drain) was only coverable on a real iOS Simulator — and the "bulk video never
+  // uploaded" bug hid because nothing headless exercised it. When
+  // window.__RT_VIDEO_ENCODE_STUB is set (ONLY by a test's addInitScript, NEVER in
+  // any shipped surface) return a synthetic shrunk mp4 — or throw the same designed
+  // .code — so every importer branch is drivable headlessly. Mirrors the existing
+  // __RT_IMPORT_FORCE_CONFIRM / __RT_BACKFILL_EXIF seams.
+  const stub = typeof window !== 'undefined' ? window.__RT_VIDEO_ENCODE_STUB : null
+  if (stub) return stubEncode(file, stub, onProgress)
+
   if (!isVideoEncodeSupported()) {
     throw withCode(
       'webcodecs-unavailable',
@@ -507,4 +519,48 @@ function withCode(code, message) {
   const e = new Error(message)
   e.code = code
   return e
+}
+
+// ─── test seam: synthetic encode ───────────────────────────────────────────
+// Returns the SAME shape encodeVideo does ({ blob:video/mp4, width, height,
+// durationMs, posterBlob }) and honors the SAME branches — a durationMs over the
+// 3:00 cap throws 'video-too-long' (with .durationMs), and `fail:true` throws a
+// generic encode failure — so the headless suite can drive the happy upload, the
+// too-long banner, and the couldn't-add banner. `blobBytes` sets the synthetic
+// shrunk size (the tile/confirm size chip). Never reached in production (guarded
+// by window.__RT_VIDEO_ENCODE_STUB, which no shipped code sets).
+const STUB_POSTER_PNG_1PX =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+function makeStubPoster() {
+  try {
+    const bytes = Uint8Array.from(atob(STUB_POSTER_PNG_1PX), (ch) => ch.charCodeAt(0))
+    return new Blob([bytes], { type: 'image/png' })
+  } catch {
+    return null
+  }
+}
+
+async function stubEncode(file, cfg, onProgress) {
+  const c = cfg === true ? {} : cfg || {}
+  if (c.fail) throw withCode(c.failCode || 'video-encode-failed', 'stubbed encode failure')
+  const durationMs = Number.isFinite(c.durationMs) ? c.durationMs : 4000
+  if (durationMs > MAX_VIDEO_DURATION_MS) {
+    const e = withCode('video-too-long', `clip is ${Math.round(durationMs / 1000)}s; keepable max is ${MAX_VIDEO_DURATION_MS / 1000}s`)
+    e.durationMs = durationMs
+    throw e
+  }
+  try {
+    onProgress?.(100)
+  } catch {
+    /* ignore */
+  }
+  const bytes = Number.isFinite(c.blobBytes) ? c.blobBytes : 12000
+  return {
+    blob: new Blob([new Uint8Array(Math.max(1, bytes))], { type: 'video/mp4' }),
+    width: Number.isFinite(c.width) ? c.width : 720,
+    height: Number.isFinite(c.height) ? c.height : 1280,
+    durationMs,
+    posterBlob: c.poster === false ? null : makeStubPoster(),
+  }
 }
