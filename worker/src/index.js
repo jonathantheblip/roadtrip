@@ -1454,6 +1454,14 @@ async function getTrips(env, traveler, url, cors, ctx) {
       if (r.date_range_start) trip.dateRangeStart = r.date_range_start
       if (r.date_range_end) trip.dateRangeEnd = r.date_range_end
       if (r.end_city) trip.endCity = r.end_city
+      // The row's server stamp — the same value the push response returns as
+      // `updatedAt` (epoch ms), so a client learns its OCC base identically
+      // from both paths. Without this a PULL-ONLY device (editing a trip
+      // someone else created — the normal case) has no base to send and its
+      // pushes bypass the 409 guard. Attached AFTER parse so a stale copy
+      // embedded in data_json can never shadow the row; a whole-trip stand-in
+      // (maskTripForViewer) is built fresh and deliberately does not carry it.
+      trip.serverUpdatedAt = Number(r.updated_at)
       return trip
     } catch {
       return null
@@ -1517,16 +1525,37 @@ async function postTrip(env, request, cors, traveler) {
   const baseUpdatedAt =
     Number.isFinite(trip.baseUpdatedAt) ? trip.baseUpdatedAt : null
   if ('baseUpdatedAt' in trip) delete trip.baseUpdatedAt
+  // serverUpdatedAt is the same transport-only family (the client's copy of the
+  // row stamp, re-emitted by getTrips) — never trip data; strip it too.
+  if ('serverUpdatedAt' in trip) delete trip.serverUpdatedAt
 
   // One stored-row read serves BOTH the concurrency check and the per-stop clobber
   // guard below (was its own SELECT). Read updated_at too for the 409 compare.
+  // Includes TOMBSTONED rows: filtering them here made the resurrection guard
+  // below unreachable (storedRow null → every check skipped → the upsert's
+  // deleted_at = NULL silently revived the trip).
   let storedRow = null
   try {
     storedRow = await env.DB.prepare(
-      'SELECT data_json, updated_at FROM trips WHERE id = ? AND deleted_at IS NULL'
+      'SELECT data_json, updated_at, deleted_at FROM trips WHERE id = ?'
     ).bind(trip.id).first()
   } catch (e) {
     console.error('postTrip stored-row read failed', e?.stack || e)
+  }
+
+  // RESURRECTION GUARD. The family deleted this trip; the only writes that can
+  // target it now are stale devices re-pushing queued edits, or a reseed.
+  // Refuse them ALL — based or base-less — so a resync can never revive a
+  // deleted trip as a side effect. `deleted: true` tells a concurrency-aware
+  // client to adopt the delete instead of retrying forever. There is
+  // deliberately NO revive-by-push: re-creating a deleted trip must be a
+  // conscious future surface, never an upsert accident.
+  if (storedRow && storedRow.deleted_at != null) {
+    return json(
+      { error: 'conflict', id: trip.id, deleted: true, storedUpdatedAt: Number(storedRow.updated_at) },
+      409,
+      cors
+    )
   }
 
   if (baseUpdatedAt != null && storedRow && Number(storedRow.updated_at) > baseUpdatedAt) {
@@ -1563,6 +1592,11 @@ async function postTrip(env, request, cors, traveler) {
     }
   }
   const updatedAt = Date.now()
+  // The update arm deliberately never touches deleted_at: the resurrection
+  // guard above already refused every push at a tombstone, so an un-delete
+  // here could only fire inside the read→write race (a DELETE landing between
+  // the guard's read and this write) — and that race must leave the trip
+  // deleted. Only the INSERT arm (a genuinely new id) starts live.
   await env.DB.prepare(
     `INSERT INTO trips (
        id, title, date_range_start, date_range_end, end_city,
@@ -1574,8 +1608,7 @@ async function postTrip(env, request, cors, traveler) {
        date_range_end = excluded.date_range_end,
        end_city = excluded.end_city,
        data_json = excluded.data_json,
-       updated_at = excluded.updated_at,
-       deleted_at = NULL`
+       updated_at = excluded.updated_at`
   ).bind(
     trip.id, trip.title || null,
     trip.dateRangeStart || null, trip.dateRangeEnd || null,

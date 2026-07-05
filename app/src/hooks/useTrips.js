@@ -10,6 +10,7 @@ import {
   subscribe as subscribeUnsynced,
 } from '../lib/tripSyncQueue'
 import { markDeleted, clearDeleted, deletedIds, withoutDeleted } from '../lib/deleteTombstones'
+import { resolveTripPushConflict, runSyncBeat } from '../lib/tripSyncFlow'
 
 // useTrips — single source of truth for the trip list.
 //
@@ -162,6 +163,78 @@ export function useTrips() {
     }
   }, [])
 
+  // Carry the server-issued row stamp onto the local copy after a confirmed
+  // push, so the NEXT edit/push of this trip sends a fresh, server-sourced OCC
+  // base. Monotonic — never lowers an existing stamp (two overlapping pushes
+  // may resolve out of order). Mirrors recordServerUpdatedAt on the memory side.
+  const stampTripSynced = useCallback((id, updatedAt) => {
+    if (!Number.isFinite(updatedAt)) return
+    setTrips((prev) => {
+      let changed = false
+      const next = prev.map((t) => {
+        if (t.id !== id) return t
+        if (Number.isFinite(t.serverUpdatedAt) && t.serverUpdatedAt >= updatedAt) return t
+        changed = true
+        return { ...t, serverUpdatedAt: updatedAt }
+      })
+      if (changed) writeCache(next)
+      return changed ? next : prev
+    })
+  }, [])
+
+  // Land a specific reconciled trip (conflict-recovery output) in state + cache.
+  // Replace-by-id only — never re-adds an id that's gone locally (it may have
+  // been deleted here mid-recovery, and the tombstone owns that story).
+  const adoptTripLocally = useCallback((next) => {
+    if (!next?.id) return
+    setTrips((prev) => {
+      if (!prev.some((t) => t.id === next.id)) return prev
+      const out = prev.map((t) => (t.id === next.id ? next : t))
+      writeCache(out)
+      return out
+    })
+  }, [])
+
+  // The family deleted this trip on another device while an edit here was
+  // still pending. The delete wins: stop retrying and drop the local copy, so
+  // a stale device can never resurrect what the family removed. A DRAFT copy
+  // stays — drafts are the author's local work-in-progress, never served by a
+  // pull; it simply stops being owed to the family.
+  const adoptFamilyDelete = useCallback((trip) => {
+    markSynced(trip.id)
+    if (trip.draft) return
+    setTrips((prev) => {
+      const next = prev.filter((t) => t.id !== trip.id)
+      if (next.length === prev.length) return prev
+      writeCache(next)
+      return next
+    })
+  }, [])
+
+  // Recover a refused-as-stale push (409): pull fresh, reapply this edit on
+  // top, retry on the fresh base — bounded, never blind (tripSyncFlow). Shared
+  // by the foreground save and the background resync so the two can't drift.
+  const recoverConflict = useCallback(async (trip, err, asTraveler) => {
+    if (err?.body?.deleted) {
+      // Short-circuit: the 409 already says the trip is tombstoned — no pull
+      // can teach us more (a deleted trip is absent from every pull anyway).
+      // A draft lands on 'refused' (dequeue, keep the local copy) — same rule
+      // as inside resolveTripPushConflict.
+      return trip?.draft ? { status: 'refused' } : { status: 'deleted' }
+    }
+    // Hand the recovery the row stamp this 409 carried: a row the pull can't
+    // serve (a draft:true row mid-publish, a corrupt data_json row) is only
+    // reachable on exactly that base — absence from the pull must never be
+    // read as a family delete (tripSyncFlow owns that contract).
+    return resolveTripPushConflict({
+      trip,
+      asTraveler,
+      push: pushTrip,
+      pull: pullTrips,
+      storedUpdatedAt: err?.body?.storedUpdatedAt,
+    })
+  }, [])
+
   // The single create/update path. Both the manual-add form and the
   // trip editor go through this — one function, one schema, one set of
   // fields (change order 2026-05-17 §3.5). Local cache is written
@@ -170,6 +243,9 @@ export function useTrips() {
   // silently dropping it. Upsert by id: replace in place if the id is
   // already known, else prepend. Idempotent — re-saving the same record
   // (same client-stable id) updates the one row, never duplicates.
+  // Returns { ok, synced, updatedAt? }: updatedAt is the server row stamp when
+  // the push (or its conflict recovery) confirmed — the caller's own working
+  // copy needs it as the base of its next save.
   const upsertTrip = useCallback(async (trip) => {
     setTrips((prev) => {
       const exists = prev.some((t) => t.id === trip.id)
@@ -200,32 +276,84 @@ export function useTrips() {
       // re-pushing never leaks it; losing the trip is the failure we're fixing,
       // and the local copy is never dropped (clobber guard).
       markSynced(trip.id)
-      pushTrip(trip).catch(() => markUnsynced(trip.id, getActiveTraveler()))
+      pushTrip(trip)
+        .then((res) => {
+          // Learn the bumped row stamp (the worker restamps every push) so the
+          // eventual PUBLISH of this trip carries a fresh base — otherwise
+          // every set-aside-then-publish cycle pushes a guaranteed-stale base
+          // and pays a full 409 recovery.
+          if (Number.isFinite(res?.updatedAt)) stampTripSynced(trip.id, res.updatedAt)
+        })
+        .catch(() => markUnsynced(trip.id, getActiveTraveler()))
       return { ok: true, synced: false, reason: 'draft' }
     }
     try {
       const reached = await pushTrip(trip)
-      if (reached === false) {
+      if (reached === false || reached?.skipped) {
         // pushTrip REFUSED without throwing — a masked/surprise projection (3b) is a
         // per-recipient stand-in that is never authoritative and must never overwrite
         // the author's real row, so the worker (and pushTrip) decline to persist it. It
         // did NOT reach the family: report honestly (synced:false), and do NOT mark it
         // unsynced — a retry would be refused forever. (This case used to fall through to
         // markSynced + {synced:true}, a lie: the badge said "synced" when nothing shipped.)
+        // `reached?.skipped` is the worker's own refusal shape — read the per-item
+        // result, never transport success alone.
         return { ok: false, synced: false, reason: 'refused' }
       }
+      // Carry the server row stamp as the base of this trip's NEXT save, so a
+      // later stale copy is refused (409) instead of clobbering. `updatedAt`
+      // rides back to the caller too — the trip editor teaches its own working
+      // copy the fresh base with it (its clone never sees the trips state).
+      const stamp = Number.isFinite(reached?.updatedAt) ? reached.updatedAt : undefined
+      if (stamp !== undefined) stampTripSynced(trip.id, stamp)
       markSynced(trip.id) // reached the family — clear any prior unsynced flag
-      return { ok: true, synced: true }
+      return { ok: true, synced: true, updatedAt: stamp }
     } catch (err) {
+      if (err?.status === 409) {
+        // The stored trip moved on since our base (another device saved, or the
+        // family deleted it). Recover deliberately — pull fresh, reapply this
+        // edit on top, retry on the fresh base — never blind-overwrite.
+        // Queue FIRST: recovery spans seconds of pulls and retries, and only a
+        // queued id is carried by refresh()'s clobber guard — unqueued, a
+        // concurrent heartbeat pull would swap the cache to the server copy
+        // mid-recovery, and a 'pending' outcome would then resync the WRONG
+        // (server) content as if it were this edit. Every terminal outcome
+        // below settles the queue: synced/refused dequeue here, a family
+        // delete dequeues inside adoptFamilyDelete, pending stays queued.
+        markUnsynced(trip.id, getActiveTraveler())
+        const out = await recoverConflict(trip, err)
+        if (out.status === 'synced') {
+          adoptTripLocally(out.trip)
+          markSynced(trip.id)
+          return {
+            ok: true,
+            synced: true,
+            updatedAt: Number.isFinite(out.trip?.serverUpdatedAt) ? out.trip.serverUpdatedAt : undefined,
+          }
+        }
+        if (out.status === 'deleted') {
+          adoptFamilyDelete(trip)
+          return { ok: false, synced: false, reason: 'deleted', error: 'This trip was deleted on another device.' }
+        }
+        if (out.status === 'refused') {
+          markSynced(trip.id) // never ours to sync (a stand-in) — don't retry forever
+          return { ok: false, synced: false, reason: 'refused' }
+        }
+        // Still conflicting / transient mid-recovery: the edit STAYS pending
+        // (queued above) — the resync retries it against a fresh pull; the
+        // badge + index note say so honestly (never dropped, never pushed blind).
+        return { ok: false, synced: false, queued: true, error: 'Another device saved this trip at the same time — still trying.' }
+      }
       // The push didn't reach the family. Remember it so resync can re-push it
       // on the next opportunity (reopen / network back / interval), instead of
       // stranding the edit on this device forever. The caller still gets a
-      // synced:false result so its UI can be honest about it.
+      // synced:false result so its UI can be honest about it; `queued` lets the
+      // badge show "still reaching the family" rather than a dead-end error.
       markUnsynced(trip.id, getActiveTraveler()) // capture the editor for an honest resync
       console.warn('useTrips upsertTrip: Worker push failed; kept locally', err)
-      return { ok: false, synced: false, error: err?.message || String(err) }
+      return { ok: false, synced: false, queued: true, error: err?.message || String(err) }
     }
-  }, [])
+  }, [stampTripSynced, adoptTripLocally, adoptFamilyDelete, recoverConflict])
 
   // Self-healing: re-push any trip edit that hasn't reached the family yet,
   // from the freshest cached version. Best-effort — a still-failing push leaves
@@ -255,11 +383,34 @@ export function useTrips() {
           // Push AS the editor who made the change (captured at mark time), not
           // whoever is active now — so the worker's per-writer masking/clobber
           // guards apply to the real author. Null author → active traveler (old rows).
-          await pushTrip(t, { asTraveler: author || undefined })
+          const res = await pushTrip(t, { asTraveler: author || undefined })
+          if (res === false || res?.skipped) {
+            // Refused (a stand-in slipped in after the cache read) — never ours
+            // to sync; same drop as the masked check above.
+            markSynced(id)
+            continue
+          }
+          if (Number.isFinite(res?.updatedAt)) stampTripSynced(id, res.updatedAt)
           markSynced(id)
           resynced += 1
-        } catch {
-          /* leave it queued; the next trigger retries */
+        } catch (err) {
+          if (err?.status === 409) {
+            // Our queued copy is STALE against the family's — the exact clobber
+            // this guard exists for. Recover on a fresh base (pull-as-author,
+            // reapply, bounded retry) instead of blind re-pushing every 20s.
+            const out = await recoverConflict(t, err, author || undefined)
+            if (out.status === 'synced') {
+              adoptTripLocally(out.trip)
+              markSynced(id)
+              resynced += 1
+            } else if (out.status === 'deleted') {
+              adoptFamilyDelete(t)
+            } else if (out.status === 'refused') {
+              markSynced(id)
+            }
+            /* 'pending': leave it queued; the next trigger retries fresh */
+          }
+          /* other errors: leave it queued; the next trigger retries */
         }
       }
     }
@@ -275,7 +426,7 @@ export function useTrips() {
       /* else: keep the tombstone; the next trigger retries, pulls keep skipping it */
     }
     return { resynced, remaining: remainingCount() }
-  }, [])
+  }, [stampTripSynced, adoptTripLocally, adoptFamilyDelete, recoverConflict])
 
   // Reflect the unsynced-count so an indicator can show "N changes haven't
   // reached the family yet."
@@ -295,8 +446,11 @@ export function useTrips() {
     let stopped = false
     const attempt = () => {
       if (!stopped) {
-        resyncPending()
-        refresh()
+        // Push-then-pull, SERIALIZED (runSyncBeat): fired concurrently, the
+        // pull could land before this device's own push and visually revert a
+        // just-made edit for one heartbeat. Not awaited here — triggers stay
+        // fire-and-forget exactly as before.
+        runSyncBeat({ resync: resyncPending, refresh, shouldContinue: () => !stopped })
       }
     }
     attempt()
@@ -367,8 +521,22 @@ export function useTrips() {
     let skipped = 0
     for (const t of SEED_TRIPS) {
       if (existing.has(t.id)) { skipped += 1; continue } // already live → never overwrite
-      const ok = await pushTrip(t)
-      if (ok) pushed += 1
+      try {
+        const ok = await pushTrip(t)
+        // Honest per-item read: a refusal (false / a worker `skipped` shape) was
+        // left untouched, never "added".
+        if (ok && !ok?.skipped) pushed += 1
+        else skipped += 1
+      } catch (err) {
+        // A tombstoned seed trip 409s (the worker's resurrection guard): the
+        // family deleted it, and additive-only means a reseed never undoes a
+        // deletion. Counts as untouched, same as an existing live trip. Any
+        // OTHER failure (offline, worker error) rethrows so Settings reports
+        // "Seed failed" — a fully-failed seed must never read as "the family
+        // already has every bundled trip".
+        if (err?.status !== 409) throw err
+        skipped += 1
+      }
     }
     await refresh()
     return { pushed, skipped }

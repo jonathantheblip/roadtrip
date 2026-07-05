@@ -17,6 +17,7 @@
 
 import { loadAsset } from './memAssets'
 import { getSession, clearSession, redeemLink } from './auth'
+import { pullWatchdogSignal, tripWireBody, baseToEpochMs } from './tripSyncFlow'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) || {}
 const WORKER_URL = (env.VITE_WORKER_URL || '').replace(/\/+$/, '')
@@ -146,6 +147,14 @@ export async function workerFetch(path, opts = {}, { asTraveler } = {}) {
     const text = await r.text().catch(() => '')
     const err = new Error(`worker ${r.status}: ${text || r.statusText}`)
     err.status = r.status
+    // Structured error body (when the worker sent JSON): a 409 carries conflict
+    // details (storedUpdatedAt, deleted) the recovery paths read — parsed once
+    // here so no caller has to re-parse the message text.
+    try {
+      err.body = text ? JSON.parse(text) : null
+    } catch {
+      err.body = null
+    }
     throw err
   }
   return r
@@ -273,16 +282,6 @@ export async function pullAll({ asTraveler } = {}) {
     out.errors = [err?.message || String(err)]
     return out
   }
-}
-
-// Convert an optimistic-concurrency base to epoch ms for the wire. Accepts an ISO
-// string (what rowToMemory emits) or a raw number; returns NaN for anything that
-// can't be a real timestamp (undefined / '' / unparseable), so the caller OMITS it
-// and the worker stays last-write-wins. Exported for unit tests.
-export function baseToEpochMs(v) {
-  if (typeof v === 'number') return v
-  if (typeof v === 'string' && v) return Date.parse(v)
-  return NaN
 }
 
 // baseUpdatedAt (optional): the SERVER updated_at this record was last known at
@@ -539,10 +538,17 @@ export async function uploadPoster(memoryId, posterBlob, { asTraveler } = {}) {
 
 // ─── Trips ────────────────────────────────────────────────────────────
 
-export async function pullTrips() {
+// `asTraveler` (optional) authenticates the pull AS a specific person — the trip
+// conflict recovery re-pulls as the queued edit's AUTHOR so a surprise trip is
+// served under the right identity, not whoever is active at recovery (mirrors
+// pullAll's asTraveler). Every existing caller passes nothing — unchanged.
+// The watchdog signal (F6) bounds the fetch: a pull that never settles would
+// otherwise latch useTrips' refresh guard until relaunch.
+export async function pullTrips({ asTraveler } = {}) {
   if (!isWorkerConfigured()) return []
   try {
-    const r = await workerFetch('/trips')
+    const signal = pullWatchdogSignal()
+    const r = await workerFetch('/trips', signal ? { signal } : {}, { asTraveler })
     const arr = await r.json()
     return Array.isArray(arr) ? arr : []
   } catch (err) {
@@ -557,17 +563,37 @@ export async function pullTrips() {
 // change — set by the trip resync from the author captured at mark time, so an
 // offline edit re-syncs under its real author (matters for the worker's per-writer
 // masking/clobber guards), not whoever is active at resync. Defaults to active.
+//
+// OCC: the trip's serverUpdatedAt (the row stamp learned from every pull and
+// push) rides as baseUpdatedAt, so a STALE copy is refused with 409 instead of
+// clobbering another device's newer edit — EXCEPT a draft, which the worker
+// never serves back: no fresh base is learnable for one, and a 409-recovery
+// pull could never find the row (it would misread the miss as a family
+// delete), so a draft push stays deliberately base-less (create/recover
+// semantics, exactly as before). Returns the worker's per-item result
+// ({ ok, id, updatedAt } — or a skipped shape when the worker declined) so a
+// caller can read the honest outcome and carry updatedAt as its next base;
+// returns false when refused locally. A 409 throws with err.status/err.body
+// for the conflict recovery.
 export async function pushTrip(trip, { asTraveler } = {}) {
   if (!isWorkerConfigured()) return false
   // A masked trip stand-in (3b) is a per-recipient projection — never push it
   // back (it would clobber the author's real trip). The worker also refuses it.
   if (trip?.masked) return false
   try {
-    await workerFetch('/trips', {
+    // serverUpdatedAt is client bookkeeping, not trip data: tripWireBody strips
+    // it from the wire copy and sends it as the concurrency base instead (the
+    // worker strips both transport fields again before data_json, defense in
+    // depth). Pure + pinned by the unit suite — this file can't be.
+    const body = tripWireBody(trip)
+    const r = await workerFetch('/trips', {
       method: 'POST',
-      body: JSON.stringify(trip),
+      body: JSON.stringify(body),
     }, { asTraveler })
-    return true
+    // Hand back the stored result (carries the server-stamped updatedAt). On a
+    // parse miss fall back to `true` so old truthiness-only callers still see
+    // success — mirrors pushMemory.
+    return await r.json().catch(() => true)
   } catch (err) {
     console.warn('workerSync pushTrip failed', err)
     throw err

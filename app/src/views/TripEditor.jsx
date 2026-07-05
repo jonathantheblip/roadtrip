@@ -19,6 +19,7 @@ import { tripCompleteness } from '../lib/tripComplete'
 import { isStayTrip } from '../lib/tripShape'
 import { hasExplicitParts, partPlaceLabel, isCompositeTrip, PART_TYPES, legGeocodeQuery } from '../lib/tripParts'
 import { flightSegments, flightLayovers, emptyFlightSegment } from '../lib/flightSegments'
+import { tripContentJson } from '../lib/tripSyncFlow'
 
 // Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
 // pulled in when a trip actually has a located lodging (Phase 2).
@@ -74,7 +75,11 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   // 'record' (what actually happened — mouth three). UI-only; flipping never
   // schedules a save. The record tense writes day.record, never day.stops.
   const [mode, setMode] = useState('plan')
-  const lastPushedJson = useRef(JSON.stringify(incoming))
+  // CONTENT json (never raw stringify): the conflict guard below compares
+  // against tripContentJson, and `incoming` carries serverUpdatedAt once
+  // pulled — a raw init would never match, leaving the guard to fire on any
+  // pull while the working copy is mid-keystroke dirty.
+  const lastPushedJson = useRef(tripContentJson(incoming))
   const timerRef = useRef(null)
   // When the user discards a draft, the unmount autosave below MUST NOT fire — it
   // would re-insert the very trip we just removed. This flag short-circuits it.
@@ -84,7 +89,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   useEffect(() => {
     if (incoming?.id && incoming.id !== tripRef.current.id) {
       setTrip(clone(incoming))
-      lastPushedJson.current = JSON.stringify(incoming)
+      lastPushedJson.current = tripContentJson(incoming)
       setConflict(false)
       setSaveState('idle')
     }
@@ -140,30 +145,57 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
   useEffect(() => {
     const remote = tripsApi.trips.find((t) => t.id === trip.id)
     if (!remote) return
-    const remoteJson = JSON.stringify(remote)
+    // Compare CONTENT (tripContentJson): serverUpdatedAt is sync bookkeeping
+    // that every pull/push refreshes — it must never read as a foreign edit.
+    const remoteJson = tripContentJson(remote)
     if (
       remoteJson !== lastPushedJson.current &&
-      remoteJson !== JSON.stringify(tripRef.current)
+      remoteJson !== tripContentJson(tripRef.current)
     ) {
       setConflict(true)
     }
   }, [tripsApi.trips, trip.id])
 
+  // Teach the working copy the server stamp its own save just earned — WITHOUT
+  // scheduling a save (the stamp is sync bookkeeping, not content; every
+  // comparer strips it via tripContentJson). The working copy is a one-time
+  // clone that never re-reads tripsApi.trips, so without this each save after
+  // the first would push the PREVIOUS base and pay a full 409 recovery (pull +
+  // re-push) per keystroke flush. Monotonic like stampTripSynced — overlapping
+  // saves can resolve out of order.
+  const adoptFreshBase = useCallback((updatedAt) => {
+    setTrip((cur) =>
+      Number.isFinite(cur?.serverUpdatedAt) && cur.serverUpdatedAt >= updatedAt
+        ? cur
+        : { ...cur, serverUpdatedAt: updatedAt }
+    )
+  }, [])
+
   const flush = useCallback(async () => {
     const snapshot = clone(tripRef.current)
     setSaveState('saving')
     setSaveErr('')
+    // Record the push content BEFORE the await: upsertTrip lands the snapshot
+    // in tripsApi.trips synchronously, and a slow push (or its 409 recovery)
+    // leaves seconds in which that echo — or this same copy arriving back via
+    // a heartbeat pull — must not read as a foreign edit.
+    lastPushedJson.current = tripContentJson(snapshot)
     const res = await tripsApi.upsertTrip(snapshot)
-    lastPushedJson.current = JSON.stringify(snapshot)
+    if (Number.isFinite(res?.updatedAt)) adoptFreshBase(res.updatedAt)
     if (res.ok) {
       // Only claim "synced" when the edit actually reached the family (res.synced);
       // a draft / unconfigured save is honest as "Saved" (not "Saved · synced").
       setSaveState(res.synced ? 'saved' : 'saved-unsynced')
+    } else if (res.queued) {
+      // Saved locally and QUEUED for the family — the resync keeps trying.
+      // Never the green confirmed state (it hasn't reached anyone), never a
+      // dead-end error (the edit isn't lost).
+      setSaveState('saved-queued')
     } else {
       setSaveState('error')
       setSaveErr(res.error || 'Sync failed — kept on this device.')
     }
-  }, [tripsApi])
+  }, [tripsApi, adoptFreshBase])
 
   const scheduleSave = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
@@ -179,7 +211,7 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
       if (timerRef.current) {
         clearTimeout(timerRef.current)
         const snap = clone(tripRef.current)
-        if (JSON.stringify(snap) !== lastPushedJson.current) {
+        if (tripContentJson(snap) !== lastPushedJson.current) {
           tripsApi.upsertTrip(snap)
         }
       }
@@ -450,10 +482,12 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
     const snap = { ...clone(tripRef.current), draft: false }
     tripRef.current = snap
     setSaveState('saving')
+    // Before the await, for the same echo reason as flush().
+    lastPushedJson.current = tripContentJson(snap)
     const res = await tripsApi.upsertTrip(snap)
-    lastPushedJson.current = JSON.stringify(snap)
-    setSaveState(res.ok ? (res.synced ? 'saved' : 'saved-unsynced') : 'error')
-    if (!res.ok) setSaveErr(res.error || 'Sync failed.')
+    if (Number.isFinite(res?.updatedAt)) adoptFreshBase(res.updatedAt)
+    setSaveState(res.ok ? (res.synced ? 'saved' : 'saved-unsynced') : res.queued ? 'saved-queued' : 'error')
+    if (!res.ok && !res.queued) setSaveErr(res.error || 'Sync failed.')
   }
   function unpublish() {
     patch({ draft: true })
@@ -741,6 +775,11 @@ function SaveBadge({ state, err }) {
     // it yet, and a draft is shared only on publish (G6: the label promises no more
     // than the plumbing delivers; upsertTrip's res.synced is the source of truth).
     'saved-unsynced': { t: 'Saved', c: '#2E5D3A', i: <Check size={12} /> },
+    // Saved locally and QUEUED — the push has NOT been confirmed by the family
+    // server (offline, failing, or a conflict still being retried; res.queued).
+    // Deliberately not the green check: a queued-but-unconfirmed save must never
+    // wear the confirmed look. The index note carries the same truth with age.
+    'saved-queued': { t: 'Saved here · still reaching the family…', c: 'inherit', i: <Loader size={12} className="rt-spin" /> },
     error: { t: err || 'Saved locally · sync failed', c: 'var(--accent-text, var(--text))', i: <AlertTriangle size={12} /> },
   }
   const m = map[state] || map.idle

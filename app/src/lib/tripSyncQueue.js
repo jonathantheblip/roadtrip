@@ -13,16 +13,24 @@
 const KEY = 'rt_trips_unsynced_v1'
 const subs = new Set()
 
-// Entries are { id, author }: author = the traveler who MADE the edit, captured
-// at mark time so the resync re-pushes under the real author (not whoever is
-// active at resync). Back-compat: pre-author rows were bare id strings → author
-// null (the resync then falls back to the active traveler, the old behavior).
+// Entries are { id, author, at }: author = the traveler who MADE the edit,
+// captured at mark time so the resync re-pushes under the real author (not
+// whoever is active at resync); at = when the edit FIRST failed to reach the
+// family (epoch ms), kept across re-marks so an honest indicator can tell a
+// stuck edit from one merely in flight. Back-compat: pre-author rows were bare
+// id strings → author null (the resync then falls back to the active
+// traveler); pre-age rows have no stamp → at null (reads as long-stuck, never
+// as freshly in flight).
 function read() {
   try {
     const a = JSON.parse(localStorage.getItem(KEY) || '[]')
     if (!Array.isArray(a)) return []
     return a
-      .map((x) => (typeof x === 'string' ? { id: x, author: null } : x))
+      .map((x) =>
+        typeof x === 'string'
+          ? { id: x, author: null, at: null }
+          : { ...x, at: Number.isFinite(x?.at) ? x.at : null }
+      )
       .filter((x) => x && typeof x.id === 'string')
   } catch {
     return []
@@ -32,7 +40,9 @@ function read() {
 function write(entries) {
   // Dedupe by id (last write wins → keeps the latest editor as author).
   const byId = new Map()
-  for (const e of entries) byId.set(e.id, { id: e.id, author: e.author ?? null })
+  for (const e of entries) {
+    byId.set(e.id, { id: e.id, author: e.author ?? null, at: Number.isFinite(e.at) ? e.at : null })
+  }
   const uniq = [...byId.values()]
   try {
     localStorage.setItem(KEY, JSON.stringify(uniq))
@@ -50,15 +60,17 @@ function write(entries) {
 
 // Record a trip id whose push to the family didn't land, with the EDITOR who made
 // it (so the resync attributes it correctly). Idempotent; re-marking updates the
-// author to the latest editor.
+// author to the latest editor but keeps the EARLIEST failure stamp — the age
+// must answer "how long has this trip been out of sync", not "when did the
+// latest retry fail".
 export function markUnsynced(id, author = null) {
   if (!id || typeof id !== 'string') return
   const entries = read()
   const idx = entries.findIndex((e) => e.id === id)
   if (idx >= 0) {
-    entries[idx] = { id, author: author ?? entries[idx].author ?? null }
+    entries[idx] = { id, author: author ?? entries[idx].author ?? null, at: entries[idx].at ?? Date.now() }
   } else {
-    entries.push({ id, author: author ?? null })
+    entries.push({ id, author: author ?? null, at: Date.now() })
   }
   write(entries)
 }
@@ -83,6 +95,15 @@ export function pendingEntries() {
 
 export function count() {
   return read().length
+}
+
+// The earliest still-pending failure stamp (epoch ms), or null when nothing is
+// queued. A legacy entry with no stamp counts as 0 (unknown = long ago) so the
+// indicator errs toward "stuck", never toward false calm.
+export function oldestPendingAt() {
+  const entries = read()
+  if (!entries.length) return null
+  return entries.reduce((min, e) => Math.min(min, Number.isFinite(e.at) ? e.at : 0), Infinity)
 }
 
 export function isUnsynced(id) {

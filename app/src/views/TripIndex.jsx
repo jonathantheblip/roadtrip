@@ -11,6 +11,8 @@ import { stayLabel } from '../lib/tripShape'
 import { heroRotationExtras, pickRotatingHero } from '../lib/heroRotation'
 import { AvatarStack } from '../components/Avatar'
 import { count as pendingDeleteCount, subscribe as subscribePendingDeletes } from '../lib/deleteTombstones'
+import { count as pendingPushCount, oldestPendingAt, subscribe as subscribePendingPushes } from '../lib/tripSyncQueue'
+import { pendingTripPushNote } from '../lib/tripSyncFlow'
 
 // Trip index — the platform's home. Direct port of the Design bundle's
 // HomeScreen (screens-supporting.jsx#HomeScreen). Per traveler theme
@@ -36,6 +38,20 @@ export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenT
   // trip it was, so it's the natural home for "it's still confirming."
   const [pendingDeletes, setPendingDeletes] = useState(() => pendingDeleteCount())
   useEffect(() => subscribePendingDeletes(setPendingDeletes), [])
+  // EDITS owed to the family (tripSyncQueue) — the push half of the same
+  // honesty: a silently-failing push otherwise looks identical to a synced
+  // one on every screen. Same wiring as the deletes note above, plus a slow
+  // tick while anything is pending: the wording flips once the oldest edit
+  // has been stuck a while, and mere aging fires no queue event.
+  const [pendingPushes, setPendingPushes] = useState(() => pendingPushCount())
+  useEffect(() => subscribePendingPushes(setPendingPushes), [])
+  const [, setPushAgeTick] = useState(0)
+  useEffect(() => {
+    if (!pendingPushes) return undefined
+    const iv = setInterval(() => setPushAgeTick((n) => n + 1), 30000)
+    return () => clearInterval(iv)
+  }, [pendingPushes])
+  const pushNote = pendingTripPushNote(pendingPushes, oldestPendingAt())
   // "Looking back": one resurfaced past moment (a completed-trip day with
   // photos), rotating daily. Null when there's nothing to look back on.
   const resurface = useMemo(() => pickResurface(trips, traveler), [trips, traveler])
@@ -199,6 +215,26 @@ export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenT
           >
             <Loader size={11} className="rt-spin" aria-hidden="true" />
             {pendingDeletes === 1 ? 'A delete is still confirming…' : `${pendingDeletes} deletes are still confirming…`}
+          </div>
+        )}
+        {pushNote && (
+          <div
+            data-testid="pending-pushes-note"
+            style={{
+              // display:flex (not inline-flex) so this stacks on its own line
+              // under the deletes note when both are pending.
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              marginTop: 8,
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 10.5,
+              letterSpacing: '0.03em',
+              color: 'var(--muted)',
+            }}
+          >
+            <Loader size={11} className="rt-spin" aria-hidden="true" />
+            {pushNote}
           </div>
         )}
       </div>

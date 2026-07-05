@@ -1,5 +1,9 @@
 // Unit tests for tripSyncQueue — the persistent record of trip edits that
 // haven't reached the family yet (the engine behind self-healing family sync).
+// Entries carry { id, author, at }: `at` (batch A-1, F2) is when the edit FIRST
+// failed to reach the family, so the honest index note can tell an edit stuck
+// for minutes from one merely in flight — "stuck for 5 days" was previously
+// undetectable even in principle.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -12,37 +16,71 @@ globalThis.localStorage = {
   removeItem: (k) => store.delete(k),
 }
 
-const { markUnsynced, markSynced, pendingIds, pendingEntries, count, isUnsynced, subscribe, _resetForTest } =
+const { markUnsynced, markSynced, pendingIds, pendingEntries, count, isUnsynced, oldestPendingAt, subscribe, _resetForTest } =
   await import('../../src/lib/tripSyncQueue.js')
 
 beforeEach(() => _resetForTest())
 
 test('captures the editor (author) and exposes it via pendingEntries', () => {
   markUnsynced('vermont-2026', 'aurelia')
-  assert.deepEqual(pendingEntries(), [{ id: 'vermont-2026', author: 'aurelia' }])
+  const [entry] = pendingEntries()
+  assert.equal(entry.id, 'vermont-2026')
+  assert.equal(entry.author, 'aurelia')
   // pendingIds() stays id-only for the count/flag callers.
   assert.deepEqual(pendingIds(), ['vermont-2026'])
 })
 
-test('re-marking updates the author to the latest editor', () => {
+test('markUnsynced stamps WHEN the edit first failed (epoch ms)', () => {
+  const before = Date.now()
+  markUnsynced('t1', 'helen')
+  const after = Date.now()
+  const [entry] = pendingEntries()
+  assert.ok(Number.isFinite(entry.at))
+  assert.ok(entry.at >= before && entry.at <= after)
+})
+
+test('re-marking updates the author to the latest editor but keeps the EARLIEST stamp', () => {
   markUnsynced('t', 'aurelia')
-  markUnsynced('t', 'jonathan') // a later edit by someone else
-  assert.deepEqual(pendingEntries(), [{ id: 't', author: 'jonathan' }])
+  const first = pendingEntries()[0].at
+  markUnsynced('t', 'jonathan') // a later edit by someone else fails again
+  const [entry] = pendingEntries()
+  assert.equal(entry.author, 'jonathan')
+  // The age answers "how long has this trip been out of sync", not "when did
+  // the latest retry fail".
+  assert.equal(entry.at, first)
   assert.equal(count(), 1)
 })
 
 test('a missing author defaults to null (resync then falls back to active)', () => {
   markUnsynced('t')
-  assert.deepEqual(pendingEntries(), [{ id: 't', author: null }])
+  const [entry] = pendingEntries()
+  assert.equal(entry.author, null)
 })
 
-test('back-compat: a pre-author bare-string row reads as { author: null }', async () => {
-  // Seat the OLD on-disk shape (array of id strings) directly.
-  store.set('rt_trips_unsynced_v1', JSON.stringify(['legacy-trip']))
+test('oldestPendingAt is the earliest stamp across entries; null when empty', () => {
+  assert.equal(oldestPendingAt(), null)
+  markUnsynced('t1')
+  const first = pendingEntries()[0].at
+  markUnsynced('t2')
+  assert.equal(oldestPendingAt(), first)
+  markSynced('t1')
+  assert.equal(oldestPendingAt(), pendingEntries()[0].at)
+  markSynced('t2')
+  assert.equal(oldestPendingAt(), null)
+})
+
+test('back-compat: pre-author / pre-age rows read as null author + null stamp', async () => {
+  // Seat the OLD on-disk shapes directly: a bare id string, and an
+  // { id, author } object with no `at`.
+  store.set('rt_trips_unsynced_v1', JSON.stringify(['legacy-trip', { id: 'legacy-obj', author: 'helen' }]))
   const fresh = await import('../../src/lib/tripSyncQueue.js?reload=back')
-  assert.deepEqual(fresh.pendingEntries(), [{ id: 'legacy-trip', author: null }])
-  assert.deepEqual(fresh.pendingIds(), ['legacy-trip'])
+  assert.deepEqual(fresh.pendingEntries(), [
+    { id: 'legacy-trip', author: null, at: null },
+    { id: 'legacy-obj', author: 'helen', at: null },
+  ])
   assert.equal(fresh.isUnsynced('legacy-trip'), true)
+  // Unknown age = long ago: the note must err toward "stuck", never false calm.
+  assert.equal(fresh.oldestPendingAt(), 0)
 })
 
 test('markUnsynced records an id; markSynced clears it', () => {
