@@ -213,8 +213,16 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-04. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-05. Update as these resolve.
 
+- **[OPEN 2026-07-05] `?trip=<id>` in the URL only resolves against trips ALREADY KNOWN at mount time.**
+  Discovered while building a live-cross-device-pull e2e test: `App.jsx` reads the URL's `?trip=` param once
+  against whatever `trips` state exists at that moment; if the id isn't there yet (e.g. a fresh deep-link to
+  a trip only a DIFFERENT device has created, not yet pulled onto this one), it silently falls through to the
+  index instead of the trip — and nothing re-attempts opening it once a later pull adds that trip to state.
+  Every e2e test this project has written sidesteps this by seeding the trip into local cache first. Real,
+  unaddressed. Matters the moment anyone builds real deep-linking to a trip this device hasn't seen yet
+  (e.g. a share link, a notification). See `memory/document-the-trip-we-had.md` for the discovery context.
 - **[RESOLVED 2026-07-04] An orphaned local WIP commit sat unpushed on `main` for days, invisible to a fresh
   window.** `c2bf3ef` ("additive day-level stamps model for #8") was built in a prior session, never pushed,
   and local `main` had drifted from `origin/main` — a fresh window reading only `origin/main` would never

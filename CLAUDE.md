@@ -33,4 +33,6 @@ The rules that catch the most expensive mistakes (full set in the agreement):
 pointer, not truth." (See agreement §5.)
 
 Product context and personas live in [MASTER_SPEC.md](MASTER_SPEC.md) (§0–§2/§5 durable; §3/§4 a frozen
-snapshot). Live feature state lives in `memory/`. Both are *pointers to verify*, not authorities to obey.
+snapshot). Live feature state lives in `memory/`. The active carryover is
+[CARRYOVER_DOCUMENT_THE_TRIP.md](CARRYOVER_DOCUMENT_THE_TRIP.md) (supersedes `CARRYOVER_FEATURES_QUEUE.md` —
+that queue is now fully shipped). All of these are *pointers to verify*, not authorities to obey.

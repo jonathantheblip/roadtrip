@@ -242,13 +242,50 @@ forks. What changes by trip is not *which* home but *what the living heart surfa
   the journey rail, per-leg geocoding) shipped, and — as of this session — a composite trip's legs are
   editable in TripEditor and can carry real multi-segment (connecting) flights with their own zones/layovers/
   "+N day" honesty, per the design's own §5 spec (`app/docs/design/hangout-first-handoff/03-scaling-the-home.md`).
-  Ticket/boarding-pass IMAGE attachment is not yet built — see `CARRYOVER_FEATURES_QUEUE.md` for current state.**
+  Ticket/boarding-pass IMAGE attachment is not yet built — see `CARRYOVER_DOCUMENT_THE_TRIP.md` for current state.**
 
 The principle for ALL home/nav work: **don't ask "what trip shape is this, which home?" — there is one home;
 ask "what does *this* trip need surfaced *right now*?"**
 
 ---
 
+## 12. THE THIRD TENSE — document the trip we had, not just the one we scheduled (decided 2026-07-02, extended 2026-07-05)
+
+The app tells **three tenses**: the PLAN, NOW, and what **actually happened**. It has always done the first
+two reasonably well; the third barely existed until The Record (`day.record` — evidence-drafted settle
+cards, the editor's record mode, the two-tense unfold; see `memory/the-record-three-tenses.md`, capture+read
+arc shipped 2026-07-03). **Jonathan's framing, verbatim spirit, extended 2026-07-05:** "document the trip we
+had, not the trip that was or wasn't scheduled." He named this as several concrete asks that all point at
+ONE thing — the agenda, the photos, and the Weave should all reflect what actually happened, LIVE, not just
+once at capture time:
+
+- **Live agenda updates**: an edit made on any device should show up everywhere promptly — not wait for a
+  device to be foregrounded or reloaded to notice a change another family member made.
+- **Self-healing photo↔agenda matching**: a photo/video should end up pinned to what the family actually did
+  that day, regardless of whether the agenda item existed before or after the upload — "unfiled" photos
+  should be re-filed automatically once better evidence exists, not stuck forever against the plan as it
+  looked at import time.
+- **The Weave should follow**: any of the above changing should prompt an updated Weave, not leave it
+  narrating a day that's since moved on.
+
+**Status (verify against git/memory, this ages):**
+- ✅ **Live agenda updates — SHIPPED** (`c5bcc58`, 2026-07-05). The existing push-resync heartbeat now also
+  pulls, so a cross-device edit shows up within ~20s instead of waiting for a foreground/reload.
+- ✅ **Weave same-day regeneration — SHIPPED** (`8f07199`, 2026-07-05). Opening a stale day's Weave now
+  regenerates on the spot instead of showing content from before the day's facts changed.
+- ⏳ **Self-healing photo↔agenda matching + an unfiled-photos triage surface — NOT STARTED, its own planning
+  pass.** Today, matching runs once at import time and never re-triggers; there is no manual re-file UI at
+  all. **Jonathan's decision (settled, do not re-ask): re-filing should apply automatically, with a visible
+  "moved because…" note** — not a draft a human confirms first. This means a provenance/lock flag (auto vs.
+  manual) is a REQUIRED prerequisite — nothing today distinguishes an algorithm's guess from a person's
+  deliberate correction, so automatic re-matching without one would silently overwrite a manual fix with no
+  way to notice (the same failure shape as the sync-honesty family, `memory/memory-sync-lww.md`). Full
+  research trail: `memory/document-the-trip-we-had.md`; carryover: `CARRYOVER_DOCUMENT_THE_TRIP.md`.
+
+---
+
 *Sources of truth for this doc: Jonathan, session `a50cb529` (2026-06-19) and on-device feedback
-(2026-06-20). Related durable memory: `all-family-trips-not-roadtrips`, `family-trips-place-model`,
-`recenter-on-family-trips`.*
+(2026-06-20). §12 added 2026-07-05 per Jonathan's own extension of The Record's three-tenses framing (his
+words, not a proposed reframe — see `memory/the-record-three-tenses.md`'s prior standing-amendment note,
+which this settles). Related durable memory: `all-family-trips-not-roadtrips`, `family-trips-place-model`,
+`recenter-on-family-trips`, `the-record-three-tenses`, `document-the-trip-we-had`.*
