@@ -47,6 +47,11 @@ const COPY = {
     tooLongCta: 'How to trim',
     tooLongHelp: 'Open the clip in Photos → Edit → drag the ends in to 3:00 or less → Done. Then add it here again.',
     hide: 'Hide',
+    // sound couldn't come along (source HAD audio; the saved copy doesn't)
+    soundLost: (n) =>
+      n === 1 ? 'This one’s sound couldn’t come along.' : `${n} clips’ sound couldn’t come along.`,
+    soundLostBody: 'The video’s saved — the original in your camera roll still has its sound.',
+    soundChip: 'no sound',
     // saved
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     // tile + pill
@@ -72,6 +77,9 @@ const COPY = {
     tooLongCta: 'How to trim',
     tooLongHelp: 'Photos → Edit → pull the ends in to 3:00 → Done. Bring it back.',
     hide: 'Hide',
+    soundLost: (n) => (n === 1 ? 'One came through without its sound.' : `${n} came through without their sound.`),
+    soundLostBody: 'Video’s in. The camera-roll original keeps the sound.',
+    soundChip: 'no sound',
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     tileWay: 'in the outbox',
     tileStuck: 'stuck',
@@ -95,6 +103,9 @@ const COPY = {
     tooLongCta: 'how to trim',
     tooLongHelp: 'photos → edit → drag the ends in to 3:00 → done. then add it again.',
     hide: 'hide',
+    soundLost: (n) => (n === 1 ? 'this one’s sound couldn’t come along.' : `${n} clips’ sound couldn’t come along.`),
+    soundLostBody: 'the video’s saved — the one on your phone still has its sound.',
+    soundChip: 'no sound',
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     tileWay: 'on its way',
     tileStuck: 'stuck — tap',
@@ -121,6 +132,11 @@ const COPY = {
     tooLongCta: null,
     tooLongHelp: null,
     hide: null,
+    // Rafa never meets a sound-loss notice either — the honest outcome
+    // surfaces on a parent's lens; his movie is simply his movie.
+    soundLost: null,
+    soundLostBody: null,
+    soundChip: null,
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     tileWay: 'saving…',
     tileStuck: 'saving…', // never a scary state for Rafa

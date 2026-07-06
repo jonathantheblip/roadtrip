@@ -56,3 +56,51 @@ test('importToastProps: never fabricates on null/undefined input', () => {
   assert.equal(importToastProps(null), null)
   assert.equal(importToastProps(undefined), null)
 })
+
+test('importToastProps: a clip that imported WITHOUT its sound shows in the summary line', () => {
+  assert.deepEqual(importToastProps({ ok: 3, queued: 0, reattached: 0, failed: 0, soundLost: 1 }), {
+    message: '3 photos added · 1 without its sound',
+    syncing: 0,
+  })
+  assert.deepEqual(importToastProps({ ok: 2, queued: 1, reattached: 0, failed: 0, soundLost: 2 }), {
+    message: '2 photos added · 2 without their sound',
+    syncing: 1,
+  })
+  assert.deepEqual(importToastProps({ ok: 1, queued: 0, reattached: 0, failed: 0, soundLost: 1 }), {
+    message: '1 photo added · 1 without its sound',
+    syncing: 0,
+  })
+})
+
+test("importToastProps: Rafa's lens never meets the sound-loss suffix — same rule as the banner and tile chip", () => {
+  // Rafa gets the classic count shape even when the batch lost sound; the
+  // count itself stays honest for the parent lenses.
+  assert.deepEqual(importToastProps({ ok: 3, queued: 1, reattached: 0, failed: 0, soundLost: 1 }, 'rafa'), {
+    count: 3,
+    noun: 'photos',
+    syncing: 1,
+  })
+  // Every other lens (and a caller passing no traveler) keeps the honest line.
+  assert.deepEqual(importToastProps({ ok: 3, queued: 0, reattached: 0, failed: 0, soundLost: 1 }, 'helen'), {
+    message: '3 photos added · 1 without its sound',
+    syncing: 0,
+  })
+  assert.deepEqual(importToastProps({ ok: 3, queued: 0, reattached: 0, failed: 0, soundLost: 1 }), {
+    message: '3 photos added · 1 without its sound',
+    syncing: 0,
+  })
+})
+
+test('importToastProps: soundLost absent or zero keeps the classic count shape byte-identical', () => {
+  assert.deepEqual(importToastProps({ ok: 3, queued: 0, reattached: 0, failed: 0, soundLost: 0 }), {
+    count: 3,
+    noun: 'photos',
+    syncing: 0,
+  })
+  // Callers that predate the field (no soundLost key at all) are unchanged.
+  assert.deepEqual(importToastProps({ ok: 2, queued: 0, reattached: 0, failed: 0 }), {
+    count: 2,
+    noun: 'photos',
+    syncing: 0,
+  })
+})

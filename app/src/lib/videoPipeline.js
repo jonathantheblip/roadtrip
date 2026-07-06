@@ -2,12 +2,15 @@
 //
 // Helen picks a video → this lib loads it in a hidden HTMLVideoElement,
 // walks every frame with requestVideoFrameCallback (rVFC), and ships
-// each frame as an ImageBitmap to encodeVideo.worker.js. Audio comes
-// out of AudioContext.decodeAudioData and is fed to the worker as
-// AudioData chunks. The worker assembles the MP4 and returns a Blob.
+// each frame as an ImageBitmap to encodeVideo.worker.js. Audio rides the
+// AUDIO CARRY LADDER (planAudioCarry below): the mainline is a PACKET COPY —
+// mp4Audio.js demuxes the source's already-compressed AAC and the worker
+// muxes those packets straight in (no decodeAudioData, no AudioEncoder,
+// neither of which is trustworthy on the family's iOS builds). The worker
+// assembles the MP4 and returns a Blob.
 //
 // Why this split: workers can't construct an HTMLVideoElement, and
-// the only iOS-compatible way to demux an arbitrary mp4/mov is to use
+// the only iOS-compatible way to decode arbitrary mp4/mov FRAMES is to use
 // a real <video>. Doing the decode on the main thread + the
 // CPU-heavy encode in a worker keeps the dispatch modal's progress UI
 // smooth (frames are transferred, not copied).
@@ -16,6 +19,19 @@
 // perspective: pass an onProgress callback and await encodeVideo()
 // to get the final blob. Throws Errors with .code set to a designed
 // dispatchErrors code on failure.
+//
+// A/V ALIGNMENT CONTRACT (packet copy): video frames are stamped with the
+// source's rVFC mediaTime (µs); AAC packets are stamped with the source's
+// stts-accumulated media time (µs), which starts at 0. The worker's muxer
+// runs firstTimestampBehavior:'offset', which rebases EACH track so its
+// first sample lands at 0 — so both tracks share the source timeline,
+// zeroed at their own first sample. Imports are untrimmed ≤3:00 camera
+// walks whose audio and video both start at the head of the clip, so this
+// plain rebase keeps them in sync; audio may outlast the walked video by
+// under a frame (the walk stops at the estimated frame count), which
+// players render as a harmless tail.
+
+import { demuxAudioTrack } from './mp4Audio.js'
 
 const TARGET_LONG_EDGE = 720
 const KEYFRAME_INTERVAL_SECONDS = 2
@@ -108,10 +124,10 @@ export async function encodeVideo(file, { onProgress, signal } = {}) {
     // encode loop, so queued tiles never look blank.
     const posterBlob = await extractFirstFramePoster(video, inputW, inputH).catch(() => null)
 
-    // Audio extraction — concurrent with frame walking. We use Web
-    // Audio decodeAudioData against the file bytes; the resulting
-    // AudioBuffer is sliced into AudioData chunks for the encoder.
-    const audioPromise = decodeAudioTrack(file).catch(() => null)
+    // Audio carry plan — concurrent with the poster work above; resolved
+    // before the worker is configured. Never throws: every outcome is a
+    // typed plan whose `sound` field the importer surfaces honestly.
+    const audioPlanPromise = planAudioCarry(file)
 
     worker = new Worker(
       new URL('../workers/encodeVideo.worker.js', import.meta.url),
@@ -124,7 +140,7 @@ export async function encodeVideo(file, { onProgress, signal } = {}) {
       inputH,
       frameRate,
       totalFrames,
-      audioPromise,
+      audioPlanPromise,
       onProgress,
       signal,
     })
@@ -134,6 +150,12 @@ export async function encodeVideo(file, { onProgress, signal } = {}) {
       height: result.height,
       durationMs,
       posterBlob,
+      // The honest per-clip sound outcome: 'carried' | 'none' | 'lost'.
+      // 'none' = the source itself had no audio (silence is the truth);
+      // 'lost' = the source HAD audio the output couldn't keep — the
+      // importer must show that, never swallow it.
+      sound: result.sound,
+      soundReason: result.soundReason,
     }
   } finally {
     URL.revokeObjectURL(url)
@@ -160,7 +182,7 @@ async function runWorkerEncode({
   inputH,
   frameRate,
   totalFrames,
-  audioPromise,
+  audioPlanPromise,
   onProgress,
   signal,
 }) {
@@ -182,7 +204,13 @@ async function runWorkerEncode({
     else if (msg.type === 'progress') onProgress?.(msg.percent)
     else if (msg.type === 'done') {
       clearTimeout(timeoutHandle)
-      doneResolve({ blob: msg.blob, width: msg.width, height: msg.height })
+      doneResolve({
+        blob: msg.blob,
+        width: msg.width,
+        height: msg.height,
+        audioIncluded: !!msg.audioIncluded,
+        audioDropReason: msg.audioDropReason || null,
+      })
     } else if (msg.type === 'error') {
       clearTimeout(timeoutHandle)
       doneReject(withCode(msg.code || 'video-encode-failed', msg.message))
@@ -193,16 +221,29 @@ async function runWorkerEncode({
     doneReject(withCode('video-encode-failed', e?.message || 'worker error'))
   }
 
-  const audio = await audioPromise // null if no audio track
+  const plan = await audioPlanPromise // typed — never null, never throws
   worker.postMessage({
     type: 'config',
     width: inputW,
     height: inputH,
     frameRate,
     totalFrames,
-    audio: audio
-      ? { numberOfChannels: audio.numberOfChannels, sampleRate: audio.sampleRate }
-      : undefined,
+    audio:
+      plan.mode === 'packets'
+        ? {
+            mode: 'packets',
+            codec: plan.track.codecString || 'mp4a.40.2',
+            numberOfChannels: plan.track.channels,
+            sampleRate: plan.track.sampleRate,
+            description: plan.track.description,
+          }
+        : plan.mode === 'pcm'
+          ? {
+              mode: 'pcm',
+              numberOfChannels: plan.audioBuffer.numberOfChannels,
+              sampleRate: plan.audioBuffer.sampleRate,
+            }
+          : undefined,
   })
   await ready
 
@@ -216,17 +257,122 @@ async function runWorkerEncode({
     worker.postMessage({ type: 'frame', bitmap, timestamp: timestampUs }, [bitmap])
   })
 
-  // Ship audio chunks. We chop into ~1024-frame AudioData buffers; the
-  // encoder is happy with anything reasonable.
-  if (audio) {
-    const chunks = sliceAudioBufferIntoAudioData(audio)
+  // Ship the audio. Packet copy transfers the demuxed AAC packets (each
+  // sample owns its buffer — see mp4Audio.readSampleBytes) in bounded
+  // batches; the PCM fallback chops the decoded AudioBuffer into
+  // ~1024-frame AudioData chunks for the worker's AudioEncoder, as before.
+  if (plan.mode === 'packets') {
+    const samples = plan.track.samples
+    const BATCH = 1000
+    for (let i = 0; i < samples.length; i += BATCH) {
+      const batch = samples.slice(i, i + BATCH)
+      worker.postMessage(
+        { type: 'audioPackets', packets: batch },
+        batch.map((s) => s.data.buffer)
+      )
+    }
+  } else if (plan.mode === 'pcm') {
+    const chunks = sliceAudioBufferIntoAudioData(plan.audioBuffer)
     for (const data of chunks) {
       worker.postMessage({ type: 'audio', audioData: data }, [data])
     }
   }
 
   worker.postMessage({ type: 'flush' })
-  return await done
+  const result = await done
+
+  // The worker's word is final: a plan that promised sound but produced a
+  // file without it (e.g. the PCM rung on a device with no AudioEncoder)
+  // downgrades to 'lost' — the file on disk is what the family keeps, so
+  // the outcome must describe the FILE, not the intent.
+  let sound = plan.sound
+  let soundReason = plan.reason || null
+  if (sound === 'carried' && !result.audioIncluded) {
+    sound = 'lost'
+    soundReason = result.audioDropReason || 'audio-not-included'
+  }
+  return { ...result, sound, soundReason }
+}
+
+// ─── audio carry ladder ───────────────────────────────────────────────────
+//
+// Rungs, in order (each explicit — no silent fallthrough anywhere):
+//  (a) demux says the source HAS an AAC track → PACKET COPY (mainline; no
+//      audio decode/encode at all). A packet set that fails validation is a
+//      copy failure: the clip proceeds video-only with sound:'lost' — LOUD,
+//      surfaced by the importer — and does NOT fall through to (b).
+//  (b) demux says audio exists but NOT AAC — or the container was unreadable
+//      (we can't rule sound out) → best-effort legacy path: decodeAudioData →
+//      AudioData → the worker's AudioEncoder. Success carries the sound
+//      (re-encoded); failure is sound:'lost', never silence.
+//  (c) demux says the source has NO audio track → silent output is HONEST:
+//      sound:'none', no tag anywhere (nothing was lost).
+// The returned plan is one of:
+//   { mode:'packets', sound:'carried', track }        — (a)
+//   { mode:'pcm',     sound:'carried', audioBuffer, reason } — (b) success
+//   { mode:'none',    sound:'none' }                  — (c)
+//   { mode:'none',    sound:'lost', reason }          — (a)/(b) failure
+// Exported for unit tests (G7): the COMPOSITION — a rung-(a) failure never
+// falls through to (b), a parse failure never claims silence — must be
+// provable in node, not just the classify/validate pieces.
+export async function planAudioCarry(file) {
+  const demux = await demuxAudioTrack(file) // typed — never throws
+  const cls = classifyAudioPlan(demux)
+  if (cls.rung === 'packets') {
+    const invalid = validateAacPackets(demux)
+    if (invalid) return { mode: 'none', sound: 'lost', reason: `aac-packets-invalid:${invalid}` }
+    return { mode: 'packets', sound: 'carried', track: demux }
+  }
+  if (cls.rung === 'silent') return { mode: 'none', sound: 'none' }
+  // .catch — the AudioContext CONSTRUCTOR itself can throw on iOS (it sits
+  // outside decodeAudioTrack's internal try). A legacy-rung crash must cost
+  // the clip its fallback, not the whole import; the null is then surfaced
+  // as an explicit 'lost' outcome, so nothing is being swallowed here.
+  const audioBuffer = await decodeAudioTrack(file).catch(() => null)
+  if (audioBuffer) return { mode: 'pcm', sound: 'carried', audioBuffer, reason: cls.reason }
+  return { mode: 'none', sound: 'lost', reason: cls.reason }
+}
+
+// Pure ladder classification (exported for unit tests — G7: the ladder's
+// routing must be provable without a browser). Maps a demux result to a rung:
+//   ok:true            → 'packets' (a)
+//   no-audio-track     → 'silent'  (c)
+//   not-aac            → 'legacy'  (b)
+//   parse-error        → 'legacy'  — the container couldn't be read, so we
+//     can NOT claim honest silence; the legacy rung either carries the sound
+//     or the failure surfaces as 'lost'. sawAacTrack only sharpens the reason
+//     (the dev log tells "AAC we couldn't copy" from "container unreadable").
+export function classifyAudioPlan(demux) {
+  if (demux?.ok) return { rung: 'packets' }
+  if (demux?.reason === 'no-audio-track') return { rung: 'silent' }
+  if (demux?.reason === 'not-aac') {
+    return { rung: 'legacy', reason: `not-aac:${demux.codec || 'unknown'}` }
+  }
+  return {
+    rung: 'legacy',
+    reason: demux?.sawAacTrack ? 'aac-parse-failed' : 'container-unreadable',
+  }
+}
+
+// Pre-mux validation of a demuxed AAC packet set (exported for unit tests).
+// Everything the muxer would choke on mid-copy is rejected UP FRONT, so a bad
+// set becomes a clean per-clip 'lost' outcome instead of a corrupted encode.
+// Returns null when valid, else a short reason string.
+export function validateAacPackets(track) {
+  if (!track?.description?.length) return 'no-description'
+  if (!Number.isFinite(track.sampleRate) || track.sampleRate <= 0) return 'bad-sample-rate'
+  if (!Number.isFinite(track.channels) || track.channels <= 0) return 'bad-channels'
+  const samples = track.samples
+  if (!Array.isArray(samples) || samples.length === 0) return 'no-samples'
+  let prev = -1
+  for (const s of samples) {
+    if (!s?.data?.length) return 'empty-sample'
+    if (!Number.isFinite(s.timestampMicros) || s.timestampMicros < 0) return 'bad-timestamp'
+    if (s.timestampMicros < prev) return 'non-monotonic'
+    if (!Number.isFinite(s.durationMicros) || s.durationMicros < 0) return 'bad-duration'
+    prev = s.timestampMicros
+  }
+  return null
 }
 
 // ─── frame walker ─────────────────────────────────────────────────
@@ -312,7 +458,12 @@ function seekTo(video, t) {
   })
 }
 
-// ─── audio extraction ─────────────────────────────────────────────
+// ─── legacy PCM decode — rung (b) ONLY ────────────────────────────
+//
+// decodeAudioData over the whole file: the OLD mainline, kept solely as the
+// best-effort fallback for non-AAC (or unreadable-container) sources. Its
+// null-on-failure is no longer swallowed — planAudioCarry turns it into an
+// explicit sound:'lost' outcome the importer surfaces.
 
 async function decodeAudioTrack(file) {
   if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') {
@@ -562,5 +713,10 @@ async function stubEncode(file, cfg, onProgress) {
     height: Number.isFinite(c.height) ? c.height : 1280,
     durationMs,
     posterBlob: c.poster === false ? null : makeStubPoster(),
+    // Synthetic clips carry no audio, so 'none' is the honest default — it
+    // keeps every existing headless flow free of sound-outcome chrome. A test
+    // can set cfg.sound ('lost'/'carried') to drive those surfaces.
+    sound: typeof c.sound === 'string' ? c.sound : 'none',
+    soundReason: typeof c.soundReason === 'string' ? c.soundReason : null,
   }
 }

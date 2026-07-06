@@ -121,7 +121,7 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
   const [toast, setToast] = useState(null)
   const toastTimerRef = useRef(null)
   function showImportToast(results) {
-    const props = importToastProps(results)
+    const props = importToastProps(results, traveler)
     if (!props) return
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     setToast(props)

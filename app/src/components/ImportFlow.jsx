@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Loader2, AlertCircle, AlertTriangle, Clock, RotateCw, Scissors } from 'lucide-react'
+import { ChevronLeft, Loader2, AlertCircle, AlertTriangle, Clock, RotateCw, Scissors, VolumeX } from 'lucide-react'
 import { readExifForImport, filterByTripRange } from '../lib/photoBackfill'
 import { matchPhotosToStops } from '../lib/photoMatch'
 import { buildReconciliationDraft } from '../lib/reconcileDraft'
@@ -130,6 +130,18 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                 tooLargeVideos.push({ name: f?.name || 'a video', bytes: enc.blob.size })
                 continue
               }
+              // Sound honesty: a clip whose source HAD audio the output
+              // couldn't keep still imports (video-only), but the loss is
+              // REMEMBERED — it forces the confirm, rides the ref, and chips
+              // the saved tile. The technical reason goes to the dev log only.
+              if (enc.sound === 'lost') {
+                logUploadEvent({
+                  code: 'video-sound-lost',
+                  message: enc.soundReason || 'source audio could not be carried',
+                  fileMeta: { name: f?.name || 'video', type: f?.type || null, size: f?.size ?? null },
+                  context: { phase: 'import-video-encode' },
+                })
+              }
               const id = itemId(f, 1000 + vi)
               videoItems.push({
                 id,
@@ -142,6 +154,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                   width: enc.width,
                   height: enc.height,
                   durationMs: enc.durationMs,
+                  sound: enc.sound || null, // 'carried' | 'none' | 'lost'
                 },
                 exif: { capturedAt, lat: null, lng: null },
                 photo: { id, capturedAt, lat: null, lng: null },
@@ -199,6 +212,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         let duplicates = 0
         let videos = 0
         let videosBytes = 0 // total shrunk bytes across imported clips — the confirm size chip (#2 proof)
+        let soundLost = 0 // clips importing WITHOUT sound their source had — the honest sound outcome
         const payload = []
         for (const item of kept) {
           // A photo that matches an EXISTING photo memory by capture time is a
@@ -222,6 +236,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           if (item.kind === 'video') {
             videos += 1
             videosBytes += item.encoded?.blob?.size || 0
+            if (item.encoded?.sound === 'lost') soundLost += 1
           } else if (stopId) matchedToStops += 1
           else interstitials += 1
           payload.push({
@@ -252,13 +267,19 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           tooLarge: tooLargeVideos.length,
           failed: failedVideos.length, // shrink failures — the warm "couldn't add" banner (#2)
           tooLong: tooLongVideos.length, // over the 3:00 cap — the "trim it" banner (#4)
+          soundLost, // importing without the sound their source had — the sound-outcome banner
         }
         const data = { payload, out, summary, tooLargeVideos, failedVideos, tooLongVideos }
         if (cancelled) return
         setAnalysis(data)
 
+        // A lost sound counts as a video notice too: the family has to SEE
+        // that a clip is coming in silent before it lands — never a smart-skip.
         const hasVideoNotice =
-          tooLargeVideos.length > 0 || failedVideos.length > 0 || tooLongVideos.length > 0
+          tooLargeVideos.length > 0 ||
+          failedVideos.length > 0 ||
+          tooLongVideos.length > 0 ||
+          soundLost > 0
         if (payload.length === 0 && !hasVideoNotice) {
           // Nothing new (all duplicates / out of range) — bounce straight back
           // with a "nothing new" toast rather than an empty confirm screen.
@@ -352,7 +373,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         recovered.push({
           kind: 'video',
           file: clip.file,
-          encoded: { blob: enc.blob, posterBlob: enc.posterBlob || null, mime: 'video/mp4', width: enc.width, height: enc.height, durationMs: enc.durationMs },
+          encoded: { blob: enc.blob, posterBlob: enc.posterBlob || null, mime: 'video/mp4', width: enc.width, height: enc.height, durationMs: enc.durationMs, sound: enc.sound || null },
           exif: { capturedAt, lat: null, lng: null },
           match: undefined,
           reattachOf: null,
@@ -378,6 +399,10 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         videos: (data.summary.videos || 0) + recovered.length,
         videosBytes: (data.summary.videosBytes || 0) + addedBytes,
         failed: stillFailed.length,
+        // A re-shrunk clip can come back sound-lost — keep the count honest.
+        soundLost:
+          (data.summary.soundLost || 0) +
+          recovered.filter((r) => r.encoded?.sound === 'lost').length,
       },
       failedVideos: stillFailed,
     })
@@ -455,6 +480,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         videos={analysis?.summary?.videos || 0}
         videosBytes={analysis?.summary?.videosBytes || 0}
         failed={analysis?.summary?.failed || 0}
+        soundLost={analysis?.summary?.soundLost || 0}
         tooLongVideos={analysis?.tooLongVideos || []}
         retrying={retrying}
         onRetry={retryFailedVideos}
@@ -798,6 +824,7 @@ function ConfirmSummary({
   videos = 0,
   videosBytes = 0,
   failed = 0,
+  soundLost = 0,
   tooLongVideos = [],
   retrying,
   onRetry,
@@ -817,10 +844,11 @@ function ConfirmSummary({
   }).filter((r) => r.count > 0)
   const n = count ?? 0
   const busy = !!(retrying && retrying.size > 0)
-  // Rafa NEVER sees a failure/too-long banner — his lens folds them into a gentle
-  // "still saving"; the honest notice surfaces to a parent's lens instead.
+  // Rafa NEVER sees a failure/too-long/lost-sound banner — his lens folds them
+  // into a gentle "still saving"; the honest notice surfaces to a parent's lens.
   const showFail = !isRafa && failed > 0
   const showTooLong = !isRafa && tooLongVideos.length > 0
+  const showSoundLost = !isRafa && soundLost > 0 && !!c.soundLost
 
   return (
     <div data-testid="import-confirm">
@@ -839,6 +867,15 @@ function ConfirmSummary({
               hideLabel={c.hide}
             />
           ))}
+        {/* sound couldn't come along: the clip still imports (video-only), but
+            the loss is said out loud — the source had sound; the saved copy
+            won't. Warm amber, no CTA (nothing to retry — the camera-roll
+            original keeps the sound). */}
+        {showSoundLost && (
+          <div data-testid="import-sound-lost">
+            <AmberBanner icon={VolumeX} title={c.soundLost(soundLost)} body={c.soundLostBody} />
+          </div>
+        )}
         {/* couldn't-add: one warm banner, celebrate the rest, retry attached (#2) */}
         {showFail && (
           <AmberBanner

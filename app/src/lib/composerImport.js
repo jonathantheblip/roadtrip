@@ -42,6 +42,7 @@ function fakeEncoded() {
     width: 320,
     height: 180,
     durationMs: 1000,
+    sound: 'none', // synthetic clip — honestly silent
   }
 }
 
@@ -55,6 +56,9 @@ async function encodeForImport(file, onProgress) {
     width: enc.width,
     height: enc.height,
     durationMs: enc.durationMs,
+    // 'carried' | 'none' | 'lost' — rides the saved ref so the tile can tag a
+    // clip whose source sound couldn't come along (same as the bulk importer).
+    sound: enc.sound || null,
   }
 }
 

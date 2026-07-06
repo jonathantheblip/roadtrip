@@ -45,7 +45,7 @@ export async function uploadBackfillPhotos({
   traveler,
   onProgress,
 }) {
-  const results = { ok: 0, reattached: 0, queued: 0, failed: 0, errors: [] }
+  const results = { ok: 0, reattached: 0, queued: 0, failed: 0, soundLost: 0, errors: [] }
   const total = photos.length
   if (total === 0) {
     onProgress?.({ done: 0, total: 0, currentName: null })
@@ -135,6 +135,9 @@ export async function uploadBackfillPhotos({
         interstitial: entry.interstitial || undefined,
       })
       results.ok += 1
+      // Sound-outcome tally rides the results so the post-import toast can
+      // say "N added · M without its sound" — only clips that actually saved.
+      if (entry.kind === 'video' && entry.encoded?.sound === 'lost') results.soundLost += 1
     } catch (err) {
       results.failed += 1
       results.errors.push({
@@ -272,6 +275,10 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     // survives the worker round-trip, exactly like width/height/durationMs. Rides
     // through the queue's item.ref → the drain re-save keeps it (no re-encode).
     bytes: Number.isFinite(blob?.size) ? blob.size : null,
+    // The sound outcome ('carried' | 'none' | 'lost') persists the same way, so
+    // every viewer's tile can tell "source had no sound" from "sound couldn't
+    // come along". Absent on legacy refs = unknown → no tag, never a guess.
+    sound: typeof enc.sound === 'string' ? enc.sound : null,
     capturedAt,
   }
   // Build the offline/render-only pending ref. The video TILE renders the

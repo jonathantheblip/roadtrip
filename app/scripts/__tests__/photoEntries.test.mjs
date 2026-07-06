@@ -550,3 +550,85 @@ test('groupByStop does NOT collapse distinct photos that merely share a URL (no 
   const grouped = groupByStop(entries, t).flatMap((g) => g.entries)
   assert.equal(grouped.length, 4)
 })
+
+// ─── location label vs section header: no doubled text ────────────────────
+// The lightbox meta line renders stopName AND locationLabel, and the tile's
+// label sits directly under the section header — so a label that merely
+// repeats the stop name printed the same text twice ("690 COMMERCIAL ST…"
+// doubled). The rule: a label that trim/case-insensitively equals the stop
+// name is suppressed; anything genuinely different is kept.
+
+test('groupByStop suppresses a location label that equals the stop name (the doubled-address bug)', () => {
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-05-22',
+    days: [
+      {
+        n: 1,
+        date: 'May 22',
+        isoDate: '2026-05-22',
+        stops: [
+          // A stop NAMED by its street address, as screenshot/AI-created
+          // stops often are — its address repeats its name modulo case.
+          { id: 'addr', name: '690 Commercial St, Provincetown', address: '690 COMMERCIAL ST, PROVINCETOWN ' },
+          // A stop with NO address at all — the label chain falls through to
+          // the stop name itself, which is the header verbatim.
+          { id: 'bare', name: 'The Cottage' },
+          // A normal stop where name and address genuinely differ.
+          { id: 'named', name: 'Mohegan Sun', address: 'New London, CT' },
+        ],
+      },
+    ],
+  })
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'dupAddr', tripId: 't', stopId: 'addr', refs: ['u://1'], capturedAt: '2026-05-22T10:00:00.000Z' }),
+    photoMem({ id: 'dupName', tripId: 't', stopId: 'bare', refs: ['u://2'], capturedAt: '2026-05-22T11:00:00.000Z' }),
+    photoMem({ id: 'kept', tripId: 't', stopId: 'named', refs: ['u://3'], capturedAt: '2026-05-22T12:00:00.000Z' }),
+    // Per-photo EXIF label that only differs by case from the stop name —
+    // still an echo of the header, still suppressed.
+    photoMem({
+      id: 'dupExif',
+      tripId: 't',
+      stopId: 'named',
+      refs: [{ url: 'u://4', locationLabel: 'MOHEGAN SUN' }],
+      capturedAt: '2026-05-22T13:00:00.000Z',
+    }),
+    // Per-photo EXIF label that is genuinely different — kept untouched.
+    photoMem({
+      id: 'keptExif',
+      tripId: 't',
+      stopId: 'named',
+      refs: [{ url: 'u://5', locationLabel: 'the back terrace' }],
+      capturedAt: '2026-05-22T14:00:00.000Z',
+    }),
+  ])
+  const label = {}
+  for (const g of groupByStop(entries, t)) {
+    for (const e of g.entries) label[e.memoryId] = e.locationLabel
+  }
+  // Equal (trim/case-insensitive) → suppressed: the header already says it.
+  assert.equal(label.dupAddr, null)
+  assert.equal(label.dupName, null)
+  assert.equal(label.dupExif, null)
+  // Distinct address vs name → both kept (header says the name, tile says where).
+  assert.equal(label.kept, 'New London, CT')
+  // A distinct per-photo label always survives.
+  assert.equal(label.keptExif, 'the back terrace')
+})
+
+test('flattenPhotoEntries surfaces the ref sound outcome; unknown/legacy values become null', () => {
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'lost', tripId: 't', stopId: 's', refs: [{ url: 'u://l', kind: 'video', mime: 'video/mp4', sound: 'lost' }] }),
+    photoMem({ id: 'silent', tripId: 't', stopId: 's', refs: [{ url: 'u://n', kind: 'video', mime: 'video/mp4', sound: 'none' }] }),
+    photoMem({ id: 'ok', tripId: 't', stopId: 's', refs: [{ url: 'u://c', kind: 'video', mime: 'video/mp4', sound: 'carried' }] }),
+    photoMem({ id: 'legacy', tripId: 't', stopId: 's', refs: [{ url: 'u://x', kind: 'video', mime: 'video/mp4' }] }),
+    photoMem({ id: 'garbage', tripId: 't', stopId: 's', refs: [{ url: 'u://g', kind: 'video', mime: 'video/mp4', sound: 'yes???' }] }),
+  ])
+  const byMem = Object.fromEntries(entries.map((e) => [e.memoryId, e.sound]))
+  assert.equal(byMem.lost, 'lost')
+  assert.equal(byMem.silent, 'none')
+  assert.equal(byMem.ok, 'carried')
+  assert.equal(byMem.legacy, null) // unknown is unknown — never a guessed tag
+  assert.equal(byMem.garbage, null)
+})

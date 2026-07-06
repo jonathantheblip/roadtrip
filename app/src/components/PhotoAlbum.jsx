@@ -229,6 +229,15 @@ export function PhotoTile({ entry, onOpen, faces, traveler, uploadState, onRetry
             <TileChip>{fmtSize(entry.videoBytes)}</TileChip>
           </span>
         )}
+        {/* sound couldn't come along — ONLY when the source provably had sound
+            the saved copy doesn't (ref.sound === 'lost'). An honestly-silent
+            source ('none') and legacy/unknown refs get no tag. Rafa's lens
+            never meets it (soundChip is null on his deck). */}
+        {entry.isVideo && vstate === 'saved' && entry.sound === 'lost' && vcopy.soundChip && (
+          <span data-testid="tile-video-no-sound" style={{ position: 'absolute', right: 6, bottom: 6, pointerEvents: 'none' }}>
+            <TileChip>{vcopy.soundChip}</TileChip>
+          </span>
+        )}
         {/* on its way — neutral, honest (Rafa gets the centered "saving…" instead) */}
         {entry.isVideo && vstate === 'uploading' && !rafaSaving && (
           <span
@@ -584,7 +593,10 @@ export function PhotoLightbox({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '14px 16px',
+          // The lightbox is position:fixed over the whole screen, so this one
+          // row (counter + delete + share + close) must clear the iPhone
+          // notch/Dynamic Island itself.
+          padding: 'calc(14px + env(safe-area-inset-top)) 16px 14px',
           fontFamily: 'JetBrains Mono, monospace',
           fontSize: 10,
           letterSpacing: '0.18em',
@@ -721,7 +733,9 @@ export function PhotoLightbox({
         )}
         {onNext && <NavArrow direction="right" onClick={onNext} />}
       </div>
-      <footer style={{ padding: '14px 18px 24px' }}>
+      {/* Bottom padding clears the home-indicator bar (same fixed-overlay
+          safe-area rule as the header row above). */}
+      <footer style={{ padding: '14px 18px calc(24px + env(safe-area-inset-bottom))' }}>
         {/* Trip name lives above the caption so the user always knows
             which trip's archive they're scrolling through — Punchlist
             4 acceptance: lightbox carries trip context. Hidden in the
@@ -1122,7 +1136,11 @@ function NavArrow({ direction, onClick }) {
       aria-label={isLeft ? 'Previous photo' : 'Next photo'}
       style={{
         position: 'absolute',
-        [isLeft ? 'left' : 'right']: 8,
+        // Landscape phones inset the sides (notch/home bar) — keep the arrow
+        // tappable there, 8px otherwise.
+        [isLeft ? 'left' : 'right']: isLeft
+          ? 'max(8px, env(safe-area-inset-left))'
+          : 'max(8px, env(safe-area-inset-right))',
         top: '50%',
         transform: 'translateY(-50%)',
         background: 'rgba(0,0,0,0.55)',

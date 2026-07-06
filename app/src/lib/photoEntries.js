@@ -118,6 +118,14 @@ export function flattenPhotoEntries(memories) {
         // stored bytes (the chip just doesn't render — never a fake size).
         videoBytes: Number.isFinite(ref?.bytes) ? ref.bytes : null,
         durationMs: Number.isFinite(ref?.durationMs) ? ref.durationMs : null,
+        // Sound outcome recorded at encode time: 'carried' | 'none' (source
+        // itself was silent) | 'lost' (source HAD sound the saved copy
+        // doesn't — the only value that earns a tile tag). Null = legacy ref,
+        // unknown → no tag, never a guess.
+        sound:
+          ref?.sound === 'carried' || ref?.sound === 'none' || ref?.sound === 'lost'
+            ? ref.sound
+            : null,
         // Not yet on R2 — a pending video ref is in the device outbox (on its way
         // or, rarely, stuck). The tile cross-references the live queue for the
         // stuck/uploading distinction; this is the "not backed up yet" flag.
@@ -189,6 +197,14 @@ function memCreatedMs(e) {
   const t = e?.memoryCreatedAt ? Date.parse(e.memoryCreatedAt) : NaN
   // Unknown create-time sorts last so it never displaces a dated entry.
   return Number.isFinite(t) ? t : Infinity
+}
+
+// A location label that trim/case-insensitively equals the section title it
+// renders under is a duplicate, not information — null it. Distinct address
+// vs name (and any per-photo EXIF label that differs) is kept untouched.
+function suppressHeaderEcho(label, header) {
+  if (!label || !header) return label || null
+  return label.trim().toLowerCase() === header.trim().toLowerCase() ? null : label
 }
 
 // Per-trip grouping — used by PhotosView. Returns an array of
@@ -280,11 +296,15 @@ export function groupByStop(entries, trip) {
         stopAddress: null,
         // No stop to file under — the section header already says "from A to
         // B", so the per-tile label is just a stored label or raw coords.
-        locationLabel:
+        // (Same header-echo suppression as the stop path — a stored label
+        // that just repeats the section title says nothing twice.)
+        locationLabel: suppressHeaderEcho(
           entry.exifLocation ||
-          (entry.exifLat != null && entry.exifLng != null
-            ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
-            : null),
+            (entry.exifLat != null && entry.exifLng != null
+              ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
+              : null),
+          ic.label
+        ),
         _dayN: ic.dayN,
         _stopOrder: ic.stopOrder,
         _dayLabel: ic.dayLabel,
@@ -299,23 +319,29 @@ export function groupByStop(entries, trip) {
     // carries an `isBase` flag and drops the clock time, since it's a place,
     // not a timed event.
     const isBase = stopIsBase(ctx?.stop)
+    const stopName = ctx?.stop?.name || 'Unfiled'
     buckets.get(sid).push({
       ...entry,
-      stopName: ctx?.stop?.name || 'Unfiled',
+      stopName,
       stopAddress: ctx?.stop?.address || null,
       // Label precedence: a stored/human label first, then the stop this
       // photo is filed to (address → name), and only as a LAST resort the
       // raw EXIF coordinates — so a finite GPS fix never replaces a
       // friendly stop name with a decimal pair. (Coords → place-name
       // reverse-geocoding lives only in the backfill triage today; the
-      // album render has no geocoder.)
-      locationLabel:
+      // album render has no geocoder.) A label that merely repeats the
+      // stop name is suppressed — the section header (and the lightbox's
+      // stop line) already says it, so echoing it doubled the text (the
+      // "690 COMMERCIAL ST…" twice-in-a-row bug).
+      locationLabel: suppressHeaderEcho(
         entry.exifLocation ||
-        ctx?.stop?.address ||
-        ctx?.stop?.name ||
-        (entry.exifLat != null && entry.exifLng != null
-          ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
-          : null),
+          ctx?.stop?.address ||
+          ctx?.stop?.name ||
+          (entry.exifLat != null && entry.exifLng != null
+            ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
+            : null),
+        stopName
+      ),
       _dayN: ctx?.day?.n ?? 99,
       // The implicit base ("At the cabin") leads its day deliberately (it's the
       // place the day hangs off, not a timed event) — explicit, not an accidental

@@ -324,7 +324,7 @@ export default function App() {
     bulkImportInputRef.current?.click()
   }
   function showBulkImportToast(results) {
-    const props = bulkImportToastProps(results)
+    const props = bulkImportToastProps(results, traveler)
     if (!props) return
     if (bulkImportToastTimer.current) clearTimeout(bulkImportToastTimer.current)
     setBulkImportToast(props)
