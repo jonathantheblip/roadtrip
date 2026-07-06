@@ -1085,7 +1085,18 @@ async function postMemory(env, traveler, request, url, cors) {
   // here could only fire inside the read→write race (a DELETE landing between
   // the guard's read and this write) — and that race must leave the memory
   // deleted. Only the INSERT arm (a genuinely new id) starts live.
-  await env.DB.prepare(
+  //
+  // The update arm's WHERE closes the race AT THE STATEMENT: a DELETE landing
+  // in the read→write window used to leave the row deleted but still overwrite
+  // every content column and write this push's EARLIER stamp over the
+  // tombstone's — updated_at went BACKWARD. getMemories is an
+  // `updated_at > since` delta, so a device whose cursor had already passed
+  // the regressed stamp would never be handed the tombstone: the delete
+  // silently never propagated. With the WHERE, the racing push is a no-op
+  // (meta.changes === 0 is the tell — an applied update or a fresh insert
+  // always counts 1) and is refused below with the resurrection guard's own
+  // delete signal.
+  const upsertRes = await env.DB.prepare(
     `INSERT INTO memories (
        id, trip_id, stop_id, author_traveler, visibility, kind,
        text, caption, transcript, transcript_lang, transcription_status,
@@ -1137,7 +1148,8 @@ async function postMemory(env, traveler, request, url, cors) {
        cover_json = COALESCE(excluded.cover_json, memories.cover_json),
        surprise_json = COALESCE(excluded.surprise_json, memories.surprise_json),
        revealed_at = COALESCE(excluded.revealed_at, memories.revealed_at),
-       updated_at = excluded.updated_at`
+       updated_at = excluded.updated_at
+     WHERE memories.deleted_at IS NULL`
   ).bind(
     body.id, body.tripId || null, body.stopId || null,
     // Author is the AUTHENTICATED traveler, never a body-supplied value. Closes
@@ -1157,6 +1169,26 @@ async function postMemory(env, traveler, request, url, cors) {
     hideFromJson, revealJson, concealVal, coverJson, surpriseJson, revealedAt,
     createdAt, updatedAt
   ).run()
+
+  // The race fired: the row was tombstoned between the guard's read and the
+  // write, so the WHERE arm made this push a no-op. Refuse it with the SAME
+  // authoritative delete signal the resurrection guard sends (409 +
+  // deleted:true) — the pushing device adopts the delete like any other
+  // instead of believing its edit landed. If the row is somehow live with 0
+  // changes (no known path), fall through to the normal read-back — the
+  // pre-guard behavior, never a new failure mode.
+  if ((upsertRes?.meta?.changes ?? 1) === 0) {
+    const tomb = await env.DB.prepare(
+      'SELECT updated_at, deleted_at FROM memories WHERE id = ?'
+    ).bind(body.id).first()
+    if (tomb && tomb.deleted_at != null) {
+      return json(
+        { error: 'conflict', id: body.id, deleted: true, storedUpdatedAt: Number(tomb.updated_at) },
+        409,
+        cors
+      )
+    }
+  }
 
   const { results } = await env.DB.prepare(
     'SELECT * FROM memories WHERE id = ?'
@@ -1640,6 +1672,12 @@ async function postTrip(env, request, cors, traveler) {
   // here could only fire inside the read→write race (a DELETE landing between
   // the guard's read and this write) — and that race must leave the trip
   // deleted. Only the INSERT arm (a genuinely new id) starts live.
+  // ⚠ Unlike the MEMORY upsert, this arm has no `WHERE deleted_at IS NULL`:
+  // the same race still overwrites a fresh trip tombstone's content columns
+  // and can regress its updated_at. Invisible today — getTrips filters
+  // tombstones out and the client learns trip deletes by absence — but it
+  // becomes load-bearing the day trips ever grow a ?since= delta. Mirror the
+  // memory fix (WHERE arm + meta.changes check) before building one.
   await env.DB.prepare(
     `INSERT INTO trips (
        id, title, date_range_start, date_range_end, end_city,
