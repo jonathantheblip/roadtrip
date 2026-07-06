@@ -383,6 +383,13 @@ function positionMs(dayIsoDate, medianMs) {
 
 // "From A to B" / "Before B" / "After A" / "In transit" — same framing
 // as the backfill triage so interstitials read consistently.
+// PARITY NOTE (photoEntries.groupByStop mirrors this 4-way voice): the album
+// now RE-DERIVES a placement at render time when a saved bracket no longer
+// resolves (self-healing, VISION §1 order-independence). No such healing is
+// needed here — this title renders at IMPORT time, against the matches just
+// computed from the live trip, so its bracket ids always resolve. The two
+// surfaces therefore still read identically at the only moment both exist;
+// keep the phrasing in lock-step with photoEntries if either ever changes.
 function interstitialTitle(bucket, day) {
   const stopName = (id) => {
     const s = (day.stops || []).find((x) => x.id === id)

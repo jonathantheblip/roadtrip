@@ -8,6 +8,7 @@ const {
   refIdbAssetKey,
 } = await import('../../src/lib/photoEntries.js')
 const { implicitBaseIdForDay } = await import('../../src/lib/photoMatch.js')
+const { photosForDay } = await import('../../src/lib/evidence.js')
 
 // refIdbAssetKey — the single source of truth for "which idb blob renders this
 // ref" (offline-imported photos/videos). Used by the hydration hook AND the
@@ -70,12 +71,16 @@ function photoMem({ id, tripId, stopId, author = 'helen', caption = '', refs, ca
 }
 
 // Trip skeleton — only days + stops + the metadata groupAcrossTrips
-// uses for sorting.
-function trip({ id, title, dateRangeStart, days }) {
+// uses for sorting. `tz` (optional) pins the trip's zone so the
+// self-healing day/band assertions are deterministic on ANY runner
+// TZ (the CI box is UTC, dev machines are US-local — see the
+// deploy-verify TZ lesson).
+function trip({ id, title, dateRangeStart, days, tz }) {
   return {
     id,
     title,
     dateRangeStart,
+    ...(tz ? { tz } : {}),
     days: days.map((d) => ({
       n: d.n,
       date: d.date,
@@ -615,6 +620,475 @@ test('groupByStop suppresses a location label that equals the stop name (the dou
   assert.equal(label.kept, 'New London, CT')
   // A distinct per-photo label always survives.
   assert.equal(label.keptExif, 'the back terrace')
+})
+
+// ─── Self-healing filing: every dateable photo lands in its day ────────────
+// Settled rule (live-trip 2026-07-05 + VISION §1 order-independence): "In
+// transit" is never a junk drawer. An in-transit photo files BETWEEN its two
+// stops; without two true (clock-timed) stops it files CHRONOLOGICALLY into
+// its day; only genuinely undateable photos remain at the bottom. Healing is
+// render-time against TODAY's plan, so a bracket that died (stop deleted /
+// re-timed) is recomputed and keeps healing as the plan changes.
+
+// A day whose stops carry real clock times — the re-bracket substrate.
+function clockDayTrip({ tz = 'UTC' } = {}) {
+  return trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-04-21',
+    tz,
+    days: [
+      {
+        n: 1,
+        date: 'Apr 21',
+        isoDate: '2026-04-21',
+        stops: [
+          { id: 'x', name: 'Aquarium', time: '10:00 AM' },
+          { id: 'y', name: 'Lobster Shack', time: '2:00 PM' },
+        ],
+      },
+    ],
+  })
+}
+
+// A stay-ish trip whose days have NO clock-timed stops (loose or none) —
+// the chronological-fallback substrate. NY zone on purpose: the leg-local
+// day pick must differ from the UTC calendar for the evening photos.
+function looseDaysTrip() {
+  return trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-07-01',
+    tz: 'America/New_York',
+    days: [
+      { n: 1, date: 'Jul 1', isoDate: '2026-07-01', stops: [{ id: 'd1', name: 'Beach day', time: 'Morning' }] },
+      { n: 2, date: 'Jul 2', isoDate: '2026-07-02', stops: [{ id: 'd2', name: 'Lazy day', time: '' }] },
+      { n: 3, date: 'Jul 3', isoDate: '2026-07-03', stops: [] },
+    ],
+  })
+}
+
+test('RE-BRACKET AT RENDER: a dead bracket pair is recomputed from today\'s clock-timed stops (files between them, not at the bottom)', () => {
+  const t = clockDayTrip()
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'atX', tripId: 't', stopId: 'x', refs: ['u://x'], capturedAt: '2026-04-21T10:30:00.000Z' }),
+    // Saved brackets point at stops that no longer exist (the plan changed).
+    photoMem({
+      id: 'street',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://street'],
+      capturedAt: '2026-04-21T12:00:00.000Z',
+      interstitial: { before: 'gone-a', after: 'gone-b' },
+    }),
+    photoMem({ id: 'atY', tripId: 't', stopId: 'y', refs: ['u://y'], capturedAt: '2026-04-21T14:30:00.000Z' }),
+  ])
+  const groups = groupByStop(entries, t)
+  // Healed: noon sits between the 10 AM and 2 PM stops of TODAY's plan.
+  assert.deepEqual(
+    groups.map((g) => g.stopName),
+    ['Aquarium', 'From Aquarium to Lobster Shack', 'Lobster Shack']
+  )
+  const healed = groups[1]
+  // The bucket is keyed by the DERIVED (live) pair — so it merges with any
+  // still-valid saved bucket of the same pair, and never by the dead ids.
+  assert.equal(healed.stopKey, '__interstitial:x__y')
+  assert.equal(healed.dayLabel, 'Apr 21')
+  assert.equal(healed.timeLabel, '') // bracketed sections keep the bare eyebrow
+  assert.equal(healed.entries[0].memoryId, 'street')
+})
+
+test('RE-BRACKET AT RENDER: a surviving one-sided bracket still re-brackets by the CURRENT plan (order-independence)', () => {
+  // Saved "before Breakfast" (the after-bracket is alive), but the photo's own
+  // clock now falls after Castle — the plan changed around it. The photo's
+  // capturedAt against today's clock stops wins over the stale saved bracket.
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-04-21',
+    tz: 'UTC',
+    days: [
+      {
+        n: 1,
+        date: 'Apr 21',
+        isoDate: '2026-04-21',
+        stops: [
+          { id: 'b', name: 'Breakfast', time: '9:00 AM' },
+          { id: 'c', name: 'Castle', time: '2:00 PM' },
+        ],
+      },
+    ],
+  })
+  const entries = flattenPhotoEntries([
+    photoMem({
+      id: 'late',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://late'],
+      capturedAt: '2026-04-21T15:00:00.000Z',
+      interstitial: { before: null, after: 'b' },
+    }),
+  ])
+  const [g] = groupByStop(entries, t)
+  assert.equal(g.stopName, 'After Castle')
+  assert.equal(g.stopKey, '__interstitial:c__end')
+})
+
+test('DAY-ANCHORED FALLBACK: no clock stops → files chronologically into its LEG-LOCAL day with a day + hour-band eyebrow (UTC would misfile)', () => {
+  const t = looseDaysTrip()
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'lazy', tripId: 't', stopId: 'd2', refs: ['u://lazy'], capturedAt: '2026-07-02T16:00:00.000Z' }),
+    // 9:30 PM in New York on Jul 2 — already Jul 3 by the UTC calendar. The
+    // one-clock rule: this is TONIGHT's photo, not tomorrow's.
+    photoMem({
+      id: 'smores',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://smores'],
+      capturedAt: '2026-07-03T01:30:00.000Z',
+      interstitial: { before: 'gone-a', after: 'gone-b' },
+    }),
+  ])
+  const groups = groupByStop(entries, t)
+  const healed = groups.find((g) => g.stopName === 'In transit')
+  assert.ok(healed, 'the orphan renders as an In transit section')
+  // Day-scoped key, JUL 2 — not the UTC calendar's Jul 3.
+  assert.equal(healed.stopKey, '__interstitial:2026-07-02:start__end')
+  assert.equal(healed.dayLabel, 'Jul 2')
+  // spanWords voice: one instant collapses to "around N" (9:30 PM → around 9).
+  assert.equal(healed.timeLabel, 'around 9')
+  // It sorts INSIDE its day — after Jul 2's own stop section, before nothing
+  // in Jul 3 (which has no photos), never in a bottom drawer.
+  assert.deepEqual(groups.map((g) => g.stopName), ['Lazy day', 'In transit'])
+})
+
+test('DAY-SCOPED KEYS: two days\' orphans never merge into one bucket (each day gets its own section + band)', () => {
+  const t = looseDaysTrip()
+  const entries = flattenPhotoEntries([
+    // Producer 1's exact shape: saved with both brackets null.
+    photoMem({
+      id: 'day1',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://one'],
+      capturedAt: '2026-07-01T14:00:00.000Z', // Jul 1, 10 AM NY
+      interstitial: { before: null, after: null },
+    }),
+    photoMem({
+      id: 'day2',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://two'],
+      capturedAt: '2026-07-02T18:00:00.000Z', // Jul 2, 2 PM NY
+      interstitial: { before: null, after: null },
+    }),
+  ])
+  const groups = groupByStop(entries, t).filter((g) => g.stopName === 'In transit')
+  assert.equal(groups.length, 2, 'one section per day — never one merged drawer')
+  assert.deepEqual(
+    groups.map((g) => g.stopKey),
+    ['__interstitial:2026-07-01:start__end', '__interstitial:2026-07-02:start__end']
+  )
+  assert.deepEqual(groups.map((g) => g.dayLabel), ['Jul 1', 'Jul 2'])
+  assert.deepEqual(groups.map((g) => g.timeLabel), ['around 10', 'around 2'])
+})
+
+test('UNFILED, DAY-ANCHORED: dead-stopId and unassigned photos with a dateable capture merge into their day\'s one "Unfiled" section', () => {
+  const t = looseDaysTrip()
+  const entries = flattenPhotoEntries([
+    // A stopId that resolves to nothing (the stop was deleted / edited away).
+    photoMem({ id: 'ghost', tripId: 't', stopId: 'ghost-stop', refs: ['u://g'], capturedAt: '2026-07-01T14:00:00.000Z' }), // 10 AM NY
+    // A plain unassigned photo (stopId null, no interstitial identity).
+    photoMem({ id: 'loose', tripId: 't', stopId: null, refs: ['u://l'], capturedAt: '2026-07-01T18:30:00.000Z' }), // 2:30 PM NY
+  ])
+  const groups = groupByStop(entries, t)
+  const unfiled = groups.filter((g) => g.stopName === 'Unfiled')
+  assert.equal(unfiled.length, 1, 'the two producers share the day\'s one Unfiled section')
+  assert.equal(unfiled[0].stopKey, '__unfiled:2026-07-01')
+  assert.equal(unfiled[0].dayLabel, 'Jul 1')
+  assert.equal(unfiled[0].timeLabel, '10–2') // spanWords band across first→last
+  assert.equal(unfiled[0].entries.length, 2)
+})
+
+test('TRUE RESIDUE: only genuinely undateable photos stay at the bottom — "Unfiled"/"In transit", empty eyebrow, after every day', () => {
+  const t = looseDaysTrip()
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'inDay', tripId: 't', stopId: 'd1', refs: ['u://d'], capturedAt: '2026-07-01T15:00:00.000Z' }),
+    // capturedAt outside every trip day → nothing honest to anchor to.
+    photoMem({ id: 'scan', tripId: 't', stopId: null, refs: ['u://s'], capturedAt: '2027-03-01T12:00:00.000Z' }),
+    // Dead brackets AND no capturedAt: falls back to createdAt (2026-05-24,
+    // outside the trip) → the in-transit residue, keyed WITHOUT a day.
+    photoMem({
+      id: 'mystery',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://m'],
+      interstitial: { before: 'gone-a', after: 'gone-b' },
+    }),
+  ])
+  const groups = groupByStop(entries, t)
+  const residueUnfiled = groups.find((g) => g.stopKey === '__unassigned')
+  const residueTransit = groups.find((g) => g.stopKey === '__interstitial:start__end')
+  assert.ok(residueUnfiled && residueTransit, 'both residue buckets exist')
+  assert.equal(residueUnfiled.stopName, 'Unfiled')
+  assert.equal(residueTransit.stopName, 'In transit')
+  for (const g of [residueUnfiled, residueTransit]) {
+    assert.equal(g.dayLabel, '') // honest empty eyebrow — no fake day
+    assert.equal(g.timeLabel, '')
+  }
+  // Residue renders after every real-day section.
+  assert.equal(groups[0].stopName, 'Beach day')
+  assert.ok(
+    groups.indexOf(residueUnfiled) > 0 && groups.indexOf(residueTransit) > 0,
+    'residue never outranks a day section'
+  )
+})
+
+test('DETERMINISTIC ORDER: two same-day loose sections sort chronologically by their first entry, whichever kind comes first', () => {
+  const t = looseDaysTrip()
+  const at = (iso) => iso
+  const mk = ({ transitAt, unfiledAt }) =>
+    groupByStop(
+      flattenPhotoEntries([
+        photoMem({
+          id: 'it',
+          tripId: 't',
+          stopId: null,
+          refs: ['u://it'],
+          capturedAt: at(transitAt),
+          interstitial: { before: null, after: null },
+        }),
+        photoMem({ id: 'uf', tripId: 't', stopId: 'ghost-stop', refs: ['u://uf'], capturedAt: at(unfiledAt) }),
+      ]),
+      t
+    ).map((g) => g.stopName)
+  // In-transit at 10 AM NY, Unfiled at 2 PM NY → transit first…
+  assert.deepEqual(
+    mk({ transitAt: '2026-07-01T14:00:00.000Z', unfiledAt: '2026-07-01T18:00:00.000Z' }),
+    ['In transit', 'Unfiled']
+  )
+  // …and the mirror-image times flip the order: chronology, not section kind.
+  assert.deepEqual(
+    mk({ transitAt: '2026-07-01T18:00:00.000Z', unfiledAt: '2026-07-01T14:00:00.000Z' }),
+    ['Unfiled', 'In transit']
+  )
+})
+
+test('G5 PIN: a both-brackets-resolve interstitial keeps today\'s exact key, label, eyebrow, and slot', () => {
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-04-20',
+    days: [
+      {
+        n: 1,
+        date: 'Apr 20',
+        isoDate: '2026-04-20',
+        stops: [
+          { id: 'mccomb', name: 'McComb' },
+          { id: 'terrell', name: 'Terrell' },
+        ],
+      },
+    ],
+  })
+  const entries = flattenPhotoEntries([
+    photoMem({
+      id: 'mid',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://mid'],
+      capturedAt: '2026-04-20T16:00:00.000Z',
+      interstitial: { before: 'mccomb', after: 'terrell' },
+    }),
+  ])
+  const [g] = groupByStop(entries, t)
+  // Byte-identical to the pre-healing render: the legacy (un-day-scoped) key,
+  // the same phrasing, the bounding day's eyebrow, no time band.
+  assert.equal(g.stopKey, '__interstitial:mccomb__terrell')
+  assert.equal(g.stopName, 'From McComb to Terrell')
+  assert.equal(g.dayLabel, 'Apr 20')
+  assert.equal(g.timeLabel, '')
+  assert.equal(g._dayN, 1)
+  assert.equal(g._stopOrder, 0.5)
+})
+
+test('groupAcrossTrips inherits the healed day-anchored section (AllPhotosView needs no separate fix)', () => {
+  const t = looseDaysTrip()
+  const sections = groupAcrossTrips([
+    {
+      trip: t,
+      memories: [
+        photoMem({
+          id: 'orphan',
+          tripId: 't',
+          stopId: null,
+          refs: ['u://o'],
+          capturedAt: '2026-07-02T18:00:00.000Z',
+          interstitial: { before: 'gone-a', after: 'gone-b' },
+        }),
+      ],
+    },
+  ])
+  const names = sections[0].stops.map((s) => s.stopName)
+  assert.deepEqual(names, ['In transit'])
+  assert.equal(sections[0].stops[0].stopKey, '__interstitial:2026-07-02:start__end')
+  assert.equal(sections[0].stops[0].timeLabel, 'around 2')
+})
+
+// ── Cross-zone composite: the day's OWN leg zone judges membership ─────────
+// The reviewer-executed counterexample (C1): Tokyo leg Jul 1–3 (Asia/Tokyo,
+// UTC+9) → Honolulu leg Jul 4–8 (Pacific/Honolulu, UTC−10). A half-mirror that
+// picks a provisional leg from the DEVICE's calendar files the same photo
+// differently on a Tokyo phone vs a New-York phone, and compares Tokyo wall
+// minutes against Honolulu-authored stop times (19h frame skew). The fix:
+// each day is judged in the zone of the leg that OWNS it — the exact
+// membership test the evidence engine runs — so placement is identical on
+// every device. This test must pass under the full runner-TZ matrix
+// (TZ=UTC / America/New_York / Pacific/Auckland).
+function crossZoneTrip() {
+  return {
+    id: 't',
+    title: 'Pacific hop',
+    dateRangeStart: '2026-07-01',
+    dateRangeEnd: '2026-07-08',
+    parts: [
+      { id: 'leg-tokyo', type: 'city', title: 'Tokyo', tz: 'Asia/Tokyo', dateStart: '2026-07-01', dateEnd: '2026-07-03' },
+      { id: 'leg-hnl', type: 'city', title: 'Honolulu', tz: 'Pacific/Honolulu', dateStart: '2026-07-04', dateEnd: '2026-07-08' },
+    ],
+    days: [
+      // Tokyo days — no clock-timed stops (loose), so a Tokyo orphan takes
+      // the chronological fallback in TOKYO hours.
+      { n: 2, date: 'Jul 2', isoDate: '2026-07-02', title: '', stops: [{ id: 'tk-walk', name: 'Shrine walk', time: 'Morning' }] },
+      { n: 3, date: 'Jul 3', isoDate: '2026-07-03', title: '', stops: [] },
+      // Honolulu day — a clock stop AUTHORED IN HONOLULU WALL TIME.
+      { n: 4, date: 'Jul 4', isoDate: '2026-07-04', title: '', stops: [{ id: 'luau', name: 'Luau', time: '6:00 PM' }] },
+    ],
+  }
+}
+
+test('CROSS-ZONE PIN (C1): each day claims a photo in its OWN leg zone — identical on every device, agreeing with photosForDay', () => {
+  const t = crossZoneTrip()
+  const mems = [
+    // Inside Tokyo's Jul 2 (12:00 Tokyo wall). GPS so photosForDay engages.
+    photoMem({
+      id: 'tokyo-noon',
+      tripId: 't',
+      stopId: null,
+      refs: [{ url: 'u://tk', lat: 35.68, lng: 139.69 }],
+      capturedAt: '2026-07-02T03:00:00.000Z',
+      interstitial: { before: 'gone-a', after: 'gone-b' },
+    }),
+    // THE SEAM: 10:00 Jul 4 in Tokyo, but 15:00 Jul 3 in Honolulu — Tokyo's
+    // calendar has left its leg, Honolulu's hasn't reached this date yet.
+    // NEITHER day's own zone claims it (the westward dateline gap): honestly
+    // unattributable → residue, never a per-device coin flip.
+    photoMem({
+      id: 'seam',
+      tripId: 't',
+      stopId: null,
+      refs: [{ url: 'u://seam', lat: 25.0, lng: -170.0 }],
+      capturedAt: '2026-07-04T01:00:00.000Z',
+      interstitial: { before: 'gone-a', after: 'gone-b' },
+    }),
+    // Properly inside Honolulu's Jul 4 (02:00 Honolulu wall) → re-brackets
+    // against the Luau in HONOLULU minutes (2:00 AM < 6:00 PM → "Before").
+    photoMem({
+      id: 'hnl-night',
+      tripId: 't',
+      stopId: null,
+      refs: [{ url: 'u://hnl', lat: 21.3, lng: -157.85 }],
+      capturedAt: '2026-07-04T12:00:00.000Z',
+      interstitial: { before: 'gone-a', after: 'gone-b' },
+    }),
+  ]
+  const groups = groupByStop(flattenPhotoEntries(mems), t)
+  // Same three sections in the same slots on EVERY device (runner-TZ matrix):
+  // Tokyo's orphan in Tokyo's Jul 2 (Tokyo hours), the Honolulu photo
+  // re-bracketed before the Luau, and the seam photo in the honest residue.
+  assert.deepEqual(
+    groups.map((g) => [g.stopKey, g.stopName]),
+    [
+      ['__interstitial:2026-07-02:start__end', 'In transit'],
+      ['__interstitial:start__luau', 'Before Luau'],
+      ['__interstitial:start__end', 'In transit'],
+    ]
+  )
+  const byKey = Object.fromEntries(groups.map((g) => [g.stopKey, g]))
+  // Band in TOKYO hours (12:00 wall), not the device's or the other leg's.
+  assert.equal(byKey['__interstitial:2026-07-02:start__end'].timeLabel, 'around 12')
+  assert.equal(byKey['__interstitial:2026-07-02:start__end'].entries[0].memoryId, 'tokyo-noon')
+  assert.equal(byKey['__interstitial:start__luau'].entries[0].memoryId, 'hnl-night')
+  assert.equal(byKey['__interstitial:start__end'].entries[0].memoryId, 'seam')
+  assert.equal(byKey['__interstitial:start__end'].dayLabel, '')
+
+  // Album ↔ evidence agreement: photosForDay with each day's OWN leg zone
+  // (deriveCurrentLeg hands the settle card exactly these zones) attributes
+  // the same instants to the same days — including refusing the seam photo
+  // for BOTH days, which is the album's residue.
+  const ids = (isoDate, tz) => photosForDay(mems, isoDate, { tz }).map((p) => p.memoryId)
+  assert.deepEqual(ids('2026-07-02', 'Asia/Tokyo'), ['tokyo-noon'])
+  assert.deepEqual(ids('2026-07-04', 'Pacific/Honolulu'), ['hnl-night'])
+  assert.equal(ids('2026-07-03', 'Asia/Tokyo').includes('seam'), false)
+  assert.equal(ids('2026-07-04', 'Pacific/Honolulu').includes('seam'), false)
+})
+
+test('KEEP SIDE of the deviation rule: a surviving one-sided bracket on a clock-less day (photo agrees on the day) keeps its stop-named render', () => {
+  // The counterpart to the "re-brackets by the CURRENT plan" test: when the
+  // photo's own day AGREES with the surviving bracket's day and that day has
+  // no true clock stops, the live stop NAME is kept — "After Sunset Point"
+  // says more than a bare "In transit" band ever could.
+  const t = trip({
+    id: 't',
+    title: 'T',
+    dateRangeStart: '2026-04-20',
+    tz: 'UTC',
+    days: [
+      {
+        n: 1,
+        date: 'Apr 20',
+        isoDate: '2026-04-20',
+        // Loose times only — nothing to re-bracket against.
+        stops: [
+          { id: 'first', name: 'First Stop', time: 'Morning' },
+          { id: 'last', name: 'Sunset Point', time: 'Evening' },
+        ],
+      },
+    ],
+  })
+  const entries = flattenPhotoEntries([
+    // before=null / after=alive → keeps "Before First Stop", slotted ahead.
+    photoMem({
+      id: 'pre',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://pre'],
+      capturedAt: '2026-04-20T06:00:00.000Z',
+      interstitial: { before: null, after: 'first' },
+    }),
+    // before=alive / after=null → keeps "After Sunset Point", slotted after.
+    photoMem({
+      id: 'post',
+      tripId: 't',
+      stopId: null,
+      refs: ['u://post'],
+      capturedAt: '2026-04-20T22:00:00.000Z',
+      interstitial: { before: 'last', after: null },
+    }),
+  ])
+  const groups = groupByStop(entries, t)
+  assert.deepEqual(
+    groups.map((g) => [g.stopKey, g.stopName]),
+    [
+      ['__interstitial:start__first', 'Before First Stop'],
+      ['__interstitial:last__end', 'After Sunset Point'],
+    ]
+  )
+  // Kept renders carry the day eyebrow and NO time band (they are
+  // stop-named sections, not chronological fallbacks).
+  for (const g of groups) {
+    assert.equal(g.dayLabel, 'Apr 20')
+    assert.equal(g.timeLabel, '')
+  }
 })
 
 test('flattenPhotoEntries surfaces the ref sound outcome; unknown/legacy values become null', () => {

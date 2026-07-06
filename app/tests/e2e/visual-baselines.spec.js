@@ -28,12 +28,20 @@ import { mockClaudeChatWorker } from './_fixtures/mockUpload.js'
 // about.
 
 const SEED_MEMORIES = [
-  // Multi-photo memory on the Day 1 pickup stop — exercises the
-  // memory-group / photoRefs[] rendering path.
+  // Multi-photo memory on Day 1 — exercises the memory-group /
+  // photoRefs[] rendering path. Filed to vb1-3 (the lodging), the only
+  // Day-1 stop the slimmed FIXTURE_TRIP kept: the original 'vb1-1'
+  // pickup stop only exists in the app's richer seed trip
+  // (src/data/trips.js), so this memory was silently rendering as a
+  // bottom "Unfiled" junk-drawer section — which the self-healing album
+  // retired (a dead-stop photo now files into its day with a
+  // DEVICE-LOCAL hour band, a TZ-dependent pixel no baseline may pin).
+  // Sharing the stop with mem_vb_lodging also keeps the two-memories-
+  // one-stop run separator in the baseline.
   {
     id: 'mem_vb_multi',
     tripId: 'volleyball-2026',
-    stopId: 'vb1-1',
+    stopId: 'vb1-3',
     authorTraveler: 'helen',
     visibility: 'shared',
     kind: 'photo',

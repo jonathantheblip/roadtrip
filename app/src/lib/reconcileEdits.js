@@ -76,6 +76,9 @@ function slug(s) {
 
 // "From A to B" / "Before B" / "After A" / "In transit" — same framing
 // the draft builder uses, so a demoted stop's bucket reads consistently.
+// (Import-time surface: names come from the draft being edited, so they
+// always resolve — the album's render-time self-healing lives in
+// photoEntries.groupByStop, which mirrors this exact 4-way voice.)
 function transitTitle(beforeName, afterName) {
   if (beforeName && afterName) return `From ${beforeName} to ${afterName}`
   if (afterName) return `Before ${afterName}`

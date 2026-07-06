@@ -21,6 +21,10 @@
 // normally.
 
 import { stopIsBase, tripImplicitBase, implicitBaseIdForDay, isHomeDay } from './photoMatch.js'
+import { parseStopTime } from './photoBackfill.js'
+import { partsWithDays } from './tripParts.js'
+import { localDateIso, nowMinutesInZone } from './localDate.js'
+import { spanWords } from './evidence.js'
 
 export function flattenPhotoEntries(memories) {
   const out = []
@@ -207,6 +211,98 @@ function suppressHeaderEcho(label, header) {
   return label.trim().toLowerCase() === header.trim().toLowerCase() ? null : label
 }
 
+// ── Self-healing filing (settled rule, live-trip 2026-07-05 + VISION §1) ────
+// "In transit" is never a junk drawer: an in-transit photo files BETWEEN its
+// two stops; without two true (clock-timed) stops it files CHRONOLOGICALLY
+// into its day; only genuinely undateable photos remain at the bottom. A saved
+// bracket (or stopId) can DIE as the plan changes — stop deleted, re-timed,
+// replaced — so placement is re-derived at RENDER time from TODAY's plan and
+// keeps healing as the plan changes (order-independence).
+
+// Sub-day sort slot for a day-anchored loose section ("In transit"/"Unfiled"
+// with no bracketing clock stops): after every planned section of its day (a
+// real day never has 50 stops; planned sections sort by stop index, brackets
+// by index ± 0.5), below the 99 unknown sentinel. The fraction-of-day of the
+// section's FIRST (earliest-captured) entry is added so two same-day loose
+// sections order chronologically — the deterministic tie-break.
+const DAY_ANCHOR_ORDER = 50
+
+// One zone per trip day — the zone of the leg that OWNS the day (leg tz →
+// trip default → null = device-local). Built once per grouping pass from
+// partsWithDays, THE canonical day→part mapping (its clamped windows already
+// settle the shared checkout/arrival day on the ARRIVING leg), so the album
+// never grows a second opinion about which leg a day belongs to. Legacy trips
+// (one derived wrapper) resolve every day to trip.tz / device-local — the
+// pre-composite behavior, byte-identical.
+function buildDayTz(trip) {
+  const byIso = new Map()
+  const tripTz = trip?.tz != null ? trip.tz : null
+  for (const part of partsWithDays(trip)) {
+    const tz = part?.tz != null ? part.tz : tripTz
+    for (const day of part.days || []) {
+      if (day?.isoDate && !byIso.has(day.isoDate)) byIso.set(day.isoDate, tz)
+    }
+  }
+  return { byIso, tripTz }
+}
+
+// The trip day an entry's capture instant belongs to (the VISION one-clock
+// commitment) — { day, iso, tz, wallMin } or null when capturedAt is
+// unparseable or no day claims it. Membership is judged PER-DAY, in the zone
+// of the leg that OWNS the day: a day claims the instant iff the instant's
+// wall date IN THAT DAY'S OWN ZONE equals day.isoDate. That is the exact test
+// the evidence engine runs (photosForDay: localDateIso(at, legTz) ===
+// isoDate), so album day-attribution and the settle card's evidence can never
+// disagree — and it is device-independent by construction. (A provisional leg
+// picked from the DEVICE's calendar is NOT: it filed one photo differently on
+// a Tokyo phone vs a New-York phone and compared Tokyo wall minutes against
+// Honolulu-authored stop times — the C1 half-mirror bug.) Cross-zone edges
+// stay honest: an eastward jump can make two days claim one instant (both
+// calendars contain it) — the first day in trip order wins, identically on
+// every device; a westward dateline seam can leave NO day claiming it
+// (Tokyo's calendar has left its leg, Honolulu's hasn't begun) — genuinely
+// unattributable → the caller's residue path, exactly as photosForDay refuses
+// it for both days. NOTE: photoMatch still bins by a UTC day window at IMPORT
+// time — that is the known parked divergence (healed later by the one-clock
+// work); do not copy its window here.
+function dayForCapture(trip, entry, dayTz) {
+  const ms = Date.parse(entry?.capturedAt || '')
+  if (!Number.isFinite(ms)) return null
+  const d = new Date(ms)
+  for (const day of trip?.days || []) {
+    if (!day?.isoDate) continue
+    const tz = dayTz.byIso.has(day.isoDate) ? dayTz.byIso.get(day.isoDate) : dayTz.tripTz
+    if (localDateIso(d, tz) !== day.isoDate) continue
+    // Wall-clock minutes in the SAME zone that claimed the day, so the in-day
+    // bracket comparison, the chronological slot, and the eyebrow band can
+    // never disagree with the day pick about what "local" means. (All entries
+    // of one day share this zone — the band's zone is a per-day constant.)
+    return { day, iso: day.isoDate, tz, wallMin: nowMinutesInZone(tz, d) }
+  }
+  return null
+}
+
+// A day's clock-timed stops as { stop, order, wallMin }, time-ascending.
+// parseStopTime anchors a stop's "3:45 PM" at the day's UTC midnight, so
+// minutes-from-that-midnight IS the stop's wall-clock time — directly
+// comparable to the photo's leg-local wall minutes above without building a
+// second absolute-time window. Loose labels ('Evening', '') are excluded: the
+// settled rule brackets only between TRUE clock stops (photoMatch's own
+// sortedClockStops rule). `order` is the stop's index in day.stops — the same
+// unit the album's section sort uses — so the ± 0.5 slot arithmetic below
+// reuses the existing convention exactly.
+function clockStopsOf(day) {
+  const midnight = Date.parse(`${day?.isoDate || ''}T00:00:00.000Z`)
+  if (!Number.isFinite(midnight)) return []
+  const out = []
+  ;(day.stops || []).forEach((stop, order) => {
+    const parsed = parseStopTime(stop?.time, day.isoDate)
+    if (parsed.loose || !Number.isFinite(parsed.at)) return
+    out.push({ stop, order, wallMin: (parsed.at - midnight) / 60_000 })
+  })
+  return out.sort((a, b) => a.wallMin - b.wallMin)
+}
+
 // Per-trip grouping — used by PhotosView. Returns an array of
 // { stopKey, stopName, dayLabel, timeLabel, isBase, _dayN, _stopOrder,
 //   entries[] } sorted by day then stop position. `isBase` marks a
@@ -239,11 +335,14 @@ export function groupByStop(entries, trip) {
     }
   }
   // Resolve a between-stops ("from A to B") section's label + position from
-  // its bounding stop ids. Anchors to the BEFORE stop so the section sorts
-  // just after it (order + 0.5); falls back to the AFTER stop at a leading
-  // day edge (order − 0.5, so it sorts just before it). Phrasing matches
-  // reconcileDraft's interstitialTitle so the triage and the album read
-  // identically (migration 007).
+  // its SAVED bounding stop ids. Anchors to the BEFORE stop so the section
+  // sorts just after it (order + 0.5); falls back to the AFTER stop at a
+  // leading day edge (order − 0.5, so it sorts just before it). Phrasing
+  // matches reconcileDraft's interstitialTitle so the triage and the album
+  // read identically (migration 007). Serves the paths where the saved
+  // brackets still describe today's plan; a bracket that DIED is re-derived
+  // in the healing branch below instead of falling through to the bare
+  // "In transit" row this returns.
   function interstitialCtx(it) {
     const beforeCtx = it.before ? stopIndex.get(it.before) : null
     const afterCtx = it.after ? stopIndex.get(it.after) : null
@@ -277,6 +376,14 @@ export function groupByStop(entries, trip) {
   }
 
   const buckets = new Map()
+  // Buckets whose eyebrow carries WHEN instead of a stop clock — the
+  // day-anchored loose sections. Maps bucket key → the leg zone the day pick
+  // used, so the hour band below is computed in the same clock.
+  const banded = new Map()
+  // The per-day zone index for the healing paths, built lazily ONCE per pass:
+  // an album where everything resolves never pays for partsWithDays.
+  let dayTzCache = null
+  const getDayTz = () => (dayTzCache = dayTzCache || buildDayTz(trip))
   for (const entry of entries) {
     // A reconciled interstitial photo keeps stopId = null and carries its
     // "from A to B" identity separately. A real stopId always wins — only a
@@ -287,8 +394,90 @@ export function groupByStop(entries, trip) {
         ? entry.interstitial
         : null
     if (it) {
-      const ic = interstitialCtx(it)
-      const sid = `__interstitial:${it.before || 'start'}__${it.after || 'end'}`
+      const beforeCtx = it.before ? stopIndex.get(it.before) : null
+      const afterCtx = it.after ? stopIndex.get(it.after) : null
+      let sid
+      let ic
+      if (beforeCtx && afterCtx) {
+        // Both saved brackets resolve in today's plan → the saved placement
+        // IS current. Key + render stay byte-identical to the pre-healing
+        // album (G5) — healed same-pair entries below merge into this bucket.
+        sid = `__interstitial:${it.before || 'start'}__${it.after || 'end'}`
+        ic = interstitialCtx(it)
+      } else {
+        // A bracket died (or was never set — the old producer saved both
+        // null). Re-derive placement from the entry's own capture time
+        // against TODAY's plan, in this order:
+        //   1. its leg-local day has clock stops → re-bracket between them;
+        //   2. a surviving saved bracket that doesn't contradict the photo's
+        //      own day → keep today's "Before X"/"After X" render (a live
+        //      stop name beats a bare time band);
+        //   3. a derivable day → anchor chronologically INTO that day;
+        //   4. nothing derivable → the honest bottom residue.
+        const cap = dayForCapture(trip, entry, getDayTz())
+        const clock = cap ? clockStopsOf(cap.day) : []
+        const savedCtx = beforeCtx || afterCtx
+        if (cap && clock.length) {
+          // RE-BRACKET AT RENDER. Same comparison the import matcher uses
+          // (last stop at-or-before wins `before`, first later wins `after`),
+          // but in leg-local wall minutes, against the CURRENT stops.
+          let b = null
+          let a = null
+          for (const c of clock) {
+            if (c.wallMin <= cap.wallMin) b = c
+            else {
+              a = c
+              break
+            }
+          }
+          // Phrasing mirrors interstitialCtx / reconcileDraft.interstitialTitle
+          // so a healed section reads exactly like a saved one.
+          const bName = b?.stop?.name || null
+          const aName = a?.stop?.name || null
+          let label
+          if (bName && aName) label = `From ${bName} to ${aName}`
+          else if (aName) label = `Before ${aName}`
+          else if (bName) label = `After ${bName}`
+          else label = 'In transit'
+          // Keyed by the DERIVED (live) pair — merges with a still-valid
+          // saved bucket of the same pair, never with another day's orphans.
+          sid = `__interstitial:${b ? b.stop.id : 'start'}__${a ? a.stop.id : 'end'}`
+          ic = {
+            label,
+            dayN: cap.day.n ?? 99,
+            // The existing slot arithmetic: just after the before-stop, or
+            // just before the after-stop at a leading day edge.
+            stopOrder: b ? b.order + 0.5 : a.order - 0.5,
+            dayLabel: cap.day.date || cap.day.title || '',
+          }
+        } else if (savedCtx && (!cap || savedCtx.day?.isoDate === cap.iso)) {
+          // ONE saved bracket still stands and the photo's own day (when
+          // derivable) agrees with it → today's exact one-bracket render.
+          // Kept deliberately: "Before First Stop" on a clock-less day is
+          // more informative than a bare "In transit" band.
+          sid = `__interstitial:${it.before || 'start'}__${it.after || 'end'}`
+          ic = interstitialCtx(it)
+        } else if (cap) {
+          // DAY-ANCHORED CHRONOLOGICAL FALLBACK: no true clock stops to file
+          // between → the photo files into its day, ordered by its own hour;
+          // the eyebrow gets the day + an hour band (computed per-bucket
+          // below). Day-scoped key: two days' orphans must never merge into
+          // one bucket with the first entry's metadata poisoning the header.
+          sid = `__interstitial:${cap.iso}:start__end`
+          ic = {
+            label: 'In transit',
+            dayN: cap.day.n ?? 99,
+            stopOrder: DAY_ANCHOR_ORDER + cap.wallMin / 1440,
+            dayLabel: cap.day.date || cap.day.title || '',
+          }
+          if (!banded.has(sid)) banded.set(sid, { tz: cap.tz })
+        } else {
+          // TRUE RESIDUE — undateable AND unbracketable. One shared bottom
+          // bucket (never one per dead-id pair), honest empty eyebrow.
+          sid = '__interstitial:start__end'
+          ic = { label: 'In transit', dayN: 99, stopOrder: 99, dayLabel: '' }
+        }
+      }
       if (!buckets.has(sid)) buckets.set(sid, [])
       buckets.get(sid).push({
         ...entry,
@@ -312,14 +501,47 @@ export function groupByStop(entries, trip) {
       })
       continue
     }
-    const sid = entry.stopId || '__unassigned'
+    const ctx = stopIndex.get(entry.stopId || '__unassigned') || null
+    if (!ctx) {
+      // THE UNFILED DRAWER, day-anchored. A stopId that resolves to nothing
+      // (the stop was deleted / edited into a new id) and a plain unassigned
+      // photo are the same thing to the family: a photo with no place. With a
+      // dateable capture it files chronologically into its day — one "Unfiled"
+      // section per day (never one per dead id), same day + hour-band eyebrow
+      // as the in-transit fallback. Only a photo whose date lands outside
+      // every trip day (or doesn't parse) stays in the true bottom residue.
+      const cap = dayForCapture(trip, entry, getDayTz())
+      const sid = cap ? `__unfiled:${cap.iso}` : '__unassigned'
+      if (!buckets.has(sid)) buckets.set(sid, [])
+      if (cap && !banded.has(sid)) banded.set(sid, { tz: cap.tz })
+      buckets.get(sid).push({
+        ...entry,
+        stopName: 'Unfiled',
+        stopAddress: null,
+        // No stop to inherit a label from — a stored label or raw coords
+        // only (same chain the pre-healing unfiled path used).
+        locationLabel: suppressHeaderEcho(
+          entry.exifLocation ||
+            (entry.exifLat != null && entry.exifLng != null
+              ? `${entry.exifLat.toFixed(3)}, ${entry.exifLng.toFixed(3)}`
+              : null),
+          'Unfiled'
+        ),
+        _dayN: cap ? cap.day.n ?? 99 : 99,
+        _stopOrder: cap ? DAY_ANCHOR_ORDER + cap.wallMin / 1440 : 99,
+        _dayLabel: cap ? cap.day.date || cap.day.title || '' : '',
+        _timeLabel: '',
+        _isBase: false,
+      })
+      continue
+    }
+    const sid = entry.stopId
     if (!buckets.has(sid)) buckets.set(sid, [])
-    const ctx = stopIndex.get(sid) || null
     // A base (a place you're staying) renders as an "At [place]" section: it
     // carries an `isBase` flag and drops the clock time, since it's a place,
     // not a timed event.
-    const isBase = stopIsBase(ctx?.stop)
-    const stopName = ctx?.stop?.name || 'Unfiled'
+    const isBase = stopIsBase(ctx.stop)
+    const stopName = ctx.stop?.name || 'Unfiled'
     buckets.get(sid).push({
       ...entry,
       stopName,
@@ -363,11 +585,23 @@ export function groupByStop(entries, trip) {
       (a.capturedAt || '') < (b.capturedAt || '') ? -1 : 1
     )
     const first = list[0]
+    // A day-anchored loose section carries WHEN instead of a stop clock: the
+    // eyebrow reads "JUL 2 · 2–5" — the record's spanWords hour voice (bare
+    // 12-hour, "around N" when the span collapses), spanning the section's
+    // first→last capture in the same leg zone the day pick used. Two loose
+    // sections sharing a day therefore read distinctly by their bands.
+    let timeLabel = first?._timeLabel || ''
+    const band = banded.get(stopKey)
+    if (band && first) {
+      const startMs = Date.parse(first.capturedAt || '')
+      const endMs = Date.parse(list[list.length - 1].capturedAt || '')
+      timeLabel = spanWords({ startMs, endMs }, { tz: band.tz }) || ''
+    }
     groups.push({
       stopKey,
       stopName: first?.stopName || 'Unfiled',
       dayLabel: first?._dayLabel || '',
-      timeLabel: first?._timeLabel || '',
+      timeLabel,
       isBase: first?._isBase || false,
       _dayN: first?._dayN ?? 99,
       _stopOrder: first?._stopOrder ?? 99,
