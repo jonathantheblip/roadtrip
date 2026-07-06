@@ -81,3 +81,19 @@ export function readMemoryPushResult(res) {
   }
   return { status: 'unconfigured', updatedAt: null, serverRow: null }
 }
+
+// Newest SERVER stamp (epoch ms) across a pulled batch — the live channel's
+// delta cursor (A-3). Pulled rows carry the worker-issued updatedAt as an ISO
+// string (derived from the row's epoch-ms updated_at, so Date.parse
+// round-trips it exactly). Rows without a parseable stamp are skipped; an
+// empty/invalid batch returns null so the caller can tell "no stamp learned"
+// from epoch 0.
+export function latestServerStamp(records) {
+  let max = null
+  if (!Array.isArray(records)) return max
+  for (const r of records) {
+    const t = Date.parse(r?.updatedAt)
+    if (Number.isFinite(t) && (max == null || t > max)) max = t
+  }
+  return max
+}

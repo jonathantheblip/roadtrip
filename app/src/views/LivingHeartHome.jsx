@@ -23,7 +23,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight, ChevronDown, ChevronUp, Play, BookOpen, Sparkles, Share2, Compass, Plane, Ticket, Pencil } from 'lucide-react'
 import { fetchStoredWeave } from '../lib/weave'
 import { WeaveReady } from '../components/EntryCues'
-import { listMemoriesForTrip } from '../lib/memoryStore'
+import { listMemoriesForTrip, subscribeMemoriesChanged } from '../lib/memoryStore'
 import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
 import { flightSegments, flightSummaryLine } from '../lib/flightSegments'
@@ -282,7 +282,14 @@ export function LivingHeartHome({
   const sun = useMemo(() => (coords ? sunTimes(new Date(), coords.lat, coords.lng) : null), [coords?.lat, coords?.lng])
   const heroUrl = (!heroErr && (trip.heroImage || trip.heroResolved?.url)) || null
 
-  const mems = useMemo(() => listMemoriesForTrip(trip.id, traveler), [trip.id, traveler])
+  // memTick: the home's memory read was frozen for the whole mount — even a
+  // foreground pull's merge never repainted the photo wall. The live channel
+  // (A-3) bumps this when a remote change lands, so the wall/beats stay honest
+  // while the family sits on the home.
+  const [memTick, setMemTick] = useState(0)
+  useEffect(() => subscribeMemoriesChanged(() => setMemTick((t) => t + 1)), [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const mems = useMemo(() => listMemoriesForTrip(trip.id, traveler), [trip.id, traveler, memTick])
   const sorted = useMemo(() => [...mems].sort((a, b) => toEpochMs(b.createdAt) - toEpochMs(a.createdAt)), [mems])
   const photoUrls = useMemo(() => {
     const cap = isAfter ? 12 : 6 // an after-trip keepsake shows a fuller wall

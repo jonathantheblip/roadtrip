@@ -839,17 +839,23 @@ function scheduleMirror(op) {
 // the 409 recovery, so a stale replay could re-impose an older target over the
 // user's newer move. On the chain a replay runs only between mirror ops, and
 // the per-intent live re-read below sees every settle that ran ahead of it.
-let memoryDrainQueued = false
+let memoryDrainRun = null
 export function drainMemorySyncQueue({ sync } = {}) {
-  if (memoryDrainQueued) return Promise.resolve({ settled: 0, remaining: memoryQueue.count() })
-  memoryDrainQueued = true
+  // Re-entry returns the IN-FLIGHT drain, never a fresh already-resolved
+  // promise. The callers that await this to enforce push-then-pull — the A-3
+  // delta beat, runSync, Settings' runPull — must actually WAIT for the
+  // pushes: an instant resolve here let their pull race the still-pending
+  // POSTs, quietly voiding the ordering they document. (A-3 adversarial
+  // review, finding 1.)
+  if (memoryDrainRun) return memoryDrainRun
   const run = mirrorChain.then(async () => {
     try {
       return await drainMemoryQueueNow(sync)
     } finally {
-      memoryDrainQueued = false
+      memoryDrainRun = null
     }
   })
+  memoryDrainRun = run
   mirrorChain = run.then(
     () => undefined,
     () => undefined
@@ -938,6 +944,29 @@ async function drainMemoryQueueNow(injected) {
   return { settled, remaining: memoryQueue.count() }
 }
 
+// ── Remote-arrival signal (A-3 live channel) ─────────────────────────────
+// Background delta pulls merge remote memories every heartbeat, but the open
+// views key their reads on a LOCAL tick (a save, a finished import) — a
+// background merge would land in localStorage and never repaint the album
+// someone is looking at. Views subscribe here to learn "the store just
+// changed underneath you." Fired from mergeFromRemote only: local mutations
+// already drive their own ticks, and doubling their signal would re-render
+// twice for one change.
+const changeListeners = new Set()
+export function subscribeMemoriesChanged(fn) {
+  changeListeners.add(fn)
+  return () => changeListeners.delete(fn)
+}
+function notifyMemoriesChanged() {
+  for (const fn of changeListeners) {
+    try {
+      fn()
+    } catch {
+      /* a listener must never break the merge */
+    }
+  }
+}
+
 // Merge a batch of remote memories into the local store. Last-write-
 // wins by updatedAt. Records with `deletedAt` set are tombstones — the
 // Worker soft-deletes so cross-device pulls can learn about deletions;
@@ -1000,6 +1029,11 @@ export function mergeFromRemote(remoteRecords) {
   for (const [author, bucket] of privateBuckets) {
     writeJson(PRIVATE_KEY(author), Array.from(bucket.values()))
   }
+  // `added` counts every applied change — new rows, LWW-won updates, AND
+  // tombstone removals — so this fires exactly when a view's picture of the
+  // store went stale, and stays silent on a no-op merge (every beat whose
+  // delta was already applied).
+  if (added > 0) notifyMemoriesChanged()
   return added
 }
 

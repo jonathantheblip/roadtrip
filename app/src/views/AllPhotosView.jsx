@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronsLeft, Play, Image as ImageIcon } from 'lucide-react'
-import { listAllLocalMemories } from '../lib/memoryStore'
+import { listAllLocalMemories, subscribeMemoriesChanged } from '../lib/memoryStore'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { groupAcrossTrips } from '../lib/photoEntries'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
@@ -76,6 +76,9 @@ const PLAYPILL = {
 
 export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
   const [memoryTick, setMemoryTick] = useState(0)
+  // Repaint when the live channel merges another device's change while this
+  // cross-trip album is open (A-3).
+  useEffect(() => subscribeMemoriesChanged(() => setMemoryTick((t) => t + 1)), [])
   const allMemories = useMemo(
     () => listAllLocalMemories(traveler),
     // eslint-disable-next-line react-hooks/exhaustive-deps

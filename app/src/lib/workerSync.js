@@ -254,14 +254,24 @@ export async function draftCover(context) {
 
 // ─── Memories ─────────────────────────────────────────────────────────
 
-export async function pullAll({ asTraveler } = {}) {
+export async function pullAll({ asTraveler, since } = {}) {
   if (!isWorkerConfigured()) return []
   try {
     // `asTraveler` (optional) authenticates the pull AS a specific person — used by
     // the conflict-recovery re-pull so a private / surprise memory is fetched under
     // its real AUTHOR (getMemories masks + filters per identity). Defaults to the
     // active traveler (every existing caller), unchanged.
-    const r = await workerFetch('/memories', {}, { asTraveler })
+    //
+    // `since` (optional, server epoch ms) turns the pull into a DELTA: the worker
+    // returns only rows with updated_at > since — including tombstones, which is
+    // what makes a delta trustworthy for deletes (the worker guarantees a
+    // tombstone's stamp never regresses; see memory-tombstone-race.test.js).
+    // Omitted (every pre-A-3 caller) → the full pull, byte-identical behavior.
+    const path =
+      Number.isFinite(since) && since > 0
+        ? `/memories?since=${Math.floor(since)}`
+        : '/memories'
+    const r = await workerFetch(path, {}, { asTraveler })
     const arr = await r.json()
     // NOTE (2026-07-01): the worker emits createdAt/updatedAt as ISO strings
     // (`new Date(r.created_at).toISOString()`) — deliberately NOT normalized to

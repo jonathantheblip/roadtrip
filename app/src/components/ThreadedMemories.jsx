@@ -5,6 +5,7 @@ import {
   listMemoriesForStop,
   saveMemory,
   deleteMemory,
+  subscribeMemoriesChanged,
 } from '../lib/memoryStore'
 import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
@@ -63,6 +64,10 @@ export function ThreadedMemories({ trip, stop, traveler }) {
 
   useEffect(() => {
     refresh()
+    // Re-read when the live channel merges another device's change while this
+    // thread is open (A-3) — a family note lands mid-conversation, not on the
+    // next visit.
+    return subscribeMemoriesChanged(refresh)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stop.id, traveler])
 

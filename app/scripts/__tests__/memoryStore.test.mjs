@@ -614,3 +614,97 @@ test('saveMemory: stopIdIfNew never overrides an existing record and an explicit
   saveMemory({ id: 'sp4', tripId: 't1', stopId: 'explicit-wins', stopIdIfNew: 'ignored', authorTraveler: 'helen', visibility: 'shared', kind: 'note', text: 'x' })
   assert.equal(sharedById('sp4').stopId, 'explicit-wins')
 })
+
+// ── subscribeMemoriesChanged — the A-3 remote-arrival signal ───────────────
+
+test('mergeFromRemote notifies subscribers when it changed the store (add / update / tombstone)', async () => {
+  const { subscribeMemoriesChanged } = await import('../../src/lib/memoryStore.js')
+  let fired = 0
+  const unsub = subscribeMemoriesChanged(() => { fired += 1 })
+  try {
+    mergeFromRemote([remoteMem('m-live-1')])
+    assert.equal(fired, 1, 'a new remote row notifies')
+    mergeFromRemote([remoteMem('m-live-1', { updatedAt: '2026-05-23T12:00:00.000Z', caption: 'edited' })])
+    assert.equal(fired, 2, 'a LWW-won update notifies')
+    mergeFromRemote([remoteMem('m-live-1', { updatedAt: '2026-05-23T13:00:00.000Z', deletedAt: '2026-05-23T13:00:00.000Z' })])
+    assert.equal(fired, 3, 'a tombstone removal notifies')
+  } finally {
+    unsub()
+  }
+})
+
+test('mergeFromRemote stays SILENT on a no-op merge — an idle heartbeat must not repaint open views', async () => {
+  const { subscribeMemoriesChanged } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('m-quiet')])
+  let fired = 0
+  const unsub = subscribeMemoriesChanged(() => { fired += 1 })
+  try {
+    // The exact same row again — the overlap window re-delivers recent rows
+    // every beat; LWW refuses them, and no listener may fire.
+    mergeFromRemote([remoteMem('m-quiet')])
+    assert.equal(fired, 0, 'an already-applied delta is silent')
+    mergeFromRemote([])
+    assert.equal(fired, 0, 'an empty batch is silent')
+  } finally {
+    unsub()
+  }
+})
+
+test('a throwing listener never breaks the merge (or the other listeners)', async () => {
+  const { subscribeMemoriesChanged } = await import('../../src/lib/memoryStore.js')
+  let heard = false
+  const unsubBad = subscribeMemoriesChanged(() => { throw new Error('bad listener') })
+  const unsubGood = subscribeMemoriesChanged(() => { heard = true })
+  try {
+    mergeFromRemote([remoteMem('m-guarded')])
+    assert.equal(heard, true, 'the merge survives and later listeners still hear it')
+    assert.deepEqual(listMemoriesForTrip('t1', 'helen').map((m) => m.id).includes('m-guarded'), true)
+  } finally {
+    unsubBad()
+    unsubGood()
+  }
+})
+
+test('unsubscribe stops the signal', async () => {
+  const { subscribeMemoriesChanged } = await import('../../src/lib/memoryStore.js')
+  let fired = 0
+  const unsub = subscribeMemoriesChanged(() => { fired += 1 })
+  unsub()
+  mergeFromRemote([remoteMem('m-unsub')])
+  assert.equal(fired, 0)
+})
+
+test('drainMemorySyncQueue: re-entry returns the IN-FLIGHT drain — an awaiting caller really waits for the pushes (push-then-pull)', async () => {
+  const { drainMemorySyncQueue } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('m-inflight')])
+  localStorage.setItem(
+    'rt_memories_unsynced_v1',
+    JSON.stringify([{ kind: 'save', memoryId: 'm-inflight', author: 'helen', at: 1748000000000 }])
+  )
+  let pushes = 0
+  let release
+  const gate = new Promise((r) => { release = r })
+  const sync = {
+    isWorkerConfigured: () => true,
+    hasCredential: () => true,
+    pushMemory: async (rec) => {
+      pushes += 1
+      await gate // the push is mid-flight until the test releases it
+      return { ...rec, updatedAt: new Date().toISOString() }
+    },
+  }
+  const p1 = drainMemorySyncQueue({ sync })
+  const p2 = drainMemorySyncQueue({ sync })
+  // The old early-return handed back a FRESH resolved promise — the second
+  // caller (the A-3 beat, runSync, Settings runPull) then pulled while the
+  // first drain's POST was still in the air, quietly voiding push-then-pull.
+  assert.equal(p2, p1, 're-entry hands back the in-flight run, not a fresh resolved promise')
+  let p2Resolved = false
+  p2.then(() => { p2Resolved = true })
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(p2Resolved, false, 'the second caller is actually waiting on the in-flight push')
+  release()
+  const out = await p2
+  assert.equal(pushes, 1, 'one drain ran, once — re-entry never doubles the work')
+  assert.equal(out.settled, 1, 'the stranded intent settled')
+})

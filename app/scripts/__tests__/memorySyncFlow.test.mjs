@@ -65,3 +65,40 @@ test('readMemoryPushResult: the honest per-item classification', () => {
   assert.equal(row.updatedAt, '2026-07-05T10:00:00.000Z')
   assert.equal(row.serverRow.stopId, 's1', 'the stored row rides out for the refusal-adoption seam')
 })
+
+// ── latestServerStamp — the A-3 delta cursor ──────────────────────────────
+
+const { latestServerStamp } = await import('../../src/lib/memorySyncFlow.js')
+
+test('latestServerStamp: newest ISO stamp wins, returned as epoch ms', () => {
+  const rows = [
+    { updatedAt: '2026-07-06T10:00:00.000Z' },
+    { updatedAt: '2026-07-06T12:30:00.000Z' },
+    { updatedAt: '2026-07-05T23:59:59.000Z' },
+  ]
+  assert.equal(latestServerStamp(rows), Date.parse('2026-07-06T12:30:00.000Z'))
+})
+
+test('latestServerStamp: unparseable/missing stamps are skipped, not poisoning the cursor', () => {
+  const rows = [
+    { updatedAt: 'not-a-date' },
+    {},
+    null,
+    { updatedAt: '2026-07-06T08:00:00.000Z' },
+  ]
+  assert.equal(latestServerStamp(rows), Date.parse('2026-07-06T08:00:00.000Z'))
+})
+
+test('latestServerStamp: empty or invalid batch → null (distinct from epoch 0), so a failed pull can never fake a baseline', () => {
+  assert.equal(latestServerStamp([]), null)
+  assert.equal(latestServerStamp(undefined), null)
+  assert.equal(latestServerStamp([{ updatedAt: 'garbage' }]), null)
+})
+
+test('latestServerStamp: round-trips the worker stamp exactly (epoch → ISO → epoch)', () => {
+  // The worker stamps rows with Date.now() and emits toISOString(); the cursor
+  // must land back on the same millisecond or a `updated_at > since` delta
+  // would re-deliver (harmless) or skip (fatal) the boundary row.
+  const epoch = 1783440000123
+  assert.equal(latestServerStamp([{ updatedAt: new Date(epoch).toISOString() }]), epoch)
+})

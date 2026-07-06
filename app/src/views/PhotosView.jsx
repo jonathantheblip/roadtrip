@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Image as ImageIcon, ImagePlus, RefreshCw, CloudOff, MapPin } from 'lucide-react'
-import { listMemoriesForTrip } from '../lib/memoryStore'
+import { listMemoriesForTrip, subscribeMemoriesChanged } from '../lib/memoryStore'
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
@@ -40,6 +40,10 @@ import { importToastProps } from '../lib/importToast'
 export function PhotosView({ trip, traveler, onBack, tripsApi }) {
   // Re-read memories when this view-render flips (e.g. after a save).
   const [memoryTick, setMemoryTick] = useState(0)
+  // …and when the live channel merges another device's change while this
+  // album is open (A-3) — without this, a background merge lands in storage
+  // but the album someone is looking at never repaints.
+  useEffect(() => subscribeMemoriesChanged(() => setMemoryTick((t) => t + 1)), [])
 
   // Bulk importer (Stage 1). When the user picks a library batch, the
   // files land here and we hand off to PhotoBackfillTriage full-screen;

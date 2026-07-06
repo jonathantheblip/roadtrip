@@ -55,6 +55,7 @@ import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer, isTripMaskedFrom } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover, uploadAssetBlob } from './lib/workerSync'
+import { latestServerStamp } from './lib/memorySyncFlow'
 import { keepDay, applyDayRecord, mergeKeepDrafts, addEntryStamp, queuePendingNote, resolvePendingNote, normalizeRecordEntry } from './lib/dayRecord'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
@@ -441,6 +442,19 @@ export default function App() {
     let drainInFlight = false
     let cancelled = false
     const SYNC_THROTTLE_MS = 5000
+    // ── A-3 live memory channel ──────────────────────────────────────────
+    // The delta cursor: the newest SERVER updated_at (epoch ms) this session
+    // has pulled. null until the first FULL pull succeeds — deltas only ever
+    // run against a known baseline. Kept in-memory on purpose: every cold
+    // load starts with the full pull anyway, so persisting the cursor would
+    // only add a staleness class.
+    let memCursor = null
+    let memBeatInFlight = false
+    // Overlap re-covers the upsert's stamp→write window (two pushes can
+    // commit in the opposite order of their stamps; the gap is in-process
+    // awaits, well under a second — 5s covers it ~50×). Re-delivered rows are
+    // no-op merges (LWW), so the only cost is a few redundant rows per beat.
+    const MEM_DELTA_OVERLAP_MS = 5000
     // Reconnect backstop. iOS Safari (standalone PWA) has NO Background Sync
     // (reg.sync is undefined → registerBackgroundSync no-ops) and fires the
     // `online` event unreliably — sometimes not at all, sometimes before
@@ -465,10 +479,66 @@ export default function App() {
         const remote = await pullAll()
         if (cancelled) return
         if (remote.length > 0) mergeFromRemote(remote)
+        // A clean full pull (re)sets the delta baseline. `.errors` marks a
+        // failed pull (it returns [] rather than throwing) — never advance
+        // the cursor on one, or the next delta would skip everything that
+        // landed while we couldn't hear it. Math.max: the cursor never goes
+        // backward, even if a slow full pull lands after a fresher delta.
+        if (!remote.errors) {
+          memCursor = Math.max(memCursor ?? 0, latestServerStamp(remote) ?? 0)
+        }
         await tripsApi.refresh?.()
       } catch (err) {
         // Worker unconfigured / offline — fine, stay on local cache.
         console.warn('autoSync failed', err)
+      }
+    }
+
+    // The 20-second heartbeat's memory half (A-3). The full pullAll above runs
+    // only on cold load + foregrounding; re-running it every beat would re-ship
+    // the family's entire multi-year archive every 20 seconds. The beat instead
+    // pulls a `?since=` DELTA — normally zero rows, a handful when another
+    // device just added/moved/deleted something — so a photo, a caption, a
+    // move, or a delete made on one phone reaches an open app within ~a beat
+    // instead of on its next launch. Tombstones ride the same delta (the worker
+    // guarantees their stamps never regress — the race fix this channel is
+    // gated on), so deletes propagate live too.
+    async function runMemoryBeat() {
+      if (memBeatInFlight || cancelled) return
+      memBeatInFlight = true
+      try {
+        // Same push-then-pull order runSync enforces: this device's own queued
+        // edit must reach the worker before the pull, or the pull shadows it
+        // for a beat.
+        await drainMemorySyncQueue()
+        if (cancelled) return
+        if (memCursor == null) {
+          // No baseline yet — the cold-load full pull failed (offline start)
+          // or hasn't finished. Try the full pull here so an offline-started
+          // session still gains the live channel once the network returns;
+          // the first success seeds the cursor and every later beat is a
+          // delta. This is at most one full pull per recovery, not per beat.
+          const remote = await pullAll()
+          if (cancelled || remote.errors) return
+          if (remote.length > 0) mergeFromRemote(remote)
+          // Math.max: a foreground runSync can complete between this branch's
+          // null-check and here — never let the slower pull lower the cursor.
+          memCursor = Math.max(memCursor ?? 0, latestServerStamp(remote) ?? 0)
+          return
+        }
+        const since = Math.max(0, memCursor - MEM_DELTA_OVERLAP_MS)
+        const remote = await pullAll({ since })
+        if (cancelled || remote.errors) return
+        if (remote.length > 0) {
+          mergeFromRemote(remote)
+          memCursor = Math.max(memCursor, latestServerStamp(remote) ?? 0)
+        }
+      } catch (err) {
+        // Offline / worker hiccup — the cursor didn't advance, so the next
+        // beat re-asks for the same window. Nothing is ever skipped.
+        console.warn('memory beat failed', err)
+      } finally {
+        memBeatInFlight = false
       }
     }
 
@@ -527,7 +597,13 @@ export default function App() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener?.('message', onSwMessage)
     }
-    const drainInterval = setInterval(runDrain, DRAIN_INTERVAL_MS)
+    // One interval, two halves: the upload/intent drain (push) and the memory
+    // delta beat (pull). Each is self-guarded against re-entrancy, so a slow
+    // pass simply skips a beat rather than stacking.
+    const drainInterval = setInterval(() => {
+      runDrain()
+      runMemoryBeat()
+    }, DRAIN_INTERVAL_MS)
 
     return () => {
       cancelled = true
