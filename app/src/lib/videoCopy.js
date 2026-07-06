@@ -52,6 +52,16 @@ const COPY = {
       n === 1 ? 'This one’s sound couldn’t come along.' : `${n} clips’ sound couldn’t come along.`,
     soundLostBody: 'The video’s saved — the original in your camera roll still has its sound.',
     soundChip: 'no sound',
+    // "add it again" — the quiet author-only pathway on a saved sound:'lost'
+    // clip. The new import pipeline carries sound now (mp4Audio packet copy),
+    // so re-picking the same camera-roll video brings its sound along. Never a
+    // nag or a banner — just available in the lightbox, in each person's voice.
+    // A re-pick that loses its sound AGAIN never replaces anything; the honest
+    // line says so once, and the door simply stays open.
+    reAddChip: 'Add it again — the sound will come along this time',
+    reAddBusy: 'Adding it again…',
+    reAddStillLost: 'The sound couldn’t come along this time either. Nothing changed — your video’s still here.',
+    reAddFailed: 'That didn’t work this time. Nothing changed — your video’s still here.',
     // saved
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     // tile + pill
@@ -80,6 +90,10 @@ const COPY = {
     soundLost: (n) => (n === 1 ? 'One came through without its sound.' : `${n} came through without their sound.`),
     soundLostBody: 'Video’s in. The camera-roll original keeps the sound.',
     soundChip: 'no sound',
+    reAddChip: 'Add it again — the sound comes along now',
+    reAddBusy: 'Running it…',
+    reAddStillLost: 'Still no sound that time. The saved one stays as-is.',
+    reAddFailed: 'Didn’t take. The saved one stays as-is.',
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     tileWay: 'in the outbox',
     tileStuck: 'stuck',
@@ -106,6 +120,10 @@ const COPY = {
     soundLost: (n) => (n === 1 ? 'this one’s sound couldn’t come along.' : `${n} clips’ sound couldn’t come along.`),
     soundLostBody: 'the video’s saved — the one on your phone still has its sound.',
     soundChip: 'no sound',
+    reAddChip: 'add it again — the sound will come along this time',
+    reAddBusy: 'adding it again…',
+    reAddStillLost: 'the sound couldn’t come along this time either. nothing changed — your video’s still here.',
+    reAddFailed: 'that didn’t work this time. nothing changed — your video’s still here.',
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     tileWay: 'on its way',
     tileStuck: 'stuck — tap',
@@ -137,6 +155,12 @@ const COPY = {
     soundLost: null,
     soundLostBody: null,
     soundChip: null,
+    // …and never the "add it again" door either (belt: the lens gate already
+    // excludes him even as an author — a null chip is the second latch).
+    reAddChip: null,
+    reAddBusy: null,
+    reAddStillLost: null,
+    reAddFailed: null,
     savedSize: (bytes) => `· ${fmtSize(bytes)}`,
     tileWay: 'saving…',
     tileStuck: 'saving…', // never a scary state for Rafa

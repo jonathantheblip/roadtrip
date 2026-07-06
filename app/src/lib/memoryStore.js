@@ -1295,6 +1295,147 @@ export function updateMemoryPoster(memoryId, posterKey, posterUrl) {
   return null
 }
 
+// ── "Add it again with sound" — in-place video-ref replacement ─────────────
+//
+// Four stored videos are permanently silent (ref.sound === 'lost'): their
+// source HAD audio the old encode couldn't keep. The new import pipeline
+// carries sound, so the author can re-pick the same camera-roll video and the
+// fresh upload REPLACES the ref in place — same memory, same moment, new
+// bytes. The record's identity is never touched: caption, stop filing (and
+// its stopProv provenance seam), reactions, visibility/surprise fields, and
+// capturedAt all ride the untouched record; only the matching ref's stored-
+// object fields swap.
+//
+// CAPTURE IDENTITY CHOICE (deliberate, documented): the replacement is the
+// SAME moment, so the ORIGINAL ref's capturedAt is kept even if the re-picked
+// file's own metadata differs slightly (re-encodes and camera-roll exports
+// drift by seconds). The swap therefore STRIPS any capturedAt the caller's
+// `next` might carry — the replacement never proposes its own capture time.
+// Everything else the old ref carried but `next` doesn't name (lat/lng, a
+// locationLabel — and the OLD posterKey/posterUrl when the new poster upload
+// failed, so the tile never goes blank while posterRetry heals it) survives
+// via the spread merge.
+
+// PURE: swap ONE video ref (identified by its stored R2 key) for its
+// replacement across a record's photo containers — photoRefs[] (+ the
+// photoRef back-compat mirror), the legacy single photoRef, and an E4
+// heterogeneous `pieces` moment (kind-guarded: the worker serializes from
+// `pieces` first, so a composed moment's copy must swap there too or the
+// replacement dies on the round-trip). Idempotent: a record already carrying
+// the replacement key answers replaced:false and is returned untouched, so a
+// re-applied mirror can never double-swap. No I/O — unit-tested directly.
+export function replaceVideoRefInRecord(record, { refKey, next } = {}) {
+  if (!record || typeof record !== 'object') return { record, replaced: false }
+  if (!refKey || typeof refKey !== 'string') return { record, replaced: false }
+  if (!next || typeof next !== 'object' || typeof next.key !== 'string' || !next.key) {
+    return { record, replaced: false }
+  }
+  const carriesNew = (r) => !!r && typeof r === 'object' && r.key === next.key
+  if (
+    carriesNew(record.photoRef) ||
+    record.photoRefs?.some?.(carriesNew) ||
+    record.pieces?.some?.(carriesNew)
+  ) {
+    return { record, replaced: false } // already applied — never double-swap
+  }
+  // The capture-identity choice above: the replacement never brings its own
+  // capturedAt; the original ref's stays (or its absence stays — the memory-
+  // level capturedAt governs the album either way).
+  const { capturedAt: _droppedCapturedAt, ...swap } = next
+  const isVideoRef = (r) =>
+    !!r &&
+    typeof r === 'object' &&
+    (r.kind === 'video' ||
+      (typeof r.mime === 'string' && r.mime.startsWith('video/')) ||
+      typeof r.posterKey === 'string' ||
+      typeof r.posterUrl === 'string')
+  let replaced = false
+  const patchRef = (r) => {
+    if (!isVideoRef(r) || r.key !== refKey) return r
+    replaced = true
+    return { ...r, ...swap }
+  }
+  const patchPiece = (p) => {
+    // Kind-guarded like preserveLocalPhotoMeta's pieces pass — a key collision
+    // across kinds must never graft video fields onto a photo/voice/note piece.
+    if (!p || p.kind !== 'video' || p.key !== refKey) return p
+    replaced = true
+    return { ...p, ...swap }
+  }
+  const out = { ...record }
+  if (Array.isArray(record.pieces)) out.pieces = record.pieces.map(patchPiece)
+  if (Array.isArray(record.photoRefs) && record.photoRefs.length) {
+    out.photoRefs = record.photoRefs.map(patchRef)
+    // Keep the back-compat mirror in step (same rule as removePhotoFromRecord):
+    // readers that still expect the single field must see the swapped ref when
+    // the video was photoRefs[0].
+    out.photoRef = out.photoRefs[0]
+  } else if (record.photoRef) {
+    out.photoRef = patchRef(record.photoRef)
+  }
+  return replaced ? { record: out, replaced: true } : { record, replaced: false }
+}
+
+// The 409 reapply for a swap (exported for unit tests, like moveReapply): on a
+// conflict, re-apply ONLY this replacement onto the FRESH server row — a
+// caption or reaction another device changed meanwhile must ride fresh, never
+// be clobbered by our stale copy. Returning null = "fresh already satisfies
+// (or no longer holds) this video" → the recovery adopts fresh and pushes
+// nothing: a fresh row that already carries the new key was swapped by an
+// earlier attempt; a fresh row missing the OLD key had the video removed (or
+// re-replaced) elsewhere, and forcing our copy back would resurrect a deleted
+// photo. In that adopt-fresh case the uploaded replacement becomes an orphaned
+// R2 object — same orphan class as every replaced original (see
+// replaceMemoryVideoRef below); worker-side cleanup is deliberately not built.
+export function replaceVideoRefReapply(refKey, next) {
+  return (fresh) => {
+    const { record: r, replaced } = replaceVideoRefInRecord(fresh, { refKey, next })
+    return replaced ? { ...r, updatedAt: new Date().toISOString() } : null
+  }
+}
+
+// Swap a stored video's ref in place on a memory (the author-only "add it
+// again with sound" flow — the caller gates authorship; the worker enforces
+// it too). Finds the record in the shared zone, else any private bucket
+// (mirrors updateMemoryPoster's by-id search), applies the pure swap, and
+// re-mirrors with the honest-sync pattern: local write + queued mirror whose
+// 409 reapply survives conflicts. A failed mirror queues a plain 'save'
+// intent (scheduleMirror's default) — sufficient because a save replay pushes
+// the CURRENT local record, and the swapped ref rides the record itself.
+//
+// THE REPLACED R2 OBJECT (the silent .mp4, and its poster once a new one
+// lands) IS ORPHANED BY DESIGN: nothing references it after the swap, and no
+// deletion is issued — worker-side R2 cleanup is out of scope for this flow.
+// Orphan class: "replaced-video-asset" (a future sweep can find keys no
+// memory row references).
+export function replaceMemoryVideoRef(memoryId, { refKey, next } = {}) {
+  if (!memoryId || !refKey || !next?.key) return { status: 'not-found' }
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    if (list[idx].masked) return { status: 'not-found' } // never patch a masked projection
+    const { record: patched, replaced } = replaceVideoRefInRecord(list[idx], { refKey, next })
+    if (!replaced) return { status: 'video-not-found' }
+    patched.updatedAt = new Date().toISOString()
+    list[idx] = patched
+    writeJson(key, list)
+    scheduleMirror({
+      type: 'save',
+      record: patched,
+      reapply: replaceVideoRefReapply(refKey, next),
+    })
+    return { status: 'replaced', record: patched }
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  for (const traveler of ALL_TRAVELERS) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return { status: 'not-found' }
+}
+
 // Manual reveal: flip a surprise from hidden → visible for its hideFrom list.
 // Stamps `revealed` so the read-side transform stops masking it (everyone sees
 // the real row from now on). Surprises live in the shared zone. Re-mirrors so

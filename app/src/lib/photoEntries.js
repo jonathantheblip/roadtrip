@@ -26,6 +26,15 @@ import { partsWithDays } from './tripParts.js'
 import { localDateIso, nowMinutesInZone } from './localDate.js'
 import { spanWords } from './evidence.js'
 
+// The album entry's identity: one memory can yield several tiles (multi-photo
+// refs), so a tile is (memoryId, rendered url). Exported so a surface that
+// REPLACES a ref's url in place (the "add it again with sound" swap) can
+// re-key its open lightbox onto the replacement instead of watching the old
+// key vanish — the one place this format is defined.
+export function photoEntryKey(memoryId, url) {
+  return `${memoryId}::${url}`
+}
+
 export function flattenPhotoEntries(memories) {
   const out = []
   for (const m of memories || []) {
@@ -75,7 +84,7 @@ export function flattenPhotoEntries(memories) {
         (typeof ref?.mime === 'string' && ref.mime.startsWith('video/')) ||
         ref?.kind === 'video'
       out.push({
-        key: `${m.id}::${url}`,
+        key: photoEntryKey(m.id, url),
         memoryId: m.id,
         stopId: m.stopId || null,
         tripId: m.tripId || null,

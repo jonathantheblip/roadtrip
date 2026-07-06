@@ -437,6 +437,21 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
           onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
           onCaptionChanged={() => setMemoryTick((t) => t + 1)}
           onDelete={() => setMemoryTick((t) => t + 1)}
+          onMediaReplaced={({ memoryId, newKey }) => {
+            // "Add it again with sound" swapped the ref in place, which changes
+            // the open entry's key (key = memoryId::url and the url is new).
+            // Re-key BEFORE the refresh so the re-resolve effect lands on the
+            // replaced video — otherwise the old key reads as a deleted photo
+            // and a single-video lightbox would close on success. ONLY when the
+            // replaced memory is still the one open: a flow can settle after
+            // the viewer swiped on to another clip, and snapping the lightbox
+            // back to the fixed video would yank them mid-look — a mismatched
+            // settle just refreshes the album underneath.
+            setLightbox((lb) =>
+              lb && lb.entry.memoryId === memoryId ? { ...lb, entry: { ...lb.entry, key: newKey } } : lb
+            )
+            setMemoryTick((t) => t + 1)
+          }}
           traveler={traveler}
         />
       )}

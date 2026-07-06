@@ -348,6 +348,21 @@ export function AllPhotosView({ trips, traveler, onBack, onPlayTrip }) {
           onCapturedAtChanged={() => setMemoryTick((t) => t + 1)}
           onCaptionChanged={() => setMemoryTick((t) => t + 1)}
           onDelete={() => setMemoryTick((t) => t + 1)}
+          onMediaReplaced={({ memoryId, newKey }) => {
+            // The ref swap re-keyed the open entry (key = memoryId::url). Point
+            // the lightbox at the replacement before refreshing so the
+            // re-resolve effect finds it by key instead of falling back to the
+            // clamped-slot guess. ONLY when the replaced memory is still the
+            // one open (a flow can settle after the viewer swiped on to another
+            // clip — snapping back would yank them mid-look); a mismatched
+            // settle just refreshes the album underneath.
+            setLightbox((lb) => {
+              if (!lb) return lb
+              const open = (tripEntries[lb.tripId] || [])[lb.index]
+              return open && open.memoryId === memoryId ? { ...lb, key: newKey } : lb
+            })
+            setMemoryTick((t) => t + 1)
+          }}
           traveler={traveler}
           showTripName
         />

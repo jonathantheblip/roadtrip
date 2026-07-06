@@ -1,13 +1,15 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2, Pencil, Plus, Loader2, CloudOff } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2, Pencil, Plus, Loader2, CloudOff, VolumeX } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { videoCopy, fmtSize, fmtDur } from '../lib/videoCopy'
 import { updateMemoryCapturedAt, updateMemoryCaption, removePhotoFromMemory } from '../lib/memoryStore'
 import { isWorkerConfigured } from '../lib/workerSync'
+import { isVideoEncodeSupported } from '../lib/videoPipeline'
+import { canOfferReAddSound, reAddSound, isReAddInFlight, beginReAddFlight, endReAddFlight, subscribeReAddSettles } from '../lib/reAddSound'
 import { ShareMomentSheet } from './ShareMomentSheet'
 import { classifySwipe } from '../lib/swipeClassify'
 import { isDevModeEnabled } from '../lib/uploadLog'
-import { firstLine, formatShortDate, formatFullDate } from '../lib/photoEntries'
+import { firstLine, formatShortDate, formatFullDate, photoEntryKey } from '../lib/photoEntries'
 import { thumbUrl } from '../lib/thumbUrl'
 import { useInView } from '../lib/useInView'
 
@@ -490,6 +492,7 @@ export function PhotoLightbox({
   onCapturedAtChanged,
   onCaptionChanged,
   onDelete,
+  onMediaReplaced,
   traveler,
   showTripName = false,
 }) {
@@ -923,6 +926,16 @@ export function PhotoLightbox({
             }}
           />
         )}
+        {/* "Add it again with sound" — the quiet, author-only door on a video
+            whose saved copy provably lost its sound (ref.sound === 'lost';
+            never on honest silence or a photo, never cross-author, never on
+            Rafa's lens). Gated further by the environment: the sound-bearing
+            copy must be encodable here and able to reach the family server.
+            key={entry.key} remounts the row on prev/next so no in-flight or
+            failure state carries onto a different clip. */}
+        {canOfferReAddSound(entry, traveler) && isWorkerConfigured() && isVideoEncodeSupported() && (
+          <ReAddSoundRow key={entry.key} entry={entry} traveler={traveler} onReplaced={onMediaReplaced} />
+        )}
       </footer>
       {shareOpen && entry?.memoryId && (
         <ShareMomentSheet memoryId={entry.memoryId} onClose={() => setShareOpen(false)} />
@@ -1089,6 +1102,145 @@ function CaptionEditor({ entry, onCancel, onSaved }) {
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+// "Add it again — the sound will come along this time" (lightbox footer, on a
+// sound:'lost' video, author-only — the caller gates; videoCopy's null chip is
+// Rafa's second latch). The chip is a real <label> wrapping a real, PRESENT
+// <input type=file> hidden sr-only style — the ONE file trigger iOS never
+// blocks is a direct tap on a real file input (or its label). NEVER a scripted
+// input.click(): that pattern dies silently on the device (the trip-hero cover
+// picker saga — see TripIndex's "Change cover photo" control, device-verified,
+// which this mirrors). The flow itself lives in lib/reAddSound: encode through
+// the normal import pipeline, upload, then swap the ref ATOMICALLY — the old
+// copy stays live until the new one is confirmed, and a re-pick that loses its
+// sound again changes nothing (honest per-lens line, door stays open, no nag).
+function ReAddSoundRow({ entry, traveler, onReplaced }) {
+  const vcopy = videoCopy(traveler)
+  // idle | busy | still-lost | too-long | failed. Success has no phase: the
+  // parent re-resolves onto the replaced entry and this row unmounts (the
+  // fresh ref's sound is no longer 'lost').
+  //
+  // A row MOUNTED while a flight for this clip is still settling (the user
+  // swiped away and back mid-flow — key={entry.key} remounts us) adopts the
+  // honest busy state instead of re-offering the chip: the C1a guard below
+  // would refuse a second flow anyway, and an idle chip over a live flight
+  // would be a lie.
+  const [phase, setPhase] = useState(() => (isReAddInFlight(entry.refKey) ? 'busy' : 'idle'))
+  const [tooLongMs, setTooLongMs] = useState(0)
+  // When the flight settles, an ADOPTED busy row falls back to idle — the
+  // initiating (unmounted) row's closure can't reach this one, so listen. Our
+  // OWN flow is unaffected: its terminal setPhase runs after endReAddFlight
+  // fired this listener (same synchronous sequence), so the honest per-clip
+  // note wins over the listener's idle write.
+  useEffect(() => {
+    return subscribeReAddSettles((settledKey) => {
+      if (settledKey !== entry.refKey) return
+      setPhase((p) => (p === 'busy' ? 'idle' : p))
+    })
+  }, [entry.refKey])
+  if (!vcopy.reAddChip) return null // a lens with no words for it has no door
+  async function onPick(e) {
+    const file = e.target.files && e.target.files[0]
+    e.target.value = '' // picking the same file again must still fire (house rule)
+    if (!file || phase === 'busy') return
+    // C1a — ONE flight per clip, across remounts: without this, a swipe-away-
+    // and-back mid-flow re-offers the chip, and a second pick double-uploads
+    // (a second orphan) whose losing swap reads 'swap-target-missing' — a
+    // lying 'failed' on a clip that was in fact just fixed.
+    if (!beginReAddFlight(entry.refKey)) {
+      if (isReAddInFlight(entry.refKey)) setPhase('busy') // adopt the live flight — never a dead tap
+      return
+    }
+    setPhase('busy')
+    let res
+    try {
+      res = await reAddSound({ file, entry })
+    } catch {
+      // P1 — the flow is designed to return statuses, but the swap's local
+      // write (writeJson) genuinely throws on storage quota: land on the
+      // honest per-lens 'failed' line, never a stranded spinner.
+      res = { status: 'failed', code: 'unexpected-throw' }
+    } finally {
+      endReAddFlight(entry.refKey)
+    }
+    if (res.status === 'replaced') {
+      onReplaced?.({ memoryId: entry.memoryId, newKey: photoEntryKey(entry.memoryId, res.url) })
+      return
+    }
+    if (res.status === 'still-lost') setPhase('still-lost')
+    else if (res.status === 'too-long') {
+      setTooLongMs(res.durationMs)
+      setPhase('too-long')
+    } else setPhase('failed')
+  }
+  // Quiet, warm — amber never red; the note reads in the caption's own serif.
+  const note = {
+    margin: 0,
+    fontFamily: 'Fraunces, Georgia, serif',
+    fontStyle: 'italic',
+    fontSize: 13.5,
+    lineHeight: 1.4,
+    color: '#F2A87A',
+  }
+  const chip = {
+    position: 'relative', // anchors the sr-only input
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 7,
+    padding: '7px 12px',
+    borderRadius: 14,
+    border: '1px solid rgba(242,235,218,0.35)',
+    background: 'rgba(255,255,255,0.06)',
+    color: 'rgba(242,235,218,0.9)',
+    fontFamily: 'Fraunces, Georgia, serif',
+    fontStyle: 'italic',
+    fontSize: 13.5,
+    lineHeight: 1.3,
+    cursor: 'pointer',
+  }
+  return (
+    <div
+      data-testid="lightbox-readd-sound"
+      style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}
+    >
+      {phase === 'still-lost' && (
+        <p data-testid="lightbox-readd-stilllost" style={note}>
+          {vcopy.reAddStillLost}
+        </p>
+      )}
+      {phase === 'too-long' && (
+        <p data-testid="lightbox-readd-toolong" style={note}>
+          {vcopy.tooLong ? vcopy.tooLong(fmtDur(tooLongMs)) : vcopy.reAddFailed}
+        </p>
+      )}
+      {phase === 'failed' && (
+        <p data-testid="lightbox-readd-failed" style={note}>
+          {vcopy.reAddFailed}
+        </p>
+      )}
+      {phase === 'busy' ? (
+        <span data-testid="lightbox-readd-busy" style={{ ...chip, cursor: 'default' }}>
+          <Loader2 size={13} className="spin" aria-hidden="true" />
+          {vcopy.reAddBusy}
+        </span>
+      ) : (
+        <label style={chip}>
+          <VolumeX size={13} aria-hidden="true" style={{ flexShrink: 0, opacity: 0.7 }} />
+          {vcopy.reAddChip}
+          <input
+            data-testid="lightbox-readd-input"
+            type="file"
+            accept="video/*"
+            onChange={onPick}
+            // sr-only, NOT display:none — the input must be real + present for
+            // the direct-tap rule (and stay reachable by assistive tech).
+            style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', border: 0, clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}
+          />
+        </label>
+      )}
     </div>
   )
 }
