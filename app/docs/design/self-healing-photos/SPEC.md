@@ -34,6 +34,23 @@ before UI is built.
 cross-device — no device may show a move the family server hasn't confirmed, and no move may be invisible
 or unexplained where it landed.**
 
+**Order independence (Jonathan, 2026-07-05 — a named invariant, not an aspiration):** the documented state
+of a trip converges to the same organized truth regardless of the ORDER events arrive in — photos first and
+naming months later; naming first, photos after; more photos again later; GPS backfilled at any point.
+Enforcement recipe: (a) the matcher is deterministic given its inputs; (b) EVERY input class has a re-match
+trigger (§5 — agenda changes, record-entry changes, photo-evidence changes, reveals), with the daily sweep
+as the eventual-convergence backstop; (c) application is idempotent; (d) the ONLY order-pinned states are a
+manual lock (deliberate — a person's decision pins the moment it was made) and legacy repair-only status —
+both visible, both repairable through the ordinary Move-to/suggestion affordances, never a special recovery
+flow. Verified by permutation property tests (§7), not by hope.
+
+**Discoverable or invisible (Jonathan, 2026-07-05 — the UX bar):** every capability is either elegantly
+discoverable at the moment of need (the manual edit/sort options — Move-to, suggestions, the
+finish-the-story pass) or completely invisible (the reconciliation machinery). Nothing in between: no
+janitor surfaces, no settings, no status noise. Every Stage-E Design prompt is written as a UX brief
+(moment of need, entry point, progressive disclosure — not just visuals), and a dedicated UX-discoverability
+audit gates Stage E before build.
+
 ## 2. Ground facts the design hangs on (verified 2026-07-05)
 
 - `memories.stop_id` is a dedicated column; the worker upsert binds a **fixed column whitelist**
@@ -111,6 +128,19 @@ Periodic memory pull piggybacked on the existing heartbeat. Cost-shape decision 
 not open-ended): trip-scoped and/or `?since=` delta — a full multi-year `pullAll` every 20s is not
 acceptable. Interval-driven ⇒ its e2e is chromium-only (page.clock/WebKit rule).
 
+### A-4½ · Record-trust fold-ins (from the 2026-07-05 vision audit — see ../document-the-trip/VISION.md §5)
+- **Surprise filter on the evidence→settle→keep path (SHIP-BLOCKER for the nightly habit):** evidence pins
+  must exclude unrevealed-surprise memories; SettleSheet gains per-pin "leave this out" (wiring the
+  reserved-but-dead `record.skipped[]`); record entries pass through per-viewer masking like memories.
+  Today one absent-minded keep publishes a surprise to every lens (incl. Rafa's stamp list) within seconds.
+- **Kept-row exemption in `getStoredWeave`:** the freshness 204 currently applies to kept rows too —
+  opening a kept page from the book silently regenerates it, violating the settled kept-is-frozen
+  principle. Also: re-keep must stop destroying the prior kept text (confirm-and-replace).
+- **Settle-sheet promised verbs:** ship per-pin skip + who-correction chips, or cut the "fix what's wrong…
+  skip what you like" copy. Ship the verbs.
+- **Fix the stale comment** at dayRecord.js:124–126 (claims Weave/photo-filing read `namedRecordEntries` —
+  false today; a future window will inherit the lie).
+
 ### A-4 · Weave + lens batch
 - **F3 — server weave learns the implicit base** (use `dayStopIds` semantics, not bare `day.stops`) —
   base-filed memories, the settled core shape, currently never trip the Phase-2 freshness check; a kept
@@ -182,11 +212,20 @@ the existing `photo_r2_keys_json` path. Keyless, no deps, idempotent, resumable.
   5. Fresher, pulled-clean agenda: trip **server row stamp** strictly newer than the memory's `tripRev`.
   6. Not masked/surprise-flagged; target not an unrevealed surprise stop; not inside the direction-flip
      cooldown. Fails 1/3/4 but passes 2 → suggestion. Fails 2 → nothing, silently.
-- **Triggers:** postTrip via `ctx.waitUntil` (never inline latency), **debounced on agenda quiescence**
-  (N minutes stable — a lodging clear-then-retype must not mass-scatter base filings in the gap, appendix
-  critique-0 #5); the daily cron carries a repair + post-reveal sweep (scheduled reveals bypass postTrip
-  entirely); reveal-time is the natural heal moment for a surprise's photos. Event + sweep — both, not
-  either/or.
+- **Triggers — the complete input-class set (this list IS the §1 order-independence guarantee; a missing
+  class breaks the invariant):**
+  (1) *Agenda changes* — postTrip via `ctx.waitUntil` (never inline latency), **debounced on agenda
+  quiescence** (N minutes stable — a lodging clear-then-retype must not mass-scatter base filings in the
+  gap, appendix critique-0 #5).
+  (2) *Record-entry changes* (a moment named/kept/renamed/removed) — if `day.record` rides the trip object,
+  postTrip already covers this (verify at build; if it lives elsewhere, it gets its own explicit trigger).
+  (3) *Photo-evidence changes* — a completed import already matches its own batch; a GPS-backfill write and
+  a capture-date edit (`updateMemoryCapturedAt` — today re-runs nothing) must ALSO enqueue a re-match for
+  the affected memories.
+  (4) *Reveals* — reveal-time is the natural heal moment for a surprise's photos; scheduled reveals bypass
+  postTrip entirely, so the reveal path triggers explicitly.
+  (5) *The daily cron sweep* — repair + post-reveal + anything a trigger missed: the eventual-convergence
+  backstop. Event + sweep — both, not either/or.
 - **Convergence:** overlapping runs need a quiesce loop (after applying, re-read the trip row stamp; if it
   moved during the run, re-run) — the guarded-UPDATE alone silently drops the *fresher* decision (appendix
   critique-0 #7). Never orphan-repair off a base id that resolved within the last M minutes.
@@ -223,6 +262,10 @@ the existing `photo_r2_keys_json` path. Keyless, no deps, idempotent, resumable.
 - Worker vitest (real D1/R2 pool): the postMemory rule matrix (rules 1–5 incl. refusal + insert), gates 1–6
   truth table, quiesce/debounce, audit-ledger writes, parity corpus. **The entire auto-move behavior is
   gateable only here** — e2e mocks all network.
+- **Order-independence permutation tests (worker vitest):** one fixture trip + a fixed event set (import
+  batch A · name/keep moments · agenda edit · import batch B · GPS backfill · one manual move) applied in a
+  fixed list of several permutations must converge to the IDENTICAL final filing + provenance state, modulo
+  the documented manual-lock pinning. This is §1's invariant as an executable gate.
 - App unit (`node --test`, no `.jsx`): matcher margin/runner-up, intent-queue reducer logic, provenance
   stamping helpers. TZ=UTC locally for day-window tests.
 - e2e (chromium+webkit): arrival/rendering from mocked pull payloads carrying `stopProv`; anything
