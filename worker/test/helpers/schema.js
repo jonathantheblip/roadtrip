@@ -26,6 +26,7 @@ import authMigration from '../../migrations/013_auth.sql?raw'
 import proposalsMigration from '../../migrations/014_proposals.sql?raw'
 import presenceMigration from '../../migrations/015_presence.sql?raw'
 import wavesMigration from '../../migrations/016_waves.sql?raw'
+import stopProvMigration from '../../migrations/017_memory_stop_provenance.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -109,7 +110,10 @@ export async function applySchema(db) {
   // throw "duplicate column name" on the second call. Swallow exactly
   // that error to keep this idempotent like the CREATE IF NOT EXISTS
   // statements above — any other failure still propagates.
-  for (const migration of [interstitialMigration, weaveKeptMigration, surprisesMigration, shareLayoutMigration]) {
+  // 017 joins this group: its CREATE TABLE/INDEX are IF NOT EXISTS (re-run
+  // safe) and its ALTER ... ADD COLUMN stop_prov_json throws duplicate-column
+  // on re-run, which the guard swallows — same handling as 007's ALTER.
+  for (const migration of [interstitialMigration, weaveKeptMigration, surprisesMigration, shareLayoutMigration, stopProvMigration]) {
     for (const stmt of splitStatements(migration)) {
       try {
         await db.prepare(stmt).run()
