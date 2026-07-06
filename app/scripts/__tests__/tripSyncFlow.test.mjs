@@ -304,6 +304,19 @@ test('pullWatchdogSignal: returns a live AbortSignal that fires after the deadli
   const signal = pullWatchdogSignal(20)
   assert.ok(signal instanceof AbortSignal) // node ≥17.3 has AbortSignal.timeout, like the family fleet
   assert.equal(signal.aborted, false)
-  await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+  // AbortSignal.timeout's internal timer is UNREF'D in node — on a quiet event
+  // loop (a loaded CI runner) nothing keeps the process alive, the loop drains,
+  // and this await dies "promise still pending" (flaked CI run 28763212724).
+  // A ref'd guard timer holds the loop open; it races, never delays — the
+  // abort resolves first (20ms vs 2000ms) on any healthy run.
+  let guard
+  try {
+    await Promise.race([
+      new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true })),
+      new Promise((resolve) => { guard = setTimeout(resolve, 2000) }),
+    ])
+  } finally {
+    clearTimeout(guard)
+  }
   assert.equal(signal.aborted, true)
 })
