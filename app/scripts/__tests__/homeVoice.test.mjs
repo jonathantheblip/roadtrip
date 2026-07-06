@@ -54,3 +54,33 @@ test('homeVoice: the return is COMPLETE — every BASE field resolves for every 
     }
   }
 })
+
+test('homeVoice: the settle-verbs strings (FIX 2–7) resolve per lens', () => {
+  const h = homeVoice('helen')
+  assert.equal(h.settlePoolSubTwo, 'The last two days — quiet ones?')
+  assert.equal(h.settlePoolCtaTwo, 'Keep them both')
+  assert.equal(h.settleKeptDoor, 'Add a name')
+  assert.equal(h.sheetLeaveOut, 'Leave this out')
+  assert.equal(h.sheetTuck, 'Tuck it into the day')
+
+  const j = homeVoice('jonathan')
+  assert.equal(j.settlePoolSubTwo, 'Two quiet days. Sign them off together?')
+  assert.equal(j.settlePoolCtaTwo, 'Sign them off')
+  assert.equal(j.settleKeptDoor, 'Add to the record')
+  assert.equal(j.sheetLeaveOut, 'Leave it out')
+  assert.equal(j.sheetTuck, 'Put it on the record')
+  assert.equal(j.sheetListen, 'Listen', 'base where not overridden')
+
+  const a = homeVoice('aurelia')
+  assert.equal(a.settlePoolSubTwo, 'two floaty days. keep ’em?')
+  assert.equal(a.settleKeptDoor, 'name one more?')
+  assert.equal(a.sheetLeaveOut, 'not this one')
+  assert.equal(a.sheetPutBack, 'undo')
+  assert.equal(a.sheetRafaTold, a.sheetRafaTold.toLowerCase(), 'her lens lowercases even base strings')
+
+  // The {n} templates carry the placeholder for the render-time count.
+  for (const lens of ['helen', 'jonathan', 'aurelia']) {
+    assert.match(homeVoice(lens).settlePoolSub, /\{n\}/)
+    assert.match(homeVoice(lens).settleRiderMany, /\{n\}/)
+  }
+})

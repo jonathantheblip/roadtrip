@@ -64,6 +64,7 @@ export function JonathanView({
   onCompose,
   onOpenEditor,
   onKeepDay,
+  onTuckPendingNote,
   weaveReady,
   bookHasPages,
   surpriseRevealCue,
@@ -93,6 +94,7 @@ export function JonathanView({
         onCompose={onCompose}
         onOpenEditor={onOpenEditor}
         onKeepDay={onKeepDay}
+        onTuckPendingNote={onTuckPendingNote}
         onOpenAllPhotos={onOpenAllPhotos}
         onOpenActivities={onOpenActivities}
         onOpenStop={onOpenStop}

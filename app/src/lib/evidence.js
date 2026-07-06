@@ -23,10 +23,25 @@
 
 import { haversineMeters } from './photoMatch.js'
 import { localDateIso } from './localDate.js'
+import { isMaskedFrom } from './surprises.js'
 
 // Tuning gates (design 05: "suggest ~200m / ~90min, tune on device"). Exported so
 // tests pin the defaults and a caller can tune per-device without editing here.
 export const EVIDENCE_DEFAULTS = { radiusMeters: 200, gapMinutes: 90 }
+
+// The refs an evidence read walks for ONE memory — photoRefs[] (or the legacy
+// single photoRef), then pieces[]. Exported because a pin's photoIds are
+// "<memoryId>:<refIndex>" INTO THIS ORDER — the settle sheet's see-inside
+// resolves thumbnails through the same reader, so an index can never point at
+// the wrong picture.
+export function evidenceRefs(m) {
+  const refs = []
+  if (!m) return refs
+  if (Array.isArray(m.photoRefs) && m.photoRefs.length) refs.push(...m.photoRefs)
+  else if (m.photoRef) refs.push(m.photoRef)
+  if (Array.isArray(m.pieces)) refs.push(...m.pieces)
+  return refs
+}
 
 // A day's photos that carry BOTH coordinates and a capture time — the only ones
 // that can form a pin. Mirrors refilePlaces.locatedPhotos and adds author (for the
@@ -40,15 +55,21 @@ export const EVIDENCE_DEFAULTS = { radiusMeters: 200, gapMinutes: 90 }
 // evidence, not tomorrow's — the whole reason localDate.js exists (it drifts hours
 // around midnight for Americas users). No `tz` → device-local (localDateIso's
 // default), matching the card's own device-local "today's photos" count.
-export function photosForDay(memories, isoDate, { tz } = {}) {
+//
+// `viewer` (SPEC §3 A-4½, ship-blocker): with a viewer, a memory that is an
+// UNREVEALED surprise hidden from that viewer contributes nothing — no pin, no
+// located count, no arithmetic leak. Per-viewer, not global: the author (and any
+// traveler it isn't hidden from) still sees its pins; revealed is real for all.
+// The filter lives HERE at the source so no evidence caller can rebuild a
+// secret's existence from a raw memory list. No viewer → unfiltered (the masked
+// listMemoriesForTrip read stays the normal upstream).
+export function photosForDay(memories, isoDate, { tz, viewer } = {}) {
   if (!Array.isArray(memories) || !isoDate) return []
   const out = []
   for (const m of memories) {
     if (!m) continue
-    const refs = []
-    if (Array.isArray(m.photoRefs) && m.photoRefs.length) refs.push(...m.photoRefs)
-    else if (m.photoRef) refs.push(m.photoRef)
-    if (Array.isArray(m.pieces)) refs.push(...m.pieces)
+    if (viewer && isMaskedFrom(m, viewer)) continue
+    const refs = evidenceRefs(m)
     refs.forEach((r, i) => {
       const lat = Number(r?.lat)
       const lng = Number(r?.lng)
@@ -169,6 +190,24 @@ function commonestLabel(members) {
   return best
 }
 
+// Pins that are safe for a ONE-TAP publish (P1, 2026-07-06): drop any pin with
+// a member memory that is an unrevealed surprise — for ANY viewer, not just
+// this one. The author sees such a pin (per-viewer masking keeps it on their
+// card and sheet), but the record it would write is shared with every lens, so
+// the zero-friction quick keep must not publish a secret place. The SHEET keep
+// stays the explicit path: there the author can deliberately include it or
+// leave it out. Returns the same array when nothing applies (memo-friendly).
+export function pinsWithoutUnrevealedSurprises(pins, memories) {
+  const secret = new Set(
+    (Array.isArray(memories) ? memories : [])
+      .filter((m) => m && Array.isArray(m.hideFrom) && m.hideFrom.length > 0 && !m.revealed)
+      .map((m) => m.id)
+  )
+  if (!secret.size || !Array.isArray(pins)) return pins || []
+  const out = pins.filter((p) => !(p.memoryIds || []).some((id) => secret.has(id)))
+  return out.length === pins.length ? pins : out
+}
+
 // The whole evidence read for a day: the pins + how many photos were located.
 // The settle card decides its state from this plus its own total photo count.
 export function buildDayEvidence(memories, isoDate, opts = {}) {
@@ -224,23 +263,39 @@ export function evidenceLevel({ pinCount = 0, photoCount = 0 } = {}) {
 // downstream concern, not promised here. `who` is the SUGGESTION (photo authors),
 // falling back to the party — asserted only when a person confirms it. `guess` is the
 // machine label, kept for honesty (never a name). `span`/`photos` ride along.
-export function pinsToDraftEntries(pins, { party = [], tz } = {}) {
+//
+// `opts.who` (FIX 4, who-correction): { [pinId]: travelerIds[] } — the settle
+// sheet's corrected "who was actually there" per pin. A NON-EMPTY correction
+// replaces the suggestion and marks the draft `whoEdited:true`, so the keep
+// merge (dayRecord.mergeKeepDrafts) knows a person chose it — only then may it
+// overwrite an existing entry's `for`. An empty correction is ignored: pins
+// credit camera-holders; deselecting everyone is not a statement.
+export function pinsToDraftEntries(pins, { party = [], tz, who } = {}) {
   if (!Array.isArray(pins)) return []
-  return pins.map((pin, i) => ({
-    id: pin.id,
-    time: spanWords(pin.span, { tz }),
-    name: '', // UNNAMED → a draft (isDraftEntry)
-    kind: '',
-    for: Array.isArray(pin.who) && pin.who.length ? pin.who : party,
-    note: '',
-    address: '',
-    lat: pin.centroid?.lat ?? null,
-    lng: pin.centroid?.lng ?? null,
-    source: 'evidence',
-    guess: pin.guess || null,
-    span: pin.span || null,
-    photos: Array.isArray(pin.memoryIds) ? pin.memoryIds : [],
-    photoCount: pin.count || 0,
-    order: i,
-  }))
+  return pins.map((pin, i) => {
+    const corrected = who && Array.isArray(who[pin.id]) && who[pin.id].length ? who[pin.id] : null
+    return {
+      id: pin.id,
+      time: spanWords(pin.span, { tz }),
+      name: '', // UNNAMED → a draft (isDraftEntry)
+      kind: '',
+      for: corrected || (Array.isArray(pin.who) && pin.who.length ? pin.who : party),
+      note: '',
+      address: '',
+      lat: pin.centroid?.lat ?? null,
+      lng: pin.centroid?.lng ?? null,
+      source: 'evidence',
+      guess: pin.guess || null,
+      span: pin.span || null,
+      photos: Array.isArray(pin.memoryIds) ? pin.memoryIds : [],
+      // Per-photo ids (<memoryId>:<refIndex>) — cluster-disjoint within a pass,
+      // so they are the HONEST overlap key for merge/display matching (C1).
+      // Memory ids alone lie: one multi-photo share can span two genuinely
+      // different places, and matching on it folded the beach into the dinner.
+      photoIds: Array.isArray(pin.photoIds) ? pin.photoIds : [],
+      photoCount: pin.count || 0,
+      order: i,
+      ...(corrected ? { whoEdited: true } : {}),
+    }
+  })
 }

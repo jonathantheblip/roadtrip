@@ -387,3 +387,195 @@ test('resolvePendingNote: an unknown/already-resolved id, or a since-vanished en
   assert.deepEqual(pendingNoteIds(day), [], 'still resolves off the queue even though the target entry vanished')
   assert.equal(day.record.entries[0].note, '', 'no entry to attach to — nothing corrupted')
 })
+
+// ── FIX 2 + FIX 5 · mergeKeepDrafts — skip is real, keep stays open ──────────
+// The keep flow's draft-writer grows from "apply once behind an already-kept
+// guard" to a MERGE: existing entries update in place (chosen things — a name,
+// a corrected who, Rafa's stamps — preserved), genuinely new pins append,
+// skipped pin ids never become entries and persist in record.skipped so a
+// re-open can't resurrect them. This is what makes "gold means the day counts,
+// never the day is closed" true (VISION §3).
+import { mergeKeepDrafts } from '../../src/lib/dayRecord.js'
+
+function draftOf(id, extra = {}) {
+  return {
+    id, time: '3–4', name: '', kind: '', for: ['helen'], note: '', address: '',
+    lat: 42.05, lng: -70.24, source: 'evidence', guess: 'Race Point', span: null,
+    photos: ['mA'], photoCount: 1, order: 0, ...extra,
+  }
+}
+
+test('mergeKeepDrafts: a skipped pin never becomes an entry, and its id persists in record.skipped', () => {
+  const trip = fixtureTrip()
+  const next = mergeKeepDrafts(trip, { dayIso: '2026-07-03' }, [draftOf('pin-a'), draftOf('pin-b', { photos: ['mB'] })], { skipped: ['pin-b'] })
+  const day = next.days.find((d) => d.isoDate === '2026-07-03')
+  assert.deepEqual(dayRecordOf(day).map((e) => e.id), ['pin-a'], 'the left-out pin wrote nothing')
+  assert.deepEqual(readRecord(day).skipped, ['pin-b'], 'the skip is remembered on the day')
+  // A later re-keep offering the same pin again stays out — sticky, by id.
+  const again = mergeKeepDrafts(next, { dayIso: '2026-07-03' }, [draftOf('pin-b', { photos: ['mB'] })])
+  const day2 = again.days.find((d) => d.isoDate === '2026-07-03')
+  assert.deepEqual(dayRecordOf(day2).map((e) => e.id), ['pin-a'], 'a persisted skip holds without being re-sent')
+  assert.deepEqual(readRecord(day2).skipped, ['pin-b'], 'no duplicate skip ids')
+})
+
+test('mergeKeepDrafts: re-keep updates an entry IN PLACE by pin id — name, stamps, who all preserved', () => {
+  const trip = fixtureTrip()
+  const first = mergeKeepDrafts(trip, { dayIso: '2026-07-03' }, [draftOf('pin-a', { name: 'Race Point Beach' })])
+  // Rafa stamps the named entry between keeps (a chosen thing on the entry).
+  const stamped = addEntryStamp(first, { dayIso: '2026-07-03' }, 'pin-a', { by: 'rafa', glyph: '⭐' })
+  // The evening re-keep passes the same pin, grown by a photo, UNNAMED (the
+  // sheet shows the named row — nothing typed) with a fresh who-suggestion.
+  const rekept = mergeKeepDrafts(stamped, { dayIso: '2026-07-03' }, [
+    draftOf('pin-a', { photos: ['mA', 'mB'], photoCount: 2, time: '3–8', for: ['helen', 'jonathan'] }),
+  ])
+  const day = rekept.days.find((d) => d.isoDate === '2026-07-03')
+  const entries = dayRecordOf(day)
+  assert.equal(entries.length, 1, 'updated in place — never re-appended')
+  assert.equal(entries[0].name, 'Race Point Beach', 'the human name survives an unnamed re-keep')
+  assert.deepEqual(entries[0].photos, ['mA', 'mB'], 'the count grows — the 8pm campfire slid in behind the keep')
+  assert.equal(entries[0].photoCount, 2)
+  assert.equal(entries[0].time, '3–8', 'the span words refresh with the evidence')
+  assert.deepEqual(entryStamps(entries[0]).map((s) => s.glyph), ['⭐'], 'Rafa’s stamp is untouched')
+  assert.deepEqual(entries[0].for, ['helen'], 'an UNEDITED who-suggestion never overwrites the entry’s who')
+})
+
+test('mergeKeepDrafts: whoEdited is the consent bit — only an explicit correction rewrites for, and the bit is stripped', () => {
+  const trip = fixtureTrip()
+  const first = mergeKeepDrafts(trip, { dayIso: '2026-07-03' }, [draftOf('pin-a')])
+  const corrected = mergeKeepDrafts(first, { dayIso: '2026-07-03' }, [
+    draftOf('pin-a', { for: ['helen', 'rafa'], whoEdited: true }),
+  ])
+  const day = corrected.days.find((d) => d.isoDate === '2026-07-03')
+  const [e] = dayRecordOf(day)
+  assert.deepEqual(e.for, ['helen', 'rafa'], 'the corrected set rides the entry')
+  assert.equal('whoEdited' in e, false, 'the wire-only bit never lands in the record')
+})
+
+test('mergeKeepDrafts: a GROWN pin (new id, overlapping photos) merges into its entry — no duplicate place', () => {
+  const trip = fixtureTrip()
+  const first = mergeKeepDrafts(trip, { dayIso: '2026-07-03' }, [
+    draftOf('pin-old', { name: 'Race Point Beach', photos: ['mA', 'mB'], photoCount: 2 }),
+  ])
+  // A later photo joins the cluster → the recomputed pin has a DIFFERENT id
+  // (ids hash the member set) but overlaps the kept entry's photos.
+  const rekept = mergeKeepDrafts(first, { dayIso: '2026-07-03' }, [
+    draftOf('pin-new', { photos: ['mA', 'mB', 'mC'], photoCount: 3 }),
+  ])
+  const day = rekept.days.find((d) => d.isoDate === '2026-07-03')
+  const entries = dayRecordOf(day)
+  assert.equal(entries.length, 1, 'the grown cluster is the SAME place — union, no dupes')
+  assert.equal(entries[0].id, 'pin-old', 'the entry id is the stable anchor (stamps, references)')
+  assert.equal(entries[0].name, 'Race Point Beach', 'names preserved')
+  assert.deepEqual(entries[0].photos, ['mA', 'mB', 'mC'])
+})
+
+test('mergeKeepDrafts: a typed name graduates an unnamed draft; a genuinely new pin appends; manual entries are never overlap-matched', () => {
+  const trip = fixtureTrip()
+  // Day already carries: an unnamed evidence draft + a MANUAL told entry (no photos).
+  const seeded = applyDayRecord(trip, { dayIso: '2026-07-03' }, [
+    draftOf('pin-a'),
+    { id: 'rec-x', name: 'Dinner on the deck', source: 'manual', for: ['helen'] },
+  ])
+  const rekept = mergeKeepDrafts(seeded, { dayIso: '2026-07-03' }, [
+    draftOf('pin-a', { name: 'The taffy shop' }), // typed in the sheet this time
+    draftOf('pin-z', { photos: ['mZ'] }), // brand-new place
+  ])
+  const day = rekept.days.find((d) => d.isoDate === '2026-07-03')
+  const entries = dayRecordOf(day)
+  assert.deepEqual(entries.map((e) => e.id), ['pin-a', 'rec-x', 'pin-z'], 'existing order kept; new appends at the end')
+  assert.equal(entries[0].name, 'The taffy shop', 'naming a draft graduates it')
+  assert.equal(entries[1].name, 'Dinner on the deck', 'a manual entry (no photos) is matched by id only — untouched')
+})
+
+test('mergeKeepDrafts: keep → new evidence → re-keep = union, no dupes, names preserved (the FIX 5 acceptance)', () => {
+  const trip = fixtureTrip()
+  // 5pm: aurelia keeps — one named pin, one skipped.
+  let t = mergeKeepDrafts(trip, { dayIso: '2026-07-03' }, [
+    draftOf('pin-beach', { name: 'The beach below the house', photos: ['m1', 'm2'], photoCount: 2 }),
+    draftOf('pin-lot', { photos: ['mLot'] }),
+  ], { skipped: ['pin-lot'] })
+  t = keepDay(t, { dayIso: '2026-07-03' }, { keptBy: 'aurelia' })
+  // 8pm: the campfire happened — the beach pin grew, a new pin appeared, the
+  // skipped parking-lot pin recomputes identically.
+  t = mergeKeepDrafts(t, { dayIso: '2026-07-03' }, [
+    draftOf('pin-beach2', { photos: ['m1', 'm2', 'm3'], photoCount: 3 }),
+    draftOf('pin-fire', { photos: ['m4'], guess: null }),
+    draftOf('pin-lot', { photos: ['mLot'] }),
+  ])
+  t = keepDay(t, { dayIso: '2026-07-03' }, { keptBy: 'helen' })
+  const day = t.days.find((d) => d.isoDate === '2026-07-03')
+  const rec = readRecord(day)
+  assert.equal(rec.state, 'kept')
+  assert.equal(rec.keptBy, 'aurelia', 'the first keeper still holds the day (existing contract)')
+  assert.deepEqual(rec.entries.map((e) => e.id), ['pin-beach', 'pin-fire'], 'union: grown beach in place + the new fire; the skip held')
+  assert.equal(rec.entries[0].name, 'The beach below the house')
+  assert.deepEqual(rec.entries[0].photos, ['m1', 'm2', 'm3'])
+  assert.deepEqual(rec.skipped, ['pin-lot'])
+})
+
+// ── C1 · one multi-photo memory must never fold two places into one entry ────
+// Memory-id overlap lies: a 4-photo share (ThreadedMemories multi-photo, E4
+// pieces, ref-merge) can span the beach AND the dinner — two pins, ONE memory
+// id. Matching entries on memory ids with a ≥1 threshold merged those places
+// and clobbered a human-named entry's coordinates. photoIds (<memId>:<refIdx>,
+// cluster-disjoint within a pass) are the honest overlap key; legacy entries
+// without them fall back to memory-id overlap ONLY behind a majority threshold
+// AND a centroid-distance gate.
+import { photosForDay, clusterPhotos, pinsToDraftEntries } from '../../src/lib/evidence.js'
+import { evidenceOverlapScore } from '../../src/lib/dayRecord.js'
+
+const C1_ISO = '2026-07-03'
+const c1T = (hhmm) => `${C1_ISO}T${hhmm}:00.000Z`
+const SHARE_MEM = {
+  id: 'm-share', authorTraveler: 'helen',
+  photoRefs: [
+    { lat: 42.05, lng: -70.24, capturedAt: c1T('15:00'), locationLabel: 'Race Point' },
+    { lat: 42.0505, lng: -70.24, capturedAt: c1T('15:10'), locationLabel: 'Race Point' },
+    { lat: 42.06, lng: -70.24, capturedAt: c1T('18:00'), locationLabel: 'The Shop' },
+    { lat: 42.0602, lng: -70.24, capturedAt: c1T('18:05'), locationLabel: 'The Shop' },
+  ],
+}
+
+test('mergeKeepDrafts: a multi-photo share spanning two places stays TWO places — the named entry keeps its coordinates (C1 repro)', () => {
+  const pins = clusterPhotos(photosForDay([SHARE_MEM], C1_ISO, { tz: 'UTC' }))
+  assert.equal(pins.length, 2, 'one shared memory, two real places')
+  const drafts = pinsToDraftEntries(pins, { party: ['helen'], tz: 'UTC' })
+  // The day was kept earlier and the beach named — a LEGACY entry: memory-id
+  // photos, centroid coords, NO photoIds (written before this batch).
+  const legacy = {
+    id: 'rec-legacy-beach', time: 'around 3', name: 'Race Point Beach', kind: '', for: ['helen'],
+    note: '', address: '', lat: 42.05025, lng: -70.24, source: 'evidence',
+    guess: 'Race Point', span: null, photos: ['m-share'], photoCount: 2, order: 0,
+  }
+  const trip = applyDayRecord(fixtureTrip(), { dayIso: C1_ISO }, [legacy])
+  const next = mergeKeepDrafts(trip, { dayIso: C1_ISO }, drafts)
+  const day = next.days.find((d) => d.isoDate === C1_ISO)
+  const entries = dayRecordOf(day)
+  assert.equal(entries.length, 2, 'the shop is its own place — never folded into the named beach entry')
+  const beach = entries.find((e) => e.name === 'Race Point Beach')
+  assert.ok(Math.abs(beach.lat - 42.05025) < 0.002, `the named entry keeps the BEACH coordinates (got lat ${beach.lat})`)
+  assert.deepEqual(beach.photoIds, ['m-share:0', 'm-share:1'], 'the in-place update stamps per-photo ids onto the entry going forward')
+  const shop = entries.find((e) => e.id !== beach.id)
+  assert.ok(shop.lat > 42.058, 'the appended entry carries the shop’s coordinates')
+})
+
+test('evidenceOverlapScore: photoIds are authoritative when both sides carry them', () => {
+  const beachEntry = { photoIds: ['m-share:0', 'm-share:1'], photos: ['m-share'], lat: 42.05, lng: -70.24 }
+  const shopDraft = { photoIds: ['m-share:2', 'm-share:3'], photos: ['m-share'], lat: 42.06, lng: -70.24 }
+  assert.equal(evidenceOverlapScore(shopDraft, beachEntry), 0, 'full memory-id overlap counts for NOTHING against disjoint photoIds')
+  const grown = { photoIds: ['m-share:0', 'm-share:1', 'm-x:0'], photos: ['m-share', 'm-x'], lat: 42.05, lng: -70.24 }
+  assert.equal(evidenceOverlapScore(grown, beachEntry), 2, 'shared photoIds count is the score')
+})
+
+test('evidenceOverlapScore: the legacy fallback needs a MAJORITY of the smaller side AND centroids within one cluster radius', () => {
+  const near = { photos: ['mA', 'mB'], lat: 42.0501, lng: -70.24 } // ~11m off
+  const far = { photos: ['mA', 'mB'], lat: 42.06, lng: -70.24 } // ~1.1km off
+  const legacyEntry = { photos: ['mA'], lat: 42.05, lng: -70.24 }
+  assert.equal(evidenceOverlapScore(near, legacyEntry), 1, 'majority (1 of min 1) + near → the same place')
+  assert.equal(evidenceOverlapScore(far, legacyEntry), 0, 'the distance gate refuses a far centroid even at full memory overlap')
+  const noCoords = { photos: ['mA'], lat: null, lng: null }
+  assert.equal(evidenceOverlapScore(near, noCoords), 0, 'a coordinate-less legacy entry never matches — a dupe is safer than a wrong merge')
+  const minority = { photos: ['mA', 'mD', 'mE'], lat: 42.0501, lng: -70.24 }
+  const bigEntry = { photos: ['mA', 'mB', 'mC'], lat: 42.05, lng: -70.24 }
+  assert.equal(evidenceOverlapScore(minority, bigEntry), 0, '1 shared of min 3 is a minority — no match even near')
+})

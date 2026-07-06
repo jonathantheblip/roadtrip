@@ -28,7 +28,7 @@ import { isStayTrip, stayLabel, stayNights } from '../lib/tripShape'
 import { findArrivalStop } from './FlightStatus'
 import { flightSegments, flightSummaryLine } from '../lib/flightSegments'
 import { sunTimes } from '../lib/sunTimes'
-import { buildDayEvidence, evidenceLevel, pinsToDraftEntries, spanWords } from '../lib/evidence'
+import { buildDayEvidence, evidenceLevel, pinsToDraftEntries, pinsWithoutUnrevealedSurprises, spanWords } from '../lib/evidence'
 import SettleSheet from './SettleSheet'
 import { tripPhase } from '../lib/tripPhase'
 import { todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../lib/localDate'
@@ -39,7 +39,8 @@ import { legOrientation, FX_AS_OF } from '../lib/legOrientation'
 import { arrivalSignature, hasSeenArrival, markArrivalSeen } from '../lib/legArrival'
 import { homeVoice } from '../lib/homeVoice'
 import { tripHasMaskedContent } from '../lib/surprises'
-import { namedRecordEntries, readableRecordEntries, dayRecordIsKept, dayRecordIsNothing, dayRecordKeptBy } from '../lib/dayRecord'
+import { namedRecordEntries, readableRecordEntries, dayRecordIsKept, dayRecordIsNothing, dayRecordKeptBy, readRecord, pendingNoteIds } from '../lib/dayRecord'
+import { settleRhythm, quietPendingIsos, poolIsContiguous } from '../lib/settleRhythm'
 import { PartsOutline, StopRow, RecordRow, dayLabel } from './PartsOutline'
 
 const MONO = { fontFamily: 'JetBrains Mono, ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.14em' }
@@ -133,7 +134,7 @@ function nothingDayLineFor(isoDate) {
 
 export function LivingHeartHome({
   trip, traveler, nowReadout, whoAround, weaveReady, bookHasPages,
-  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenEditor, onOpenAllPhotos, onOpenActivities, onOpenStop, onKeepDay,
+  onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onOpenSurprises, onCompose, onOpenEditor, onOpenAllPhotos, onOpenActivities, onOpenStop, onKeepDay, onTuckPendingNote,
 }) {
   const [weave, setWeave] = useState(null)
   const [heroErr, setHeroErr] = useState(false)
@@ -304,7 +305,11 @@ export function LivingHeartHome({
   // day (evidence.js); after golden hour, a rich-evidence day (≥2 pins or ≥6 photos)
   // offers itself back to keep — even with nothing named. See the keptIso comment
   // above for the invitation contract (evenings only, live trip only, never nags).
-  const evidence = useMemo(() => buildDayEvidence(mems, todayIso, { tz: legTz }), [mems, todayIso, legTz])
+  // `viewer` rides into the evidence read (SPEC §3 A-4½): the engine itself
+  // drops an unrevealed surprise hidden from this traveler, so a secret can
+  // never draft itself into a pin here even if a caller ever feeds a raw list.
+  // (mems is already masked upstream — this is the filter AT the source.)
+  const evidence = useMemo(() => buildDayEvidence(mems, todayIso, { tz: legTz, viewer: traveler }), [mems, todayIso, legTz, traveler])
   // photoCount = the day's total photos, located or not (todayCount is device-local;
   // it equals the leg-local day today because every live trip's legTz is null — when
   // legs carry a tz, recompute this leg-local so evLevel can't claim 'rich' on a day
@@ -315,23 +320,65 @@ export function LivingHeartHome({
   // actually DELAY the card past ~7:50pm — later than it's useful — and is coords-
   // fragile, so golden-hour precision is a deferred refinement, not a gate.)
   const isEveningNow = nowMinutesInZone(legTz) >= 17 * 60
-  const settleState = !di.dayX ? null // only while the trip is live (today = day N)
-    : todayKept ? 'kept'
-    : !isEveningNow ? null
-    : (todayRecorded.length > 0 || evLevel === 'rich') ? 'keep'
-    : 'nothing'
+  // A pin someone left out (record.skipped) stays out of the card's chips, the
+  // quick-keep drafts, and the sheet — sticky by id; only a genuinely new photo
+  // set (a new pin id) may re-raise the place. Richness still reads the RAW pin
+  // count (a left-out place was still a real place that day).
+  const todaySkipped = useMemo(() => (todayDay ? readRecord(todayDay).skipped : []), [todayDay])
+  const todayPending = useMemo(() => (todayDay ? pendingNoteIds(todayDay) : []), [todayDay])
+  const visiblePins = useMemo(
+    () => evidence.pins.filter((p) => !todaySkipped.includes(p.id)),
+    [evidence.pins, todaySkipped]
+  )
+  // THE RHYTHM (FIX 6, Jonathan's settled pick — quiet days POOL): a rich day
+  // keeps its evening card; a lone quiet evening mid-trip is silent; 2+ pending
+  // quiet days are offered together; a single quiet day surfaces only on the
+  // trip's last evening or riding a rich day's card. Pure table: settleRhythm.
+  const pendingQuietAll = useMemo(
+    () => quietPendingIsos(trip, mems, todayIso, { tz: legTz, viewer: traveler }),
+    [trip, mems, todayIso, legTz, traveler]
+  )
+  // Optimistic: pool/rider keeps flip locally before the trip round-trips.
+  const [pooledIsos, setPooledIsos] = useState([])
+  const pendingQuiet = useMemo(
+    () => pendingQuietAll.filter((iso) => !pooledIsos.includes(iso)),
+    [pendingQuietAll, pooledIsos]
+  )
+  const rhythm = settleRhythm({
+    live: !!di.dayX,
+    todayKept,
+    isEvening: isEveningNow,
+    todayRich: todayRecorded.length > 0 || evLevel === 'rich',
+    isLastDay: !!trip.dateRangeEnd && todayIso === trip.dateRangeEnd,
+    todayIso,
+    pendingQuiet,
+  })
+  const settleState = rhythm?.kind || null
   const party = trip.travelers?.length ? trip.travelers : (trip.data?.travelers || [])
   function handleKeep(opts = {}) {
+    // Pooled quiet days (the pool card / a rich card's rider): one tap keeps
+    // them all with the nothing-verdict, one trip write (App folds the isos).
+    if (Array.isArray(opts.poolIsos) && opts.poolIsos.length) {
+      setPooledIsos((cur) => [...cur, ...opts.poolIsos])
+      if (opts.poolIsos.includes(todayIso)) setKeptIso(todayIso)
+      if (onKeepDay) onKeepDay(opts.poolIsos, { nothing: true })
+      setSheetOpen(false)
+      return
+    }
     setKeptIso(todayIso)
-    // The settle SHEET provides its own drafts (named where a person named a pin). The
-    // quick "keep today" builds unnamed drafts from the pins. A nothing-day or an
-    // already-named day keeps no drafts. `party` is the who-fallback for author-less pins.
+    // The settle SHEET provides its own drafts (named/corrected where a person
+    // touched a pin) plus the pin ids they left out. The quick "keep today"
+    // builds unnamed drafts from the visible (un-skipped) pins — MINUS any pin
+    // holding an unrevealed surprise (P1): the record is shared with every
+    // lens, so the one-tap keep must never publish the author's secret place;
+    // the sheet stays the deliberate include-or-leave-out path. A nothing-day
+    // or an already-named day keeps no drafts. `party` is the who-fallback.
     const drafts = opts.drafts != null
       ? opts.drafts
-      : (!opts.nothing && todayRecorded.length === 0 && evidence.pins.length
-          ? pinsToDraftEntries(evidence.pins, { party, tz: legTz })
+      : (!opts.nothing && todayRecorded.length === 0 && visiblePins.length
+          ? pinsToDraftEntries(pinsWithoutUnrevealedSurprises(visiblePins, mems), { party, tz: legTz })
           : [])
-    if (onKeepDay) onKeepDay(todayIso, { nothing: opts.nothing, drafts })
+    if (onKeepDay) onKeepDay(todayIso, { nothing: opts.nothing, drafts, skipped: opts.skipped })
     setSheetOpen(false)
   }
   // Per-stop memory count, so an agenda row can show "N ENTRIES" (a stop that
@@ -506,16 +553,21 @@ export function LivingHeartHome({
           <SettleCard
             state={settleState}
             entries={todayRecorded}
-            pins={evidence.pins}
+            pins={visiblePins}
             photoCount={Math.max(evidence.locatedCount, todayCount)}
             tz={legTz}
             keptBy={todayKeptBy}
+            poolIsos={rhythm?.kind === 'pool' ? rhythm.isos : null}
+            riderIsos={rhythm?.kind === 'keep' || rhythm?.kind === 'kept' ? rhythm.rider : null}
             v={v}
             onKeep={handleKeep}
             onLookOver={() => setSheetOpen(true)}
           />
         )}
-        {sheetOpen && settleState === 'keep' && (
+        {/* The sheet opens from a keepable evening AND from a kept day's quiet
+            door (FIX 5 — kept, never closed): current pins, current pending,
+            re-keep merges additively. */}
+        {sheetOpen && (settleState === 'keep' || settleState === 'kept') && (
           <SettleSheet
             dayLabel={todayDay?.date || ''}
             pins={evidence.pins}
@@ -523,6 +575,10 @@ export function LivingHeartHome({
             party={party}
             tz={legTz}
             v={v}
+            memories={mems}
+            skippedIds={todaySkipped}
+            pendingIds={todayPending}
+            onTuckPending={onTuckPendingNote ? (memId, transcript) => onTuckPendingNote(todayIso, memId, transcript) : null}
             onKeep={handleKeep}
             onClose={() => setSheetOpen(false)}
           />
@@ -799,12 +855,55 @@ export function LivingHeartHome({
 // collapsed face); flights show inline on their day. Nothing here is capped:
 // the +N-more accordion is the collapsed glance face's rule only (01#3).
 // THE RECORD · the settle card — the design's centerpiece: keep the day → it
-// wears gold. Three honest states: 'keep' (today has a record → keep it),
-// 'nothing' (a quiet day → "we stayed put"), 'kept' (already kept → the gold
-// confirmation). Framed in the day's-story slot with the --kept gold thread.
-function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy, v, onKeep, onLookOver }) {
+// wears gold. Four honest states: 'keep' (today has a record → keep it),
+// 'nothing' (a lone quiet day, the trip's last evening only), 'pool' (2+ quiet
+// days offered together — Jonathan's settled pick), 'kept' (already kept → the
+// gold confirmation, now with a quiet door back into the sheet — gold means
+// the day counts, never that it's closed). Framed in the day's-story slot.
+function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy, poolIsos = null, riderIsos = null, v, onKeep, onLookOver }) {
   const kept = state === 'kept'
   const nothing = state === 'nothing'
+  const pool = state === 'pool' && Array.isArray(poolIsos) && poolIsos.length >= 2
+  // The pooled copy: "the last two days" only when that's literally true
+  // (a contiguous run ending today — G6); otherwise an honest count.
+  const poolN = pool ? poolIsos.length : 0
+  const poolSub = pool
+    ? (poolN === 2 && poolIsContiguous(poolIsos) ? v.settlePoolSubTwo : v.settlePoolSub.replace('{n}', String(poolN)))
+    : ''
+  const poolCta = poolN === 2 ? v.settlePoolCtaTwo : v.settlePoolCta
+  if (pool) {
+    return (
+      <div
+        data-testid="settle-card"
+        data-settle-state="pool"
+        style={{
+          background: 'color-mix(in srgb, var(--kept) 12%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--kept) 38%, transparent)',
+          borderRadius: 'min(var(--radius, 16px), 16px)', padding: '14px 16px', marginBottom: 16,
+        }}
+      >
+        <div style={{ ...MONO, fontSize: 9, color: 'var(--kept)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--kept)' }} aria-hidden="true" />
+          {v.lc(v.settlePoolKick)}
+        </div>
+        <div style={{ ...DISPLAY, fontStyle: 'var(--display-italic, normal)', fontSize: 18, color: 'var(--text)', marginTop: 7 }}>
+          {v.lc(poolSub)}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 12 }}>
+          <button
+            type="button" data-testid="settle-pool-keep" onClick={() => onKeep({ poolIsos })}
+            style={{
+              minHeight: 40, padding: '9px 18px', borderRadius: 'min(var(--radius, 14px), 14px)',
+              background: 'var(--kept)', color: '#1c1408', border: 0, cursor: 'pointer',
+              fontFamily: 'Inter Tight, -apple-system, system-ui, sans-serif', fontWeight: 600, fontSize: 14,
+            }}
+          >
+            {v.lc(poolCta)}
+          </button>
+        </div>
+      </div>
+    )
+  }
   // A rich-evidence keep with nothing named yet: the day drafted itself into pins.
   // Show them as honest DASHED guesses (never a name) — the "nearly free" magic.
   const showPins = !kept && !nothing && entries.length === 0 && pins.length > 0
@@ -827,9 +926,29 @@ function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy
         {v.lc(kept ? v.settleKeptKick : nothing ? v.settleNothingKick : v.settleKick)}{kept ? ' ✓' : ''}
       </div>
       {kept ? (
-        <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14, color: 'var(--muted)', marginTop: 7, lineHeight: 1.45 }}>
-          {v.lc(keptBy ? `Kept by ${TRAVELERS[keptBy]?.name || keptBy}. ${v.settleKeptSub}` : v.settleKeptSub)}
-        </div>
+        <>
+          <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 14, color: 'var(--muted)', marginTop: 7, lineHeight: 1.45 }}>
+            {v.lc(keptBy ? `Kept by ${TRAVELERS[keptBy]?.name || keptBy}. ${v.settleKeptSub}` : v.settleKeptSub)}
+          </div>
+          {/* The quiet door back in (FIX 5): a kept day keeps accepting — the
+              8pm campfire slides in behind an early keep; re-keeping merges,
+              never duplicates. */}
+          {onLookOver && (
+            <button
+              type="button" data-testid="settle-reopen" onClick={onLookOver}
+              style={{
+                ...MONO, fontSize: 10, color: 'var(--kept)', background: 'transparent', border: 0,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 10, padding: '4px 0',
+              }}
+            >
+              {v.lc(v.settleKeptDoor)} ›
+            </button>
+          )}
+          {/* Pending quiet days ride the kept card too (C2): without this line
+              a keep on the trip's LAST evening would strand them — the card is
+              already showing, so the rider is a line, never a new ask. */}
+          <QuietRider isos={riderIsos} v={v} onKeep={onKeep} />
+        </>
       ) : (
         <>
           {nothing ? (
@@ -879,7 +998,10 @@ function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy
             >
               {v.lc(nothing ? v.settleNothingCta : v.settleCta)}
             </button>
-            {showPins && onLookOver && (
+            {/* The sheet door rides EVERY keepable face now the verbs are real
+                (see inside · leave out · who-chips · Rafa's pending note) —
+                not only the pins face. The nothing face stays one simple tap. */}
+            {!nothing && onLookOver && (
               <button
                 type="button" data-testid="settle-lookover" onClick={onLookOver}
                 style={{
@@ -892,9 +1014,33 @@ function SettleCard({ state, entries = [], pins = [], photoCount = 0, tz, keptBy
               </button>
             )}
           </div>
+          {/* Pending quiet days ride a rich day's card as ONE tappable line —
+              they surface because this card is showing anyway, never as their
+              own ask (FIX 6). Tap = keep them with the nothing-verdict. */}
+          {!nothing && <QuietRider isos={riderIsos} v={v} onKeep={onKeep} />}
         </>
       )}
     </div>
+  )
+}
+
+// The rider line shared by the rich-day and kept faces: pending quiet days as
+// one tappable, italic line under a card that is already showing — never its
+// own initiation. Tap = keep them all with the nothing-verdict.
+function QuietRider({ isos, v, onKeep }) {
+  if (!Array.isArray(isos) || !isos.length) return null
+  return (
+    <button
+      type="button" data-testid="settle-quiet-rider" onClick={() => onKeep({ poolIsos: isos })}
+      style={{
+        display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 0,
+        borderTop: '1px dashed color-mix(in srgb, var(--kept) 35%, transparent)', cursor: 'pointer',
+        marginTop: 12, padding: '10px 0 2px', fontFamily: 'var(--font-display)', fontStyle: 'italic',
+        fontSize: 12.5, color: 'var(--muted)',
+      }}
+    >
+      {v.lc(isos.length === 1 ? v.settleRiderOne : v.settleRiderMany.replace('{n}', String(isos.length)))}
+    </button>
   )
 }
 

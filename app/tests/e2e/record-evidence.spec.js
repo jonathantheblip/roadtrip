@@ -78,8 +78,10 @@ test('a hangout day drafts itself from photos → the settle card shows pins, ke
   // Keep it. The card flips to kept; the pins persist as UNNAMED drafts.
   await settle.getByTestId('settle-keep').click()
   await expect(settle).toHaveAttribute('data-settle-state', 'kept', { timeout: 3000 })
-  // The day is settled — no re-keep path (design 02: additions never re-open a kept day).
+  // The kept card sheds its primary keep button; the way back in is the quiet
+  // re-open door (kept ≠ closed — additive re-keep is settle-sheet-verbs.spec.js).
   await expect(home.getByTestId('settle-keep')).toHaveCount(0)
+  await expect(home.getByTestId('settle-reopen')).toBeVisible()
 
   await expect.poll(() => readRecord(page, 'evi-stay', '2026-05-23'), { timeout: 4000 }).not.toBeNull()
   const rec = await readRecord(page, 'evi-stay', '2026-05-23')
@@ -166,14 +168,26 @@ test('a full day of GPS-less photos (≥6) offers to keep with an honest count, 
   await expect(settle).toContainText(/6 photos/i) // a real count (honesty rule #3)
 })
 
-test('a quiet day (few photos, no places) stays the nothing-day tap', async ({ page }) => {
+test('a quiet day (few photos, no places) stays the nothing-day tap — on the trip’s last evening', async ({ page }) => {
+  // Quiet days POOL mid-trip (the settled rhythm — settle-sheet-verbs.spec.js);
+  // the lone nothing-day tap survives only on the trip's LAST evening with no
+  // other quiet day pending. Same THIN-evidence classification as ever.
+  const LAST_DAY = {
+    ...STAY, id: 'evi-stay-last',
+    dateRange: 'May 22 – 23, 2026', dateRangeStart: '2026-05-22', dateRangeEnd: '2026-05-23',
+    days: [
+      { n: 1, isoDate: '2026-05-22', date: 'Fri May 22', title: 'Arrive', lodging: 'Harbor Breeze', stops: [],
+        record: { state: 'kept', keptBy: 'jonathan', keptAt: '2026-05-22T23:00:00.000Z', nothing: true, entries: [] } },
+      { n: 2, isoDate: '2026-05-23', date: 'Sat May 23', title: '', lodging: 'Harbor Breeze', stops: [] },
+    ],
+  }
   await pinEvening(page)
-  await seedTripIntoCache(page, STAY)
+  await seedTripIntoCache(page, LAST_DAY)
   await seedMemoriesIntoCache(page, [
     // one located photo → 1 pin, and only 1 photo total → THIN (not ≥2 pins, not ≥6 photos)
     locatedMem('m-only', { lat: 42.0500, lng: -70.2400, at: '2026-05-23T15:00:00.000Z', label: 'Race Point' }),
-  ])
-  await page.goto('/?person=helen&trip=evi-stay&nosw=1')
+  ].map((m) => ({ ...m, tripId: 'evi-stay-last' })))
+  await page.goto('/?person=helen&trip=evi-stay-last&nosw=1')
   const home = page.getByTestId('living-heart-home')
   await expect(home).toBeVisible({ timeout: 10000 })
   const settle = home.getByTestId('settle-card')

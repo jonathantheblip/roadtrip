@@ -84,13 +84,18 @@ test('the settle card keeps today → the day wears gold on the unfold', async (
   await expect(keptDay.first()).toContainText(/kept/i)
 })
 
-test('a nothing-day keeps as "we stayed put"', async ({ page }) => {
+test('a lone nothing-day keeps as "we stayed put" — on the trip’s LAST evening (quiet days pool otherwise)', async ({ page }) => {
+  // The settle rhythm (Jonathan's settled pick, 2026-07-06): a single quiet day
+  // gets its own card only when the trip is about to close — mid-trip it stays
+  // silent and pools with the next quiet one (settle-sheet-verbs.spec.js covers
+  // the pool). So today is the LAST day here, with yesterday already kept.
   const NOTHING = {
     ...BASE, id: 'keep-nothing',
+    dateRange: 'May 22 – 23, 2026', dateRangeStart: '2026-05-22', dateRangeEnd: '2026-05-23',
     days: [
-      { n: 1, isoDate: '2026-05-22', date: 'Fri May 22', title: 'Arrive', lodging: 'Harbor Breeze', stops: [] },
+      { n: 1, isoDate: '2026-05-22', date: 'Fri May 22', title: 'Arrive', lodging: 'Harbor Breeze', stops: [],
+        record: { state: 'kept', keptBy: 'jonathan', keptAt: '2026-05-22T23:00:00.000Z', nothing: true, entries: [] } },
       { n: 2, isoDate: '2026-05-23', date: 'Sat May 23', title: 'A quiet day', lodging: 'Harbor Breeze', stops: [] },
-      { n: 3, isoDate: '2026-05-24', date: 'Sun May 24', title: 'Dunes', lodging: 'Harbor Breeze', stops: [] },
     ],
   }
   await pinEvening(page)

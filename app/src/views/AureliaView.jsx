@@ -17,7 +17,7 @@ import { homeVoice } from '../lib/homeVoice'
 // on purpose — it reads as a real typeset letter, not app chrome.
 const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
 
-export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, onOpenEditor, onKeepDay, weaveReady, bookHasPages, surpriseRevealCue, nowReadout, whoAround }) {
+export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenStop, onOpenActivities, onOpenPhotos, onOpenAllPhotos, onShowMe, onOpenSettings, onOpenMap, onOpenWeave, onOpenReplay, onOpenBook, onCompose, onOpenEditor, onKeepDay, onTuckPendingNote, weaveReady, bookHasPages, surpriseRevealCue, nowReadout, whoAround }) {
   // ONE home for EVERY phase (slice 4): the living heart is Aurelia's home during AND
   // after (its keepsake state) — it reads straight from props. Her film-roll keepsake
   // is retired; her "note from Dad" + photos/show-me entries stay; Things-to-do drops after.
@@ -44,6 +44,7 @@ export function AureliaView({ trip, traveler, pastTrips, onPlayPastTrip, onOpenS
         onCompose={onCompose}
         onOpenEditor={onOpenEditor}
         onKeepDay={onKeepDay}
+        onTuckPendingNote={onTuckPendingNote}
         onOpenAllPhotos={onOpenAllPhotos}
         onOpenActivities={onOpenActivities}
         onOpenStop={onOpenStop}

@@ -15,6 +15,12 @@
 // Pure functions only — no I/O, no React. Lives in the trip's flexible
 // data (data_json); no schema/migration.
 
+// Pure siblings only: the one great-circle formula (evidenceOverlapScore's
+// centroid gate) and the evidence engine's cluster radius — the same ~200m
+// that decided the pins is what decides whether two centroids are one place.
+import { haversineMeters } from './photoMatch.js'
+import { EVIDENCE_DEFAULTS } from './evidence.js'
+
 // Match TripEditor's humanDate: ISO → "Fri Jun 19" (local-noon trick so
 // the calendar date never drifts across timezones).
 function humanDate(iso) {
@@ -121,9 +127,9 @@ export function isDraftEntry(e) {
 }
 
 // The record entries a READER should see once evidence is in play: named memories
-// AND evidence drafts. Distinct from namedRecordEntries (named-only), which the
-// Weave narration and photo-name filing still use — a draft has no name to narrate
-// or file under. A half-typed MANUAL row remains hidden (isDraftEntry excludes it).
+// AND evidence drafts. Distinct from namedRecordEntries (named-only) — a draft has
+// no name to narrate or file under, so any name-consuming reader stays on the
+// named-only view. A half-typed MANUAL row remains hidden (isDraftEntry excludes it).
 export function readableRecordEntries(day) {
   return dayRecordOf(day).filter((e) => (e?.name || '').trim() || isDraftEntry(e))
 }
@@ -234,6 +240,120 @@ export function applyDayRecord(trip, target = {}, entries = []) {
     else existing.push(e)
   }
   days[idx] = { ...days[idx], record: { ...cur, entries: existing } }
+  return commitDays(trip, days)
+}
+
+// MERGE evidence drafts onto a day's record — the keep flow's writer (FIX 2 +
+// FIX 5, 2026-07-06). Gold means "this day counts," never "this day is closed"
+// (VISION §3): a re-keep must fold NEW evidence in without disturbing anything
+// a person chose. The rules, in order:
+//   • a draft whose pin id is in record.skipped (persisted or passed here)
+//     writes NOTHING — "leave this out" is sticky, by id; only a genuinely new
+//     photo set (a new id) may ever re-raise the place;
+//   • a draft matching an existing entry BY ID updates it in place;
+//   • else a draft whose photos OVERLAP an existing evidence entry's photos is
+//     that same place GROWN (pin ids hash the member set, so accretion mints a
+//     new id) — it updates that entry in place, most-shared-photos wins, and
+//     the entry's id stays put (the stable anchor for stamps and references);
+//   • anything else is a genuinely new place and appends in told order.
+// On an update, evidence facts refresh (span/time words, photos, counts,
+// centroid, guess) while chosen things hold: a typed name wins, an existing
+// name survives an unnamed re-offer, `for` moves only when the draft carries
+// the explicit whoEdited consent bit (which is wire-only — stripped here),
+// and stamps/notes/keeper facts are never touched. skipped ids union.
+// Manual/chat entries carry no photos and are matched by id only — a pin can
+// never swallow a told memory. Pure; never touches day.stops.
+// Does an evidence draft describe the SAME PLACE as an existing entry, and how
+// strongly? 0 = no match; higher = more shared photos. The overlap key is
+// photoIds (<memoryId>:<refIndex>) — cluster-disjoint within a clustering
+// pass, so one shared photo id genuinely means one shared photo AT ONE PLACE.
+// Memory-id overlap is NOT that (C1, 2026-07-06): a single multi-photo share
+// can span the beach AND the dinner — two pins, one memory id — and a ≥1
+// memory-id threshold folded those two places into one entry, clobbering a
+// human-named entry's coordinates with the other place's.
+//
+// LEGACY entries (kept before drafts carried photoIds) fall back to memory-id
+// overlap ONLY behind both guards:
+//   • a MAJORITY of the smaller side shared (2n > min sizes) — one incidental
+//     shared album-memory can't marry two places;
+//   • centroids within one cluster radius (the same ~200m that formed the
+//     pins) — and an entry without coordinates never matches, because a
+//     duplicate place is safer than a wrong merge.
+// Shared verbatim by mergeKeepDrafts and the settle sheet's covered-pin
+// display so the two kernels can never disagree about what "the same place"
+// means. Pure.
+export function evidenceOverlapScore(draft, entry, { radiusMeters = EVIDENCE_DEFAULTS.radiusMeters } = {}) {
+  const dPids = Array.isArray(draft?.photoIds) ? draft.photoIds : []
+  const ePids = Array.isArray(entry?.photoIds) ? entry.photoIds : []
+  if (dPids.length && ePids.length) {
+    const set = new Set(ePids)
+    return dPids.reduce((s, id) => s + (set.has(id) ? 1 : 0), 0)
+  }
+  const dMem = Array.isArray(draft?.photos) ? draft.photos : []
+  const eMem = Array.isArray(entry?.photos) ? entry.photos : []
+  if (!dMem.length || !eMem.length) return 0
+  const set = new Set(eMem)
+  const n = dMem.reduce((s, id) => s + (set.has(id) ? 1 : 0), 0)
+  if (!n || 2 * n <= Math.min(dMem.length, eMem.length)) return 0
+  const dLat = Number(draft?.lat)
+  const dLng = Number(draft?.lng)
+  const eLat = Number(entry?.lat)
+  const eLng = Number(entry?.lng)
+  if (![dLat, dLng, eLat, eLng].every(Number.isFinite)) return 0
+  if (haversineMeters(dLat, dLng, eLat, eLng) > radiusMeters) return 0
+  return n
+}
+
+export function mergeKeepDrafts(trip, target = {}, drafts = [], { skipped = [] } = {}) {
+  if (!trip) throw new Error('mergeKeepDrafts: trip required')
+  const { days, idx } = findOrCreateDay(trip, target)
+  const cur = readRecord(days[idx])
+  const skipSet = new Set([...cur.skipped, ...(Array.isArray(skipped) ? skipped.filter(Boolean) : [])])
+  const entries = cur.entries.slice()
+
+  const targetIndex = (draft) => {
+    const byId = entries.findIndex((e) => e?.id === draft.id)
+    if (byId >= 0) return byId
+    let best = -1
+    let bestN = 0
+    entries.forEach((e, i) => {
+      if (!e || (e.source !== 'evidence' && e.src !== 'evidence')) return
+      const n = evidenceOverlapScore(draft, e)
+      if (n > bestN) { best = i; bestN = n }
+    })
+    return best
+  }
+
+  for (const d of drafts) {
+    if (!d || !d.id) continue
+    if (skipSet.has(d.id)) continue // left out — never becomes an entry
+    const { whoEdited, ...draft } = d
+    const at = targetIndex(d)
+    if (at < 0) {
+      entries.push(draft)
+      continue
+    }
+    const prev = entries[at]
+    entries[at] = {
+      ...prev,
+      // Evidence facts refresh so the kept day's counts stay true…
+      time: draft.time || prev.time,
+      lat: draft.lat ?? prev.lat,
+      lng: draft.lng ?? prev.lng,
+      guess: draft.guess ?? prev.guess,
+      span: draft.span || prev.span,
+      photos: Array.isArray(draft.photos) && draft.photos.length ? draft.photos : prev.photos,
+      // …and the per-photo ids ride the update, so a legacy entry graduates to
+      // the honest overlap key on its first re-keep (C1).
+      photoIds: Array.isArray(draft.photoIds) && draft.photoIds.length ? draft.photoIds : prev.photoIds,
+      photoCount: draft.photoCount || prev.photoCount,
+      // …chosen things hold.
+      name: (draft.name || '').trim() ? draft.name : prev.name,
+      for: whoEdited ? draft.for : (Array.isArray(prev.for) && prev.for.length ? prev.for : draft.for),
+      id: prev.id,
+    }
+  }
+  days[idx] = { ...days[idx], record: { ...cur, entries, skipped: [...skipSet] } }
   return commitDays(trip, days)
 }
 

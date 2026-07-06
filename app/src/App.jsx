@@ -55,7 +55,7 @@ import { useIsIpad } from './hooks/useMediaQuery'
 import { ArrivalRevealWatcher, countUnseenReveals, markRevealsSeen, hasPendingArrival } from './hooks/useSurpriseAutomation'
 import { mergeCoverStops, maskTripsForViewer, maskTripForViewer, isTripMaskedFrom } from './lib/surprises'
 import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCover, uploadAssetBlob } from './lib/workerSync'
-import { keepDay, applyDayRecord, dayRecordIsKept, addEntryStamp, queuePendingNote } from './lib/dayRecord'
+import { keepDay, applyDayRecord, mergeKeepDrafts, addEntryStamp, queuePendingNote, resolvePendingNote, normalizeRecordEntry } from './lib/dayRecord'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
 import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip, drainMemorySyncQueue } from './lib/memoryStore'
@@ -1020,20 +1020,52 @@ export default function App() {
   async function onKeepDay(dayIso, opts = {}) {
     if (!trip || !dayIso) return { ok: false }
     const current = allTrips.find((t) => t.id === trip.id) || trip
-    // Persist evidence drafts (unnamed pins the day drafted itself into) onto the day
-    // BEFORE keeping, so a kept hangout day carries its places even with nothing named
-    // (design 02: unnamed-and-kept is valid). It never touches day.stops (the plan).
-    // The FIRST keep settles the day (design 02: "additions never re-open a kept day"):
-    // once kept, a re-keep — or a second device keeping before the first sync lands —
-    // does NOT re-apply drafts. (applyDayRecord upserts by the pin id, so a same-session
-    // re-tap with the same photos is already a no-op; this guard covers a changed photo
-    // set / cross-device race, whose pin ids would differ. True cross-device pin merge on
-    // partial photo sets is a downstream concern — R4c / server optimistic-concurrency.)
-    const curDay = (current.data?.days || current.days || []).find((d) => d?.isoDate === dayIso)
-    const withDrafts = !(curDay && dayRecordIsKept(curDay)) && Array.isArray(opts.drafts) && opts.drafts.length
-      ? applyDayRecord(current, { dayIso }, opts.drafts)
+    // POOLED quiet days (FIX 6, Jonathan's pick): an array of isos keeps them
+    // all with the nothing-verdict in ONE trip transformation + ONE push — two
+    // sequential onKeepDay calls would each read the same React-stale snapshot
+    // and the second would clobber the first.
+    if (Array.isArray(dayIso)) {
+      const isos = dayIso.filter(Boolean)
+      if (!isos.length) return { ok: false }
+      let pooled = current
+      for (const iso of isos) pooled = keepDay(pooled, { dayIso: iso }, { keptBy: traveler || null, nothing: !!opts.nothing })
+      await tripsApi.upsertTrip(pooled)
+      return { ok: true }
+    }
+    // MERGE evidence drafts + left-out pin ids onto the day BEFORE keeping
+    // (FIX 2 + FIX 5): mergeKeepDrafts updates existing entries in place (names,
+    // corrected who, stamps preserved), appends genuinely new pins, drops and
+    // remembers skipped ones (record.skipped — sticky by id). The old "an
+    // already-kept day drops the drafts" guard is retired on Jonathan's settled
+    // keep semantics: gold means the day counts, never that it's closed — an
+    // evening re-keep folds the 8pm campfire in, and never duplicates. It still
+    // never touches day.stops (the plan).
+    const withDrafts = (Array.isArray(opts.drafts) && opts.drafts.length) || (Array.isArray(opts.skipped) && opts.skipped.length)
+      ? mergeKeepDrafts(current, { dayIso }, opts.drafts || [], { skipped: opts.skipped || [] })
       : current
     const next = keepDay(withDrafts, { dayIso }, { keptBy: traveler || null, nothing: !!opts.nothing })
+    await tripsApi.upsertTrip(next)
+    return { ok: true }
+  }
+
+  // A PARENT tucks one of Rafa's pending "tell about today" notes into the
+  // day's record from the settle sheet (FIX 7): his words become a record
+  // entry verbatim (the entry id is derived from the memory id, so a retry
+  // upserts), then the id leaves the pending queue — the same honest emptying
+  // the editor's placement flow does (placed = removed from pending). The
+  // voice memory itself stays what it always was; the entry quotes him.
+  async function onTuckPendingNote(dayIso, memId, transcript) {
+    if (!trip || !dayIso || !memId) return { ok: false }
+    const text = (transcript || '').trim()
+    if (!text) return { ok: false } // nothing to tuck until Whisper lands
+    const current = allTrips.find((t) => t.id === trip.id) || trip
+    const party = current.travelers?.length ? current.travelers : (current.data?.travelers || [])
+    const entry = normalizeRecordEntry(
+      { id: `rec-rafa-${memId}`, name: text, source: 'manual' },
+      { party, recordedBy: 'rafa' }
+    )
+    const placed = applyDayRecord(current, { dayIso }, [entry])
+    const next = resolvePendingNote(placed, { dayIso }, memId, null, '')
     await tripsApi.upsertTrip(next)
     return { ok: true }
   }
@@ -1345,9 +1377,10 @@ export default function App() {
         openEditor(null, opts && typeof opts.focusDayIso === 'string' ? { ...opts, from: 'trip' } : { from: 'trip' }),
       onOpenSurprises: openSurprises,
       onCompose: openCompose, // "Share a moment" — designed home-band entry (was ⋯-only)
-      onKeepDay, // the Record's settle action — keep today (or a nothing-day) → gold
+      onKeepDay, // the Record's settle action — keep today (or pooled quiet days) → gold
       onStampEntry, // Rafa's stamp — additive, on the entry, for everyone
       onQueuePendingNote, // Rafa's "tell about today" — queues a memory id for a parent to place
+      onTuckPendingNote, // a parent tucks Rafa's pending note into the record from the settle sheet
 
       weaveReady,
       bookHasPages,

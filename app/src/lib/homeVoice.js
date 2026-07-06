@@ -32,6 +32,20 @@ export const BASE = {
   settleNothingCta: 'Keep it',
   settleKeptKick: 'Today, kept',
   settleKeptSub: 'Tonight’s story writes itself from this.',
+  // The kept card's quiet door back into the sheet (FIX 5 — kept, never closed).
+  settleKeptDoor: 'Add a name',
+  // Quiet days POOL (FIX 6 — Jonathan's pick): the card that offers them
+  // together. {n} is replaced at render; the "last two" line is used only when
+  // the pool is literally the last two days (poolIsContiguous — G6).
+  settlePoolKick: 'The quiet days',
+  settlePoolSubTwo: 'The last two days — quiet ones?',
+  settlePoolSub: '{n} quiet days, still loose.',
+  settlePoolCtaTwo: 'Keep them both',
+  settlePoolCta: 'Keep them all',
+  // A rich day's card carries pending quiet days as one tappable line (never
+  // its own ask — the rider only exists because the card is showing anyway).
+  settleRiderOne: 'One quiet day, still loose — keep it too?',
+  settleRiderMany: '{n} quiet days, still loose — keep them too?',
   // THE RECORD · settle SHEET (name the drafted pins). Per-lens nuance is R6.
   sheetLookOver: 'Look it over',
   sheetTitle: 'The record',
@@ -40,6 +54,18 @@ export const BASE = {
   sheetKeepGuess: 'Keep the guess',
   sheetAddMissed: 'Something the photos missed',
   sheetFooter: 'The plan isn’t touched.',
+  // The sheet's VERBS (FIX 2/3/4/7 — the promise line above, made true).
+  sheetLeaveOut: 'Leave this out',
+  sheetLeftOut: 'Left out',
+  sheetPutBack: 'Put it back',
+  sheetSeePhotos: 'See the photos',
+  sheetHidePhotos: 'Hide the photos',
+  sheetWho: 'Who was there',
+  sheetRafaTold: 'Rafa told about today',
+  sheetListen: 'Listen',
+  sheetTuck: 'Tuck it into the day',
+  sheetTranscribing: 'Transcribing…',
+  sheetPlayToHear: '(play to hear it)',
 }
 
 // Per-lens overrides (only the lines that differ from the warm base). Jonathan's
@@ -58,9 +84,19 @@ const OVERRIDES = {
     settleNothingSub: 'Stayed put. Zero regrets.',
     settleKeptKick: 'Today, on the record',
     settleKeptSub: 'Signed. The day stands.',
+    settleKeptDoor: 'Add to the record',
+    settlePoolSubTwo: 'Two quiet days. Sign them off together?',
+    settlePoolSub: '{n} quiet days. Sign them off together?',
+    settlePoolCtaTwo: 'Sign them off',
+    settlePoolCta: 'Sign them off',
+    settleRiderOne: 'One quiet day back there. Sign it off too?',
+    settleRiderMany: '{n} quiet days back there. Sign them off too?',
     sheetLookOver: 'Review the draft',
     sheetIntro: 'Drafted from the day’s photos. Fix what’s wrong, name what’s nameless, skip the rest.',
     sheetNameHint: 'Name it',
+    sheetLeaveOut: 'Leave it out',
+    sheetSeePhotos: 'Show the photos',
+    sheetTuck: 'Put it on the record',
   },
   aurelia: {
     weaveKicker: 'the weave',
@@ -77,6 +113,16 @@ const OVERRIDES = {
     settleNothingSub: 'we did nothing (elite)',
     settleKeptKick: 'today, kept',
     settleKeptSub: 'woven while you slept.',
+    settleKeptDoor: 'name one more?',
+    settlePoolSubTwo: 'two floaty days. keep ’em?',
+    settlePoolSub: '{n} floaty days. keep ’em?',
+    settlePoolCtaTwo: 'keep ’em both',
+    settlePoolCta: 'keep ’em all',
+    settleRiderOne: 'a floaty day, still loose — keep it too?',
+    settleRiderMany: '{n} floaty days, still loose — keep ’em too?',
+    sheetLeaveOut: 'not this one',
+    sheetPutBack: 'undo',
+    sheetTuck: 'tuck it in',
   },
 }
 
@@ -107,6 +153,14 @@ export function homeVoice(traveler) {
     settleNothingCta: g('settleNothingCta'),
     settleKeptKick: g('settleKeptKick'),
     settleKeptSub: g('settleKeptSub'),
+    settleKeptDoor: g('settleKeptDoor'),
+    settlePoolKick: g('settlePoolKick'),
+    settlePoolSubTwo: g('settlePoolSubTwo'),
+    settlePoolSub: g('settlePoolSub'),
+    settlePoolCtaTwo: g('settlePoolCtaTwo'),
+    settlePoolCta: g('settlePoolCta'),
+    settleRiderOne: g('settleRiderOne'),
+    settleRiderMany: g('settleRiderMany'),
     sheetLookOver: g('sheetLookOver'),
     sheetTitle: g('sheetTitle'),
     sheetIntro: g('sheetIntro'),
@@ -114,5 +168,16 @@ export function homeVoice(traveler) {
     sheetKeepGuess: g('sheetKeepGuess'),
     sheetAddMissed: g('sheetAddMissed'),
     sheetFooter: g('sheetFooter'),
+    sheetLeaveOut: g('sheetLeaveOut'),
+    sheetLeftOut: g('sheetLeftOut'),
+    sheetPutBack: g('sheetPutBack'),
+    sheetSeePhotos: g('sheetSeePhotos'),
+    sheetHidePhotos: g('sheetHidePhotos'),
+    sheetWho: g('sheetWho'),
+    sheetRafaTold: g('sheetRafaTold'),
+    sheetListen: g('sheetListen'),
+    sheetTuck: g('sheetTuck'),
+    sheetTranscribing: g('sheetTranscribing'),
+    sheetPlayToHear: g('sheetPlayToHear'),
   }
 }

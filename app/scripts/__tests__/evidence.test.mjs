@@ -258,3 +258,98 @@ test('pinsToDraftEntries: empty who falls back to the whole party (the honest ha
   const [d] = pinsToDraftEntries(pins, { party: ['jonathan', 'helen', 'aurelia', 'rafa'], tz: 'UTC' })
   assert.deepEqual(d.for, ['jonathan', 'helen', 'aurelia', 'rafa'], 'no photo author → the party is the suggestion')
 })
+
+// ── FIX 1 · the surprise filter at the SOURCE (SPEC §3 A-4½, ship-blocker) ────
+// An unrevealed surprise must be invisible to the viewer it hides from at the
+// evidence engine itself — not only upstream in listMemoriesForTrip — so no
+// caller (retro-settle, a future surface, a raw-list path) can rebuild pins
+// from a secret. Per-viewer, not global: the author/conspirator still sees it.
+
+test('photosForDay: an unrevealed surprise is invisible to the viewer it hides from — per-viewer, not global', () => {
+  const memories = [
+    mem('m-plain', 'helen', [ref(BEACH, '15:00')]),
+    { id: 'm-secret', authorTraveler: 'jonathan', hideFrom: ['helen'], photoRefs: [ref(SHOP, '16:00', { locationLabel: 'The Kite Shop' })] },
+  ]
+  const forHelen = photosForDay(memories, ISO, { tz: 'UTC', viewer: 'helen' })
+  assert.deepEqual(forHelen.map((p) => p.memoryId), ['m-plain'], 'helen (hidden-from) never sees the secret photo')
+  const forJonathan = photosForDay(memories, ISO, { tz: 'UTC', viewer: 'jonathan' })
+  assert.deepEqual(forJonathan.map((p) => p.memoryId), ['m-plain', 'm-secret'], 'the author still sees his own surprise')
+  const forAurelia = photosForDay(memories, ISO, { tz: 'UTC', viewer: 'aurelia' })
+  assert.deepEqual(forAurelia.map((p) => p.memoryId), ['m-plain', 'm-secret'], 'a conspirator it is NOT hidden from sees its pins — per-viewer, not global')
+})
+
+test('photosForDay: hideFrom everyone hides from every non-author; a REVEALED surprise is real for all', () => {
+  const secret = { id: 'm-secret', authorTraveler: 'jonathan', hideFrom: ['everyone'], photoRefs: [ref(SHOP, '16:00')] }
+  assert.equal(photosForDay([secret], ISO, { tz: 'UTC', viewer: 'helen' }).length, 0)
+  assert.equal(photosForDay([secret], ISO, { tz: 'UTC', viewer: 'rafa' }).length, 0)
+  assert.equal(photosForDay([secret], ISO, { tz: 'UTC', viewer: 'jonathan' }).length, 1, 'the author always sees their own')
+  const revealed = { ...secret, revealed: '2026-07-03T18:00:00.000Z' }
+  assert.equal(photosForDay([revealed], ISO, { tz: 'UTC', viewer: 'helen' }).length, 1, 'revealed = everyone')
+})
+
+test('photosForDay/buildDayEvidence: no viewer → no filtering (legacy callers unchanged)', () => {
+  const memories = [{ id: 'm-secret', authorTraveler: 'jonathan', hideFrom: ['helen'], photoRefs: [ref(SHOP, '16:00')] }]
+  assert.equal(photosForDay(memories, ISO, UTC).length, 1, 'viewer-less read keeps the old behavior')
+  const evHelen = buildDayEvidence(memories, ISO, { tz: 'UTC', viewer: 'helen' })
+  assert.equal(evHelen.pins.length, 0, 'buildDayEvidence passes the viewer through to the source')
+  assert.equal(evHelen.locatedCount, 0, 'the located count cannot leak the secret’s existence by arithmetic')
+})
+
+// ── FIX 4 · who-correction rides pinsToDraftEntries ──────────────────────────
+test('pinsToDraftEntries: a who-correction overrides the suggestion and is MARKED as edited', () => {
+  const pins = clusterPhotos(photosForDay([
+    mem('m1', 'helen', [ref(BEACH, '15:00')]),
+    mem('m2', 'jonathan', [ref(BEACH_N, '15:20')]),
+    mem('m3', 'aurelia', [ref(SHOP, '18:00')]),
+  ], ISO, UTC), UTC)
+  assert.equal(pins.length, 2)
+  const drafts = pinsToDraftEntries(pins, {
+    party: ['jonathan', 'helen', 'aurelia', 'rafa'],
+    tz: 'UTC',
+    who: { [pins[0].id]: ['helen', 'rafa'] },
+  })
+  assert.deepEqual(drafts[0].for, ['helen', 'rafa'], 'the corrected set rides the entry’s for')
+  assert.equal(drafts[0].whoEdited, true, 'marked so the merge knows a person chose this (vs a suggestion)')
+  assert.deepEqual(drafts[1].for, ['aurelia'], 'an uncorrected pin keeps its author suggestion')
+  assert.equal(drafts[1].whoEdited, undefined, 'no correction → no mark')
+})
+
+test('pinsToDraftEntries: an EMPTY who-correction is ignored (falls back to the suggestion chain)', () => {
+  const pins = clusterPhotos(photosForDay([mem('m1', 'helen', [ref(BEACH, '15:00')])], ISO, UTC), UTC)
+  const [d] = pinsToDraftEntries(pins, { party: ['jonathan', 'helen'], tz: 'UTC', who: { [pins[0].id]: [] } })
+  assert.deepEqual(d.for, ['helen'], 'deselecting everyone is not a correction — the suggestion stands')
+  assert.equal(d.whoEdited, undefined)
+})
+
+// ── P1 · the one-tap keep never publishes a secret place ─────────────────────
+// The author SEES their surprise's pin (per-viewer masking), but the record a
+// keep writes is shared with every lens — so the zero-friction card keep drops
+// masked-origin pins; the sheet remains the deliberate include/leave-out path.
+import { pinsWithoutUnrevealedSurprises } from '../../src/lib/evidence.js'
+
+test('pinsWithoutUnrevealedSurprises: drops any pin holding an unrevealed surprise; revealed and plain pass through', () => {
+  const memories = [
+    mem('m-plain', 'helen', [ref(BEACH, '15:00')]),
+    { id: 'm-secret', authorTraveler: 'jonathan', hideFrom: ['helen'], photoRefs: [ref(SHOP, '16:00')] },
+  ]
+  const pins = clusterPhotos(photosForDay(memories, ISO, { tz: 'UTC', viewer: 'jonathan' }))
+  assert.equal(pins.length, 2, 'the author sees both pins')
+  const safe = pinsWithoutUnrevealedSurprises(pins, memories)
+  assert.equal(safe.length, 1, 'the secret-place pin is not quick-keepable')
+  assert.deepEqual(safe[0].memoryIds, ['m-plain'])
+  // Revealed = real for everyone → publishable.
+  const revealed = memories.map((m) => (m.id === 'm-secret' ? { ...m, revealed: '2026-07-03T18:00:00.000Z' } : m))
+  assert.equal(pinsWithoutUnrevealedSurprises(pins, revealed).length, 2)
+  // A MIXED pin (a secret member sharing a cluster with a plain photo) is
+  // dropped whole — its entry would still place the secret on the record.
+  const mixed = clusterPhotos(photosForDay([
+    mem('m-plain', 'helen', [ref(BEACH, '15:00')]),
+    { id: 'm-secret', authorTraveler: 'jonathan', hideFrom: ['helen'], photoRefs: [ref(BEACH_N, '15:10')] },
+  ], ISO, { tz: 'UTC', viewer: 'jonathan' }))
+  assert.equal(mixed.length, 1, 'one shared cluster')
+  assert.equal(pinsWithoutUnrevealedSurprises(mixed, memories).length, 0)
+  // No surprises in play → the SAME array reference (memo-friendly no-op).
+  const plainOnly = [mem('m-plain', 'helen', [ref(BEACH, '15:00')])]
+  const plainPins = clusterPhotos(photosForDay(plainOnly, ISO, UTC))
+  assert.equal(pinsWithoutUnrevealedSurprises(plainPins, plainOnly), plainPins)
+})
