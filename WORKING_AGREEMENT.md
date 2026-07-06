@@ -213,8 +213,22 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-05. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-06. Update as these resolve.
 
+- **[OPEN 2026-07-06] The dev Mac cannot reliably run the FULL dual-engine e2e suite; a machine-conditional
+  gate policy is in force (Jonathan-approved 2026-07-06).** Under full-suite load, webkit-mobile tests stall
+  at 30s timeouts (mostly at browser-context setup) with SHIFTING victims; zero assertion failures ever;
+  every victim passes solo; chromium is always clean; CI's runners pass the same suite green. Cause
+  unproven (NOT disk — that theory was a df misread; the Mac had ~228GB free). While this holds: local
+  gate = both unit suites + vite build + full CHROMIUM project green + stalled webkit files green solo,
+  and **CI's full dual-engine suite arbitrates at deploy** (it e2e-gates every deploy anyway). Related
+  operational traps, all bitten this window: the harness resets the shell cwd unpredictably — EVERY
+  playwright invocation gets an explicit `cd .../app &&` (a root-cwd run once produced a fake-green "No
+  tests found" caught only by reading literal lines, and a root-cwd `npx playwright install` fetched a
+  FOREIGN playwright whose GC deleted the project's browsers); never pipe suite output through tail
+  (it eats the failed/flaky section and masks exit codes) — capture full output and read
+  `app/test-results/.last-run.json` for the authoritative status. Resolve by finding the machine cause
+  (or the staging-PWA making cloud verification primary), then retire this entry.
 - **[OPEN 2026-07-05] `?trip=<id>` in the URL only resolves against trips ALREADY KNOWN at mount time.**
   Discovered while building a live-cross-device-pull e2e test: `App.jsx` reads the URL's `?trip=` param once
   against whatever `trips` state exists at that moment; if the id isn't there yet (e.g. a fresh deep-link to
