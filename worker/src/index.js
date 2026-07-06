@@ -894,17 +894,42 @@ async function postMemory(env, traveler, request, url, cors) {
   const baseUpdatedAt =
     Number.isFinite(body.baseUpdatedAt) ? body.baseUpdatedAt : null
   if ('baseUpdatedAt' in body) delete body.baseUpdatedAt
-  if (baseUpdatedAt != null) {
-    const storedRow = await env.DB.prepare(
-      'SELECT updated_at FROM memories WHERE id = ?'
+
+  // One stored-row read serves BOTH the resurrection guard and the concurrency
+  // check. Unconditional (not only when a base rides along) and INCLUDING
+  // tombstoned rows: a tombstone must refuse based and base-less pushes alike —
+  // the stamp compare alone lets a push whose base matches the tombstone's own
+  // updated_at sail through into the upsert. Mirrors postTrip's guard.
+  let storedRow = null
+  try {
+    storedRow = await env.DB.prepare(
+      'SELECT updated_at, deleted_at FROM memories WHERE id = ?'
     ).bind(body.id).first()
-    if (storedRow && Number(storedRow.updated_at) > baseUpdatedAt) {
-      return json(
-        { error: 'conflict', id: body.id, storedUpdatedAt: Number(storedRow.updated_at) },
-        409,
-        cors
-      )
-    }
+  } catch (e) {
+    console.error('postMemory stored-row read failed', e?.stack || e)
+  }
+
+  // RESURRECTION GUARD. The family deleted this memory; the only writes that
+  // can target it now are stale devices — a drained outbox, a queued edit, a
+  // conflict recovery reapplying onto the tombstone. Refuse them ALL with the
+  // worker's one authoritative delete signal (`deleted: true`), so a
+  // concurrency-aware client adopts the delete instead of retrying forever.
+  // There is deliberately NO revive-by-push: re-creating a deleted memory must
+  // be a conscious future surface, never an upsert accident.
+  if (storedRow && storedRow.deleted_at != null) {
+    return json(
+      { error: 'conflict', id: body.id, deleted: true, storedUpdatedAt: Number(storedRow.updated_at) },
+      409,
+      cors
+    )
+  }
+
+  if (baseUpdatedAt != null && storedRow && Number(storedRow.updated_at) > baseUpdatedAt) {
+    return json(
+      { error: 'conflict', id: body.id, storedUpdatedAt: Number(storedRow.updated_at) },
+      409,
+      cors
+    )
   }
   // Server stamps updated_at to ensure monotonic incremental sync.
   const updatedAt = Date.now()
@@ -1045,6 +1070,11 @@ async function postMemory(env, traveler, request, url, cors) {
     )
   }
 
+  // The update arm deliberately never touches deleted_at: the resurrection
+  // guard above already refused every push at a tombstone, so an un-delete
+  // here could only fire inside the read→write race (a DELETE landing between
+  // the guard's read and this write) — and that race must leave the memory
+  // deleted. Only the INSERT arm (a genuinely new id) starts live.
   await env.DB.prepare(
     `INSERT INTO memories (
        id, trip_id, stop_id, author_traveler, visibility, kind,
@@ -1097,8 +1127,7 @@ async function postMemory(env, traveler, request, url, cors) {
        cover_json = COALESCE(excluded.cover_json, memories.cover_json),
        surprise_json = COALESCE(excluded.surprise_json, memories.surprise_json),
        revealed_at = COALESCE(excluded.revealed_at, memories.revealed_at),
-       updated_at = excluded.updated_at,
-       deleted_at = NULL`
+       updated_at = excluded.updated_at`
   ).bind(
     body.id, body.tripId || null, body.stopId || null,
     // Author is the AUTHENTICATED traveler, never a body-supplied value. Closes

@@ -484,3 +484,41 @@ test('mergeFromRemote preserves album photoRefs coords by index when a newer rem
   assert.equal(m.photoRefs[1].lng, -21.5)
   assert.equal(m.photoRefs[1].capturedAt, '2026-05-01T11:00:00.000Z')
 })
+
+// ── Batch A-2 FIX 3: stopId preserve-on-undefined + stopIdIfNew ─────────────
+// The outbox-revert root fix: a drain re-save hours later must not carry its
+// enqueue-time filing over a move that landed in between. stopId joins the
+// capturedAt/interstitial/mask preserve family; the enqueue-time stop remains
+// meaningful ONLY for a memory that does not exist yet (stopIdIfNew).
+
+const SHARED = 'rt_memories_shared_v1'
+const readShared = () => JSON.parse(globalThis.localStorage.getItem(SHARED) || '[]')
+const sharedById = (id) => readShared().find((m) => m.id === id)
+
+test('saveMemory: an UNDEFINED stopId preserves the existing filing (a drain-style re-save cannot revert a move)', () => {
+  saveMemory({ id: 'sp1', tripId: 't1', stopId: 'imported-here', authorTraveler: 'helen', visibility: 'shared', kind: 'photo', caption: '', photoRef: { storage: 'r2', key: 'k' } })
+  // The memory moved while an upload sat in the outbox…
+  saveMemory({ id: 'sp1', tripId: 't1', stopId: 'moved-here', authorTraveler: 'helen', visibility: 'shared', kind: 'photo', caption: '', photoRef: { storage: 'r2', key: 'k' } })
+  // …and the drain re-saves WITHOUT a stopId (its enqueue-time stop rides stopIdIfNew only).
+  saveMemory({ id: 'sp1', tripId: 't1', stopIdIfNew: 'imported-here', authorTraveler: 'helen', visibility: 'shared', kind: 'photo', caption: '', photoRef: { storage: 'r2', key: 'k2' } })
+  const m = sharedById('sp1')
+  assert.equal(m.stopId, 'moved-here', 'the live filing survives the drain')
+  assert.equal(m.photoRef.key, 'k2', 'the drain still lands its uploaded ref')
+})
+
+test('saveMemory: an EXPLICIT null stopId still unfiles (interstitial / trip-level saves keep their meaning)', () => {
+  saveMemory({ id: 'sp2', tripId: 't1', stopId: 'somewhere', authorTraveler: 'helen', visibility: 'shared', kind: 'note', text: 'x' })
+  saveMemory({ id: 'sp2', tripId: 't1', stopId: null, authorTraveler: 'helen', visibility: 'shared', kind: 'note', text: 'x' })
+  assert.equal(sharedById('sp2').stopId, null)
+})
+
+test('saveMemory: stopIdIfNew files a memory that does NOT exist yet (first save creates it at the enqueue-time stop)', () => {
+  saveMemory({ id: 'sp3', tripId: 't1', stopIdIfNew: 'queued-stop', authorTraveler: 'helen', visibility: 'shared', kind: 'photo', caption: '', photoRef: { storage: 'r2', key: 'k' } })
+  assert.equal(sharedById('sp3').stopId, 'queued-stop', 'a lost local record still files where the import chose')
+})
+
+test('saveMemory: stopIdIfNew never overrides an existing record and an explicit stopId always wins', () => {
+  saveMemory({ id: 'sp4', tripId: 't1', stopId: 'real', authorTraveler: 'helen', visibility: 'shared', kind: 'note', text: 'x' })
+  saveMemory({ id: 'sp4', tripId: 't1', stopId: 'explicit-wins', stopIdIfNew: 'ignored', authorTraveler: 'helen', visibility: 'shared', kind: 'note', text: 'x' })
+  assert.equal(sharedById('sp4').stopId, 'explicit-wins')
+})

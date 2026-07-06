@@ -20,6 +20,7 @@ import { isStayTrip } from '../lib/tripShape'
 import { hasExplicitParts, partPlaceLabel, isCompositeTrip, PART_TYPES, legGeocodeQuery } from '../lib/tripParts'
 import { flightSegments, flightLayovers, emptyFlightSegment } from '../lib/flightSegments'
 import { tripContentJson } from '../lib/tripSyncFlow'
+import { subscribeOutcomes } from '../lib/tripSyncQueue'
 
 // Confirm-the-pin map for the lodging address — leaflet is heavy, so it's only
 // pulled in when a trip actually has a located lodging (Phase 2).
@@ -137,6 +138,26 @@ export function TripEditor({ trip: incoming, traveler, dark, tripsApi, onBack, o
       requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }))
     }
   })
+
+  // A queued save's honest ending (batch A-2, carried from A-1): the badge sits
+  // on 'saved-queued' while the background resync keeps trying — and flips ONLY
+  // on the queue's per-outcome signal for THIS trip. 'synced' is the one
+  // outcome that earns the confirmed look; a refusal and a family delete are
+  // different truths and get their own copy — mere dequeue proves nothing.
+  useEffect(
+    () =>
+      subscribeOutcomes((id, outcome) => {
+        if (id !== tripRef.current?.id) return
+        setSaveState((cur) => {
+          if (cur !== 'saved-queued') return cur
+          if (outcome === 'synced') return 'saved'
+          if (outcome === 'refused') return 'family-kept'
+          if (outcome === 'delete-adopted') return 'family-deleted'
+          return cur // still-pending — the queued truth stands
+        })
+      }),
+    []
+  )
 
   // Concurrent-edit detection (change order §6.4 — last-write-wins is
   // acceptable, the conflict must surface). If the synced copy for this
@@ -779,7 +800,13 @@ function SaveBadge({ state, err }) {
     // server (offline, failing, or a conflict still being retried; res.queued).
     // Deliberately not the green check: a queued-but-unconfirmed save must never
     // wear the confirmed look. The index note carries the same truth with age.
+    // It leaves this state only on the queue's per-outcome signal: 'synced'
+    // earns the green check; the two below are the OTHER honest endings.
     'saved-queued': { t: 'Saved here · still reaching the family…', c: 'inherit', i: <Loader size={12} className="rt-spin" /> },
+    // The worker settled the queued save WITHOUT taking it — never the green
+    // check (nothing of ours landed), never a spinner (nothing is still trying).
+    'family-kept': { t: "This change couldn't be shared — the family's copy stands.", c: 'var(--accent-text, var(--text))', i: <AlertTriangle size={12} /> },
+    'family-deleted': { t: 'This trip was deleted on another device.', c: 'var(--accent-text, var(--text))', i: <AlertTriangle size={12} /> },
     error: { t: err || 'Saved locally · sync failed', c: 'var(--accent-text, var(--text))', i: <AlertTriangle size={12} /> },
   }
   const m = map[state] || map.idle

@@ -10,6 +10,8 @@
 // so it survives a reload (the whole point — a stranded edit must outlive the
 // session that failed to push it).
 
+import { emitOutcome as emitSyncOutcome, subscribeOutcomes as subscribeSyncOutcomes } from './syncOutcomes.js'
+
 const KEY = 'rt_trips_unsynced_v1'
 const subs = new Set()
 
@@ -115,6 +117,19 @@ export function isUnsynced(id) {
 export function subscribe(fn) {
   subs.add(fn)
   return () => subs.delete(fn)
+}
+
+// The uniform per-outcome signal (batch A-2, carried from A-1). Dequeue alone
+// is ambiguous — synced, refused, and delete-adopted all leave the queue but
+// are three different truths; a surface (the saved-queued SaveBadge) may claim
+// "reached the family" ONLY on 'synced'. Both sync queues expose this same
+// pair over syncOutcomes' shared vocabulary so they can't drift.
+export function emitOutcome(id, outcome) {
+  emitSyncOutcome('trip', id, outcome)
+}
+
+export function subscribeOutcomes(fn) {
+  return subscribeSyncOutcomes('trip', fn)
 }
 
 // Test-only reset so unit tests start from a known-empty state.

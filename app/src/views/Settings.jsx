@@ -18,7 +18,7 @@ import {
 } from '../lib/workerSync'
 import { enrolledTravelers, isAdult, defaultDeviceLabel, hasSession } from '../lib/auth'
 import { isTripMaskedFrom } from '../lib/surprises'
-import { listAllLocalMemories, mergeFromRemote } from '../lib/memoryStore'
+import { listAllLocalMemories, mergeFromRemote, drainMemorySyncQueue } from '../lib/memoryStore'
 import {
   clearUploadLog,
   isDevModeEnabled,
@@ -159,6 +159,12 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
     setSyncing(true)
     setSyncMsg(null)
     try {
+      // Push-then-pull, the same order every auto-sync moment enforces (App.jsx
+      // runSync / useTrips runSyncBeat): replay queued memory edits FIRST so
+      // this device's own unsynced filing isn't visually overwritten by the
+      // pull until the next drain beat. Never throws; still-failing intents
+      // stay queued.
+      await drainMemorySyncQueue()
       const remote = await pullAll()
       const merged = mergeFromRemote(remote)
       let msg = `Pulled ${remote.length} record${remote.length === 1 ? '' : 's'}; ${merged} merged into local cache.`

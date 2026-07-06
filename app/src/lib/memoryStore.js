@@ -37,9 +37,12 @@
 
 import { maskForViewer, isSurprise } from './surprises.js'
 import { markDeleted, clearDeleted, isDeleted } from './deleteTombstones.js'
+import { mergeSaveOverFresh, moveReapply, readMemoryPushResult, sameStopId } from './memorySyncFlow.js'
+import * as memoryQueue from './memorySyncQueue.js'
 
 const SHARED_KEY = 'rt_memories_shared_v1'
 const PRIVATE_KEY = (traveler) => `rt_memories_private_${traveler}_v1`
+const ALL_TRAVELERS = ['jonathan', 'helen', 'aurelia', 'rafa']
 
 function readJson(key) {
   try {
@@ -109,6 +112,13 @@ export function saveMemory({
   id,
   tripId,
   stopId,
+  // Where to FILE this memory when it doesn't exist locally yet — and ONLY
+  // then. The upload-queue drains pass their enqueue-time stop here: for a
+  // memory whose local record was lost (storage cleared between enqueue and
+  // drain) the first save must still land at the stop chosen at import; for a
+  // memory that exists, the enqueue-time stop is HOURS-stale by definition and
+  // must never override the live filing (the stuck-video revert class).
+  stopIdIfNew,
   authorTraveler,
   visibility,
   kind,
@@ -153,6 +163,22 @@ export function saveMemory({
   }
   if (existingPriv && visibility === 'shared') {
     writeJson(PRIVATE_KEY(authorTraveler), privList.filter((m) => m.id !== id))
+  }
+
+  // stopId: an explicit value (or explicit null — a deliberate unfiled /
+  // interstitial save) sets it; undefined PRESERVES the existing filing — the
+  // same contract capturedAt/interstitial/mask already have. A memory's stop
+  // filing changes only through a deliberate stop write (updateMemoryStop, or
+  // an explicit stopId here), never as a side effect of a content re-save that
+  // simply didn't think about filing — the outbox drain re-saving hours later
+  // must not carry its enqueue-time stop over a move that landed in between.
+  let resolvedStopId
+  if (stopId !== undefined) {
+    resolvedStopId = stopId
+  } else if (existingShared || existingPriv) {
+    resolvedStopId = (existingShared || existingPriv).stopId
+  } else {
+    resolvedStopId = stopIdIfNew !== undefined ? stopIdIfNew : undefined
   }
 
   // Default kind for legacy callers that only pass text. New surfaces
@@ -295,7 +321,7 @@ export function saveMemory({
   const record = {
     id: id || makeId(),
     tripId,
-    stopId,
+    stopId: resolvedStopId,
     authorTraveler,
     visibility,
     kind: resolvedKind,
@@ -491,6 +517,33 @@ function putLocalRecord(record) {
   writeJson(key, list)
 }
 
+// Remove one record from every zone — the family's DELETE won (a worker-asserted
+// tombstone: a deleted:true 409 body, or a fresh pull copy carrying deletedAt).
+// No client tombstone is written: this device didn't initiate the delete, the
+// server already holds it (mirrors mergeFromRemote's deletedAt branch).
+function removeLocalRecord(id) {
+  if (!id) return
+  for (const key of [SHARED_KEY, ...ALL_TRAVELERS.map(PRIVATE_KEY)]) {
+    const list = readJson(key)
+    const next = list.filter((m) => m.id !== id)
+    if (next.length !== list.length) writeJson(key, next)
+  }
+}
+
+// Locate a record by id across the shared zone and every private bucket — the
+// queue drain re-reads the LIVE record at replay time (a save intent pushes
+// current content; a move intent patches its stored target onto it).
+function findLocalMemory(id) {
+  if (!id) return null
+  const shared = readJson(SHARED_KEY).find((m) => m.id === id)
+  if (shared) return shared
+  for (const t of ALL_TRAVELERS) {
+    const hit = readJson(PRIVATE_KEY(t)).find((m) => m.id === id)
+    if (hit) return hit
+  }
+  return null
+}
+
 // Record the server-issued updatedAt onto the local copy after a successful push,
 // so the NEXT patch sends a fresh, server-sourced base (monotonic — never lowers).
 export function recordServerUpdatedAt(id, author, iso) {
@@ -510,7 +563,40 @@ export function recordServerUpdatedAt(id, author, iso) {
   // A private record lives in its author's bucket — go straight there when we know
   // the author (the push always carries it); fall back to a scan only when we don't.
   if (author) { bump(PRIVATE_KEY(author)); return }
-  for (const t of ['jonathan', 'helen', 'aurelia', 'rafa']) if (bump(PRIVATE_KEY(t))) return
+  for (const t of ALL_TRAVELERS) if (bump(PRIVATE_KEY(t))) return
+}
+
+// Settle the local copy after a CONFIRMED push: carry the server row stamp as
+// the next OCC base (monotonic, like recordServerUpdatedAt), and re-stamp the
+// LWW `updatedAt` with the SERVER's value — the conflict path has done this
+// since the clock-skew hazard was first documented (see resolveSaveConflict),
+// and the ordinary success path must too: a clock-ahead device otherwise
+// leaves a future-dated device stamp live, and shouldTakeRemote refuses every
+// later family edit/heal to this memory for the whole skew duration. The
+// restamp applies ONLY while the stored copy still carries the exact stamp we
+// pushed — a newer local edit made mid-push keeps its own stamp (its own
+// mirror confirms and restamps it in turn), so an unsynced edit can never be
+// aged backward under a concurrent pull. Both sides stay ISO strings
+// (memory-sync-lww standing rule: never normalize the synced/timestamp shape).
+export function confirmMemoryPushed(record, serverIso) {
+  if (!record?.id || !serverIso) return
+  const settle = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === record.id)
+    if (idx < 0) return false
+    const cur = list[idx]
+    const next = { ...cur }
+    if (!cur.serverUpdatedAt || serverIso > cur.serverUpdatedAt) next.serverUpdatedAt = serverIso
+    if (cur.updatedAt === record.updatedAt) next.updatedAt = serverIso
+    if (next.serverUpdatedAt !== cur.serverUpdatedAt || next.updatedAt !== cur.updatedAt) {
+      list[idx] = next
+      writeJson(key, list)
+    }
+    return true
+  }
+  if (settle(SHARED_KEY)) return
+  if (record.authorTraveler && settle(PRIVATE_KEY(record.authorTraveler))) return
+  for (const t of ALL_TRAVELERS) if (settle(PRIVATE_KEY(t))) return
 }
 
 const MIRROR_CONFLICT_RETRIES = 2
@@ -520,23 +606,54 @@ const MIRROR_CONFLICT_RETRIES = 2
 // device that's usually the wrong identity and would mask/hide the row), then either
 // re-apply ONLY our one field onto the fresh row (background patch → true merge,
 // never clobbers a neighbor) or re-push the whole edit on top of fresh (foreground →
-// last deliberate edit wins). Push-then-write: local is updated to the merged state
-// only AFTER a successful re-push, so a mid-recovery failure can't strand local ahead
-// of the server (an island the next pull would refuse).
+// last deliberate CONTENT edit wins, fresh's stop filing preserved: only a move op's
+// own closure may change stopId — mergeSaveOverFresh). Push-then-write: local is
+// updated to the merged state only AFTER a successful re-push, so a mid-recovery
+// failure can't strand local ahead of the server (an island the next pull would
+// refuse). Returns the honest outcome (the queue drain dequeues ONLY on these):
+//   'synced'         — the reapplied edit landed (or fresh already satisfied a move
+//                      intent — adopted, nothing pushed)
+//   'delete-adopted' — the family deleted this memory; local dropped, NEVER re-pushed
+//                      (a tombstoned fresh copy IS the worker's assertion — pushing
+//                      onto it would resurrect the memory family-wide)
+//   'refused'        — the worker will never take this version (masked stub, a
+//                      declined re-push, or bounded retries exhausted — local adopted
+//                      the fresh row, no island); retrying is pointless
+//   'pending'        — transient (offline mid-recovery, pull failed, row not served):
+//                      local stays as-is; the intent queue owns the retry
 export async function resolveSaveConflict(sync, op, attempt = 0) {
   let remote
   try {
     remote = await sync.pullAll({ asTraveler: op.record.authorTraveler || undefined })
   } catch {
-    return // offline mid-conflict — leave local as-is (same as a plain failed push)
+    return { status: 'pending' } // offline mid-conflict — same as a plain failed push
   }
-  if (!Array.isArray(remote) || remote.errors) return // transient — don't strand in a loop
+  if (!Array.isArray(remote) || remote.errors) return { status: 'pending' } // transient — don't strand in a loop
   const fresh = remote.find((r) => r.id === op.record.id)
-  if (!fresh || fresh.masked) return // can't see the real row / masked stub — leave canonical
-  const merged = op.reapply ? op.reapply(fresh) : { ...op.record }
+  if (!fresh) return { status: 'pending' } // row not served (transient / filtered) — never guess
+  if (fresh.deletedAt) {
+    // ADOPT THE DELETE. The 409 led us to a tombstone: the family removed this
+    // memory while our edit was in flight. Re-pushing our copy onto it (with the
+    // tombstone's own stamp as base) would pass OCC and resurrect it for everyone
+    // — the delete is adopted instead, exactly like a pull learning deletedAt.
+    removeLocalRecord(op.record.id)
+    return { status: 'delete-adopted' }
+  }
+  if (fresh.masked) return { status: 'refused' } // can't see the real row — never reapply onto a stand-in
+  const merged = op.reapply ? op.reapply(fresh) : mergeSaveOverFresh(op.record, fresh)
+  if (merged === null) {
+    // The fresh row already satisfies this op's intent (a move whose target the
+    // family already reached). Pushing a content-identical copy would only churn
+    // updated_at — adopt fresh (our local poster/EXIF carried forward) instead.
+    putLocalRecord(stampServer(preserveLocalPhotoMeta({ ...fresh }, op.record)))
+    return { status: 'synced' }
+  }
   merged.serverUpdatedAt = fresh.updatedAt
   try {
     const res = await sync.pushMemory(merged, { baseUpdatedAt: fresh.updatedAt })
+    const outStatus = readMemoryPushResult(res).status
+    if (outStatus === 'refused') return { status: 'refused' }
+    if (outStatus === 'unconfigured') return { status: 'pending' } // nothing was pushed — never claim it landed
     const serverUpdatedAt = res && typeof res === 'object' && res.updatedAt ? res.updatedAt : fresh.updatedAt
     // Stamp local's LWW `updatedAt` with the SERVER's value (not the reapply's client
     // wall clock). If the periodic auto-sync (App.jsx runSync) merged an even-newer
@@ -546,16 +663,119 @@ export async function resolveSaveConflict(sync, op, attempt = 0) {
     // preserveLocalPhotoMeta carries our poster onto that newer row. Force-write
     // because the optimistic local copy is timestamped ahead of the server.
     putLocalRecord({ ...merged, updatedAt: serverUpdatedAt, serverUpdatedAt })
+    return { status: 'synced' }
   } catch (err) {
-    if (err?.status === 409 && attempt < MIRROR_CONFLICT_RETRIES) {
-      return resolveSaveConflict(sync, { ...op, record: merged }, attempt + 1)
+    if (err?.status === 409) {
+      if (err?.body?.deleted) {
+        // The worker's own tombstone answer mid-recovery — the one authoritative
+        // delete signal (never inferred from absence). Same adoption as above.
+        removeLocalRecord(op.record.id)
+        return { status: 'delete-adopted' }
+      }
+      if (attempt < MIRROR_CONFLICT_RETRIES) {
+        return resolveSaveConflict(sync, { ...op, record: merged }, attempt + 1)
+      }
+      // Give up this burst WITHOUT an island: adopt the fresh server row, carrying our
+      // local poster/EXIF forward (preserveLocalPhotoMeta) so a synced video keeps its
+      // still and the durable posterRetry queue can re-push later. updatedAt becomes
+      // the server's, so the next pull reconciles cleanly.
+      putLocalRecord(stampServer(preserveLocalPhotoMeta({ ...fresh }, op.record)))
+      return { status: 'refused' }
     }
-    // Give up this burst WITHOUT an island: adopt the fresh server row, carrying our
-    // local poster/EXIF forward (preserveLocalPhotoMeta) so a synced video keeps its
-    // still and the durable posterRetry queue can re-push later. updatedAt becomes
-    // the server's, so the next pull reconciles cleanly.
-    putLocalRecord(stampServer(preserveLocalPhotoMeta({ ...fresh }, op.record)))
+    // A NON-409 failure mid-recovery is transient, not a verdict: local keeps the
+    // edit and the intent stays queued (the drain retries on a fresh pull). Adopting
+    // fresh here would silently drop a deliberate edit over a network blip.
+    return { status: 'pending' }
   }
+}
+
+// One save-type mirror attempt, end to end: push with the server-known base,
+// read the honest per-item result, recover a 409 deliberately. Exported so the
+// unit suite and the queue drain can drive it with a stub sync — scheduleMirror
+// is only the lazy-import + serial-chain wrapper around it. Returns the honest
+// outcome ('synced' | 'refused' | 'delete-adopted' | 'pending' | 'unconfigured');
+// `onRecoveryStart` fires before the bounded 409 recovery begins, so the caller
+// can persist the intent FIRST — recovery spans seconds of pulls and retries,
+// and a crash mid-flight must leave the edit replayable, never stranded.
+export async function mirrorSaveOp(sync, op, { onRecoveryStart } = {}) {
+  try {
+    const res = await sync.pushMemory(op.record, { baseUpdatedAt: op.record.serverUpdatedAt })
+    const out = readMemoryPushResult(res)
+    if (out.status === 'refused') return 'refused'
+    if (out.status === 'unconfigured') return 'unconfigured'
+    // REFUSAL-ADOPTION seam (Stage B): when the worker's 200 carries a stored
+    // row that KEPT a different filing than we pushed (the manual-lock refusal,
+    // worker rule 2), adopt the server's answer locally — this device must not
+    // keep displaying its refused move until some later pull. Inert today:
+    // postMemory always writes the pushed stop_id, so the filings can't differ.
+    if (out.serverRow && !sameStopId(out.serverRow.stopId, op.record.stopId)) {
+      adoptServerStopFiling(op.record, out.serverRow)
+    }
+    if (out.updatedAt) confirmMemoryPushed(op.record, out.updatedAt)
+    return 'synced'
+  } catch (err) {
+    if (err?.status === 409) {
+      if (err?.body?.deleted) {
+        // The worker refused the push at a tombstone (deleted:true) — the one
+        // authoritative delete signal. Adopt it: drop local, never re-push.
+        removeLocalRecord(op.record.id)
+        return 'delete-adopted'
+      }
+      onRecoveryStart?.()
+      const r = await resolveSaveConflict(sync, op, 0)
+      return r?.status || 'pending'
+    }
+    return 'pending' // offline / Worker error — the intent queue owns the retry
+  }
+}
+
+// Patch ONLY the stop filing (+ its Stage-B provenance) from a server row the
+// worker answered with, leaving every content field the local copy carries.
+// The stamps are settled by confirmMemoryPushed right after (same row).
+function adoptServerStopFiling(record, serverRow) {
+  const key = record.visibility === 'private' ? PRIVATE_KEY(record.authorTraveler) : SHARED_KEY
+  const list = readJson(key)
+  const idx = list.findIndex((m) => m.id === record.id)
+  if (idx < 0) return
+  const next = { ...list[idx], stopId: serverRow.stopId }
+  if ('stopProv' in serverRow) next.stopProv = serverRow.stopProv
+  list[idx] = next
+  writeJson(key, list)
+}
+
+// Settle a mirror attempt's outcome against the intent queue + the per-outcome
+// signal. Only worker-settled outcomes dequeue; 'pending' persists the intent
+// so the drain replays it (the silent-swallow class: a failed mirror used to
+// leave the device forked forever — its newer local stamp then blocked every
+// pull from correcting it). 'unconfigured' never queues: there is nothing to
+// sync to, and a worker-less build must not accrete a queue it can never drain.
+function settleMirrorOutcome(op, outcome) {
+  const id = op.record.id
+  const intent = op.intent || { kind: 'save' }
+  if (outcome === 'unconfigured') return
+  if (outcome === 'pending') {
+    // ensureUnsynced, not markUnsynced: this op may have been in flight when a
+    // NEWER move re-decided the target (the decision path already replaced the
+    // entry) — a failure settle only guarantees the intent is owed, it never
+    // writes its own older target back over the latest decision.
+    memoryQueue.ensureUnsynced({
+      kind: intent.kind,
+      memoryId: id,
+      stopId: intent.stopId,
+      author: op.record.authorTraveler || null,
+    })
+    memoryQueue.emitOutcome(id, 'still-pending')
+    return
+  }
+  if (outcome === 'delete-adopted') {
+    // The family's delete won — nothing about this record is owed anymore.
+    memoryQueue.clearAllFor(id)
+    memoryQueue.emitOutcome(id, 'delete-adopted')
+    return
+  }
+  // synced | refused — this intent is worker-settled either way.
+  memoryQueue.markSynced(id, intent.kind)
+  memoryQueue.emitOutcome(id, outcome)
 }
 
 // Tiny serial queue so a fast burst of saves doesn't fan out to N
@@ -564,8 +784,17 @@ let mirrorChain = Promise.resolve()
 function scheduleMirror(op) {
   mirrorChain = mirrorChain
     .then(async () => {
+      let sync
       try {
-        const sync = await import('./workerSync.js')
+        sync = await import('./workerSync.js')
+      } catch {
+        // The sync module itself couldn't load (offline chunk fetch). A save's
+        // intent is queued for the drain — the edit is owed, not lost; a delete
+        // keeps its tombstone (the pull-side guard + resync own that retry).
+        if (op.type !== 'delete') settleMirrorOutcome(op, 'pending')
+        return
+      }
+      try {
         if (op.type === 'delete') {
           const ok = await sync.deleteRemote(op.record)
           // Confirmed on the server (true) or no worker to sync to (null) → the delete
@@ -574,22 +803,139 @@ function scheduleMirror(op) {
           if (ok !== false) clearDeleted('memory', op.record.id)
           return
         }
-        // save — send the server-known base so a STALE push is refused (409)
-        // instead of clobbering; capture the new server version on success.
-        try {
-          const res = await sync.pushMemory(op.record, { baseUpdatedAt: op.record.serverUpdatedAt })
-          if (res && typeof res === 'object' && res.updatedAt) {
-            recordServerUpdatedAt(op.record.id, op.record.authorTraveler, res.updatedAt)
-          }
-        } catch (err) {
-          if (err?.status === 409) await resolveSaveConflict(sync, op, 0)
-          /* else offline / unconfigured / Worker error — local stays canonical */
-        }
+        // save — queue-first at the recovery boundary (a crash mid-recovery must
+        // leave the intent replayable), then settle on the honest outcome.
+        // ensureUnsynced (never markUnsynced): a newer decision may already own
+        // the entry — see settleMirrorOutcome.
+        const outcome = await mirrorSaveOp(sync, op, {
+          onRecoveryStart: () =>
+            memoryQueue.ensureUnsynced({
+              kind: (op.intent || { kind: 'save' }).kind,
+              memoryId: op.record.id,
+              stopId: op.intent?.stopId,
+              author: op.record.authorTraveler || null,
+            }),
+        })
+        settleMirrorOutcome(op, outcome)
       } catch {
-        /* import failed / offline — local stays canonical */
+        /* defense — mirrorSaveOp reports failures as outcomes, never throws */
       }
     })
     .catch(() => {})
+}
+
+// Replay every queued memory intent against the family server — the memory
+// side of useTrips' resyncPending, fired on the same sync moments (App.jsx:
+// cold load, foregrounding, network back, the drain interval). Bounded: ONE
+// attempt per intent per call; a transient failure leaves the entry queued for
+// the next moment. Dequeue happens only on worker-settled outcomes (synced /
+// refused / delete-adopted), and every entry's outcome is emitted on the
+// per-outcome signal. `sync` is injectable so the unit suite can drive every
+// branch; the real caller gets the lazy workerSync import.
+//
+// The replay RIDES THE MIRROR CHAIN: a move's own in-flight mirror and a drain
+// tick replaying its queue entry are pushes of the same decision stream, and
+// unserialized they can land in either order — whichever finishes second wins
+// the 409 recovery, so a stale replay could re-impose an older target over the
+// user's newer move. On the chain a replay runs only between mirror ops, and
+// the per-intent live re-read below sees every settle that ran ahead of it.
+let memoryDrainQueued = false
+export function drainMemorySyncQueue({ sync } = {}) {
+  if (memoryDrainQueued) return Promise.resolve({ settled: 0, remaining: memoryQueue.count() })
+  memoryDrainQueued = true
+  const run = mirrorChain.then(async () => {
+    try {
+      return await drainMemoryQueueNow(sync)
+    } finally {
+      memoryDrainQueued = false
+    }
+  })
+  mirrorChain = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
+}
+
+async function drainMemoryQueueNow(injected) {
+  let sync = injected
+  if (!sync) {
+    try {
+      sync = await import('./workerSync.js')
+    } catch {
+      return { settled: 0, remaining: memoryQueue.count() }
+    }
+  }
+  if (typeof sync.isWorkerConfigured === 'function' && !sync.isWorkerConfigured()) {
+    return { settled: 0, remaining: memoryQueue.count() }
+  }
+  let settled = 0
+  for (const intent of memoryQueue.pendingIntents()) {
+    // Re-read the LIVE entry: an op ahead on the chain may have settled it,
+    // and a decision made since this drain was scheduled may have replaced a
+    // move's target. A vanished entry has nothing owed; a changed target
+    // means a NEWER decision owns this memory — replaying the snapshot would
+    // push the superseded one (and 409-recover it into winning).
+    const live = memoryQueue.getIntent(intent.memoryId, intent.kind)
+    if (!live) continue
+    if (intent.kind === 'move' && !sameStopId(live.stopId, intent.stopId)) continue
+    const record = findLocalMemory(intent.memoryId)
+    if (!record || record.masked) {
+      // Gone locally (a delete owns its own tombstone story), or a masked
+      // projection that is never ours to sync — the intent is moot.
+      memoryQueue.markSynced(intent.memoryId, intent.kind)
+      memoryQueue.emitOutcome(intent.memoryId, 'refused')
+      settled += 1
+      continue
+    }
+    // The push authenticates AS the record's author (pushMemory), and this
+    // device may hold no credential for them — a cross-author refile from a
+    // one-person device. Replaying anyway burns a guaranteed-401 request per
+    // intent on every heartbeat, forever. The edit stays owed — quietly —
+    // until a credential for that author is enrolled here; an author-less
+    // record pushes as the active traveler, so it is never skipped.
+    if (
+      record.authorTraveler &&
+      typeof sync.hasCredential === 'function' &&
+      !sync.hasCredential(record.authorTraveler)
+    ) {
+      continue
+    }
+    let op
+    if (intent.kind === 'move') {
+      // A MOVE replays its STORED target — the decision captured at move
+      // time — never the live record's filing (a pull may have overwritten
+      // it in between; replaying "current state" would push the overwrite
+      // and erase the decision). The push identity is the record's author
+      // (pushMemory authenticates as authorTraveler).
+      let pushRecord = record
+      if (!sameStopId(record.stopId, intent.stopId)) {
+        pushRecord = { ...record, stopId: intent.stopId, updatedAt: new Date().toISOString() }
+        putLocalRecord(pushRecord)
+      }
+      op = { type: 'save', record: pushRecord, reapply: moveReapply(intent.stopId), intent }
+    } else {
+      // A SAVE pushes the CURRENT local record — content edits are
+      // whole-record by design, so the record itself carries the latest
+      // truth; the entry only remembers that it is owed.
+      op = { type: 'save', record, intent }
+    }
+    const outcome = await mirrorSaveOp(sync, op)
+    if (outcome === 'unconfigured' || outcome === 'pending') {
+      memoryQueue.emitOutcome(intent.memoryId, 'still-pending')
+      continue // stays queued for the next sync moment
+    }
+    if (outcome === 'delete-adopted') {
+      memoryQueue.clearAllFor(intent.memoryId)
+      memoryQueue.emitOutcome(intent.memoryId, 'delete-adopted')
+      settled += 1
+      continue
+    }
+    memoryQueue.markSynced(intent.memoryId, intent.kind) // synced | refused
+    memoryQueue.emitOutcome(intent.memoryId, outcome)
+    settled += 1
+  }
+  return { settled, remaining: memoryQueue.count() }
 }
 
 // Merge a batch of remote memories into the local store. Last-write-
@@ -830,6 +1176,10 @@ export function updateMemoryCaption(memoryId, caption) {
 // the trip's implicit base appears AFTER photos were already imported). Patches the
 // single stopId field + re-mirrors so other devices pick up the move. Idempotent
 // (a no-op when already there); a masked projection is never a valid target.
+// The mirror carries a MOVE intent: on a 409 the reapply re-asserts THIS target
+// onto the fresh row (skipping the push when fresh already sits there), and a
+// failed mirror queues { move, stopId } — the drain replays the stored target,
+// never a re-derive from whatever the record holds at drain time.
 export function updateMemoryStop(memoryId, stopId) {
   if (!memoryId) return null
   const tryUpdateIn = (key) => {
@@ -837,21 +1187,37 @@ export function updateMemoryStop(memoryId, stopId) {
     const idx = list.findIndex((m) => m.id === memoryId)
     if (idx < 0) return null
     if (list[idx].masked) return list[idx]
-    if (list[idx].stopId === stopId) return list[idx] // already filed there
+    if (sameStopId(list[idx].stopId, stopId)) return list[idx] // already filed there
     const now = new Date().toISOString()
     const patched = { ...list[idx], stopId, updatedAt: now }
     list[idx] = patched
     writeJson(key, list)
+    // A still-queued older move for this memory is superseded RIGHT NOW, not
+    // when this mirror settles: the queue's contract (the stored target IS the
+    // latest decision) must hold while the mirror is in flight — a drain tick
+    // in that window would otherwise replay the stale target, snap the filing
+    // back on screen, and win the 409 recovery against this newer move. Only a
+    // replace, never a first enqueue: whether this edit is owed at all is the
+    // mirror outcome's verdict (unconfigured must not accrete queue entries).
+    if (memoryQueue.getIntent(memoryId, 'move')) {
+      memoryQueue.markUnsynced({
+        kind: 'move',
+        memoryId,
+        stopId,
+        author: patched.authorTraveler || null,
+      })
+    }
     scheduleMirror({
       type: 'save',
       record: patched,
-      reapply: (fresh) => ({ ...fresh, stopId, updatedAt: new Date().toISOString() }),
+      reapply: moveReapply(stopId),
+      intent: { kind: 'move', stopId },
     })
     return patched
   }
   const inShared = tryUpdateIn(SHARED_KEY)
   if (inShared) return inShared
-  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+  for (const traveler of ALL_TRAVELERS) {
     const result = tryUpdateIn(PRIVATE_KEY(traveler))
     if (result) return result
   }

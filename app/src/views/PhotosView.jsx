@@ -221,7 +221,12 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
         saveMemory({
           id: item.id,
           tripId: item.tripId,
-          stopId: item.stopId,
+          // Enqueue-time stop applies ONLY when no local record exists (first
+          // save files it where the import chose); an existing record keeps its
+          // LIVE filing so a stuck upload can't revert a later move (saveMemory
+          // preserves stopId on undefined; mirrors App.jsx uploadQueueRunner so
+          // the two can't drift).
+          stopIdIfNew: item.stopId,
           authorTraveler: item.authorTraveler,
           visibility: 'shared',
           kind: 'photo',

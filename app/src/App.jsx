@@ -58,7 +58,7 @@ import { pullAll, isWorkerConfigured, workerFetch, hasCredential, uploadTripCove
 import { keepDay, applyDayRecord, dayRecordIsKept, addEntryStamp, queuePendingNote } from './lib/dayRecord'
 import { uploadPosterOrQueue, drainPendingPosters } from './lib/posterRetry'
 import { switcherList, subscribeAuth, resolveActivePersona } from './lib/auth'
-import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip } from './lib/memoryStore'
+import { backfillCapturedAt, mergeFromRemote, saveMemory, listMemoriesForTrip, drainMemorySyncQueue } from './lib/memoryStore'
 import { drain as drainQueue, count as queueCount } from './lib/uploadQueue'
 import { removeAsset } from './lib/memAssets'
 import { applyInstallIdentity } from './lib/appInstall'
@@ -203,7 +203,13 @@ async function uploadQueueRunner(item) {
   saveMemory({
     id: item.id,
     tripId: item.tripId,
-    stopId: item.stopId,
+    // The enqueue-time stop is meaningful ONLY when the memory doesn't exist
+    // locally yet (storage lost between enqueue and drain — first save files it
+    // where the import chose). For the normal case the record exists and KEEPS
+    // its live filing: a video stuck for hours must not revert a move that
+    // landed in between (saveMemory preserves stopId on undefined; mirrors
+    // PhotosView.triggerDrain so the two can't drift).
+    stopIdIfNew: item.stopId,
     authorTraveler: item.authorTraveler,
     visibility: 'shared',
     kind: 'photo', // memories always 'photo' kind; photoRef.kind disambiguates
@@ -451,6 +457,11 @@ export default function App() {
       if (now - lastSyncRun < SYNC_THROTTLE_MS) return
       lastSyncRun = now
       try {
+        // Push-then-pull: replay any memory edits stranded by a failed mirror
+        // BEFORE pulling, so this device's own queued change can't be shadowed
+        // by the pull for a beat (same order runSyncBeat enforces for trips).
+        // Never throws; a still-failing intent stays queued for the next moment.
+        await drainMemorySyncQueue()
         const remote = await pullAll()
         if (cancelled) return
         if (remote.length > 0) mergeFromRemote(remote)
@@ -479,6 +490,12 @@ export default function App() {
         // online video that uploaded but whose poster blipped).
         if (!cancelled && isWorkerConfigured()) {
           await drainPendingPosters()
+        }
+        // Replay stranded memory-record edits on the same reconnect heartbeat
+        // (the interval is the one dependable "network's back" signal on iOS).
+        // Cheap no-op when the intent queue is empty.
+        if (!cancelled) {
+          await drainMemorySyncQueue()
         }
       } catch (err) {
         // Drain failures stay silent — the items remain in the queue

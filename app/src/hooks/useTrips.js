@@ -8,6 +8,7 @@ import {
   pendingEntries,
   count as unsyncedCountNow,
   subscribe as subscribeUnsynced,
+  emitOutcome,
 } from '../lib/tripSyncQueue'
 import { markDeleted, clearDeleted, deletedIds, withoutDeleted } from '../lib/deleteTombstones'
 import { resolveTripPushConflict, runSyncBeat } from '../lib/tripSyncFlow'
@@ -199,9 +200,11 @@ export function useTrips() {
   // still pending. The delete wins: stop retrying and drop the local copy, so
   // a stale device can never resurrect what the family removed. A DRAFT copy
   // stays — drafts are the author's local work-in-progress, never served by a
-  // pull; it simply stops being owed to the family.
+  // pull; it simply stops being owed to the family. 'delete-adopted' is its
+  // own outcome — a dequeue here must never read as "reached the family".
   const adoptFamilyDelete = useCallback((trip) => {
     markSynced(trip.id)
+    emitOutcome(trip.id, 'delete-adopted')
     if (trip.draft) return
     setTrips((prev) => {
       const next = prev.filter((t) => t.id !== trip.id)
@@ -284,7 +287,10 @@ export function useTrips() {
           // and pays a full 409 recovery.
           if (Number.isFinite(res?.updatedAt)) stampTripSynced(trip.id, res.updatedAt)
         })
-        .catch(() => markUnsynced(trip.id, getActiveTraveler()))
+        .catch(() => {
+          markUnsynced(trip.id, getActiveTraveler())
+          emitOutcome(trip.id, 'still-pending')
+        })
       return { ok: true, synced: false, reason: 'draft' }
     }
     try {
@@ -298,6 +304,7 @@ export function useTrips() {
         // markSynced + {synced:true}, a lie: the badge said "synced" when nothing shipped.)
         // `reached?.skipped` is the worker's own refusal shape — read the per-item
         // result, never transport success alone.
+        emitOutcome(trip.id, 'refused')
         return { ok: false, synced: false, reason: 'refused' }
       }
       // Carry the server row stamp as the base of this trip's NEXT save, so a
@@ -307,6 +314,7 @@ export function useTrips() {
       const stamp = Number.isFinite(reached?.updatedAt) ? reached.updatedAt : undefined
       if (stamp !== undefined) stampTripSynced(trip.id, stamp)
       markSynced(trip.id) // reached the family — clear any prior unsynced flag
+      emitOutcome(trip.id, 'synced')
       return { ok: true, synced: true, updatedAt: stamp }
     } catch (err) {
       if (err?.status === 409) {
@@ -325,6 +333,7 @@ export function useTrips() {
         if (out.status === 'synced') {
           adoptTripLocally(out.trip)
           markSynced(trip.id)
+          emitOutcome(trip.id, 'synced')
           return {
             ok: true,
             synced: true,
@@ -337,11 +346,13 @@ export function useTrips() {
         }
         if (out.status === 'refused') {
           markSynced(trip.id) // never ours to sync (a stand-in) — don't retry forever
+          emitOutcome(trip.id, 'refused')
           return { ok: false, synced: false, reason: 'refused' }
         }
         // Still conflicting / transient mid-recovery: the edit STAYS pending
         // (queued above) — the resync retries it against a fresh pull; the
         // badge + index note say so honestly (never dropped, never pushed blind).
+        emitOutcome(trip.id, 'still-pending')
         return { ok: false, synced: false, queued: true, error: 'Another device saved this trip at the same time — still trying.' }
       }
       // The push didn't reach the family. Remember it so resync can re-push it
@@ -350,6 +361,7 @@ export function useTrips() {
       // synced:false result so its UI can be honest about it; `queued` lets the
       // badge show "still reaching the family" rather than a dead-end error.
       markUnsynced(trip.id, getActiveTraveler()) // capture the editor for an honest resync
+      emitOutcome(trip.id, 'still-pending')
       console.warn('useTrips upsertTrip: Worker push failed; kept locally', err)
       return { ok: false, synced: false, queued: true, error: err?.message || String(err) }
     }
@@ -373,6 +385,7 @@ export function useTrips() {
           // Trip gone locally, or a masked projection that must never be pushed —
           // either way it's not ours to sync. Drop it from the queue.
           markSynced(id)
+          emitOutcome(id, 'refused')
           continue
         }
         // A draft re-pushes fine: it carries draft:true, which the worker's getTrips
@@ -388,10 +401,12 @@ export function useTrips() {
             // Refused (a stand-in slipped in after the cache read) — never ours
             // to sync; same drop as the masked check above.
             markSynced(id)
+            emitOutcome(id, 'refused')
             continue
           }
           if (Number.isFinite(res?.updatedAt)) stampTripSynced(id, res.updatedAt)
           markSynced(id)
+          emitOutcome(id, 'synced') // the background landing a queued badge waits for
           resynced += 1
         } catch (err) {
           if (err?.status === 409) {
@@ -402,15 +417,19 @@ export function useTrips() {
             if (out.status === 'synced') {
               adoptTripLocally(out.trip)
               markSynced(id)
+              emitOutcome(id, 'synced')
               resynced += 1
             } else if (out.status === 'deleted') {
               adoptFamilyDelete(t)
             } else if (out.status === 'refused') {
               markSynced(id)
+              emitOutcome(id, 'refused')
+            } else {
+              emitOutcome(id, 'still-pending') // stays queued; the next trigger retries fresh
             }
-            /* 'pending': leave it queued; the next trigger retries fresh */
+          } else {
+            emitOutcome(id, 'still-pending') // stays queued; the next trigger retries
           }
-          /* other errors: leave it queued; the next trigger retries */
         }
       }
     }
