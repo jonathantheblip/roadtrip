@@ -299,7 +299,10 @@ export function ShareComposer({ trip, traveler, onClose }) {
         if (k === 'note') return { kind: 'note', text: p.text }
         if (k === 'voice') return { kind: 'voice', key: p.audioRef.key, mime: p.audioRef.mime, url: p.audioRef.url, durationSeconds: p.durationSeconds }
         const ref = currentRef(p)
-        return { kind: k, key: ref.key, mime: ref.mime, url: ref.url, ...(ref.capturedAt ? { capturedAt: ref.capturedAt } : {}), ...(ref.posterKey ? { posterKey: ref.posterKey, posterUrl: ref.posterUrl } : {}) }
+        // `sound` must ride the piece too: for a mixed moment the worker stores
+        // pieces[] INSTEAD OF photoRefs[] in the JSON column, so dropping it
+        // here would strip the honest no-sound label cross-device.
+        return { kind: k, key: ref.key, mime: ref.mime, url: ref.url, ...(ref.capturedAt ? { capturedAt: ref.capturedAt } : {}), ...(ref.posterKey ? { posterKey: ref.posterKey, posterUrl: ref.posterUrl } : {}), ...(ref.sound ? { sound: ref.sound } : {}) }
       })
       const photoRefs = sel.filter((p) => pieceKind(p) === 'photo' || pieceKind(p) === 'video').map((p) => currentRef(p)).filter(Boolean)
       const hasExtras = sel.some((p) => pieceKind(p) === 'voice' || pieceKind(p) === 'note')

@@ -350,6 +350,98 @@ test('mergeFromRemote preserves a local video posterKey/posterUrl when a newer r
   assert.equal(m.photoRef.posterUrl, 'https://e.test/poster.jpg')
 })
 
+test('mergeFromRemote preserves a local video sound verdict when a stale remote drops it (rollout carry)', () => {
+  // Sound honesty: a pre-sound worker (or a row pushed before the fix) serves
+  // refs with no `sound` — the capturing device must keep its own 'lost'
+  // verdict so a pull can't erase the honest no-sound label. Non-vacuous:
+  // without the preserveLocalPhotoMeta sound carry, the wholesale replace
+  // leaves m.photoRefs[0].sound === undefined → red.
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'snd1', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+        kind: 'photo',
+        photoRefs: [{ storage: 'r2', key: 'r2/video', mime: 'video/mp4', posterKey: 'r2/poster', sound: 'lost' }],
+        createdAt: '2026-07-05T03:00:00.000Z', updatedAt: '2026-07-05T03:00:00.000Z',
+      },
+    ])
+  )
+  const added = mergeFromRemote([
+    {
+      id: 'snd1', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+      kind: 'photo',
+      photoRefs: [{ storage: 'r2', key: 'r2/video', mime: 'video/mp4', posterKey: 'r2/poster' }],
+      createdAt: '2026-07-05T03:00:00.000Z', updatedAt: '2026-07-05T04:00:00.000Z',
+    },
+  ])
+  assert.equal(added, 1) // the remote was taken (proves the wholesale replace fired)
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.equal(m.photoRefs[0].sound, 'lost')
+})
+
+test('mergeFromRemote lets the remote own sound verdict win when present', () => {
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'snd2', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+        kind: 'photo',
+        photoRefs: [{ storage: 'r2', key: 'r2/video', mime: 'video/mp4', sound: 'lost' }],
+        createdAt: '2026-07-05T03:00:00.000Z', updatedAt: '2026-07-05T03:00:00.000Z',
+      },
+    ])
+  )
+  mergeFromRemote([
+    {
+      id: 'snd2', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+      kind: 'photo',
+      photoRefs: [{ storage: 'r2', key: 'r2/video', mime: 'video/mp4', sound: 'carried' }],
+      createdAt: '2026-07-05T03:00:00.000Z', updatedAt: '2026-07-05T04:00:00.000Z',
+    },
+  ])
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.equal(m.photoRefs[0].sound, 'carried') // remote's authoritative value wins, not the stale local
+})
+
+test('mergeFromRemote preserves sound/poster on E4 pieces when a stale remote drops them (rollout carry)', () => {
+  // A mixed moment's videos live in pieces[] server-side (INSTEAD of photoRefs),
+  // so the merge-guard must gap-fill pieces too. Non-vacuous: without the
+  // pieces fill, the wholesale replace leaves m.pieces[0].sound === undefined
+  // → red. The note piece must pass through untouched (kind-matched fill).
+  globalThis.localStorage.setItem(
+    'rt_memories_shared_v1',
+    JSON.stringify([
+      {
+        id: 'snd3', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+        kind: 'photo',
+        photoRefs: [{ storage: 'r2', key: 'r2/video', mime: 'video/mp4', posterKey: 'r2/poster', sound: 'lost' }],
+        pieces: [
+          { kind: 'video', storage: 'r2', key: 'r2/video', mime: 'video/mp4', posterKey: 'r2/poster', sound: 'lost' },
+          { kind: 'note', text: 'so loud in person' },
+        ],
+        createdAt: '2026-07-05T03:00:00.000Z', updatedAt: '2026-07-05T03:00:00.000Z',
+      },
+    ])
+  )
+  mergeFromRemote([
+    {
+      id: 'snd3', tripId: 't', stopId: 's', authorTraveler: 'helen', visibility: 'shared',
+      kind: 'photo',
+      photoRefs: [{ storage: 'r2', key: 'r2/video', mime: 'video/mp4', posterKey: 'r2/poster' }],
+      pieces: [
+        { kind: 'video', storage: 'r2', key: 'r2/video', mime: 'video/mp4' },
+        { kind: 'note', text: 'so loud in person' },
+      ],
+      createdAt: '2026-07-05T03:00:00.000Z', updatedAt: '2026-07-05T04:00:00.000Z',
+    },
+  ])
+  const [m] = listMemoriesForTrip('t', 'helen')
+  assert.equal(m.pieces[0].sound, 'lost')
+  assert.equal(m.pieces[0].posterKey, 'r2/poster') // poster heals through the same fill
+  assert.deepEqual(m.pieces[1], { kind: 'note', text: 'so loud in person' }) // untouched
+})
+
 test('mergeFromRemote does not override coords the remote already carries (LEG-C lossless album)', () => {
   globalThis.localStorage.setItem(
     'rt_memories_shared_v1',

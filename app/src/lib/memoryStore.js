@@ -1054,6 +1054,13 @@ function preserveLocalPhotoMeta(remote, local) {
     if (!rRef.posterUrl && typeof lRef.posterUrl === 'string' && lRef.posterUrl) {
       rRef.posterUrl = lRef.posterUrl
     }
+    // Sound honesty verdict ('carried' | 'none' | 'lost'): a stale/rolling-out
+    // remote (pre-sound worker) carries no `sound` — keep the capturing
+    // device's own so a pull can't erase the honest no-sound label. (Same
+    // merge-guard rationale as posterKey above; the remote wins when present.)
+    if (!rRef.sound && typeof lRef.sound === 'string' && lRef.sound) {
+      rRef.sound = lRef.sound
+    }
     return rRef
   }
   if (remote.photoRef && local.photoRef) {
@@ -1065,6 +1072,20 @@ function preserveLocalPhotoMeta(remote, local) {
     remote.photoRefs.length === local.photoRefs.length
   ) {
     remote.photoRefs = remote.photoRefs.map((rRef, i) => fill({ ...rRef }, local.photoRefs[i]))
+  }
+  // E4 moment pieces ride the JSON column INSTEAD of photoRefs server-side, so
+  // a stale remote's pieces need the same gap-fill or a pull strips poster/
+  // sound from the composed moment's own videos. Kinds must match — an index
+  // collision across kinds must never graft one piece's meta onto another
+  // (voice/note pieces carry none of these fields anyway).
+  if (
+    Array.isArray(remote.pieces) &&
+    Array.isArray(local.pieces) &&
+    remote.pieces.length === local.pieces.length
+  ) {
+    remote.pieces = remote.pieces.map((rPc, i) =>
+      rPc && local.pieces[i] && rPc.kind === local.pieces[i].kind ? fill({ ...rPc }, local.pieces[i]) : rPc
+    )
   }
   // Preserve a locally-set "from A to B" interstitial identity (007) when the
   // incoming record lacks one — same merge-guard rationale as the per-photo

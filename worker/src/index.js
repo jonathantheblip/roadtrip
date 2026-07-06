@@ -960,6 +960,11 @@ async function postMemory(env, traveler, request, url, cors) {
     // so a video carries a separate posterKey (first-frame JPEG). rowToMemory
     // derives posterUrl from it. Rides the same JSON column — no migration.
     if (typeof r.posterKey === 'string' && r.posterKey) e.posterKey = r.posterKey
+    // Sound honesty verdict ('carried' | 'none' | 'lost') — the per-clip label
+    // every device's tile shows FOREVER (nobody is ever asked to re-import).
+    // Value-whitelisted: any other value is never written, so a garbage flag
+    // can't persist and a soundless ref stays byte-identical to legacy rows.
+    if (r.sound === 'carried' || r.sound === 'none' || r.sound === 'lost') e.sound = r.sound
     return e
   }
   const refHasExif = (r) =>
@@ -967,6 +972,7 @@ async function postMemory(env, traveler, request, url, cors) {
     Number.isFinite(r?.lng) ||
     (typeof r?.capturedAt === 'string' && r.capturedAt)
   const refHasPoster = (r) => typeof r?.posterKey === 'string' && !!r.posterKey
+  const refHasSound = (r) => r?.sound === 'carried' || r?.sound === 'none' || r?.sound === 'lost'
   // E4 — an ordered heterogeneous "moment" piece. Photos/videos reuse photoEntry
   // (+ an explicit `kind`); a voice clip carries its audio r2 key + duration; a
   // note slip is pure author text. All ride the SAME photo_r2_keys_json column
@@ -988,14 +994,18 @@ async function postMemory(env, traveler, request, url, cors) {
     photoR2KeysJson = JSON.stringify(body.pieces.map(pieceEntry))
   } else if (body.photoRefs?.length) {
     photoR2KeysJson = JSON.stringify(body.photoRefs.map(photoEntry))
-  } else if (body.photoRef?.storage === 'r2' && (refHasExif(body.photoRef) || refHasPoster(body.photoRef))) {
+  } else if (
+    body.photoRef?.storage === 'r2' &&
+    (refHasExif(body.photoRef) || refHasPoster(body.photoRef) || refHasSound(body.photoRef))
+  ) {
     // Single-photo dispatch / single-video path: the scalar photo_r2_key column
-    // keeps no EXIF and no posterKey, so when this lone ref carries location/date
-    // OR a video poster, ALSO mirror it into the JSON column — the only place
-    // those survive without a migration, making them durable CROSS-DEVICE
-    // (rowToMemory then surfaces a 1-element photoRefs[]). A dateless video still
-    // mirrors (on posterKey) so its poster isn't lost; a coordless plain photo
-    // stays scalar-only, unchanged.
+    // keeps no EXIF, no posterKey and no sound flag, so when this lone ref
+    // carries location/date OR a video poster OR a sound verdict, ALSO mirror
+    // it into the JSON column — the only place those survive without a
+    // migration, making them durable CROSS-DEVICE (rowToMemory then surfaces a
+    // 1-element photoRefs[]). A poster-less 'lost' video still mirrors (on
+    // sound) so the honest label isn't lost; a coordless plain photo stays
+    // scalar-only, unchanged.
     photoR2KeysJson = JSON.stringify([photoEntry(body.photoRef)])
   }
   // E4 clobber guard — a re-save carrying ONLY photoRefs (no pieces) must not
@@ -1356,6 +1366,10 @@ function rowToMemory(r, origin) {
           ref.posterKey = a.posterKey
           ref.posterUrl = assetUrl(a.posterKey, origin)
         }
+        // Sound honesty verdict — same value-whitelist as the write side
+        // (photoEntry): both directions must pass it or the flag dies on the
+        // first round-trip. Omit when absent so legacy rows stay byte-identical.
+        if (a.sound === 'carried' || a.sound === 'none' || a.sound === 'lost') ref.sound = a.sound
         refs.push(ref)
         ordered.push({ kind: ref.posterUrl ? 'video' : 'photo', ...ref })
       }
