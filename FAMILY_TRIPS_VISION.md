@@ -268,19 +268,46 @@ once at capture time:
 - **The Weave should follow**: any of the above changing should prompt an updated Weave, not leave it
   narrating a day that's since moved on.
 
+**The complete vision was settled 2026-07-05/06 and lives in
+[app/docs/design/document-the-trip/VISION.md](app/docs/design/document-the-trip/VISION.md)** ("the trip
+remembers itself") with the engineering plan in
+[app/docs/design/self-healing-photos/SPEC.md](app/docs/design/self-healing-photos/SPEC.md). The
+principles that govern everything here (each was a real gap in this section's earlier text):
+
+1. **Reality is what surfaces RENDER FROM, never what other tenses sync to.** The plan is never rewritten
+   by the record — "we planned the whale watch, biked the dunes instead" stays tellable forever. (This
+   also retires the import-reconcile flow's old habit of rewriting `day.stops`; it records instead.)
+2. **On plan-less trips (the dominant hangout shape), the RECORD is the spine** — evidence pins + the
+   names a person gives them; the agenda is one input. A KEPT day is read from its record everywhere
+   (album titles, story, replay, shares), plan quoted alongside. (Settled 2026-07-05.)
+3. **Every backward-looking surface follows** — not just agenda/photos/Weave: replay, resurfacing, the
+   album's sections, share pages, the kids' read-faces. One shared place-resolver + one clock (leg-local
+   day attribution) are the enforcement, not per-surface patches.
+4. **Chosen things are inputs, never targets.** Kept days stay open to new material but their KEPT PAGES
+   are prints — they change only when a person re-keeps them, and re-keeping never destroys the version
+   that was chosen. Manual placements never move; the machine defers to authorship forever.
+5. **The ask-economy:** the app initiates once per day (the evening settle moment; quiet days pool),
+   everything else is a door that stays open forever — any loose day, any trip age, can be settled
+   ("finish the story"), and the app never chases, counts, or nags about the past.
+6. **Order independence:** photos-then-naming, naming-then-photos, more photos months later, locations
+   backfilled anytime — the documented state converges identically in every order (gated by permutation
+   tests, not hope). **Capture feels like keeping, not homework** — a nothing-day is a valid record.
+
 **Status (verify against git/memory, this ages):**
-- ✅ **Live agenda updates — SHIPPED** (`c5bcc58`, 2026-07-05). The existing push-resync heartbeat now also
-  pulls, so a cross-device edit shows up within ~20s instead of waiting for a foreground/reload.
-- ✅ **Weave same-day regeneration — SHIPPED** (`8f07199`, 2026-07-05). Opening a stale day's Weave now
-  regenerates on the spot instead of showing content from before the day's facts changed.
-- ⏳ **Self-healing photo↔agenda matching + an unfiled-photos triage surface — NOT STARTED, its own planning
-  pass.** Today, matching runs once at import time and never re-triggers; there is no manual re-file UI at
-  all. **Jonathan's decision (settled, do not re-ask): re-filing should apply automatically, with a visible
-  "moved because…" note** — not a draft a human confirms first. This means a provenance/lock flag (auto vs.
-  manual) is a REQUIRED prerequisite — nothing today distinguishes an algorithm's guess from a person's
-  deliberate correction, so automatic re-matching without one would silently overwrite a manual fix with no
-  way to notice (the same failure shape as the sync-honesty family, `memory/memory-sync-lww.md`). Full
-  research trail: `memory/document-the-trip-we-had.md`; carryover: `CARRYOVER_DOCUMENT_THE_TRIP.md`.
+- ✅ **Live agenda updates — SHIPPED** (`c5bcc58`, 2026-07-05), with real conflict protection + honest
+  pending notes added 2026-07-06 (`cbbba10`: a stale device can no longer silently erase another's edit
+  or resurrect a deleted trip).
+- ✅ **Weave same-day regeneration — SHIPPED** (`8f07199`), and the server learned the implicit base
+  2026-07-06 (batch A-4): stay-trip photos filed "at the place" finally produce stories; kept pages are
+  exempt prints; NULL-signature rows converge.
+- ✅ **Memory-sync integrity — SHIPPED 2026-07-06** (`ea502d0`): photo edits are remembered/retried
+  honestly, delete-safe, move-safe — the foundation auto-healing runs on.
+- ⏳ **Self-healing photo↔agenda matching — foundation in progress; the flag design is settled** (auto
+  vs manual provenance = migration 017 + worker-enforced "manual beats auto"; strict + repair-first
+  gates; worker is the single referee behind an off/shadow/on knob; every auto-move carries a visible
+  "moved because…" note naming the human act it follows). Jonathan's auto-apply decision stands.
+- ⏳ **Finish-the-story (retro-settle), the resolver, the record bridge, kid read-faces** — sequenced as
+  V1–V5 in VISION.md §5.
 
 ---
 
