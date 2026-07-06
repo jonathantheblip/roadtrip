@@ -199,14 +199,14 @@ describe('stale-weave serve guard — GET /weave/latest', () => {
   })
 
   it('FRESHNESS: a beat_signature matching the day\'s CURRENT memories still serves 200', async () => {
-    await seedTrip({
+    const trip = {
       id: 'fresh', title: 'A trip', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-01',
       days: [{ isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }],
-    })
+    }
+    await seedTrip(trip)
     await seedPlainMemory({ tripId: 'fresh', stopId: 's1', marker: 'a' })
-    const day = { isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }
     const memories = [{ stopId: 's1', authorTraveler: 'jonathan', kind: 'text', text: 'note a' }]
-    const sig = beatSignature(buildBeatsServer(day, memories))
+    const sig = beatSignature(buildBeatsServer(trip, trip.days[0], memories))
     await seedWeaveWithSignature({ tripId: 'fresh', dayIso: '2026-08-01', marker: 'FRESH', signature: sig })
     const res = await getLatest('?trip_id=fresh&day=2026-08-01')
     expect(res.status).toBe(200)
@@ -214,14 +214,14 @@ describe('stale-weave serve guard — GET /weave/latest', () => {
   })
 
   it('FRESHNESS: a beat_signature that no longer matches (a NEW memory landed since) serves 204', async () => {
-    await seedTrip({
+    const trip = {
       id: 'stale', title: 'A trip', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-01',
       days: [{ isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }],
-    })
+    }
+    await seedTrip(trip)
     // The weave was written when the day had ONE memory (helen's).
-    const dayBefore = { isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }
     const before = [{ stopId: 's1', authorTraveler: 'helen', kind: 'text', text: 'note h' }]
-    const staleSig = beatSignature(buildBeatsServer(dayBefore, before))
+    const staleSig = beatSignature(buildBeatsServer(trip, trip.days[0], before))
     await seedWeaveWithSignature({ tripId: 'stale', dayIso: '2026-08-01', marker: 'STALE', signature: staleSig })
     // Since then, a SECOND family member's memory landed on the same day —
     // the real-world "someone added a photo mid-day" case.
@@ -234,7 +234,10 @@ describe('stale-weave serve guard — GET /weave/latest', () => {
     expect(await weaveRowExists('stale::2026-08-01')).toBe(true)
   })
 
-  it('FRESHNESS: a row with NO stored signature (legacy/unknown) is served as-is, never treated as stale', async () => {
+  it('FRESHNESS: a row with NO stored signature (legacy/unknown) still serves — never a blanket 204', async () => {
+    // The unknown-signature row serves as stored (stale at most once) and
+    // CONVERGES via a signature backfill — the backfill itself is pinned in
+    // weave-implicit-base.test.js; here we pin the availability half.
     await seedTrip({
       id: 'nosig', title: 'A trip', dateRangeStart: '2026-08-01', dateRangeEnd: '2026-08-01',
       days: [{ isoDate: '2026-08-01', stops: [{ id: 's1', name: 'Walk' }] }],

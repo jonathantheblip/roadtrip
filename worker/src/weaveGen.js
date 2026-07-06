@@ -15,6 +15,7 @@
 //   - SHARED memories only (the weave is the shared family page).
 //   - NO random discovery mode (the cron only pre-makes an ACTIVE trip).
 import { partDayOwner } from './surprises.js'
+import { dayStopIds, isImplicitBaseId, IMPLICIT_BASE_PREFIX } from './dayStopIds.js'
 
 // ── Day selection (server, shared-family) ────────────────────────────────
 // Mirrors selectWeaveDay's ACTIVE-TRIP branch: a trip is "active" within its
@@ -142,9 +143,14 @@ export async function secretWeaveDaySet(env, tripId) {
   }
 
   // Hidden unrevealed SHARED memories. A memory carries a stop_id but no day of its own
-  // → map it via trip.days. If its stop is GONE from trip.days (restructured after the
-  // row was woven) we can't locate the day → withhold the WHOLE trip's weaves (rare,
-  // conservative, safe). A NULL stop_id never enters a day's beats → never leaks → skip.
+  // → map it via trip.days — except an implicit-base id (`__trip_base__:<iso>`), which
+  // ENCODES its day and lives in no day.stops list: read the day out of the id itself
+  // (also the layers-directly property — it maps even when the row outlives trip.days,
+  // and dayStopIds files a base memory to that one day and nowhere else, so day-scoped
+  // withholding is exact, never looser). If a stop is GONE from trip.days (restructured
+  // after the row was woven) we can't locate the day → withhold the WHOLE trip's weaves
+  // (rare, conservative, safe). A NULL stop_id never enters a day's beats → never leaks
+  // → skip.
   const hiddenMemoryDays = new Set()
   let unmappableHiddenMemory = false
   try {
@@ -155,7 +161,9 @@ export async function secretWeaveDaySet(env, tripId) {
     ).bind(tripId).all()
     for (const r of results || []) {
       if (!r?.stop_id) continue
-      const iso = stopDay.get(r.stop_id)
+      const iso = isImplicitBaseId(r.stop_id)
+        ? day10(r.stop_id.slice(IMPLICIT_BASE_PREFIX.length + 1))
+        : stopDay.get(r.stop_id)
       if (iso) hiddenMemoryDays.add(iso)
       else unmappableHiddenMemory = true
     }
@@ -179,8 +187,14 @@ export async function secretWeaveDaySet(env, tripId) {
 // Returns [{ who, kind, snippet }] — the short summaries Claude frames around.
 const KIND_RANK = { voice: 0, photo: 1, text: 2 }
 
-export function buildBeatsServer(day, sharedMemories) {
-  const stopIds = new Set((day.stops || []).map((s) => s.id))
+export function buildBeatsServer(trip, day, sharedMemories) {
+  // The day's ids come from the mirrored dayStopIds, NEVER bare day.stops: on
+  // a stay, footprint photos file to the per-day implicit-base id
+  // (`__trip_base__:<iso>`), which no day.stops list contains — an id set that
+  // misses it silently drops every base-filed memory from the beats. Takes the
+  // whole trip because only the trip carries the implicit-base gates
+  // (shape/anchor/lodging).
+  const stopIds = dayStopIds(trip, day)
   const dayMems = (sharedMemories || []).filter((m) => stopIds.has(m.stopId))
 
   const byAuthor = {}
@@ -304,7 +318,10 @@ export async function runNightlyWeave(env, { nowMs, generateNarrative, todayIso 
   }
 
   const dayHasSharedMemory = (trip, day) => {
-    const stopIds = new Set((day.stops || []).map((s) => s.id))
+    // dayStopIds, not bare day.stops — a stay day whose memories all sit on
+    // the implicit base must still count as "having" a shared memory, or the
+    // cron never selects it and the trip never gets a story.
+    const stopIds = dayStopIds(trip, day)
     return (memByTrip.get(trip.id) || []).some((m) => stopIds.has(m.stopId))
   }
 
@@ -312,7 +329,7 @@ export async function runNightlyWeave(env, { nowMs, generateNarrative, todayIso 
   if (!picked) return { skipped: 'no-active-day' }
 
   const { trip, day } = picked
-  const beats = buildBeatsServer(day, memByTrip.get(trip.id) || [])
+  const beats = buildBeatsServer(trip, day, memByTrip.get(trip.id) || [])
   if (!beats.length) return { skipped: 'no-beats', tripId: trip.id, dayIso: day.isoDate }
 
   const sig = beatSignature(beats)

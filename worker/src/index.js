@@ -3307,25 +3307,26 @@ async function getStoredWeave(env, url, cors) {
   const row = rows.find((r) => !secret.isSecretDay(r.day_iso))
   if (!row) return new Response(null, { status: 204, headers: cors })
 
-  // SAME-DAY FRESHNESS: the nightly cron already self-throttles via a
-  // beat-signature comparison (runNightlyWeave, above) before re-calling
-  // Claude — but that check only ever runs once a night. A photo/agenda
-  // change made mid-day (after last night's run) was invisible here: this
-  // route served the stored row forever, unconditionally. Re-derive the
-  // SAME signature from the day's CURRENT shared memories and compare it
-  // against what's stored; a mismatch means real facts changed since this
-  // row was written, so serve 204 — the client already falls back to
-  // building the weave itself from its own current beats whenever `title`
-  // is absent (TheWeave.jsx computes those BEFORE checking the stored
-  // weave), so this reuses that path with zero new client code. On any
-  // ambiguity (trip/day unresolvable) fail toward serving the stored row —
-  // staleness is a UX nit, not a privacy leak, so favor availability here
-  // (the inverse of the surprise guard above, which fails closed on purpose).
-  // A row with NO stored signature (predates this check, or a row a test/
-  // maintenance path wrote without one) can't be compared at all — skip
-  // rather than treat "unknown" as "stale" (which would force every such
-  // row to regenerate the moment this ships).
-  if (row.beat_signature != null) {
+  // KEPT PAGES ARE PRINTS (keep semantics — settled, VISION §3): a row with
+  // kept_at is a page the family chose for the book, served EXACTLY as
+  // stored — no freshness comparison, no 204, ever. Only the surprise guard
+  // above outranks a print (secrecy over availability). The quiet "the day
+  // has more photos now — weave it again?" offer is future Stage-E work.
+  if (row.kept_at == null) {
+    // SAME-DAY FRESHNESS: the nightly cron already self-throttles via a
+    // beat-signature comparison (runNightlyWeave, above) before re-calling
+    // Claude — but that check only ever runs once a night. A photo/agenda
+    // change made mid-day (after last night's run) was invisible here: this
+    // route served the stored row forever, unconditionally. Re-derive the
+    // SAME signature from the day's CURRENT shared memories and compare it
+    // against what's stored; a mismatch means real facts changed since this
+    // row was written, so serve 204 — the client already falls back to
+    // building the weave itself from its own current beats whenever `title`
+    // is absent (TheWeave.jsx computes those BEFORE checking the stored
+    // weave), so this reuses that path with zero new client code. On any
+    // ambiguity (trip/day unresolvable) fail toward serving the stored row —
+    // staleness is a UX nit, not a privacy leak, so favor availability here
+    // (the inverse of the surprise guard above, which fails closed on purpose).
     try {
       const tripRow = await env.DB.prepare(
         `SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL`
@@ -3349,8 +3350,28 @@ async function getStoredWeave(env, url, cors) {
           transcript: r.transcript,
           updatedAt: r.updated_at,
         }))
-        const currentSig = beatSignature(buildBeatsServer(day, memories))
-        if (currentSig !== row.beat_signature) {
+        // The whole trip goes in: a stay's beats include memories filed to
+        // the per-day implicit-base id, which only the trip can derive.
+        const currentSig = beatSignature(buildBeatsServer(trip, day, memories))
+        if (row.beat_signature == null) {
+          // A row with NO stored signature (predates the freshness check, or
+          // a maintenance path wrote none) can't be compared. Serving it
+          // as-is FOREVER would freeze pre-move content for good once stop
+          // moves begin — but a 204 here would be worse: client on-demand
+          // rebuilds are never persisted (F4 is future work), so a
+          // 204-forever permanently blanks past days the cron never
+          // revisits. CONVERGE instead: serve the stored narrative this once
+          // (stale at most once) and BACKFILL the current signature onto the
+          // row, so the next real change trips the honest 204 comparison.
+          // The WHERE re-checks what the JS gates already guaranteed so a
+          // concurrent keep (or another reader's backfill) landing between
+          // our SELECT and this write makes this a no-op instead of stamping
+          // an inert signature onto a row whose state moved underneath us.
+          await env.DB.prepare(
+            `UPDATE weaves SET beat_signature = ?, updated_at = ?
+             WHERE id = ? AND beat_signature IS NULL AND kept_at IS NULL`
+          ).bind(currentSig, Date.now(), row.id).run()
+        } else if (currentSig !== row.beat_signature) {
           return new Response(null, { status: 204, headers: cors })
         }
       }

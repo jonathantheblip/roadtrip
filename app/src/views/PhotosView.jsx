@@ -11,6 +11,7 @@ import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { listQueueStates, subscribe as subscribeQueue, drain as drainQueue } from '../lib/uploadQueue'
 import { videoCopy } from '../lib/videoCopy'
 import { isWorkerConfigured, uploadAssetBlob } from '../lib/workerSync'
+import { isAdult } from '../lib/auth'
 import { uploadPosterOrQueue } from '../lib/posterRetry'
 import { removeAsset } from '../lib/memAssets'
 import { saveMemory } from '../lib/memoryStore'
@@ -68,9 +69,16 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
   // staying at, with no planned stop) and photos were imported BEFORE it existed,
   // they're filed to the nearest dinner. Offer a one-tap re-sort, shown only when
   // there's actually something to move (a dry run counts candidates).
+  // ADULTS ONLY (jonathan/helen): the move re-files OTHER people's photos across
+  // every device ("Everyone will see the change"), which puts it on the deciders
+  // line (auth ADULTS / proposals DECIDERS) — not the authorship line kid-permitted
+  // affordances follow (the lightbox delete is own-photos-only). Both kid lenses
+  // route through this view, and Aurelia's teen lens sits on the kid side of every
+  // family-consequence gate in the app, so neither sees the banner; the dry-run
+  // scan is skipped too, not just hidden.
   const implicitBase = useMemo(() => tripImplicitBase(trip), [trip])
   const refileCount = useMemo(
-    () => (implicitBase ? refileTripToPlaces(trip, { traveler, dryRun: true }).movedPhotos : 0),
+    () => (implicitBase && isAdult(traveler) ? refileTripToPlaces(trip, { traveler, dryRun: true }).movedPhotos : 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip, traveler, memoryTick, implicitBase]
   )

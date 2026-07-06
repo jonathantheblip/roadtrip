@@ -147,7 +147,7 @@ describe('weaveGen — pure logic', () => {
       { stopId: 's2a', authorTraveler: 'jonathan', kind: 'voice', transcript: 'a clip' },
       { stopId: 's2a', authorTraveler: 'helen', kind: 'photo', caption: 'a frame' },
     ]
-    const beats = buildBeatsServer(day, mems)
+    const beats = buildBeatsServer(TRIP, day, mems)
     expect(beats).toHaveLength(2) // jonathan + helen
     const jb = beats.find((b) => b.who === 'jonathan')
     expect(jb.kind).toBe('voice') // voice beats text
