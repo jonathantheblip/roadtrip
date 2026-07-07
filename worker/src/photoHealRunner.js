@@ -278,6 +278,42 @@ export async function runHealForTrip(env, tripId, { mode, evidenceFreshIds, now 
   return { mode: 'on', tripRev: first.tripRev, applied, rounds }
 }
 
+// AGENDA-change trigger (SPEC §5 D trigger 1), QUIESCED on stability. postTrip
+// bumps the trip's server stamp on every save; this schedules a heal FOR that
+// stamp, waits a short beat, then BAILS if a newer edit has since landed (its
+// own trigger will heal the settled state). So a rapid lodging clear-then-retype
+// heals ONCE, on the final state — never mass-scattering base filings in the gap
+// (SPEC §5 D convergence, appendix critique-0 #5). evidenceFresh is NOT set: an
+// agenda change relies on the fresher stamp (gate 5), not fresh photo evidence.
+// Runs inside ctx.waitUntil AFTER the response, so it adds no latency to the save.
+// `quiesceMs` is injectable so tests don't wait the real window.
+const AGENDA_QUIESCE_MS = 5000
+// The quiesce window, tunable without a deploy (and settable to 0 in tests) via
+// env.PHOTO_HEAL_QUIESCE_MS. Defaults to AGENDA_QUIESCE_MS.
+export function agendaQuiesceMs(env) {
+  const raw = env?.PHOTO_HEAL_QUIESCE_MS
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
+  return Number.isFinite(n) && n >= 0 ? n : AGENDA_QUIESCE_MS
+}
+export async function scheduleAgendaHeal(env, tripId, { now = Date.now(), quiesceMs } = {}) {
+  const mode = photoHealMode(env)
+  if (mode === 'off') return { skipped: 'off' }
+  const before = await env.DB.prepare(
+    'SELECT updated_at FROM trips WHERE id = ? AND deleted_at IS NULL'
+  ).bind(tripId).first()
+  if (!before) return { skipped: 'no-trip' }
+  const scheduledStamp = before.updated_at
+  const wait = Number.isFinite(quiesceMs) ? quiesceMs : agendaQuiesceMs(env)
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+  const after = await env.DB.prepare(
+    'SELECT updated_at FROM trips WHERE id = ? AND deleted_at IS NULL'
+  ).bind(tripId).first()
+  // A newer edit (or a delete) landed during the quiesce window → its trigger
+  // owns the heal; skip so we don't heal a superseded snapshot.
+  if (!after || after.updated_at !== scheduledStamp) return { skipped: 'superseded' }
+  return runHealForTrip(env, tripId, { mode, now })
+}
+
 // The DAILY CRON backstop (SPEC §5 D trigger 5): heal every active trip. No
 // evidenceFresh + no stamp bump — pure repair + agenda-freshness convergence,
 // the net that catches anything an event trigger missed. Per-trip failures are

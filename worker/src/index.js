@@ -35,7 +35,7 @@ import { forecastUrl, marineUrl, buildConditions } from './conditions.js'
 import { createWave, listUnseenWaves, markWavesSeen, runWavePurge } from './waves.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
-import { healSweep } from './photoHealRunner.js'
+import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode } from './photoHealRunner.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -189,7 +189,7 @@ export default {
         return await getMemories(env, traveler, url, cors)
       }
       if (path === '/memories' && request.method === 'POST') {
-        return await postMemory(env, traveler, request, url, cors)
+        return await postMemory(env, traveler, request, url, cors, ctx)
       }
       const memMatch = path.match(/^\/memories\/([^/]+)$/)
       if (memMatch && request.method === 'DELETE') {
@@ -205,7 +205,7 @@ export default {
         return await getTrips(env, traveler, url, cors, ctx)
       }
       if (path === '/trips' && request.method === 'POST') {
-        return await postTrip(env, request, cors, traveler)
+        return await postTrip(env, request, cors, traveler, ctx)
       }
       const tripMatch = path.match(/^\/trips\/([^/]+)$/)
       if (tripMatch && request.method === 'DELETE') {
@@ -880,7 +880,7 @@ async function getMemories(env, traveler, url, cors) {
   return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
-async function postMemory(env, traveler, request, url, cors) {
+async function postMemory(env, traveler, request, url, cors, ctx) {
   const body = await request.json()
   if (!body?.id) return json({ error: 'missing id' }, 400, cors)
   // Masked-projection guard (Surprises, 010). A teaser stub / cover stand-in is
@@ -1260,6 +1260,23 @@ async function postMemory(env, traveler, request, url, cors) {
   const { results } = await env.DB.prepare(
     'SELECT * FROM memories WHERE id = ?'
   ).bind(body.id).all()
+  // PHOTO-EVIDENCE trigger (SPEC §5 D trigger 3): this memory's photos / GPS /
+  // capturedAt just changed → re-match it NOW, marking ONLY this memory
+  // evidence-fresh so a stamp-stable evidence change (a GPS backfill, a
+  // capturedAt edit) can still re-file it (gate 5). Gated by the knob + an actual
+  // applied write (a no-op tombstone/conflict path healed nothing) + a live row.
+  // Async via waitUntil → adds no latency to the save; heals the STORED state,
+  // never re-deciding the incoming body (the resolver above already ruled on it).
+  if (ctx && results[0] && !results[0].deleted_at && results[0].trip_id &&
+      (upsertRes?.meta?.changes ?? 1) > 0 && photoHealMode(env) !== 'off') {
+    const healTripId = results[0].trip_id
+    ctx.waitUntil(
+      runHealForTrip(env, healTripId, { evidenceFreshIds: [body.id] }).then(
+        (r) => console.log('[photo-heal-evidence]', JSON.stringify(r)),
+        (e) => console.error('[photo-heal-evidence] failed', e?.stack || e)
+      )
+    )
+  }
   return json(rowToMemory(results[0], workerOrigin(env, url)), 200, cors)
 }
 
@@ -1654,7 +1671,7 @@ async function getTrips(env, traveler, url, cors, ctx) {
   return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
 }
 
-async function postTrip(env, request, cors, traveler) {
+async function postTrip(env, request, cors, traveler, ctx) {
   const trip = await request.json()
   if (!trip?.id) return json({ error: 'missing id' }, 400, cors)
   // Masked-projection guard (whole-trip masking, 3b). A trip stand-in the worker
@@ -1794,6 +1811,19 @@ async function postTrip(env, request, cors, traveler) {
   const stamped = await env.DB.prepare(
     'SELECT updated_at FROM trips WHERE id = ?'
   ).bind(trip.id).first()
+  // AGENDA-change trigger (SPEC §5 D trigger 1): the plan changed → re-file
+  // photos whose stop moved (or whose base anchor shifted), quiesced on stability
+  // so a rapid clear-then-retype heals once, on the settled state. Gated by the
+  // knob; async via waitUntil → no save latency. day.record rides the trip, so a
+  // named settle-sheet moment change is covered by this trigger too.
+  if (ctx && photoHealMode(env) !== 'off') {
+    ctx.waitUntil(
+      scheduleAgendaHeal(env, trip.id, {}).then(
+        (r) => console.log('[photo-heal-agenda]', JSON.stringify(r)),
+        (e) => console.error('[photo-heal-agenda] failed', e?.stack || e)
+      )
+    )
+  }
   return json({ ok: true, id: trip.id, updatedAt: Number(stamped?.updated_at ?? updatedAt) }, 200, cors)
 }
 
