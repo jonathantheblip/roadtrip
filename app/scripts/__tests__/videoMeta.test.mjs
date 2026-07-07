@@ -82,15 +82,17 @@ function makeMp4(moovInner, leadingBoxes = []) {
 test('extractVideoCreationDate reads mvhd v0 creation_time', async () => {
   const captured = new Date('2026-04-17T11:23:45.000Z')
   const file = bufferAsFile(makeMp4([mvhdV0(captured)]))
-  const iso = await extractVideoCreationDate(file)
-  assert.equal(iso, captured.toISOString())
+  const meta = await extractVideoCreationDate(file)
+  assert.equal(meta.capturedAt, captured.toISOString())
+  assert.equal(meta.offsetMinutes, null) // mvhd carries no offset
 })
 
 test('extractVideoCreationDate reads mvhd v1 creation_time (64-bit)', async () => {
   const captured = new Date('2026-05-22T18:00:00.000Z')
   const file = bufferAsFile(makeMp4([mvhdV1(captured)]))
-  const iso = await extractVideoCreationDate(file)
-  assert.equal(iso, captured.toISOString())
+  const meta = await extractVideoCreationDate(file)
+  assert.equal(meta.capturedAt, captured.toISOString())
+  assert.equal(meta.offsetMinutes, null)
 })
 
 test('extractVideoCreationDate prefers Apple Keys creationdate over mvhd', async () => {
@@ -113,11 +115,13 @@ test('extractVideoCreationDate prefers Apple Keys creationdate over mvhd', async
     Buffer.from(appleIso, 'ascii'),
     Buffer.from([0, 0]), // trailing nulls
   ])
-  const meta = atom('meta', metaPayload)
-  const file = bufferAsFile(makeMp4([mvhdV0(captured), meta]))
-  const iso = await extractVideoCreationDate(file)
-  // Apple value should win and the parser normalizes to UTC.
-  assert.equal(iso, captured.toISOString())
+  const metaAtom = atom('meta', metaPayload)
+  const file = bufferAsFile(makeMp4([mvhdV0(captured), metaAtom]))
+  const meta = await extractVideoCreationDate(file)
+  // Apple value should win; capturedAt normalizes to UTC AND its local offset
+  // (-04:00 → -240 minutes) is preserved for the matcher's local-clock filing.
+  assert.equal(meta.capturedAt, captured.toISOString())
+  assert.equal(meta.offsetMinutes, -240)
 })
 
 test('extractVideoCreationDate returns null when moov is missing', async () => {
@@ -173,6 +177,6 @@ test('extractVideoCreationDate finds moov at the END of the file, past the 4MB m
   const captured = new Date('2026-05-24T22:58:05.000Z')
   const bigMdat = atom('mdat', Buffer.alloc(4 * 1024 * 1024 + 1024)) // > 4MB
   const file = bufferAsFile(makeMp4([mvhdV0(captured)], [bigMdat]))
-  const iso = await extractVideoCreationDate(file)
-  assert.equal(iso, captured.toISOString())
+  const meta = await extractVideoCreationDate(file)
+  assert.equal(meta.capturedAt, captured.toISOString())
 })

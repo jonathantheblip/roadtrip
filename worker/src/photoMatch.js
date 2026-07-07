@@ -256,15 +256,20 @@ export function matchPhotoToStop(photo, dayIndex) {
   if (!photo || !photo.capturedAt) return unmatched()
   const photoMs = Date.parse(photo.capturedAt)
   if (!Number.isFinite(photoMs)) return unmatched()
+  // TIME comparisons run in the photo's OWN local wall clock (offsetMinutes = its
+  // capture-time UTC offset); absent an offset it degrades to UTC (+0), unchanged.
+  // Faithful mirror of the client matchPhotoToStop — see its comment.
+  const offMin = Number.isFinite(photo.offsetMinutes) ? photo.offsetMinutes : 0
+  const photoWallMs = photoMs + offMin * 60_000
 
-  const dayEntry = dayEntryForPhoto(photoMs, dayIndex)
+  const dayEntry = dayEntryForPhoto(photoWallMs, dayIndex)
   if (!dayEntry) return unmatched()
   const { day, sortedClockStops, allStops, isStay } = dayEntry
 
   let before = null
   let after = null
   for (const s of sortedClockStops) {
-    if (s._parsedAt <= photoMs) before = s
+    if (s._parsedAt <= photoWallMs) before = s
     else {
       after = s
       break
@@ -396,7 +401,10 @@ export function nearestLocatedStops(photo, dayIndex, assignedStopId) {
   if (!photo || !photoHasGps(photo)) return null
   const photoMs = Date.parse(photo.capturedAt)
   if (!Number.isFinite(photoMs)) return null
-  const entry = dayEntryForPhoto(photoMs, dayIndex)
+  // Day pick uses the photo's LOCAL wall clock (offset-aware), same as
+  // matchPhotoToStop, so the margin is measured against the correct day's stops.
+  const offMin = Number.isFinite(photo.offsetMinutes) ? photo.offsetMinutes : 0
+  const entry = dayEntryForPhoto(photoMs + offMin * 60_000, dayIndex)
   if (!entry) return null
 
   const located = []

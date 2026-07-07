@@ -60,6 +60,9 @@ export function rowToHealMemory(r) {
           lat: Number.isFinite(a.lat) ? a.lat : undefined,
           lng: Number.isFinite(a.lng) ? a.lng : undefined,
           capturedAt: typeof a.capturedAt === 'string' ? a.capturedAt : undefined,
+          // Capture-time offset (mig-less; rides photo_r2_keys_json) so the worker
+          // matcher files by LOCAL wall-clock time, matching the client import.
+          offsetMinutes: Number.isFinite(a.offsetMinutes) ? a.offsetMinutes : undefined,
         }))
     } catch {}
   }

@@ -1094,3 +1094,35 @@ test('a no-GPS photo NEVER defaults to a record moment (only the base)', () => {
   const m = matchPhotoToStop({ id: 'p', capturedAt: '2026-07-01T18:05:00.000Z' }, idx) // no lat/lng
   assert.equal(m.stopId, implicitBaseIdForDay('2026-07-01'), 'no-GPS stay default is the base, not a named moment')
 })
+
+// ─── Offset-aware time filing (the tz fix: local wall clock, not UTC) ─────────
+
+test('offset-aware: a 3:18 PM EDT no-GPS photo files to the 2:30 PM stop, not the 6:45 PM one', () => {
+  // Rafa's day 3, verbatim: Monster Trucks 2:30 PM, Depart 5:00 PM, Texas 6:45 PM.
+  const trip = { id: 't', shape: 'route', days: [{ n: 3, isoDate: '2026-05-03', stops: [
+    { id: 'trucks', time: '2:30 PM', lat: 41.1772, lng: -73.1859 },
+    { id: 'depart', time: '5:00 PM' },
+    { id: 'texas', time: '6:45 PM', lat: 41.7264, lng: -72.7686 },
+  ] }] }
+  const idx = buildDayIndex(trip)
+  // 3:18 PM EDT = 19:18Z, offset -240. No GPS → files by LOCAL time.
+  const m = matchPhotoToStop({ id: 'v', capturedAt: '2026-05-03T19:18:45.000Z', offsetMinutes: -240 }, idx)
+  assert.equal(m.stopId, 'trucks')
+  assert.equal(m.matchType, 'time')
+  // The documented regression the fix closes: WITHOUT the offset, the old UTC math
+  // sorts 19:18Z after the 6:45 PM (18:45Z) stop → the misfile. Fallback unchanged.
+  const oldM = matchPhotoToStop({ id: 'v2', capturedAt: '2026-05-03T19:18:45.000Z' }, idx)
+  assert.equal(oldM.stopId, 'texas')
+})
+
+test('offset-aware: the local wall clock also picks the right DAY near midnight', () => {
+  const trip = { id: 't', shape: 'route', days: [
+    { n: 1, isoDate: '2026-05-03', stops: [{ id: 'd3-evening', time: '11:00 PM' }] },
+    { n: 2, isoDate: '2026-05-04', stops: [{ id: 'd4-morning', time: '8:00 AM' }] },
+  ] }
+  const idx = buildDayIndex(trip)
+  // 11:30 PM EDT May 3 = 03:30Z May 4. Offset -240 → the LOCAL day is still May 3.
+  const m = matchPhotoToStop({ id: 'p', capturedAt: '2026-05-04T03:30:00.000Z', offsetMinutes: -240 }, idx)
+  assert.equal(m.dayIsoDate, '2026-05-03')
+  assert.equal(m.stopId, 'd3-evening')
+})

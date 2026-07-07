@@ -278,6 +278,28 @@ const CORPUS = [
     ],
     expectTypes: ['gps+time', 'gps+time'],
   },
+  {
+    // OFFSET-AWARE time filing (the tz fix). A no-GPS 3:18 PM EDT photo carries
+    // offsetMinutes -240; TIME comparisons run in its local wall clock, so it
+    // brackets AFTER the 2:30 PM stop and BEFORE the 5 PM one → the Monster Trucks
+    // stop, not the 6:45 PM one the old UTC math chose. Both copies must agree.
+    name: 'offset-aware: a 3:18 PM EDT no-GPS photo files by LOCAL time',
+    trip: {
+      id: 'r11', shape: 'route',
+      days: [{
+        n: 1, isoDate: '2026-05-03',
+        stops: [
+          { id: 's-trucks', time: '2:30 PM', lat: 41.1772, lng: -73.1859 },
+          { id: 's-depart', time: '5:00 PM' },
+          { id: 's-texas', time: '6:45 PM', lat: 41.7264, lng: -72.7686 },
+        ],
+      }],
+    },
+    photos: [
+      { id: 'p-3pm', capturedAt: '2026-05-03T19:18:45.000Z', offsetMinutes: -240 },
+    ],
+    expectTypes: ['time'],
+  },
 ]
 
 describe('worker photoMatch mirror — parity with the client matcher', () => {
@@ -314,6 +336,17 @@ describe('worker photoMatch mirror — parity with the client matcher', () => {
     expect(worker.matches[0].stopId).toBe(recordId)
     expect(client.matches[1].stopId).toBe('__trip_base__:2026-07-01')
     expect(worker.matches[1].stopId).toBe('__trip_base__:2026-07-01')
+  })
+
+  it('offset-aware: both copies file the 3:18 PM EDT photo to the 2:30 PM stop (not 6:45 PM)', () => {
+    const trip = CORPUS.find((c) => c.name.startsWith('offset-aware')).trip
+    const photo = { id: 'p', capturedAt: '2026-05-03T19:18:45.000Z', offsetMinutes: -240 }
+    expect(clientMatch([photo], trip).matches[0].stopId).toBe('s-trucks')
+    expect(workerMatch([photo], trip).matches[0].stopId).toBe('s-trucks')
+    // Fallback unchanged: no offset → the old UTC misfile, identically on both.
+    const noOff = { id: 'p2', capturedAt: '2026-05-03T19:18:45.000Z' }
+    expect(clientMatch([noOff], trip).matches[0].stopId).toBe('s-texas')
+    expect(workerMatch([noOff], trip).matches[0].stopId).toBe('s-texas')
   })
 
   it('geometry helpers agree (haversine + polyline distance)', () => {

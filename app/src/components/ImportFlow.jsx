@@ -89,7 +89,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
             file: f,
             kind: 'photo',
             exif,
-            photo: { id, capturedAt: exif.capturedAt, lat: exif.lat, lng: exif.lng },
+            photo: { id, capturedAt: exif.capturedAt, lat: exif.lat, lng: exif.lng, offsetMinutes: exif.offsetMinutes ?? null },
           })
         }
         // Videos: a sequential WebCodecs encode (CPU-heavy — one at a time,
@@ -110,13 +110,15 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
             const f = videoFiles[vi]
             setEncode({ index: vi, total: videoFiles.length, percent: 0 })
             try {
-              const capturedAtPromise = extractVideoCreationDate(f).catch(() => null)
+              const metaPromise = extractVideoCreationDate(f).catch(() => null)
               const enc = await encodeVideo(f, {
                 onProgress: (p) => {
                   if (!cancelled) setEncode({ index: vi, total: videoFiles.length, percent: p })
                 },
               })
-              const capturedAt = await capturedAtPromise
+              const vmeta = await metaPromise
+              const capturedAt = vmeta?.capturedAt ?? null
+              const offsetMinutes = vmeta?.offsetMinutes ?? null
               // SANITY CAP: large videos upload via multipart now (uploadAssetBlob), so
               // only a pathologically huge encode (over the 2GB cap) is refused up front
               // + REMEMBERED so the summary can say so honestly, instead of churning.
@@ -156,8 +158,8 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                   durationMs: enc.durationMs,
                   sound: enc.sound || null, // 'carried' | 'none' | 'lost'
                 },
-                exif: { capturedAt, lat: null, lng: null },
-                photo: { id, capturedAt, lat: null, lng: null },
+                exif: { capturedAt, lat: null, lng: null, offsetMinutes },
+                photo: { id, capturedAt, lat: null, lng: null, offsetMinutes },
               })
             } catch (err) {
               // #2 honesty: a shrink failure is NEVER silently dropped. Classify it so
@@ -364,7 +366,9 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
     const stillFailed = []
     for (const clip of clips) {
       try {
-        const capturedAt = await extractVideoCreationDate(clip.file).catch(() => null)
+        const vmeta = await extractVideoCreationDate(clip.file).catch(() => null)
+        const capturedAt = vmeta?.capturedAt ?? null
+        const offsetMinutes = vmeta?.offsetMinutes ?? null
         const enc = await encodeVideo(clip.file)
         if (enc.blob && enc.blob.size > VIDEO_MAX_UPLOAD_BYTES) {
           stillFailed.push(clip)
@@ -374,7 +378,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           kind: 'video',
           file: clip.file,
           encoded: { blob: enc.blob, posterBlob: enc.posterBlob || null, mime: 'video/mp4', width: enc.width, height: enc.height, durationMs: enc.durationMs, sound: enc.sound || null },
-          exif: { capturedAt, lat: null, lng: null },
+          exif: { capturedAt, lat: null, lng: null, offsetMinutes },
           match: undefined,
           reattachOf: null,
           stopId: null,

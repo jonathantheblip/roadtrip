@@ -136,7 +136,7 @@ export async function readExifForImport(file) {
       lat: Number.isFinite(o.lat) ? o.lat : null,
       lng: Number.isFinite(o.lng) ? o.lng : null,
       orientation: null,
-      offset: null,
+      offsetMinutes: Number.isFinite(o.offsetMinutes) ? o.offsetMinutes : null,
     }
   }
   return readPhotoExif(file)

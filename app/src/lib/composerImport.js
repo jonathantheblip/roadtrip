@@ -84,9 +84,13 @@ export async function importComposerFile(file, { trip, traveler, onProgress } = 
     if (!canImportVideo()) {
       throw Object.assign(new Error('This device can’t add videos here.'), { code: 'video-unsupported' })
     }
-    const capturedAt = await extractVideoCreationDate(file).catch(() => null)
+    const vmeta = await extractVideoCreationDate(file).catch(() => null)
     const encoded = await encodeForImport(file, onProgress)
-    const saved = await saveImportedMedia({ file, kind: 'video', exif: { capturedAt }, encoded, trip, traveler })
+    const saved = await saveImportedMedia({
+      file, kind: 'video',
+      exif: { capturedAt: vmeta?.capturedAt ?? null, offsetMinutes: vmeta?.offsetMinutes ?? null },
+      encoded, trip, traveler,
+    })
     return pieceFromImport(saved)
   }
   const exif = await readExifForImport(file)

@@ -21,6 +21,11 @@
 // epoch). The mvhd atom stamps in MP4 epoch.
 const MP4_TO_UNIX_EPOCH_SECONDS = 2_082_844_800
 
+// Returns { capturedAt: ISO-UTC string, offsetMinutes: number|null } or null.
+// `offsetMinutes` is the clip's LOCAL UTC offset (from Apple's creationdate,
+// e.g. "-0400"), which the matcher needs to file by local wall-clock time — the
+// mvhd fallback CANNOT recover it (Apple writes local-as-UTC there), so it
+// returns null offset and the matcher degrades to UTC for that clip.
 export async function extractVideoCreationDate(file) {
   // Test seam (PROD-INERT): the synthetic-encode path (videoPipeline's
   // __RT_VIDEO_ENCODE_STUB) hands over a fake file with no real mvhd/Keys atom, so
@@ -28,7 +33,9 @@ export async function extractVideoCreationDate(file) {
   // by the importer's trip-range filter and the headless upload path can't run.
   // Never set in any shipped surface.
   const stub = typeof window !== 'undefined' ? window.__RT_VIDEO_ENCODE_STUB : null
-  if (stub && typeof stub.capturedAt === 'string') return stub.capturedAt
+  if (stub && typeof stub.capturedAt === 'string') {
+    return { capturedAt: stub.capturedAt, offsetMinutes: Number.isFinite(stub.offsetMinutes) ? stub.offsetMinutes : null }
+  }
   if (!file) return null
   try {
     const moov = await locateTopLevelAtom(file, 'moov')
@@ -43,13 +50,28 @@ export async function extractVideoCreationDate(file) {
     const apple = readAppleQuickTimeCreationDate(view, 0, view.byteLength)
     if (apple) return apple
 
-    // Fallback: mvhd creation_time (UTC seconds since 1904).
+    // Fallback: mvhd creation_time (UTC seconds since 1904) — no offset available.
     const mvhd = findAtom(view, 0, view.byteLength, 'mvhd')
     if (!mvhd) return null
-    return parseMvhdCreationDate(view, mvhd.start, mvhd.end)
+    const iso = parseMvhdCreationDate(view, mvhd.start, mvhd.end)
+    return iso ? { capturedAt: iso, offsetMinutes: null } : null
   } catch {
     return null
   }
+}
+
+// Parse a trailing UTC offset from an ISO 8601 string → signed minutes, or null.
+// Handles "-0400", "-04:00", and "Z"/"+00:00" (→ 0). Used ONLY to recover the
+// clip's local offset; the capturedAt itself stays the absolute UTC instant.
+function offsetMinutesFromIso(iso) {
+  if (typeof iso !== 'string') return null
+  const m = /([+-])(\d{2}):?(\d{2})$/.exec(iso)
+  if (m) {
+    const sign = m[1] === '-' ? -1 : 1
+    return sign * (parseInt(m[2], 10) * 60 + parseInt(m[3], 10))
+  }
+  if (/[zZ]$/.test(iso)) return 0
+  return null
 }
 
 // Walk the top-level atom chain, reading only each box's 8/16-byte header and
@@ -181,7 +203,10 @@ function readAppleQuickTimeCreationDate(view, start, end) {
         const minMs = Date.UTC(2000, 0, 1)
         if (d.getTime() < minMs) continue
         if (d.getTime() > Date.now() + 24 * 60 * 60 * 1000) continue
-        return d.toISOString()
+        // The raw ISO carries the device's LOCAL offset (e.g. "-0400") — capture
+        // it before Date.parse collapses everything to the absolute instant, so
+        // the matcher can file the clip by its local wall clock.
+        return { capturedAt: d.toISOString(), offsetMinutes: offsetMinutesFromIso(iso) }
       }
     }
   }

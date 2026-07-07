@@ -1035,6 +1035,10 @@ async function postMemory(env, traveler, request, url, cors, ctx) {
     if (Number.isFinite(r.lat)) e.lat = r.lat
     if (Number.isFinite(r.lng)) e.lng = r.lng
     if (typeof r.capturedAt === 'string' && r.capturedAt) e.capturedAt = r.capturedAt
+    // Capture-time UTC offset (minutes) — the matcher files by LOCAL wall-clock
+    // time using it. Whitelisted like the others; a ref without it stays byte-
+    // identical, and it only means anything alongside capturedAt.
+    if (Number.isFinite(r.offsetMinutes)) e.offsetMinutes = r.offsetMinutes
     // Video poster: the ref's `key` points at an .mp4 (unrenderable as <img>),
     // so a video carries a separate posterKey (first-frame JPEG). rowToMemory
     // derives posterUrl from it. Rides the same JSON column — no migration.
@@ -1519,6 +1523,9 @@ function rowToMemory(r, origin) {
         if (Number.isFinite(a.lat)) ref.lat = a.lat
         if (Number.isFinite(a.lng)) ref.lng = a.lng
         if (typeof a.capturedAt === 'string' && a.capturedAt) ref.capturedAt = a.capturedAt
+        // Capture-time offset — same round-trip whitelist as capturedAt (both
+        // directions must pass it or the matcher loses the local clock on re-pull).
+        if (Number.isFinite(a.offsetMinutes)) ref.offsetMinutes = a.offsetMinutes
         // Video poster — derive a renderable URL from the stored posterKey
         // (the ref's own url points at the .mp4). Omit when absent.
         if (typeof a.posterKey === 'string' && a.posterKey) {

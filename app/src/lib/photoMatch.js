@@ -430,13 +430,24 @@ export function matchPhotoToStop(photo, dayIndex) {
   if (!photo || !photo.capturedAt) return unmatched()
   const photoMs = Date.parse(photo.capturedAt)
   if (!Number.isFinite(photoMs)) return unmatched()
+  // TIME comparisons run in the photo's OWN local wall clock. `offsetMinutes` is
+  // its capture-time UTC offset (EXIF OffsetTimeOriginal for photos; the Apple
+  // QuickTime creationdate offset for videos) — adding it shifts the real UTC
+  // instant into the SAME wall-clock frame the stop times live in (parseStopTime
+  // anchors those to the day's UTC midnight, i.e. wall-minutes-as-UTC). Absent an
+  // offset it degrades to `+0` = the prior UTC behavior, so offset-less items are
+  // byte-identical. THIS is what files a 3:18-PM photo to the 3-PM stop instead of
+  // one ~4h later for US timezones — the fix for the parked UTC-binning divergence
+  // (matchPhotoToStop used to compare a real UTC instant against wall-as-UTC stops).
+  const offMin = Number.isFinite(photo.offsetMinutes) ? photo.offsetMinutes : 0
+  const photoWallMs = photoMs + offMin * 60_000
 
-  // Pick the day whose [00:00, 23:59] window contains the photo.
+  // Pick the day whose [00:00, 23:59] window contains the photo's LOCAL day.
   let dayEntry = null
   for (const entry of dayIndex.values()) {
     const dayStartMs = Date.parse(`${entry.day.isoDate}T00:00:00.000Z`)
     const dayEndMs = Date.parse(`${entry.day.isoDate}T23:59:59.999Z`)
-    if (photoMs >= dayStartMs && photoMs <= dayEndMs) {
+    if (photoWallMs >= dayStartMs && photoWallMs <= dayEndMs) {
       dayEntry = entry
       break
     }
@@ -444,13 +455,13 @@ export function matchPhotoToStop(photo, dayIndex) {
   if (!dayEntry) return unmatched()
   const { day, sortedClockStops, allStops, isStay } = dayEntry
 
-  // Temporal bracket: the clock stops immediately before/after this photo.
-  // Used to LABEL an interstitial ("from A to B") and to bind a no-GPS photo
-  // to the stop whose window it sits in. It is NOT a gate on GPS matches.
+  // Temporal bracket: the clock stops immediately before/after this photo (in its
+  // local wall clock). Used to LABEL an interstitial ("from A to B") and to bind a
+  // no-GPS photo to the stop whose window it sits in. It is NOT a gate on GPS matches.
   let before = null
   let after = null
   for (const s of sortedClockStops) {
-    if (s._parsedAt <= photoMs) before = s
+    if (s._parsedAt <= photoWallMs) before = s
     else {
       after = s
       break
