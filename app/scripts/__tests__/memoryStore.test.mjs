@@ -708,3 +708,36 @@ test('drainMemorySyncQueue: re-entry returns the IN-FLIGHT drain — an awaiting
   assert.equal(pushes, 1, 'one drain ran, once — re-entry never doubles the work')
   assert.equal(out.settled, 1, 'the stranded intent settled')
 })
+
+// ── skip-pending-intent (A-3 review fold-in) ───────────────────────────────
+
+test('mergeFromRemote SKIPS a record with a pending unsynced intent — an unpushed local edit is never clobbered', async () => {
+  const q = await import('../../src/lib/memorySyncQueue.js')
+  // Seed a local edit, then mark it queued/unsynced (an edit that hasn't reached the family).
+  mergeFromRemote([remoteMem('mp', { updatedAt: '2026-05-23T10:00:00.000Z', caption: 'my local edit' })])
+  q.markUnsynced({ kind: 'save', memoryId: 'mp', author: 'helen' })
+  // A NEWER remote row arrives (would win last-write-wins) — the clock-behind-skew aperture.
+  const added = mergeFromRemote([remoteMem('mp', { updatedAt: '2026-05-23T12:00:00.000Z', caption: 'stale remote' })])
+  const local = listMemoriesForTrip('t1', 'helen').find((m) => m.id === 'mp')
+  assert.equal(local.caption, 'my local edit', 'the unpushed local edit is preserved, not clobbered')
+  assert.equal(added, 0, 'the pending record was skipped — nothing merged')
+})
+
+test('a tombstone still drops a pending-intent record — a delete is authoritative', async () => {
+  const q = await import('../../src/lib/memorySyncQueue.js')
+  mergeFromRemote([remoteMem('mt', { caption: 'x' })])
+  q.markUnsynced({ kind: 'save', memoryId: 'mt', author: 'helen' })
+  mergeFromRemote([remoteMem('mt', { updatedAt: '2026-05-24T00:00:00.000Z', deletedAt: '2026-05-24T00:00:00.000Z' })])
+  assert.deepEqual(
+    listMemoriesForTrip('t1', 'helen').filter((m) => m.id === 'mt'),
+    [],
+    'the delete propagated despite the pending intent',
+  )
+})
+
+test('a genuinely-new remote row is still taken even if an intent exists for its id (guard is existing-scoped)', async () => {
+  const q = await import('../../src/lib/memorySyncQueue.js')
+  q.markUnsynced({ kind: 'save', memoryId: 'mn', author: 'helen' }) // an intent, but no local record to protect
+  const added = mergeFromRemote([remoteMem('mn', { caption: 'fresh' })])
+  assert.equal(added, 1, 'the new remote is added — there was nothing local to clobber')
+})

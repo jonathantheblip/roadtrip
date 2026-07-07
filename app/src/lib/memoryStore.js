@@ -983,6 +983,12 @@ export function mergeFromRemote(remoteRecords) {
     }
     return privateBuckets.get(author)
   }
+  // Snapshot the unsynced set ONCE — the skip-pending-intent guard below
+  // consults it per record, and mergeFromRemote also runs over the whole
+  // archive on a cold-load full pull; a per-record localStorage re-parse (via
+  // isUnsynced) would be O(N) parses (A-3 review #4). pendingIntents() reads
+  // the (typically tiny) queue once.
+  const pendingIds = new Set(memoryQueue.pendingIntents().map((e) => e.memoryId))
   let added = 0
   for (const r of remoteRecords) {
     if (!r?.id) continue
@@ -1007,6 +1013,22 @@ export function mergeFromRemote(remoteRecords) {
         if (bucket.delete(r.id)) added += 1
       }
       continue
+    }
+    // SKIP-PENDING-INTENT (A-3 review fold-in). This device holds an unpushed
+    // local edit for r.id (a queued save/move). A remote LWW win here would
+    // clobber it before it ever reaches the family — the clock-behind-skew
+    // aperture the A-3 review flagged (a delta re-delivers an older server row
+    // whose server stamp outranks this edit's device-clock stamp). Keep local;
+    // the queue pushes the edit, and a later pull carries the confirmed row.
+    // Scoped to the UPSERT branches only — a tombstone (handled above) is
+    // authoritative and still propagates; the drain delete-adopts the intent.
+    // Guarded on `existing` so a genuinely-new remote row is never dropped.
+    if (pendingIds.has(r.id)) {
+      if (r.visibility === 'private') {
+        if (r.authorTraveler && getPrivateBucket(r.authorTraveler).has(r.id)) continue
+      } else if (sharedMap.has(r.id)) {
+        continue
+      }
     }
     if (r.visibility === 'private') {
       const author = r.authorTraveler

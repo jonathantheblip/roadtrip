@@ -209,7 +209,14 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
       let firstError = null
       for (const m of records) {
         try {
-          const r = await pushMemory(m)
+          // Carry the record's last-known SERVER stamp as the OCC base so a
+          // DIVERGED local copy 409s (→ conflict recovery adopts the fresh stop
+          // + provenance) instead of a bare last-write-wins push. Without it, a
+          // stale local stopId would trip the worker's manual-lock rule (§4
+          // rule 3) and freeze a photo's filing family-wide, unprotected — the
+          // one push path that otherwise skips the guard (A-3 review #2).
+          // Omitted-when-absent: a never-synced record sends no base, unchanged.
+          const r = await pushMemory(m, { baseUpdatedAt: m.serverUpdatedAt })
           // pushMemory: `null` = deliberately SKIPPED (a masked projection we must
           // never push back, or the worker unconfigured) — NOT pushed, not a failure;
           // a truthy value = pushed. A real failure THROWS (→ the catch below counts
@@ -224,8 +231,17 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
             ok += 1
           }
         } catch (err) {
-          failed += 1
-          if (!firstError) firstError = err?.message || String(err)
+          // A 409 is NOT a failure: the server already holds a newer version
+          // (or a tombstone) and correctly refused this stale local copy — the
+          // whole point of sending the OCC base. Count it as skipped (server
+          // wins), not failed, so the honest report doesn't cry "failed" over a
+          // record that's simply already current elsewhere.
+          if (err?.status === 409) {
+            skipped += 1
+          } else {
+            failed += 1
+            if (!firstError) firstError = err?.message || String(err)
+          }
         }
       }
       setPushAllState({
