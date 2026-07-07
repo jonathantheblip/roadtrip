@@ -34,6 +34,7 @@ import { listPresence, upsertPresence, runPresencePurge } from './presence.js'
 import { forecastUrl, marineUrl, buildConditions } from './conditions.js'
 import { createWave, listUnseenWaves, markWavesSeen, runWavePurge } from './waves.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
+import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -903,7 +904,7 @@ async function postMemory(env, traveler, request, url, cors) {
   let storedRow = null
   try {
     storedRow = await env.DB.prepare(
-      'SELECT updated_at, deleted_at FROM memories WHERE id = ?'
+      'SELECT updated_at, deleted_at, stop_id, stop_prov_json FROM memories WHERE id = ?'
     ).bind(body.id).first()
   } catch (e) {
     console.error('postMemory stored-row read failed', e?.stack || e)
@@ -937,6 +938,29 @@ async function postMemory(env, traveler, request, url, cors) {
     ? toEpochMs(body.createdAt)
     : updatedAt
   const reactionsJson = body.reactions?.length ? JSON.stringify(body.reactions) : null
+
+  // STOP-FILING PROVENANCE (SPEC §4, migration 017). Decide the effective
+  // stop_id + stopProv to persist, whether a manual lock refused an auto move,
+  // and whether to append to the memory_stop_moves ledger — all BEFORE the bind,
+  // in pure JS (stopProvenance.js). This is where "a person's hand-move beats
+  // the machine" is real. A stored NULL prov is legacy (neither auto nor
+  // manual); the resolver's rules 1–4 handle preserve / refuse / manual-stamp /
+  // insert-legacy. The stored-row read above already fetched stop_id +
+  // stop_prov_json, so this costs no extra query.
+  let storedProv = null
+  if (storedRow?.stop_prov_json) {
+    try { storedProv = JSON.parse(storedRow.stop_prov_json) } catch { storedProv = null }
+  }
+  const prov = resolveStopProvenance({
+    storedStopId: storedRow ? storedRow.stop_id : null,
+    storedProv,
+    isInsert: !storedRow,
+    incomingStopId: body.stopId || null,
+    incomingProv: whitelistProv(body.stopProv),
+    now: updatedAt,
+  })
+  const effectiveStopId = prov.stopId
+  const stopProvJson = prov.prov ? JSON.stringify(prov.prov) : null
 
   // photoRefs[] album: store as JSON array of {key, mime}
   let photoR2Key = null
@@ -1098,7 +1122,7 @@ async function postMemory(env, traveler, request, url, cors) {
   // delete signal.
   const upsertRes = await env.DB.prepare(
     `INSERT INTO memories (
-       id, trip_id, stop_id, author_traveler, visibility, kind,
+       id, trip_id, stop_id, stop_prov_json, author_traveler, visibility, kind,
        text, caption, transcript, transcript_lang, transcription_status,
        duration_seconds, mood, reactions_json,
        audio_r2_key, audio_mime, photo_r2_key, photo_mime,
@@ -1106,7 +1130,7 @@ async function postMemory(env, traveler, request, url, cors) {
        hide_from_json, reveal_json, conceal, cover_json, surprise_json, revealed_at,
        created_at, updated_at, deleted_at
      ) VALUES (
-       ?, ?, ?, ?, ?, ?,
+       ?, ?, ?, ?, ?, ?, ?,
        ?, ?, ?, ?, ?,
        ?, ?, ?,
        ?, ?, ?, ?,
@@ -1117,6 +1141,10 @@ async function postMemory(env, traveler, request, url, cors) {
      ON CONFLICT(id) DO UPDATE SET
        trip_id = excluded.trip_id,
        stop_id = excluded.stop_id,
+       -- stop_prov_json is the resolver's EFFECTIVE value (excluded), not a
+       -- COALESCE: the resolver already applied the preserve/refuse/stamp rules
+       -- (§4), so a NULL here is a deliberate legacy filing, not a gap to keep.
+       stop_prov_json = excluded.stop_prov_json,
        -- AUTHOR IS IMMUTABLE on upsert. The author is stamped from the token at
        -- insert (below). On a conflict KEEP the stored author — never let a
        -- different traveler re-author an existing memory. This matters because the
@@ -1148,10 +1176,15 @@ async function postMemory(env, traveler, request, url, cors) {
        cover_json = COALESCE(excluded.cover_json, memories.cover_json),
        surprise_json = COALESCE(excluded.surprise_json, memories.surprise_json),
        revealed_at = COALESCE(excluded.revealed_at, memories.revealed_at),
-       updated_at = excluded.updated_at
+       -- STAMP MONOTONICITY (A-3 fold-in): two racing pushes can commit out of
+       -- stamp order; the loser's older stamp landing on the row wedges the last
+       -- write stuck-stale (a device that saw the higher stamp LWW-refuses it
+       -- forever). MAX makes last-to-commit win + propagate. The return re-reads
+       -- the row, so the client always gets this actual stamp as its OCC base.
+       updated_at = MAX(excluded.updated_at, memories.updated_at + 1)
      WHERE memories.deleted_at IS NULL`
   ).bind(
-    body.id, body.tripId || null, body.stopId || null,
+    body.id, body.tripId || null, effectiveStopId, stopProvJson,
     // Author is the AUTHENTICATED traveler, never a body-supplied value. Closes
     // the author-spoof (a spoofed author would be exempt from the masking on the
     // next read). Reconciled: the in-app composer/dispatch already set
@@ -1187,6 +1220,28 @@ async function postMemory(env, traveler, request, url, cors) {
         409,
         cors
       )
+    }
+  }
+
+  // AUDIT LEDGER (migration 017). Append one memory_stop_moves row per ACCEPTED
+  // stop change the resolver reported — so a bad matcher release is diagnosable
+  // afterward (stop_prov_json only holds the latest state; this never forgets).
+  // Guarded on an applied write (changes > 0): the tombstone-noop path above
+  // wrote nothing, so it must log nothing. Best-effort: the memory already
+  // persisted; a ledger miss is a diagnostic gap, never a reason to fail the
+  // save (mirrors the other best-effort worker guards).
+  if (prov.move && (upsertRes?.meta?.changes ?? 1) > 0) {
+    try {
+      const m = prov.move
+      await env.DB.prepare(
+        `INSERT INTO memory_stop_moves
+           (memory_id, from_stop, to_stop, from_label, to_label, source, reason, trip_rev, by, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        body.id, m.from, m.to, m.fromLabel, m.toLabel, m.source, m.reason, m.tripRev, m.by, m.at
+      ).run()
+    } catch (e) {
+      console.error('postMemory ledger write failed', e?.stack || e)
     }
   }
 
@@ -1453,6 +1508,11 @@ function rowToMemory(r, origin) {
   const surprise = parseJson(r.surprise_json)
   const revealed = r.revealed_at || undefined
   const conceal = r.conceal || undefined
+  // Migration 017 — surface the stop-filing provenance when stored; undefined
+  // for the NULL column on every legacy row (omitted from JSON, so pre-017
+  // deserialization is byte-identical). The client reads `stopProv.source` to
+  // render the lock/"moved because…" and to decide what a hand-move sends back.
+  const stopProv = parseJson(r.stop_prov_json)
   return {
     id: r.id,
     tripId: r.trip_id || undefined,
@@ -1481,6 +1541,7 @@ function rowToMemory(r, origin) {
     ...(cover ? { cover } : {}),
     ...(surprise ? { surprise } : {}),
     ...(revealed ? { revealed } : {}),
+    ...(stopProv ? { stopProv } : {}),
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
     deletedAt: r.deleted_at ? new Date(r.deleted_at).toISOString() : undefined,
@@ -1667,18 +1728,20 @@ async function postTrip(env, request, cors, traveler) {
     }
   }
   const updatedAt = Date.now()
-  // The update arm deliberately never touches deleted_at: the resurrection
-  // guard above already refused every push at a tombstone, so an un-delete
-  // here could only fire inside the read→write race (a DELETE landing between
-  // the guard's read and this write) — and that race must leave the trip
-  // deleted. Only the INSERT arm (a genuinely new id) starts live.
-  // ⚠ Unlike the MEMORY upsert, this arm has no `WHERE deleted_at IS NULL`:
-  // the same race still overwrites a fresh trip tombstone's content columns
-  // and can regress its updated_at. Invisible today — getTrips filters
-  // tombstones out and the client learns trip deletes by absence — but it
-  // becomes load-bearing the day trips ever grow a ?since= delta. Mirror the
-  // memory fix (WHERE arm + meta.changes check) before building one.
-  await env.DB.prepare(
+  // The update arm deliberately never touches deleted_at. Two A-3 hardening
+  // fold-ins here mirror the memory upsert:
+  //  • WHERE trips.deleted_at IS NULL — closes the push-vs-delete race AT THE
+  //    STATEMENT (a DELETE landing between the guard read and this write used to
+  //    overwrite the tombstone's content + regress its stamp). meta.changes === 0
+  //    is the tell; refused below with the resurrection guard's delete signal.
+  //    Harmless-but-real today (trips pull by absence); load-bearing the day a
+  //    trip ?since= delta exists.
+  //  • updated_at = MAX(excluded.updated_at, trips.updated_at + 1) — STAMP
+  //    MONOTONICITY. Two racing pushes can commit out of stamp order; the loser's
+  //    older stamp used to land on the winner's row, wedging the last write
+  //    stuck-stale (a device that saw the higher stamp LWW-refuses it forever
+  //    until the next edit). MAX makes last-to-COMMIT win and propagate.
+  const upsertRes = await env.DB.prepare(
     `INSERT INTO trips (
        id, title, date_range_start, date_range_end, end_city,
        data_json, updated_at, deleted_at
@@ -1689,16 +1752,37 @@ async function postTrip(env, request, cors, traveler) {
        date_range_end = excluded.date_range_end,
        end_city = excluded.end_city,
        data_json = excluded.data_json,
-       updated_at = excluded.updated_at`
+       updated_at = MAX(excluded.updated_at, trips.updated_at + 1)
+     WHERE trips.deleted_at IS NULL`
   ).bind(
     trip.id, trip.title || null,
     trip.dateRangeStart || null, trip.dateRangeEnd || null,
     trip.endCity || null,
     JSON.stringify(trip), updatedAt
   ).run()
-  // Return the new updated_at so a concurrency-aware client can carry it as the
-  // base for its next save (older clients ignore the extra field).
-  return json({ ok: true, id: trip.id, updatedAt }, 200, cors)
+
+  // The race fired: tombstoned between the guard read and the write, so the
+  // WHERE arm made this a no-op. Refuse with the resurrection guard's signal.
+  if ((upsertRes?.meta?.changes ?? 1) === 0) {
+    const tomb = await env.DB.prepare(
+      'SELECT updated_at, deleted_at FROM trips WHERE id = ?'
+    ).bind(trip.id).first()
+    if (tomb && tomb.deleted_at != null) {
+      return json(
+        { error: 'conflict', id: trip.id, deleted: true, storedUpdatedAt: Number(tomb.updated_at) },
+        409,
+        cors
+      )
+    }
+  }
+
+  // Return the ACTUAL stored stamp, not Date.now(): MAX may have bumped it to
+  // trips.updated_at + 1 (the monotonicity fix), and the client carries this as
+  // its next OCC base — a stale value would 409 its own next save. One PK read.
+  const stamped = await env.DB.prepare(
+    'SELECT updated_at FROM trips WHERE id = ?'
+  ).bind(trip.id).first()
+  return json({ ok: true, id: trip.id, updatedAt: Number(stamped?.updated_at ?? updatedAt) }, 200, cors)
 }
 
 async function deleteTrip(env, traveler, id, cors) {
