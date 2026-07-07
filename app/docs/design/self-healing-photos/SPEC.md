@@ -195,9 +195,17 @@ migration; the first move or hand-filing stamps it.
 
 ## 5. Stage C+D — the healing service
 
-**C — GPS.** (a) Import-forward: persist per-ref `lat/lng` (small `baseRef` change). (b) Archive backfill:
-one-time client-side pass — fetch R2 originals, re-run the existing EXIF extractor, push per-ref GPS through
-the existing `photo_r2_keys_json` path. Keyless, no deps, idempotent, resumable.
+**C — GPS. ✅ SHIPPED 2026-07-07 (`471f674`) — with a CORRECTION to (b). DO NOT RE-ATTEMPT the full backfill.**
+(a) Import-forward: persist per-ref `lat/lng` (small `baseRef` change) — SHIPPED (`photoBackfillUpload.js`
+threads EXIF lat/lng onto the ref, both bulk + composer paths). (b) Archive backfill — the original plan
+("fetch R2 originals, re-run the EXIF extractor") is **INFEASIBLE for the bulk of the archive and was NOT
+built as such.** ⚠ VERIFIED: the upload pipeline (`photoPipeline.js` downscaleImage) canvas-re-encodes every
+photo UNCONDITIONALLY, STRIPPING all EXIF incl. GPS, and the worker `/assets` route stores exactly the bytes
+it received — so a normally-imported photo's R2 copy NEVER had GPS to recover. The earlier "feasible" claim
+verified the baseRef-drops-GPS bug but NOT that R2 keeps EXIF. What SHIPPED (Jonathan chose "recover the few
+that slipped through"): an adults-only Settings "Locate archived photos" tool (`lib/gpsBackfill.js`) that
+recovers GPS ONLY for the subset uploaded RAW (downscale failures). Old photos otherwise heal by time + named
+moments. Keyless, no deps, idempotent, resumable — but honest small yield, not the whole archive.
 
 **D — worker-side matcher.**
 - Mirror `photoMatch.js` into `worker/src/` (surprises.js precedent) **plus an automatic parity test**: one
