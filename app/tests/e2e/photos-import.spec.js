@@ -153,5 +153,16 @@ test.describe('Importer Stage 2 — ImportFlow (smart-skip + confirm)', () => {
     await expect.poll(() => uploadedMimes.length, { timeout: 8000 }).toBeGreaterThan(0)
     // The downscale ran end-to-end: the Worker got a JPEG, not the source PNG.
     expect(uploadedMimes[0]).toMatch(/jpeg/i)
+
+    // Stage C-a — the photo's EXIF GPS reached the saved ref, so a forward
+    // import is self-healable (the worker persists ref lat/lng via LEG-C; the
+    // importer used to drop them, landing every bulk import GPS-blind).
+    const refCoords = await page.evaluate(() => {
+      const mems = JSON.parse(localStorage.getItem('rt_memories_shared_v1') || '[]')
+      const m = mems.find((x) => x.photoRef || (x.photoRefs && x.photoRefs.length))
+      const ref = m?.photoRef || (m?.photoRefs && m.photoRefs[0])
+      return ref ? { lat: ref.lat, lng: ref.lng } : null
+    })
+    expect(refCoords).toEqual({ lat: 40.0, lng: -75.0 })
   })
 })

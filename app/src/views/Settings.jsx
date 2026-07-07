@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, Archive, Smartphone } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Cloud, CloudOff, RefreshCw, Check, Upload, FileText, Pencil, Trash2, Terminal, Archive, Smartphone, MapPin } from 'lucide-react'
 import { TRAVELERS, TRAVELER_ORDER, TRAVELER_DOT } from '../data/travelers'
 import { AppIcon } from '../components/AppIcon'
 import { APP_IDENTITY, getSticker } from '../data/appIdentity'
@@ -18,7 +18,9 @@ import {
 } from '../lib/workerSync'
 import { enrolledTravelers, isAdult, defaultDeviceLabel, hasSession } from '../lib/auth'
 import { isTripMaskedFrom } from '../lib/surprises'
-import { listAllLocalMemories, mergeFromRemote, drainMemorySyncQueue } from '../lib/memoryStore'
+import { listAllLocalMemories, mergeFromRemote, drainMemorySyncQueue, applyRefGps } from '../lib/memoryStore'
+import { runGpsBackfill } from '../lib/gpsBackfill'
+import { loadExifTags } from '../lib/exifRead'
 import {
   clearUploadLog,
   isDevModeEnabled,
@@ -126,6 +128,7 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
   const [weaveRegen, setWeaveRegen] = useState({ status: 'idle', message: null })
   const [seeding, setSeeding] = useState(false)
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
+  const [locateState, setLocateState] = useState({ status: 'idle', message: null })
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [archiving, setArchiving] = useState(false)
   const [confirmDeleteTrip, setConfirmDeleteTrip] = useState(false)
@@ -250,6 +253,46 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })
+    }
+  }
+
+  // Locate archived photos (Stage C-b) — a one-time, adults-only pass that
+  // re-reads each already-uploaded photo's own bytes and, for the SUBSET whose
+  // location tag survived upload (a full-size original that slipped past the
+  // shrink), fills in where it was taken so it can settle into place. It reports
+  // the honest count — a handful, not the whole archive (normal uploads had
+  // their location stripped by the shrink; new photos keep it via the importer
+  // fix). Resumable + idempotent; enriched photos re-mirror to the family.
+  async function runLocatePhotos() {
+    setLocateState({ status: 'running', message: 'Looking through your photos…' })
+    try {
+      const memories = listAllLocalMemories(traveler)
+      const res = await runGpsBackfill({
+        memories,
+        fetchImpl: (url) => fetch(url),
+        loadTags: loadExifTags,
+        apply: applyRefGps,
+        storage: window.localStorage,
+        onProgress: ({ done, total, found }) => {
+          setLocateState({
+            status: 'running',
+            message: total
+              ? `Checked ${done} of ${total}${found ? ` · found ${found} so far` : ''}…`
+              : 'Nothing to check.',
+          })
+        },
+      })
+      let message
+      if (res.total === 0) {
+        message = 'No archived photos needed locating — you’re all set.'
+      } else if (res.found === 0) {
+        message = `Looked through ${res.checked} photo${res.checked === 1 ? '' : 's'} — none of the older ones still carried a location (the upload shrink had removed it). New photos keep theirs from now on.`
+      } else {
+        message = `Found the location for ${res.found} photo${res.found === 1 ? '' : 's'} and filled it in — they can settle into place now.`
+      }
+      setLocateState({ status: 'done', message })
+    } catch (err) {
+      setLocateState({ status: 'error', message: err?.message || String(err) })
     }
   }
 
@@ -749,7 +792,28 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
                   <RefreshCw size={12} /> {weaveRegen.status === 'running' ? 'Rewriting…' : 'Rewrite saved Weave pages'}
                 </button>
               )}
+              {isAdult(traveler) && (
+                <button
+                  type="button"
+                  className="btn-pill"
+                  onClick={runLocatePhotos}
+                  disabled={locateState.status === 'running'}
+                  data-testid="settings-locate-photos"
+                  title="Re-read older photos' own files to recover a location the upload shrink may have left behind, so they can settle into place. One-time, resumable; new photos already keep their location."
+                >
+                  <MapPin size={12} /> {locateState.status === 'running' ? 'Locating…' : 'Locate archived photos'}
+                </button>
+              )}
             </div>
+            {locateState.message && (
+              <p
+                className="f-dm text-[12px] mt-3 italic"
+                data-testid="settings-locate-msg"
+                style={{ opacity: 0.8, color: locateState.status === 'error' ? 'var(--accent)' : 'inherit' }}
+              >
+                {locateState.message}
+              </p>
+            )}
             {syncMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{syncMsg}</p>
             )}

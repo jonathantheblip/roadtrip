@@ -62,6 +62,13 @@ export async function uploadBackfillPhotos({
       // honors the __RT_BACKFILL_EXIF test seam; the downscale's own EXIF is
       // identical in production but null for headless fixtures.
       const capturedAt = entry?.exif?.capturedAt || null
+      // Per-photo GPS from the triage's EXIF read (Stage C-a). The worker's
+      // photoEntry already persists ref lat/lng into photo_r2_keys_json (LEG-C);
+      // the importer just never carried them onto the ref, so every bulk import
+      // landed GPS-blind. Thread them now so forward imports are self-healable.
+      // Finite-only (absent EXIF → null → ref stays coordless, unchanged).
+      const lat = Number.isFinite(entry?.exif?.lat) ? entry.exif.lat : null
+      const lng = Number.isFinite(entry?.exif?.lng) ? entry.exif.lng : null
 
       // Pick the stop assignment. An explicit `entry.stopId` (set by the
       // reconciliation layer, which binds photos to the FINAL reconciled
@@ -86,7 +93,10 @@ export async function uploadBackfillPhotos({
         // edge (existing metadata row, missing bytes).
         const assetKey = makeAssetKey('photo')
         const { mime } = await saveAsset('photo', assetKey, entry.file)
-        const ref = { key: assetKey, storage: 'idb', mime, capturedAt }
+        const ref = {
+          key: assetKey, storage: 'idb', mime, capturedAt,
+          ...(lat != null ? { lat } : {}), ...(lng != null ? { lng } : {}),
+        }
         const existing = entry.reattachOf
         const merged = mergeRefIntoExisting(existing, ref)
         saveMemory({
@@ -114,8 +124,8 @@ export async function uploadBackfillPhotos({
       const memoryId = makeMemoryId()
       const ref =
         entry.kind === 'video'
-          ? await uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, capturedAt, results })
-          : await uploadOrQueueNewPhoto({ entry, memoryId, trip, traveler, stopId, capturedAt, results })
+          ? await uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, capturedAt, lat, lng, results })
+          : await uploadOrQueueNewPhoto({ entry, memoryId, trip, traveler, stopId, capturedAt, lat, lng, results })
 
       // An interstitial photo keeps stopId = null and carries its "from A to
       // B" identity as a memory-level field (007). On a queued photo this
@@ -163,6 +173,8 @@ async function uploadOrQueueNewPhoto({
   traveler,
   stopId,
   capturedAt,
+  lat,
+  lng,
   results,
 }) {
   // Downscale for upload (the M2 pipeline — guards iOS's decoded-image
@@ -187,7 +199,10 @@ async function uploadOrQueueNewPhoto({
   // too — matching AddDispatchModal.queueSilently. (The importer used to
   // diverge here, going IDB-only with no pill, which read as "saved, nothing
   // syncing" in a worker-less build.)
-  const baseRef = { kind: 'photo', mime, capturedAt }
+  const baseRef = {
+    kind: 'photo', mime, capturedAt,
+    ...(Number.isFinite(lat) ? { lat } : {}), ...(Number.isFinite(lng) ? { lng } : {}),
+  }
   try {
     const r = await workerFetch(
       `/assets/photo/${encodeURIComponent(memoryId)}`,
@@ -260,7 +275,7 @@ function safeObjectUrl(blob) {
 // poster (the encoded video itself isn't grid-renderable). Videos never use
 // the IDB asset store (memAssets has no video store) — offline persistence is
 // the upload queue; with no Worker the object URL covers the session.
-async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, capturedAt, results }) {
+async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, capturedAt, lat, lng, results }) {
   const enc = entry.encoded || {}
   const blob = enc.blob
   const posterBlob = enc.posterBlob || null
@@ -270,6 +285,10 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
     width: enc.width,
     height: enc.height,
     durationMs: enc.durationMs,
+    // Per-photo GPS (Stage C-a) — a video shot on the trip carries its location
+    // the same as a still, so a videos-only day still heals. Finite-only.
+    ...(Number.isFinite(lat) ? { lat } : {}),
+    ...(Number.isFinite(lng) ? { lng } : {}),
     // The shrunk byte size — the design's "proof" value (#2). Persisted on the
     // ref (not just local) so the saved-tile size chip shows for every viewer and
     // survives the worker round-trip, exactly like width/height/durationMs. Rides
@@ -371,12 +390,17 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
 export async function saveImportedMedia({ file, kind, exif, encoded, trip, traveler }) {
   const memoryId = makeMemoryId()
   const capturedAt = exif?.capturedAt || null
+  // Per-photo GPS (Stage C-a) — the composer-import path drops coords onto the
+  // ref the same way the bulk path does, so a photo added via the composer is
+  // just as healable. Finite-only; a coordless import stays byte-identical.
+  const lat = Number.isFinite(exif?.lat) ? exif.lat : null
+  const lng = Number.isFinite(exif?.lng) ? exif.lng : null
   const stopId = null
   const results = { ok: 0, reattached: 0, queued: 0, failed: 0, errors: [] }
   const ref =
     kind === 'video'
-      ? await uploadOrQueueVideo({ entry: { encoded }, memoryId, trip, traveler, stopId, capturedAt, results })
-      : await uploadOrQueueNewPhoto({ entry: { file }, memoryId, trip, traveler, stopId, capturedAt, results })
+      ? await uploadOrQueueVideo({ entry: { encoded }, memoryId, trip, traveler, stopId, capturedAt, lat, lng, results })
+      : await uploadOrQueueNewPhoto({ entry: { file }, memoryId, trip, traveler, stopId, capturedAt, lat, lng, results })
   // A video is stored as a kind:'photo' memory whose photoRef carries the video
   // (ref.kind/mime/posterUrl distinguish it) — mirroring uploadBackfillPhotos.
   saveMemory({

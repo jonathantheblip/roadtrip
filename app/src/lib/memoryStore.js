@@ -1351,6 +1351,62 @@ export function updateMemoryPoster(memoryId, posterKey, posterUrl) {
   return null
 }
 
+// Fill in a photo/video ref's GPS (lat/lng) AFTER the fact — the archive
+// backfill (Stage C-b): a ref whose R2 asset still carried EXIF (a full-size
+// upload that slipped past the shrink) gets its coords re-read and written here,
+// then re-mirrored so every device's copy gains the location. Identified by the
+// ref's stable R2 `key`. Idempotent: only a ref that LACKS coords is patched, so
+// a re-run (or a 409 re-push) never overwrites coords another device set, and
+// the same-stop re-save trips provenance rule 1 (preserve) — GPS enrichment
+// never manual-locks a photo. Mirrors updateMemoryPoster's shape.
+export function applyRefGps(memoryId, refKey, { lat, lng } = {}) {
+  if (!memoryId || !refKey) return null
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  const matches = (r) => !!r && typeof r === 'object' && r.key === refKey
+  const needsGps = (r) => matches(r) && !(Number.isFinite(r.lat) && Number.isFinite(r.lng))
+  const patchRef = (r) => (needsGps(r) ? { ...r, lat, lng } : r)
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    if (list[idx].masked) return list[idx] // never patch a masked projection
+    const m = list[idx]
+    // No-op guard: if no container ref both matches the key AND lacks coords,
+    // there's nothing to write — don't bump updatedAt or re-mirror (idempotent
+    // resume must not churn the whole archive on every run).
+    const hasTarget =
+      needsGps(m.photoRef) ||
+      (Array.isArray(m.photoRefs) && m.photoRefs.some(needsGps))
+    if (!hasTarget) return m
+    const now = new Date().toISOString()
+    const patched = { ...m, updatedAt: now }
+    if (m.photoRef) patched.photoRef = patchRef({ ...m.photoRef })
+    if (Array.isArray(m.photoRefs)) patched.photoRefs = m.photoRefs.map((r) => patchRef({ ...r }))
+    list[idx] = patched
+    writeJson(key, list)
+    scheduleMirror({
+      type: 'save',
+      record: patched,
+      // 409 re-push: gap-fill coords ONLY where the fresh ref still lacks them,
+      // so a concurrent enrichment from another device is never clobbered.
+      reapply: (fresh) => {
+        const f = { ...fresh, updatedAt: new Date().toISOString() }
+        if (fresh.photoRef) f.photoRef = patchRef({ ...fresh.photoRef })
+        if (Array.isArray(fresh.photoRefs)) f.photoRefs = fresh.photoRefs.map((r) => patchRef({ ...r }))
+        return f
+      },
+    })
+    return patched
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return null
+}
+
 // ── "Add it again with sound" — in-place video-ref replacement ─────────────
 //
 // Four stored videos are permanently silent (ref.sound === 'lost'): their

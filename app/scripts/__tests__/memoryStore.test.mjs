@@ -741,3 +741,37 @@ test('a genuinely-new remote row is still taken even if an intent exists for its
   const added = mergeFromRemote([remoteMem('mn', { caption: 'fresh' })])
   assert.equal(added, 1, 'the new remote is added — there was nothing local to clobber')
 })
+
+// ── applyRefGps (Stage C-b archive backfill) ───────────────────────────────
+
+test('applyRefGps: writes coords onto a coordless r2 ref, idempotent, never overwrites existing coords', async () => {
+  const { applyRefGps } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('mg', { photoRef: { storage: 'r2', key: 'kk', url: 'uu' } })])
+  const patched = applyRefGps('mg', 'kk', { lat: 41.3, lng: -72.1 })
+  assert.equal(patched.photoRef.lat, 41.3)
+  assert.equal(patched.photoRef.lng, -72.1)
+  // Idempotent: a ref that already has coords is a no-op — existing coords stand.
+  const again = applyRefGps('mg', 'kk', { lat: 99, lng: 99 })
+  assert.equal(again.photoRef.lat, 41.3, 'existing coords are never overwritten')
+  // Unknown memory / non-finite coords → null (nothing to do at all).
+  assert.equal(applyRefGps('nope', 'kk', { lat: 1, lng: 2 }), null)
+  assert.equal(applyRefGps('mg', 'kk', { lat: 'x', lng: 2 }), null)
+  // A wrong key on an existing memory is a no-op — the record comes back, its
+  // ref untouched (nothing matched to write).
+  const noMatch = applyRefGps('mg', 'other-key', { lat: 1, lng: 2 })
+  assert.equal(noMatch.photoRef.lat, 41.3, 'no ref matched → nothing written')
+})
+
+test('applyRefGps: matches the right ref by key inside a photoRefs[] album', async () => {
+  const { applyRefGps } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('ma', {
+    photoRefs: [
+      { storage: 'r2', key: 'a1', url: 'ua1', lat: 10, lng: 20 }, // already located
+      { storage: 'r2', key: 'a2', url: 'ua2' },                    // coordless → target
+    ],
+  })])
+  const patched = applyRefGps('ma', 'a2', { lat: 5, lng: 6 })
+  assert.equal(patched.photoRefs[0].lat, 10, 'the already-located ref is untouched')
+  assert.equal(patched.photoRefs[1].lat, 5)
+  assert.equal(patched.photoRefs[1].lng, 6)
+})
