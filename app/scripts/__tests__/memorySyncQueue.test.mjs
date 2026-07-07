@@ -49,6 +49,24 @@ test('a move intent stores its TARGET — including an explicit null (deliberate
   assert.equal(pendingIntents().find((e) => e.memoryId === 'm2').stopId, null)
 })
 
+test('a HAND-move intent carries its provenance (Ch3); a plain move stores none', () => {
+  const prov = { source: 'manual', by: 'jonathan', reason: 'hand-filed', targetLabel: 'Race Point' }
+  markUnsynced({ kind: 'move', memoryId: 'm1', stopId: 's1', prov, author: 'jonathan' })
+  assert.deepEqual(getIntent('m1', 'move').prov, prov, 'the hand-move story rides the intent to the drain')
+  markUnsynced({ kind: 'move', memoryId: 'm2', stopId: 's2', author: 'jonathan' })
+  assert.equal('prov' in getIntent('m2', 'move'), false, 'a plain machine/refile move is byte-identical to before Ch3')
+})
+
+test('re-deciding a hand-move updates its provenance; a plain re-mark keeps the prior prov', () => {
+  const p1 = { source: 'manual', by: 'jonathan', targetLabel: 'Dinner' }
+  const p2 = { source: 'manual', by: 'helen', targetLabel: 'The pier' }
+  markUnsynced({ kind: 'move', memoryId: 'm1', stopId: 's1', prov: p1 })
+  markUnsynced({ kind: 'move', memoryId: 'm1', stopId: 's2', prov: p2 })
+  assert.deepEqual(getIntent('m1', 'move').prov, p2, 'the newest decision owns the story')
+  markUnsynced({ kind: 'move', memoryId: 'm1', stopId: 's3' }) // a prov-less re-mark (bookkeeping)
+  assert.deepEqual(getIntent('m1', 'move').prov, p2, 'a prov-less re-mark does not erase the human story')
+})
+
 test('one entry per (memoryId, kind): save and move for the same memory coexist; re-marks dedupe', () => {
   markUnsynced({ kind: 'save', memoryId: 'm1', author: 'helen' })
   markUnsynced({ kind: 'move', memoryId: 'm1', stopId: 's1', author: 'helen' })

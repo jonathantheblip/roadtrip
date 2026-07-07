@@ -45,10 +45,14 @@ export function mergeSaveOverFresh(localRecord, fresh) {
 // change and returns the stored row (rule 2) — this closure then never wins;
 // the refusal-adoption path owns that outcome. The prov to WRITE for the move
 // itself will ride the intent (memorySyncQueue entries extend with `prov`).
-export function moveReapply(stopId, nowIso = () => new Date().toISOString()) {
+export function moveReapply(stopId, nowIso = () => new Date().toISOString(), prov = undefined) {
   return (fresh) => {
     if (sameStopId(fresh?.stopId, stopId)) return null
-    return { ...fresh, stopId, updatedAt: nowIso() }
+    // A hand-move carries its provenance (source:'manual', by, snapshotted
+    // labels) so the re-asserted filing keeps its human story cross-device — the
+    // LIVE worker (resolveStopProvenance) stamps + locks it. Omitted for a plain
+    // machine/refile move → the row is byte-identical to before Ch3.
+    return { ...fresh, stopId, ...(prov !== undefined ? { stopProv: prov } : {}), updatedAt: nowIso() }
   }
 }
 

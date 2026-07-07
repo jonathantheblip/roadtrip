@@ -762,6 +762,7 @@ function settleMirrorOutcome(op, outcome) {
       kind: intent.kind,
       memoryId: id,
       stopId: intent.stopId,
+      prov: intent.prov, // carry a hand-move's story onto the queued intent too
       author: op.record.authorTraveler || null,
     })
     memoryQueue.emitOutcome(id, 'still-pending')
@@ -813,6 +814,7 @@ function scheduleMirror(op) {
               kind: (op.intent || { kind: 'save' }).kind,
               memoryId: op.record.id,
               stopId: op.intent?.stopId,
+              prov: op.intent?.prov,
               author: op.record.authorTraveler || null,
             }),
         })
@@ -916,10 +918,15 @@ async function drainMemoryQueueNow(injected) {
       // (pushMemory authenticates as authorTraveler).
       let pushRecord = record
       if (!sameStopId(record.stopId, intent.stopId)) {
-        pushRecord = { ...record, stopId: intent.stopId, updatedAt: new Date().toISOString() }
+        pushRecord = {
+          ...record,
+          stopId: intent.stopId,
+          ...(intent.prov !== undefined ? { stopProv: intent.prov } : {}),
+          updatedAt: new Date().toISOString(),
+        }
         putLocalRecord(pushRecord)
       }
-      op = { type: 'save', record: pushRecord, reapply: moveReapply(intent.stopId), intent }
+      op = { type: 'save', record: pushRecord, reapply: moveReapply(intent.stopId, undefined, intent.prov), intent }
     } else {
       // A SAVE pushes the CURRENT local record — content edits are
       // whole-record by design, so the record itself carries the latest
@@ -1257,7 +1264,7 @@ export function updateMemoryCaption(memoryId, caption) {
 // onto the fresh row (skipping the push when fresh already sits there), and a
 // failed mirror queues { move, stopId } — the drain replays the stored target,
 // never a re-derive from whatever the record holds at drain time.
-export function updateMemoryStop(memoryId, stopId) {
+export function updateMemoryStop(memoryId, stopId, prov = undefined) {
   if (!memoryId) return null
   const tryUpdateIn = (key) => {
     const list = readJson(key)
@@ -1266,7 +1273,11 @@ export function updateMemoryStop(memoryId, stopId) {
     if (list[idx].masked) return list[idx]
     if (sameStopId(list[idx].stopId, stopId)) return list[idx] // already filed there
     const now = new Date().toISOString()
-    const patched = { ...list[idx], stopId, updatedAt: now }
+    // A hand-move (Ch3) carries `prov` — {source:'manual', by, reason, snapshotted
+    // labels} — so the LIVE worker (resolveStopProvenance) stamps + LOCKS it
+    // (authorship outranks the machine). Omitted for a plain machine/refile move
+    // → the record + queue entry stay byte-identical to before Ch3.
+    const patched = { ...list[idx], stopId, ...(prov !== undefined ? { stopProv: prov } : {}), updatedAt: now }
     list[idx] = patched
     writeJson(key, list)
     // A still-queued older move for this memory is superseded RIGHT NOW, not
@@ -1281,14 +1292,15 @@ export function updateMemoryStop(memoryId, stopId) {
         kind: 'move',
         memoryId,
         stopId,
+        prov,
         author: patched.authorTraveler || null,
       })
     }
     scheduleMirror({
       type: 'save',
       record: patched,
-      reapply: moveReapply(stopId),
-      intent: { kind: 'move', stopId },
+      reapply: moveReapply(stopId, undefined, prov),
+      intent: { kind: 'move', stopId, ...(prov !== undefined ? { prov } : {}) },
     })
     return patched
   }

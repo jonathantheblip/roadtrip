@@ -59,6 +59,9 @@ function write(entries) {
       kind: e.kind,
       memoryId: e.memoryId,
       ...(e.kind === 'move' ? { stopId: e.stopId ?? null } : {}),
+      // A hand-move's provenance (Ch3) survives the normalization so the drain
+      // can replay the human story; absent → byte-identical to before Ch3.
+      ...(e.prov !== undefined ? { prov: e.prov } : {}),
       author: e.author ?? null,
       at: Number.isFinite(e.at) ? e.at : null,
     })
@@ -83,14 +86,20 @@ function write(entries) {
 // latest decision, keeps the EARLIEST failure stamp, and updates the author to
 // the latest editor (the resync attributes the push to the record's author —
 // the entry's author is bookkeeping for honest indicators).
-export function markUnsynced({ kind, memoryId, stopId, author = null } = {}) {
+export function markUnsynced({ kind, memoryId, stopId, prov = undefined, author = null } = {}) {
   if (!INTENT_KINDS.includes(kind) || !memoryId || typeof memoryId !== 'string') return
   const entries = read()
   const idx = entries.findIndex((e) => e.memoryId === memoryId && e.kind === kind)
+  // A hand-move's provenance rides the move intent so the drain replays the
+  // human story with the filing (Ch3). Only set when provided — absent, the
+  // entry is byte-identical to before (a plain machine/refile move stays
+  // prov-less). On a re-decision the spread keeps a prior prov unless the new
+  // decision supplies its own.
   if (idx >= 0) {
     entries[idx] = {
       ...entries[idx],
       ...(kind === 'move' ? { stopId: stopId ?? null } : {}),
+      ...(prov !== undefined ? { prov } : {}),
       author: author ?? entries[idx].author ?? null,
       at: entries[idx].at ?? Date.now(),
     }
@@ -99,6 +108,7 @@ export function markUnsynced({ kind, memoryId, stopId, author = null } = {}) {
       kind,
       memoryId,
       ...(kind === 'move' ? { stopId: stopId ?? null } : {}),
+      ...(prov !== undefined ? { prov } : {}),
       author,
       at: Date.now(),
     })
@@ -113,10 +123,10 @@ export function markUnsynced({ kind, memoryId, stopId, author = null } = {}) {
 // re-decided), and writing its older target over the entry would hand the next
 // drain a stale decision to replay. If an entry exists it is newer-or-equal by
 // construction (only a decision replaces targets) — leave it untouched.
-export function ensureUnsynced({ kind, memoryId, stopId, author = null } = {}) {
+export function ensureUnsynced({ kind, memoryId, stopId, prov = undefined, author = null } = {}) {
   if (!INTENT_KINDS.includes(kind) || !memoryId || typeof memoryId !== 'string') return
   if (read().some((e) => e.memoryId === memoryId && e.kind === kind)) return
-  markUnsynced({ kind, memoryId, stopId, author })
+  markUnsynced({ kind, memoryId, stopId, prov, author })
 }
 
 // Clear ONE intent once the worker settled it (confirmed, refused, or the

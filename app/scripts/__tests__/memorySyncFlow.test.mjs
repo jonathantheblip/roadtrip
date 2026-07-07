@@ -52,6 +52,18 @@ test('moveReapply: returns null (skip the push) when fresh already sits at the t
   assert.notEqual(moveReapply('s1')({ id: 'm', stopId: 's2' }), null)
 })
 
+test('moveReapply: a HAND-move carries its provenance onto the re-asserted filing (Ch3)', () => {
+  const prov = { source: 'manual', by: 'helen', reason: 'hand-filed', targetLabel: 'Race Point' }
+  const out = moveReapply('target-stop', () => '2026-07-05T12:00:00.000Z', prov)({ id: 'm', stopId: 'elsewhere' })
+  assert.equal(out.stopId, 'target-stop')
+  assert.deepEqual(out.stopProv, prov, 'the manual provenance rides the filing so the LIVE worker locks it')
+})
+
+test('moveReapply: a PLAIN (prov-less) move is byte-identical to before Ch3 — no stopProv key', () => {
+  const out = moveReapply('t', () => 'x')({ id: 'm', stopId: 'other' })
+  assert.equal('stopProv' in out, false, 'a machine/refile move never invents a provenance stamp')
+})
+
 test('readMemoryPushResult: the honest per-item classification', () => {
   assert.equal(readMemoryPushResult(null).status, 'unconfigured', 'no worker / masked preflight — nothing was pushed')
   assert.equal(readMemoryPushResult(undefined).status, 'unconfigured')
