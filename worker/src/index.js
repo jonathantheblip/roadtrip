@@ -35,6 +35,7 @@ import { forecastUrl, marineUrl, buildConditions } from './conditions.js'
 import { createWave, listUnseenWaves, markWavesSeen, runWavePurge } from './waves.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
+import { healSweep } from './photoHealRunner.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -429,6 +430,17 @@ export default {
       runWavePurge(env.DB, { now: Date.now() }).then(
         (r) => console.log('[wave-purge]', JSON.stringify(r)),
         (e) => console.error('[wave-purge] failed', e?.stack || e)
+      )
+    )
+    // Self-healing photos (Stage D): the daily backstop sweep. Gated by
+    // env.PHOTO_HEAL_MODE — OFF (unset) is a no-op, so this changes nothing
+    // until the secret is set. In `shadow` it only writes the would-move ledger
+    // (memory_stop_moves) for review; `on` applies. NEVER `on` without Jonathan's
+    // review of the shadow ledger (SPEC §5 D enable order).
+    ctx.waitUntil(
+      healSweep(env, { now: Date.now() }).then(
+        (r) => console.log('[photo-heal-sweep]', JSON.stringify(r)),
+        (e) => console.error('[photo-heal-sweep] failed', e?.stack || e)
       )
     )
   },
