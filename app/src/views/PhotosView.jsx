@@ -12,6 +12,7 @@ import { listQueueStates, subscribe as subscribeQueue, drain as drainQueue } fro
 import { videoCopy } from '../lib/videoCopy'
 import { isWorkerConfigured, uploadAssetBlob } from '../lib/workerSync'
 import { isAdult } from '../lib/auth'
+import { maskTripForViewer } from '../lib/surprises'
 import { uploadPosterOrQueue } from '../lib/posterRetry'
 import { removeAsset } from '../lib/memAssets'
 import { saveMemory } from '../lib/memoryStore'
@@ -68,6 +69,32 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
     () => groupByStop(photoEntries, trip),
     [photoEntries, trip]
   )
+
+  // Ch3 photo-moves: the day-sectioned PLACES an adult can hand-file a photo to.
+  // SURPRISE-MASKING (README invariant 5): built from the PER-VIEWER MASKED trip,
+  // never the raw one — a stop hidden from this viewer must never appear as a
+  // move target (that would leak its real name + existence). A masked stand-in
+  // (`s.masked` — the "Something's coming" teaser / a cover stub) is skipped too,
+  // so it's never offered as a destination. A timed event reads as "a named
+  // moment"; a lodging/base as "a place". (The implicit base + record moments are
+  // not yet move targets — a follow-up.)
+  const viewerTrip = useMemo(() => maskTripForViewer(trip, traveler), [trip, traveler])
+  const moveTargets = useMemo(() => {
+    const out = []
+    for (const day of viewerTrip?.days || []) {
+      const dayLabel = day?.n ? `Day ${day.n}` : (day?.isoDate || '')
+      for (const s of day?.stops || []) {
+        if (!s?.id || s.masked) continue
+        out.push({
+          stopId: s.id,
+          label: s.name || s.title || 'Stop',
+          dayLabel,
+          kind: s.kind === 'lodging' || s.isBase ? 'place' : 'moment',
+        })
+      }
+    }
+    return out
+  }, [viewerTrip])
 
   // "Sort to places" — when the trip has an implicit base (the lodging/home you're
   // staying at, with no planned stop) and photos were imported BEFORE it existed,
@@ -456,6 +483,8 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
             )
             setMemoryTick((t) => t + 1)
           }}
+          onStopChanged={() => setMemoryTick((t) => t + 1)}
+          moveTargets={moveTargets}
           traveler={traveler}
         />
       )}

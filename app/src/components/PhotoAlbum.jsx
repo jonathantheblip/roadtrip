@@ -2,8 +2,11 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, X, MapPin, Image as ImageIcon, Calendar, Play, Share2, Trash2, Pencil, Plus, Loader2, CloudOff, VolumeX } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { videoCopy, fmtSize, fmtDur } from '../lib/videoCopy'
-import { updateMemoryCapturedAt, updateMemoryCaption, removePhotoFromMemory } from '../lib/memoryStore'
-import { isWorkerConfigured } from '../lib/workerSync'
+import { updateMemoryCapturedAt, updateMemoryCaption, removePhotoFromMemory, updateMemoryStop } from '../lib/memoryStore'
+import { isWorkerConfigured, getActiveTraveler } from '../lib/workerSync'
+import { isAdult } from '../lib/auth'
+import { MoveSheet } from './MoveSheet'
+import { moveActionLabel, lockedLine } from '../lib/moveCopy'
 import { isVideoEncodeSupported } from '../lib/videoPipeline'
 import { canOfferReAddSound, reAddSound, isReAddInFlight, beginReAddFlight, endReAddFlight, subscribeReAddSettles } from '../lib/reAddSound'
 import { ShareMomentSheet } from './ShareMomentSheet'
@@ -493,6 +496,8 @@ export function PhotoLightbox({
   onCaptionChanged,
   onDelete,
   onMediaReplaced,
+  onStopChanged,
+  moveTargets = [],
   traveler,
   showTripName = false,
 }) {
@@ -500,6 +505,7 @@ export function PhotoLightbox({
   const [editingDate, setEditingDate] = useState(false)
   const [editingCaption, setEditingCaption] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [moveOpen, setMoveOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   // A real, synced memory can be shared out; a local-only photo (no memoryId)
   // or an unconfigured worker can't.
@@ -517,6 +523,28 @@ export function PhotoLightbox({
   // metadata — so no dev-mode override, unlike the date). A caption is per-memory:
   // on a multi-photo album memory it's shared by every frame, as it already displays.
   const canEditCaption = canDelete
+  // Ch3 photo-moves: ANY ADULT (not only the author) may re-file a photo by
+  // hand — a deliberate contrast with delete (author-only). The move stamps a
+  // manual provenance the LIVE worker LOCKS. Rafa is excluded by isAdult; the
+  // moved-note, separately, shows to everyone-but-Rafa (Aurelia included).
+  const canMove = !!entry?.memoryId && isAdult(traveler) && moveTargets.length > 0
+  const movedNote =
+    traveler !== 'rafa' && entry?.stopProv?.source === 'manual'
+      ? lockedLine(entry.stopProv, traveler)
+      : null
+  function handleMovePick(stopId, targetLabel) {
+    setMoveOpen(false)
+    if (!entry?.memoryId) return
+    const by = getActiveTraveler()
+    updateMemoryStop(entry.memoryId, stopId, {
+      source: 'manual',
+      by,
+      reason: 'hand-filed',
+      movedFromLabel: entry.stopName || null,
+      targetLabel: targetLabel || null,
+    })
+    onStopChanged?.()
+  }
   function handleDelete() {
     const res = removePhotoFromMemory({
       memoryId: entry.memoryId,
@@ -533,6 +561,7 @@ export function PhotoLightbox({
     setEditingDate(false)
     setEditingCaption(false)
     setShareOpen(false)
+    setMoveOpen(false)
     setConfirmDelete(false)
   }, [entry?.memoryId, entry?.key])
   // Keyboard for desktop; touch swipe for phone. Both call into the
@@ -915,7 +944,42 @@ export function PhotoLightbox({
               </button>
             </>
           )}
+          {canMove && !editingDate && (
+            <>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                data-testid="lightbox-move-to"
+                onClick={() => setMoveOpen(true)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(242,235,218,0.35)',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 9,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <MapPin size={10} /> {moveActionLabel(traveler)}
+              </button>
+            </>
+          )}
         </div>
+        {movedNote && (
+          <div
+            data-testid="lightbox-moved-note"
+            style={{ marginTop: 7, fontSize: 12.5, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          >
+            <MapPin size={11} /> {movedNote}
+          </div>
+        )}
         {canEditDate && editingDate && (
           <CapturedAtEditor
             entry={entry}
@@ -939,6 +1003,15 @@ export function PhotoLightbox({
       </footer>
       {shareOpen && entry?.memoryId && (
         <ShareMomentSheet memoryId={entry.memoryId} onClose={() => setShareOpen(false)} />
+      )}
+      {moveOpen && canMove && (
+        <MoveSheet
+          currentStopId={entry?.stopId || null}
+          targets={moveTargets}
+          traveler={traveler}
+          onPick={handleMovePick}
+          onClose={() => setMoveOpen(false)}
+        />
       )}
     </div>
   )

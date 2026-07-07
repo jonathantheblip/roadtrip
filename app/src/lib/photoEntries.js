@@ -87,6 +87,10 @@ export function flattenPhotoEntries(memories) {
         key: photoEntryKey(m.id, url),
         memoryId: m.id,
         stopId: m.stopId || null,
+        // Stop-filing provenance (mig 017) rides the entry so the lightbox can
+        // render the honest "moved because…" / "locked by a person" note (Ch3).
+        // Null on every legacy row → the note simply doesn't render.
+        stopProv: m.stopProv || null,
         tripId: m.tripId || null,
         author: m.authorTraveler,
         caption: m.caption || m.text || '',
