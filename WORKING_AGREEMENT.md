@@ -213,8 +213,17 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-06. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-07. Update as these resolve.
 
+- **[OPEN 2026-07-07] The local wrangler token CANNOT set worker SECRETS or list accounts (auth error 10000);
+  `d1 execute --remote` hits it too.** So the overnight run could NOT set `PHOTO_HEAL_MODE` — the self-healing
+  matcher ships `off` (inert). Jonathan sets it via the Cloudflare **dashboard** (Workers → the roadtrip worker
+  [name = `worker/wrangler.toml`'s `name`] → Settings → Variables and Secrets → add `PHOTO_HEAL_MODE` = `shadow`
+  as an **encrypted Secret** so a CI code-deploy can't wipe it), or with a fuller-scoped token. Do NOT burn
+  cycles retrying `wrangler secret put` / `--remote` locally. Context: the whole self-healing arc is now LIVE +
+  shadow-ready — Stage D (`e2bf029`/`9ca426f`/`ab9eb4a`) + Stage E Ch3a photo-moves (`5529781`/`48fee9a`); the
+  deployed state, the skipped-steps-first sequence, and the dashboard how-to are in
+  `CARRYOVER_DOCUMENT_THE_TRIP.md` + `memory/document-the-trip-we-had.md`.
 - **[OPEN 2026-07-06] The dev Mac cannot reliably run the FULL dual-engine e2e suite; a machine-conditional
   gate policy is in force (Jonathan-approved 2026-07-06).** Under full-suite load, webkit-mobile tests stall
   at 30s timeouts (mostly at browser-context setup) with SHIFTING victims; zero assertion failures ever;
