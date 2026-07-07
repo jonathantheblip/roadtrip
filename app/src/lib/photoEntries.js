@@ -20,7 +20,7 @@
 // sibling. Single-photo memories (post-M2 dispatch composer) render
 // normally.
 
-import { stopIsBase, tripImplicitBase, implicitBaseIdForDay, isHomeDay } from './photoMatch.js'
+import { stopIsBase, tripImplicitBase, implicitBaseIdForDay, isHomeDay, recordEntryTargets } from './photoMatch.js'
 import { parseStopTime } from './photoBackfill.js'
 import { partsWithDays } from './tripParts.js'
 import { localDateIso, nowMinutesInZone } from './localDate.js'
@@ -240,6 +240,29 @@ function suppressHeaderEcho(label, header) {
 // sections order chronologically — the deterministic tie-break.
 const DAY_ANCHOR_ORDER = 50
 
+// Sub-day sort slot for a named-record-moment section (record bridge, SPEC §5 D).
+// Sits AFTER a day's planned stops (indices 0..N — a real day never has 40) and
+// BEFORE the day-anchored loose drawer (DAY_ANCHOR_ORDER), with a within-day
+// fraction from the moment's span-start so record sections read chronologically
+// among themselves. On the dominant hangout day (no planned stops) the base
+// leads (-1) and record moments follow in time order — exactly right.
+const RECORD_SECTION_ORDER = 40
+// A record moment's within-day sort key: its span-start as a fraction of the
+// day, anchored to the day's OWN UTC midnight. NOT `startMs % 86_400_000`, which
+// wraps at UTC midnight and would sort an evening moment whose UTC instant has
+// rolled into the next date (e.g. 9pm US-Eastern = 1am UTC) BEFORE the morning.
+// Anchoring to the day keeps the fraction MONOTONIC in startMs across the whole
+// leg-local day (the tz offset is constant within a day, so absolute-time order
+// equals local-time order — no tz lookup needed). The value stays in ~[-0.6, 1.5)
+// for any zone: comfortably above the day's planned-stop indices and below the
+// day-anchored loose drawer (DAY_ANCHOR_ORDER), so the band never collides.
+function recordSectionOrder(stop, dayIso) {
+  const ms = stop?._recordStartMs
+  const midnight = Date.parse(`${dayIso || ''}T00:00:00.000Z`)
+  if (!Number.isFinite(ms) || !Number.isFinite(midnight)) return RECORD_SECTION_ORDER
+  return RECORD_SECTION_ORDER + (ms - midnight) / 86_400_000
+}
+
 // One zone per trip day — the zone of the leg that OWNS the day (leg tz →
 // trip default → null = device-local). Built once per grouping pass from
 // partsWithDays, THE canonical day→part mapping (its clamped windows already
@@ -345,6 +368,12 @@ export function groupByStop(entries, trip) {
     if (baseTemplate && day.isoDate && !isHomeDay(day)) {
       const id = implicitBaseIdForDay(day.isoDate)
       stopIndex.set(id, { stop: { ...baseTemplate, id }, day })
+    }
+    // Named settle-sheet moments are filing targets (record bridge, §5 D) — a
+    // photo filed to one must resolve to a section named after the moment, not
+    // fall to "Unfiled". Same day-scoped synthetic id the matcher files to.
+    for (const rt of recordEntryTargets(day)) {
+      stopIndex.set(rt.id, { stop: rt, day })
     }
   }
   // Resolve a between-stops ("from A to B") section's label + position from
@@ -580,12 +609,15 @@ export function groupByStop(entries, trip) {
       _dayN: ctx?.day?.n ?? 99,
       // The implicit base ("At the cabin") leads its day deliberately (it's the
       // place the day hangs off, not a timed event) — explicit, not an accidental
-      // findIndex(-1). A planned stop sorts by its position in the day.
+      // findIndex(-1). A named record moment sits after the day's planned stops,
+      // time-ordered among moments. A planned stop sorts by its position.
       _stopOrder: ctx?.stop?._implicitBase
         ? -1
-        : ctx?.stop?.id
-          ? (ctx.day?.stops || []).findIndex((s) => s.id === ctx.stop.id)
-          : 99,
+        : ctx?.stop?._recordEntry
+          ? recordSectionOrder(ctx.stop, ctx?.day?.isoDate)
+          : ctx?.stop?.id
+            ? (ctx.day?.stops || []).findIndex((s) => s.id === ctx.stop.id)
+            : 99,
       _dayLabel: ctx?.day?.date || ctx?.day?.title || '',
       _timeLabel: isBase ? '' : ctx?.stop?.time || '',
       _isBase: isBase,
@@ -627,6 +659,40 @@ export function groupByStop(entries, trip) {
     return a._stopOrder - b._stopOrder
   })
   return groups
+}
+
+// The day-sectioned targets an adult can hand-file a photo to (Ch3 Move-to):
+// the trip's implicit base ("At the cabin"), its planned stops, and named
+// settle-sheet moments (record bridge, SPEC §5 D). Pure, so PhotosView can
+// memoize it AND a unit test can pin the surface. MUST be handed the PER-VIEWER
+// MASKED trip (surprise invariant 5): a stop hidden from the viewer, or a masked
+// stand-in (`s.masked`), is never offered as a destination — that would leak its
+// name + existence. Record moments carry no surprise flag (a named kept moment
+// is public), and ride the masked trip's days for consistency. Within a day the
+// order is base → planned stops → named moments; `kind` drives the row's
+// PLACE/MOMENT sub-label (MoveSheet). Returns [] for a null/empty trip.
+export function buildMoveTargets(viewerTrip) {
+  const out = []
+  const baseTemplate = tripImplicitBase(viewerTrip)
+  for (const day of viewerTrip?.days || []) {
+    const dayLabel = day?.n ? `Day ${day.n}` : (day?.isoDate || '')
+    if (baseTemplate && day?.isoDate && !isHomeDay(day)) {
+      out.push({ stopId: implicitBaseIdForDay(day.isoDate), label: baseTemplate.name, dayLabel, kind: 'place' })
+    }
+    for (const s of day?.stops || []) {
+      if (!s?.id || s.masked) continue
+      out.push({
+        stopId: s.id,
+        label: s.name || s.title || 'Stop',
+        dayLabel,
+        kind: s.kind === 'lodging' || s.isBase ? 'place' : 'moment',
+      })
+    }
+    for (const rt of recordEntryTargets(day)) {
+      out.push({ stopId: rt.id, label: rt.name, dayLabel, kind: 'moment' })
+    }
+  }
+  return out
 }
 
 // Cross-trip grouping (Punchlist 4). Walks every (trip, memories)

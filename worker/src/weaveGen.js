@@ -15,7 +15,7 @@
 //   - SHARED memories only (the weave is the shared family page).
 //   - NO random discovery mode (the cron only pre-makes an ACTIVE trip).
 import { partDayOwner } from './surprises.js'
-import { dayStopIds, isImplicitBaseId, IMPLICIT_BASE_PREFIX } from './dayStopIds.js'
+import { dayStopIds, isImplicitBaseId, IMPLICIT_BASE_PREFIX, isRecordTargetId, parseRecordTargetId } from './dayStopIds.js'
 
 // ── Day selection (server, shared-family) ────────────────────────────────
 // Mirrors selectWeaveDay's ACTIVE-TRIP branch: a trip is "active" within its
@@ -163,7 +163,12 @@ export async function secretWeaveDaySet(env, tripId) {
       if (!r?.stop_id) continue
       const iso = isImplicitBaseId(r.stop_id)
         ? day10(r.stop_id.slice(IMPLICIT_BASE_PREFIX.length + 1))
-        : stopDay.get(r.stop_id)
+        : isRecordTargetId(r.stop_id)
+          // A named settle-sheet moment (record bridge) is date-scoped; its day
+          // is the id's own isoDate. An unparseable id → iso null → the whole
+          // trip's weaves are withheld (conservative, safe — same as a vanished stop).
+          ? day10(parseRecordTargetId(r.stop_id)?.isoDate)
+          : stopDay.get(r.stop_id)
       if (iso) hiddenMemoryDays.add(iso)
       else unmappableHiddenMemory = true
     }

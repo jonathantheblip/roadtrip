@@ -233,3 +233,33 @@ describe('share-out E2 — the collage layout is stored on mint + honored on res
     expect(html).toContain('layout-wall')
   })
 })
+
+// Pure unit: findStopName resolves the record-bridge id-space (SPEC §5 D). A
+// photo hand-filed / healed to a named settle-sheet moment carries a
+// `__record__:<iso>:<entryId>` id; the public share card must show that name.
+describe('findStopName — record bridge resolution', async () => {
+  const { findStopName } = await import('../src/share.js')
+  const trip = {
+    days: [{
+      isoDate: '2026-07-04', stops: [{ id: 's-planned', name: 'The parade' }],
+      record: { state: 'kept', entries: [
+        { id: 'pin-fw', name: 'Fireworks on the beach', lat: 41.7, lng: -70.0 },
+        { id: 'pin-draft', name: '', lat: 41.7, lng: -70.0 }, // draft → not a target → no name
+      ] },
+    }],
+  }
+  it('a planned stop id resolves to its name (unchanged)', () => {
+    expect(findStopName(trip, 's-planned')).toBe('The parade')
+  })
+  it('a record-moment id resolves to the named moment', () => {
+    expect(findStopName(trip, '__record__:2026-07-04:pin-fw')).toBe('Fireworks on the beach')
+  })
+  it('a draft (unnamed) record id has no shareable name → undefined', () => {
+    expect(findStopName(trip, '__record__:2026-07-04:pin-draft')).toBe(undefined)
+  })
+  it('an unknown / malformed record id → undefined (never throws)', () => {
+    expect(findStopName(trip, '__record__:2026-07-04:nope')).toBe(undefined)
+    expect(findStopName(trip, '__record__:bad')).toBe(undefined)
+    expect(findStopName(trip, 's-gone')).toBe(undefined)
+  })
+})

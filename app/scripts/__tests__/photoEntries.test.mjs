@@ -6,8 +6,9 @@ const {
   groupByStop,
   groupAcrossTrips,
   refIdbAssetKey,
+  buildMoveTargets,
 } = await import('../../src/lib/photoEntries.js')
-const { implicitBaseIdForDay } = await import('../../src/lib/photoMatch.js')
+const { implicitBaseIdForDay, recordTargetId } = await import('../../src/lib/photoMatch.js')
 const { photosForDay } = await import('../../src/lib/evidence.js')
 
 // refIdbAssetKey — the single source of truth for "which idb blob renders this
@@ -1105,4 +1106,104 @@ test('flattenPhotoEntries surfaces the ref sound outcome; unknown/legacy values 
   assert.equal(byMem.ok, 'carried')
   assert.equal(byMem.legacy, null) // unknown is unknown — never a guessed tag
   assert.equal(byMem.garbage, null)
+})
+
+// ─── The RECORD BRIDGE (SPEC §5 D) — named moments in the album + Move-to ─────
+
+test('groupByStop resolves a photo filed to a NAMED settle-sheet moment to its own section (record bridge)', () => {
+  const recId = recordTargetId('2026-06-19', 'pin-a')
+  const t = {
+    id: 't', title: 'Cabin weekend', dateRangeStart: '2026-06-19',
+    lodging: { name: 'The Cabin' }, homeBase: { lat: 43.21, lng: -72.9, label: 'The Cabin' },
+    days: [
+      { n: 1, date: 'Jun 19', isoDate: '2026-06-19',
+        stops: [{ id: 'dinner', name: 'Dinner out', kind: 'food', time: '7:00 PM' }],
+        record: { state: 'kept', entries: [
+          { id: 'pin-a', name: 'The tide pools', lat: 43.30, lng: -72.95, time: 'around 4',
+            span: { startMs: Date.parse('2026-06-19T16:00:00.000Z') } },
+        ] } },
+    ],
+  }
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'm1', tripId: 't', stopId: recId, refs: ['u://1'], capturedAt: '2026-06-19T16:05:00.000Z' }),
+  ])
+  const byKey = Object.fromEntries(groupByStop(entries, t).map((g) => [g.stopKey, g]))
+  assert.ok(byKey[recId], 'the record-moment group resolves (NOT Unfiled)')
+  assert.equal(byKey[recId].stopName, 'The tide pools')
+  assert.equal(byKey[recId].isBase, false) // a specific moment, not a base
+  assert.equal(byKey[recId].timeLabel, 'around 4') // carries the moment's own loose time
+})
+
+test('groupByStop: a record moment sorts after the base + planned stops (record bridge order)', () => {
+  const baseId = implicitBaseIdForDay('2026-06-19')
+  const recId = recordTargetId('2026-06-19', 'pin-a')
+  const t = {
+    id: 't', title: 'T', dateRangeStart: '2026-06-19',
+    lodging: { name: 'Cabin' }, homeBase: { lat: 43.21, lng: -72.9, label: 'Cabin' },
+    days: [{ n: 1, date: 'Jun 19', isoDate: '2026-06-19',
+      stops: [{ id: 'dinner', name: 'Dinner', kind: 'food', time: '7:00 PM' }],
+      record: { state: 'kept', entries: [
+        { id: 'pin-a', name: 'Tide pools', lat: 43.30, lng: -72.95, span: { startMs: Date.parse('2026-06-19T16:00:00.000Z') } },
+      ] } }],
+  }
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'm-base', tripId: 't', stopId: baseId, refs: ['u://1'], capturedAt: '2026-06-19T12:00:00.000Z' }),
+    photoMem({ id: 'm-dinner', tripId: 't', stopId: 'dinner', refs: ['u://2'], capturedAt: '2026-06-19T23:30:00.000Z' }),
+    photoMem({ id: 'm-rec', tripId: 't', stopId: recId, refs: ['u://3'], capturedAt: '2026-06-19T16:05:00.000Z' }),
+  ])
+  const order = groupByStop(entries, t).map((g) => g.stopKey)
+  assert.deepEqual(order, [baseId, 'dinner', recId], 'base leads, planned next, record moment after')
+})
+
+test('buildMoveTargets: base + planned stops + named moments, with kinds + surprise masking', () => {
+  const t = {
+    id: 't', shape: 'stay', lodging: { name: 'The Cabin', lat: 43.24, lng: -72.9 },
+    days: [{ n: 1, isoDate: '2026-06-19',
+      stops: [
+        { id: 'dinner', name: 'Dinner', kind: 'food', time: '7:00 PM' },
+        { id: 'secret', name: 'Surprise', masked: true }, // a masked stand-in → NEVER offered
+      ],
+      record: { state: 'kept', entries: [
+        { id: 'pin-a', name: 'Tide pools', lat: 43.30, lng: -72.95 },
+        { id: 'pin-draft', name: '', lat: 43.31, lng: -72.96 }, // draft → NOT a target
+      ] } }],
+  }
+  const targets = buildMoveTargets(t)
+  const byId = Object.fromEntries(targets.map((x) => [x.stopId, x]))
+  const baseId = implicitBaseIdForDay('2026-06-19')
+  assert.ok(byId[baseId], 'implicit base offered')
+  assert.equal(byId[baseId].kind, 'place')
+  assert.equal(byId.dinner.kind, 'moment') // a timed event reads as a named moment
+  assert.ok(byId[recordTargetId('2026-06-19', 'pin-a')], 'named moment offered')
+  assert.equal(byId[recordTargetId('2026-06-19', 'pin-a')].kind, 'moment')
+  assert.ok(!byId.secret, 'a masked stand-in is NEVER a destination (surprise safety)')
+  assert.equal(targets.filter((x) => x.stopId.startsWith('__record__')).length, 1, 'the draft is not offered')
+  assert.ok(targets.every((x) => x.dayLabel === 'Day 1'), 'every target is day-labelled')
+})
+
+test('buildMoveTargets: empty / null trip → []', () => {
+  assert.deepEqual(buildMoveTargets(null), [])
+  assert.deepEqual(buildMoveTargets({ days: [] }), [])
+})
+
+test('groupByStop: record sections order by LOCAL time even across the UTC-midnight seam (recordSectionOrder anchor, not modulo)', () => {
+  // A US-Eastern (EDT=UTC-4) cabin day. The 9pm-local moment's UTC instant rolls
+  // onto the NEXT date — the old `startMs % day` wrapped it to a tiny fraction and
+  // sorted it BEFORE the 10am moment. Anchoring to the day's midnight keeps order.
+  const morning = recordTargetId('2026-07-04', 'pin-morning')
+  const evening = recordTargetId('2026-07-04', 'pin-evening')
+  const t = {
+    id: 't', title: 'Cape', dateRangeStart: '2026-07-04', tz: 'America/New_York',
+    days: [{ n: 1, date: 'Jul 4', isoDate: '2026-07-04', stops: [],
+      record: { state: 'kept', entries: [
+        { id: 'pin-evening', name: 'Fireworks', lat: 41.7, lng: -70.0, span: { startMs: Date.parse('2026-07-05T01:00:00.000Z') } }, // 9pm EDT
+        { id: 'pin-morning', name: 'Beach morning', lat: 41.7, lng: -70.0, span: { startMs: Date.parse('2026-07-04T14:00:00.000Z') } }, // 10am EDT
+      ] } }],
+  }
+  const entries = flattenPhotoEntries([
+    photoMem({ id: 'm-ev', tripId: 't', stopId: evening, refs: ['u://1'], capturedAt: '2026-07-05T01:00:00.000Z' }),
+    photoMem({ id: 'm-mo', tripId: 't', stopId: morning, refs: ['u://2'], capturedAt: '2026-07-04T14:00:00.000Z' }),
+  ])
+  const order = groupByStop(entries, t).map((g) => g.stopKey)
+  assert.deepEqual(order, [morning, evening], 'morning (local 10am) precedes evening (local 9pm) — no UTC-wrap flip')
 })

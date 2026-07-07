@@ -25,6 +25,10 @@ const {
   isHomeDay,
   dayStopIds,
   dayForStopId,
+  recordEntryTargets,
+  recordTargetId,
+  isRecordTargetId,
+  parseRecordTargetId,
 } = await import('../../src/lib/photoMatch.js')
 const { isStayTrip } = await import('../../src/lib/tripShape.js')
 
@@ -1011,4 +1015,82 @@ test('dayForStopId: resolves an implicit-base id to its day (so replay/weave fin
   const d = dayForStopId(trip, implicitBaseIdForDay('2026-04-18'))
   assert.equal(d?.isoDate, '2026-04-18')
   assert.equal(dayForStopId(trip, 'dinner-1')?.isoDate, '2026-04-17')
+})
+
+// ─── The RECORD BRIDGE (SPEC §5 D) — named settle-sheet moments as targets ────
+
+const recordDay = (iso, entries) => ({ n: 1, isoDate: iso, stops: [], record: { state: 'kept', entries } })
+const cabinRecordTrip = (entries) => ({
+  id: 't', shape: 'stay', lodging: { name: 'Cabin', lat: 43.24, lng: -72.9 },
+  days: [recordDay('2026-07-01', entries)],
+})
+
+test('parseRecordTargetId: round-trips id ↔ {isoDate, entryId}; entryId may contain colons', () => {
+  const id = recordTargetId('2026-07-01', 'pin-2026-07-01-abc')
+  assert.equal(id, '__record__:2026-07-01:pin-2026-07-01-abc')
+  assert.ok(isRecordTargetId(id))
+  assert.deepEqual(parseRecordTargetId(id), { isoDate: '2026-07-01', entryId: 'pin-2026-07-01-abc' })
+  // An entry id that itself contains ':' survives (we slice past the fixed date, never split).
+  const weird = recordTargetId('2026-07-01', 'rec:with:colons')
+  assert.deepEqual(parseRecordTargetId(weird), { isoDate: '2026-07-01', entryId: 'rec:with:colons' })
+  // Non-record ids + malformed → null; the two id-spaces never overlap.
+  assert.equal(parseRecordTargetId('s-planned'), null)
+  assert.equal(parseRecordTargetId('__trip_base__:2026-07-01'), null)
+  assert.equal(parseRecordTargetId('__record__:bad'), null)
+  assert.equal(isRecordTargetId('__trip_base__:2026-07-01'), false)
+})
+
+test('recordEntryTargets: only NAMED + LOCATED entries become targets', () => {
+  const day = recordDay('2026-07-01', [
+    { id: 'pin-a', name: 'The tide pools', lat: 43.30, lng: -72.95, span: { startMs: 111 } },
+    { id: 'pin-draft', name: '', lat: 43.31, lng: -72.96 },        // draft (unnamed) → out
+    { id: 'rec-nocoord', name: 'A thought', lat: null, lng: null },// coordless → out (Number(null)===0 trap)
+    { id: 'rec-empty', name: 'Empty coords', lat: '', lng: '' },   // '' → out (not coerced to 0)
+    { name: 'No id', lat: 1, lng: 1 },                             // no id → out
+  ])
+  const t = recordEntryTargets(day)
+  assert.equal(t.length, 1)
+  assert.equal(t[0].id, '__record__:2026-07-01:pin-a')
+  assert.equal(t[0].name, 'The tide pools')
+  assert.equal(t[0].isBase, false)
+  assert.equal(t[0]._recordEntry, true)
+  assert.equal(t[0]._recordStartMs, 111)
+})
+
+test('recordEntryTargets: reads a LEGACY bare-array record shape too', () => {
+  const day = { n: 1, isoDate: '2026-07-01', stops: [], record: [{ id: 'e1', name: 'Beach', lat: 1, lng: 2 }] }
+  assert.equal(recordEntryTargets(day).length, 1)
+})
+
+test('recordEntryTargets: a coordinate of exactly 0 IS valid (only null/"" excluded)', () => {
+  assert.equal(recordEntryTargets(recordDay('2026-07-01', [{ id: 'e0', name: 'Null Island', lat: 0, lng: 0 }])).length, 1)
+})
+
+test('buildDayIndex: a named record moment joins allStops, NOT the polyline', () => {
+  const idx = buildDayIndex(cabinRecordTrip([{ id: 'pin-a', name: 'Tide pools', lat: 43.30, lng: -72.95 }]))
+  const entry = idx.get('2026-07-01')
+  assert.ok(entry.allStops.some((s) => s.id === '__record__:2026-07-01:pin-a'), 'record target in allStops')
+  assert.ok(!entry.polyline.some((p) => p.lat === 43.30), 'record moment must not warp the route line')
+})
+
+test('dayStopIds + dayForStopId resolve a record-moment id (so replay/weave find it)', () => {
+  const trip = cabinRecordTrip([{ id: 'pin-a', name: 'Tide pools', lat: 43.30, lng: -72.95 }])
+  const recId = '__record__:2026-07-01:pin-a'
+  assert.ok(dayStopIds(trip, trip.days[0]).has(recId))
+  assert.equal(dayForStopId(trip, recId)?.isoDate, '2026-07-01')
+})
+
+test('a GPS photo at a named moment files to the record id; a cabin photo stays on the base', () => {
+  const idx = buildDayIndex(cabinRecordTrip([{ id: 'pin-a', name: 'Tide pools', lat: 43.30, lng: -72.95 }]))
+  const atMoment = matchPhotoToStop({ id: 'p', capturedAt: '2026-07-01T18:05:00.000Z', lat: 43.3001, lng: -72.9501 }, idx)
+  assert.equal(atMoment.stopId, '__record__:2026-07-01:pin-a')
+  assert.equal(atMoment.matchType, 'gps+time')
+  const atCabin = matchPhotoToStop({ id: 'p2', capturedAt: '2026-07-01T14:00:00.000Z', lat: 43.2401, lng: -72.9001 }, idx)
+  assert.equal(atCabin.stopId, implicitBaseIdForDay('2026-07-01'))
+})
+
+test('a no-GPS photo NEVER defaults to a record moment (only the base)', () => {
+  const idx = buildDayIndex(cabinRecordTrip([{ id: 'pin-a', name: 'Tide pools', lat: 43.30, lng: -72.95 }]))
+  const m = matchPhotoToStop({ id: 'p', capturedAt: '2026-07-01T18:05:00.000Z' }, idx) // no lat/lng
+  assert.equal(m.stopId, implicitBaseIdForDay('2026-07-01'), 'no-GPS stay default is the base, not a named moment')
 })

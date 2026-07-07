@@ -34,6 +34,22 @@ const TRIP_WITH_SECRET = {
   ],
 }
 
+// FIXTURE_TRIP + a NAMED settle-sheet moment on day 2 (the RECORD BRIDGE). A
+// hangout day gets named in the evening settle sheet (day.record), never in
+// day.stops — so those named moments must be first-class Move-to targets, and a
+// hand-move to one files the photo to its date-scoped record id (`__record__:…`).
+const TRIP_WITH_RECORD = {
+  ...FIXTURE_TRIP,
+  days: FIXTURE_TRIP.days.map((d) =>
+    d.isoDate === '2026-05-23'
+      ? { ...d, record: { state: 'kept', entries: [
+          { id: 'pin-boardwalk', name: 'The boardwalk', lat: 41.49, lng: -72.09, time: 'around 4',
+            span: { startMs: Date.parse('2026-05-23T16:00:00.000Z') } },
+        ] } }
+      : d
+  ),
+}
+
 async function openLightbox(page, persona) {
   await page.goto(`/?person=${persona}&trip=volleyball-2026&nosw=1`)
   await page.getByTestId(`${persona}-photos-entry`).click()
@@ -76,6 +92,28 @@ test.describe('album photo moves (Ch3a)', () => {
     await openLightbox(page, 'rafa')
     await expect(page.getByTestId('lightbox-move-to')).toHaveCount(0) // no move control
     await expect(page.getByTestId('lightbox-moved-note')).toHaveCount(0) // never meets the note
+  })
+
+  test('record bridge: a NAMED settle-sheet moment is a Move-to target; picking it files + LOCKS to the record id', async ({ page }) => {
+    await seedTripIntoCache(page, TRIP_WITH_RECORD)
+    await seedMemoriesIntoCache(page, [photoMemory({ id: 'mvr', stopId: 'vb2-3', authorTraveler: 'helen' })])
+    await openLightbox(page, 'jonathan')
+
+    await page.getByTestId('lightbox-move-to').click()
+    await expect(page.getByTestId('move-sheet')).toBeVisible()
+    // The named moment appears as a picker row (distinct from planned stops).
+    const momentRow = page.getByTestId('move-sheet').getByText('The boardwalk')
+    await expect(momentRow).toBeVisible()
+    await momentRow.click()
+
+    // Filed to the date-scoped record id + LOCKED with a manual, mover-stamped prov.
+    await expect.poll(async () => (await stored(page, 'mvr'))?.stopId).toBe('__record__:2026-05-23:pin-boardwalk')
+    const prov = (await stored(page, 'mvr'))?.stopProv
+    expect(prov?.source).toBe('manual')
+    expect(prov?.by).toBe('jonathan')
+    expect(prov?.targetLabel).toBe('The boardwalk')
+    // The lightbox now reads the moment's name on its place line (display resolves the record id).
+    await expect(page.getByTestId('photo-lightbox')).toContainText('The boardwalk')
   })
 
   test('surprise-masking: a stop hidden from the viewer is NEVER a move target (no leak)', async ({ page }) => {

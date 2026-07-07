@@ -237,6 +237,47 @@ const CORPUS = [
     ],
     expectTypes: ['gps+time', 'time'],
   },
+  {
+    // RECORD BRIDGE (SPEC §5 D): a hangout day with NO planned stops, NAMED in
+    // the settle sheet (day.record). A GPS photo AT the named moment files to it,
+    // not the base; a photo at the cabin still files to the base (base-priority
+    // preserved — the moment is a specific candidate, never a no-GPS default).
+    name: 'record bridge: a photo at a named settle-sheet moment files to it, not the base',
+    trip: {
+      id: 'r10',
+      shape: 'stay',
+      lodging: { name: 'The cabin', lat: 43.24, lng: -72.9 },
+      days: [
+        {
+          n: 1,
+          isoDate: '2026-07-01',
+          stops: [],
+          record: {
+            state: 'kept',
+            entries: [
+              {
+                id: 'pin-2026-07-01-abc',
+                name: 'The tide pools',
+                lat: 43.30,
+                lng: -72.95,
+                span: { startMs: Date.parse('2026-07-01T18:00:00.000Z') },
+              },
+              // A DRAFT (name:'') and a NAMELESS/coordless entry must NOT become
+              // targets — neither side may see them, so parity + branch coverage
+              // both hold with only the located, named moment as a candidate.
+              { id: 'pin-draft', name: '', lat: 43.31, lng: -72.96 },
+              { id: 'rec-manual-0', name: 'Just a thought', lat: null, lng: null },
+            ],
+          },
+        },
+      ],
+    },
+    photos: [
+      P('p-tidepools', '2026-07-01T18:05:00.000Z', 43.3001, -72.9501), // ~14m → the moment
+      P('p-cabin', '2026-07-01T14:00:00.000Z', 43.2401, -72.9001), // at the cabin → base
+    ],
+    expectTypes: ['gps+time', 'gps+time'],
+  },
 ]
 
 describe('worker photoMatch mirror — parity with the client matcher', () => {
@@ -260,6 +301,20 @@ describe('worker photoMatch mirror — parity with the client matcher', () => {
       }
     })
   }
+
+  it('record bridge: both copies assign the photo to the SAME date-scoped record id', () => {
+    const trip = CORPUS.find((c) => c.name.startsWith('record bridge')).trip
+    const recordId = '__record__:2026-07-01:pin-2026-07-01-abc'
+    const atMoment = P('p-tp', '2026-07-01T18:05:00.000Z', 43.3001, -72.9501)
+    const atCabin = P('p-cb', '2026-07-01T14:00:00.000Z', 43.2401, -72.9001)
+    const client = clientMatch([atMoment, atCabin], trip)
+    const worker = workerMatch([atMoment, atCabin], trip)
+    // The named moment wins for the photo taken there; the base still wins at the cabin.
+    expect(client.matches[0].stopId).toBe(recordId)
+    expect(worker.matches[0].stopId).toBe(recordId)
+    expect(client.matches[1].stopId).toBe('__trip_base__:2026-07-01')
+    expect(worker.matches[1].stopId).toBe('__trip_base__:2026-07-01')
+  })
 
   it('geometry helpers agree (haversine + polyline distance)', () => {
     expect(workerHaversine(29.72, -95.39, 29.74, -95.40)).toBeCloseTo(

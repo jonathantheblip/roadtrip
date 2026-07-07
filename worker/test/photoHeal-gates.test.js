@@ -274,4 +274,48 @@ describe('decideMemoryHeal — the gate truth table', () => {
     // An OLDER stamp certainly must not move it either.
     expect(decideMemoryHeal(realShape(), ctx({ tripRev: 199 })).action).toBe('suggest')
   })
+
+  it('RECORD BRIDGE: an auto-filed base photo heals to a NAMED settle-sheet moment', () => {
+    // A hangout day named only in the settle sheet (day.record) — no planned
+    // stops. A GPS photo AT the named moment, currently auto-filed to the base,
+    // moves to the moment's date-scoped id (stopExists resolves it because it is
+    // in buildDayIndex's allStops via recordEntryTargets).
+    const trip = {
+      id: 'grec', shape: 'stay',
+      lodging: { name: 'The cabin', lat: 43.24, lng: -72.9 },
+      days: [{
+        n: 1, isoDate: '2026-07-01', stops: [],
+        record: { state: 'kept', entries: [
+          { id: 'pin-tp', name: 'The tide pools', lat: 43.30, lng: -72.95,
+            span: { startMs: Date.parse('2026-07-01T18:00:00.000Z') } },
+        ] },
+      }],
+    }
+    const recDayIndex = buildDayIndex(trip)
+    const baseId = implicitBaseIdForDay('2026-07-01')
+    const recordId = '__record__:2026-07-01:pin-tp'
+    const resolved = new Set([baseId, recordId])
+    const recCtx = {
+      dayIndex: recDayIndex, tripRev: 200,
+      stopExists: (id) => resolved.has(id),
+      isSurpriseStop: () => false, inCooldown: () => false, now: 1_000_000,
+    }
+    const d = decideMemoryHeal({
+      id: 'm-tp', stopId: baseId, masked: false,
+      stopProv: { source: 'auto', by: 'matcher', tripRev: 100 },
+      photos: [{ id: 'ph', capturedAt: '2026-07-01T18:05:00.000Z', lat: 43.3001, lng: -72.9501 }],
+    }, recCtx)
+    expect(d.action).toBe('move')
+    expect(d.toStopId).toBe(recordId)
+    expect(d.matchType).toBe('gps+time')
+    // A photo AT the cabin, already on the base, has nothing to do (base-priority
+    // holds — the moment never steals a genuine cabin photo).
+    const cabin = decideMemoryHeal({
+      id: 'm-cb', stopId: baseId, masked: false,
+      stopProv: { source: 'auto', by: 'matcher', tripRev: 100 },
+      photos: [{ id: 'ph2', capturedAt: '2026-07-01T14:00:00.000Z', lat: 43.2401, lng: -72.9001 }],
+    }, recCtx)
+    expect(cabin.action).toBe('none')
+    expect(cabin.reason).toBe('already-filed')
+  })
 })

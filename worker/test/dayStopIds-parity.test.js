@@ -28,11 +28,13 @@ import {
   dayStopIds as clientDayStopIds,
   implicitBaseIdForDay as clientBaseId,
   tripImplicitBase as clientImplicitBase,
+  recordTargetId as clientRecordId,
 } from '../../app/src/lib/photoMatch.js'
 import {
   dayStopIds as workerDayStopIds,
   implicitBaseIdForDay as workerBaseId,
   tripImplicitBase as workerImplicitBase,
+  recordTargetId as workerRecordId,
 } from '../src/dayStopIds.js'
 
 const CORPUS = [
@@ -347,6 +349,33 @@ const CORPUS = [
 describe('dayStopIds parity — client photoMatch vs worker mirror', () => {
   it('the two implicit-base id builders agree', () => {
     expect(workerBaseId('2026-07-01')).toBe(clientBaseId('2026-07-01'))
+  })
+
+  it('record bridge: both copies add the named-moment id (and only named+located ones)', () => {
+    const trip = {
+      id: 'rec1', shape: 'stay',
+      lodging: { name: 'The cabin', lat: 43.24, lng: -72.9 },
+      days: [{
+        n: 1, isoDate: '2026-07-01', stops: [],
+        record: {
+          state: 'kept',
+          entries: [
+            { id: 'pin-abc', name: 'The tide pools', lat: 43.30, lng: -72.95 },
+            { id: 'pin-draft', name: '', lat: 43.31, lng: -72.96 }, // draft → excluded
+            { id: 'rec-x', name: 'No coords', lat: null, lng: null }, // coordless → excluded
+          ],
+        },
+      }],
+    }
+    const day = trip.days[0]
+    const recId = clientRecordId('2026-07-01', 'pin-abc')
+    expect(workerRecordId('2026-07-01', 'pin-abc')).toBe(recId)
+    const client = [...clientDayStopIds(trip, day)].sort()
+    const worker = [...workerDayStopIds(trip, day)].sort()
+    expect(worker).toEqual(client)
+    expect(client).toContain(recId)
+    // Exactly ONE record target — the draft + the coordless entry are not filing targets.
+    expect(client.filter((id) => id.startsWith('__record__'))).toEqual([recId])
   })
 
   for (const { name, trip, baseDays, template } of CORPUS) {

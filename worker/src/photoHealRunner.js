@@ -15,16 +15,18 @@
 //   • on     → apply each accepted move with a guarded UPDATE + the ledger,
 //              looping to DB quiescence. Dormant until enabled.
 //
-// SCOPE NOTE (D2a): the target set is agenda stops + the trip's implicit base
-// (buildDayIndex). The RECORD BRIDGE (kept settle-sheet moments as extra
-// targets, SPEC §5 D) is DEFERRED — the worker has no record-entry awareness
-// yet and the kept-entry id-space/precedence needs its own design pass; tracked
-// for a follow-up. Nothing here files to a record moment; a hangout day named
-// only in the settle sheet heals to its base, not the named pin, for now.
+// SCOPE NOTE (D2b): the target set is agenda stops + the trip's implicit base +
+// NAMED settle-sheet moments (the RECORD BRIDGE, SPEC §5 D — now LIVE). Those
+// moments join buildDayIndex's allStops via dayStopIds.recordEntryTargets, so a
+// hangout day named only in the settle sheet heals a nearby photo to the NAMED
+// pin, not just the base. A record target is a specific (non-base) GPS candidate
+// (never a no-GPS time-only default); its id is date-scoped (`__record__:<iso>:
+// <entryId>`); stopExists resolves it (it's in allStops) and labelForStop
+// snapshots its name for the ledger + moved-note.
 
 import { healMemories, buildDayIndex } from './photoHeal.js'
 import { isStopSurprise } from './surprises.js'
-import { isImplicitBaseId } from './dayStopIds.js'
+import { isImplicitBaseId, isRecordTargetId, parseRecordTargetId } from './dayStopIds.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -89,6 +91,13 @@ function labelForStop(trip, dayIndex, stopId) {
     const iso = stopId.split(':')[1]
     const base = dayIndex.get(iso)?.allStops?.find((s) => s.id === stopId)
     return (base?.name || '').trim() || 'the place we stayed'
+  }
+  // A bridged record moment (record bridge, §5 D): its human name is snapshotted
+  // from the day index's synthetic target (dayStopIds.recordEntryTargets).
+  if (isRecordTargetId(stopId)) {
+    const parsed = parseRecordTargetId(stopId)
+    const rt = parsed && dayIndex.get(parsed.isoDate)?.allStops?.find((s) => s.id === stopId)
+    return (rt?.name || '').trim() || null
   }
   return null
 }

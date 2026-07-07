@@ -3,7 +3,7 @@ import { ChevronLeft, Image as ImageIcon, ImagePlus, RefreshCw, CloudOff, MapPin
 import { listMemoriesForTrip, subscribeMemoriesChanged } from '../lib/memoryStore'
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
-import { flattenPhotoEntries, groupByStop } from '../lib/photoEntries'
+import { flattenPhotoEntries, groupByStop, buildMoveTargets } from '../lib/photoEntries'
 import { useFaceTags } from '../lib/useFaceTags'
 import { tripImplicitBase } from '../lib/photoMatch'
 import { refileTripToPlaces } from '../lib/refilePlaces'
@@ -70,31 +70,15 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
     [photoEntries, trip]
   )
 
-  // Ch3 photo-moves: the day-sectioned PLACES an adult can hand-file a photo to.
-  // SURPRISE-MASKING (README invariant 5): built from the PER-VIEWER MASKED trip,
-  // never the raw one — a stop hidden from this viewer must never appear as a
-  // move target (that would leak its real name + existence). A masked stand-in
-  // (`s.masked` — the "Something's coming" teaser / a cover stub) is skipped too,
-  // so it's never offered as a destination. A timed event reads as "a named
-  // moment"; a lodging/base as "a place". (The implicit base + record moments are
-  // not yet move targets — a follow-up.)
+  // Ch3 photo-moves: the day-sectioned targets an adult can hand-file a photo to
+  // — the trip's implicit base, its planned stops, and named settle-sheet moments
+  // (record bridge, SPEC §5 D). SURPRISE-MASKING (README invariant 5): built from
+  // the PER-VIEWER MASKED trip, never the raw one — a stop hidden from this viewer
+  // (or a masked stand-in) must never appear as a destination (that would leak its
+  // name + existence). A lodging/base reads as "a place"; a timed event or a named
+  // moment as "a named moment". Pure helper, unit-pinned in photoEntries.test.
   const viewerTrip = useMemo(() => maskTripForViewer(trip, traveler), [trip, traveler])
-  const moveTargets = useMemo(() => {
-    const out = []
-    for (const day of viewerTrip?.days || []) {
-      const dayLabel = day?.n ? `Day ${day.n}` : (day?.isoDate || '')
-      for (const s of day?.stops || []) {
-        if (!s?.id || s.masked) continue
-        out.push({
-          stopId: s.id,
-          label: s.name || s.title || 'Stop',
-          dayLabel,
-          kind: s.kind === 'lodging' || s.isBase ? 'place' : 'moment',
-        })
-      }
-    }
-    return out
-  }, [viewerTrip])
+  const moveTargets = useMemo(() => buildMoveTargets(viewerTrip), [viewerTrip])
 
   // "Sort to places" — when the trip has an implicit base (the lodging/home you're
   // staying at, with no planned stop) and photos were imported BEFORE it existed,

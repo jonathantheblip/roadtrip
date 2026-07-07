@@ -3,7 +3,7 @@ import { Play, Pause, X, ChevronDown } from 'lucide-react'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { capturedBy } from '../lib/replayPresence'
 import { flattenPhotoEntries, formatFullDate } from '../lib/photoEntries'
-import { dayStopIds, dayForStopId, tripImplicitBase, implicitBaseIdForDay, isHomeDay } from '../lib/photoMatch'
+import { dayStopIds, dayForStopId, tripImplicitBase, implicitBaseIdForDay, isHomeDay, recordEntryTargets } from '../lib/photoMatch'
 import { useHydratedMemories } from '../lib/usePhotoHydration'
 import { thumbUrl } from '../lib/thumbUrl'
 import { fetchStoredWeave } from '../lib/weave'
@@ -269,6 +269,13 @@ export function ReplayView({ trip, trips, traveler, onExit, initial }) {
         if (d.isoDate && !isHomeDay(d)) {
           map[implicitBaseIdForDay(d.isoDate)] = { dayN: d.n, stopName: base.name }
         }
+      }
+    }
+    // A photo hand-filed / healed to a named settle-sheet moment (record bridge)
+    // carries a __record__ id — resolve it so the reel chip reads "Day N · <moment>".
+    for (const d of scopeTrip?.days || []) {
+      for (const rt of recordEntryTargets(d)) {
+        map[rt.id] = { dayN: d.n, stopName: rt.name }
       }
     }
     return map

@@ -163,6 +163,83 @@ export function isImplicitBaseId(id) {
   return typeof id === 'string' && id.startsWith(`${IMPLICIT_BASE_PREFIX}:`)
 }
 
+// ── The RECORD BRIDGE (self-healing-photos SPEC §5 D) ─────────────────────────
+// Named settle-sheet moments as photo-filing targets. On a hangout day (the
+// dominant trip shape) nobody back-edits the agenda; the day is NAMED in the
+// evening settle sheet, which writes day.record.entries — NEVER day.stops. So a
+// photo taken at "the tide pools" had nowhere to file but the base, until the
+// bridge makes those named moments first-class targets alongside dayStopIds.
+//
+// A record entry is a target iff it is NAMED (a person affirmed it — a draft
+// with name:'' is an ephemeral machine guess that recomputes, and targeting a
+// moving centroid would break §1 order-independence) AND LOCATED (a coordinate
+// to GPS-match against). The synthetic "stop" it yields is a SPECIFIC
+// (non-base) place: it competes in the matcher's nearest-stop scan + base-yield
+// rule exactly like a planned pin, and — being neither a base nor an implicit
+// base — NEVER wins a no-GPS time-only default (a photo files to a named moment
+// only when its OWN GPS proves it was there — the strict + repair-first spirit).
+//
+// The id is date-scoped (`__record__:<isoDate>:<entryId>`) so every consumer
+// resolves it to the right day in O(1) without scanning every record, and it
+// can never collide with a planned stop id or a base id.
+export const RECORD_TARGET_PREFIX = '__record__'
+export function recordTargetId(isoDate, entryId) {
+  return `${RECORD_TARGET_PREFIX}:${isoDate}:${entryId}`
+}
+export function isRecordTargetId(id) {
+  return typeof id === 'string' && id.startsWith(`${RECORD_TARGET_PREFIX}:`)
+}
+// Parse a record target id back to { isoDate, entryId }, or null if malformed.
+// isoDate is the fixed 10 chars after the prefix; the entryId is the remainder
+// (which may itself contain ':', so we slice rather than split).
+export function parseRecordTargetId(id) {
+  if (!isRecordTargetId(id)) return null
+  const rest = id.slice(RECORD_TARGET_PREFIX.length + 1)
+  const isoDate = rest.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate) || rest.charAt(10) !== ':') return null
+  const entryId = rest.slice(11)
+  return entryId ? { isoDate, entryId } : null
+}
+
+// The day's kept record moments that can HOLD a photo: NAMED and LOCATED. Reads
+// day.record shape-agnostically (the {entries} object OR a legacy bare array —
+// the same coercion dayRecord.readRecord does, inlined so this stays a pure
+// sibling with no cross-module dep, faithfully mirrorable into the worker).
+// Returns synthetic "stop" shapes the matcher, the album grouping, and the
+// Move-to picker all treat like a specific located stop. `_recordStartMs` (the
+// moment's span start) drives the album's chronological section order.
+export function recordEntryTargets(day) {
+  if (!day || !day.isoDate) return []
+  const r = day.record
+  const entries = r && typeof r === 'object' && !Array.isArray(r)
+    ? (Array.isArray(r.entries) ? r.entries : [])
+    : (Array.isArray(r) ? r : [])
+  // A coordinate that is genuinely present + numeric — mirroring
+  // dayRecord.normalizeRecordEntry, so a coordless entry (`lat:null`/`''`, the
+  // common chat/manual case) is NOT coerced to 0 (Number(null)===0 is finite —
+  // the trap) and is correctly excluded from the target set.
+  const coord = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
+  const out = []
+  for (const e of entries) {
+    const name = (e?.name || '').trim()
+    const lat = coord(e?.lat)
+    const lng = coord(e?.lng)
+    if (!name || !e?.id || lat == null || lng == null) continue
+    out.push({
+      id: recordTargetId(day.isoDate, e.id),
+      name,
+      lat,
+      lng,
+      time: (e?.time || '').trim(),
+      isBase: false,
+      _recordEntry: true,
+      _recordEntryId: e.id,
+      _recordStartMs: Number.isFinite(e?.span?.startMs) ? e.span.startMs : NaN,
+    })
+  }
+  return out
+}
+
 // "home" / "(home)" / "— (home)" — a trip you DIDN'T stay away for. The implicit
 // base must never turn your actual house into a photo place on a day trip.
 const HOME_LODGING = /^[\s—–-]*\(?\s*home\s*\)?[\s—–-]*$/i
@@ -245,6 +322,10 @@ export function dayStopIds(trip, day) {
   if (day?.isoDate && !isHomeDay(day) && tripImplicitBase(trip)) {
     ids.add(implicitBaseIdForDay(day.isoDate))
   }
+  // Named settle-sheet moments are filing targets too (record bridge, §5 D), so
+  // membership readers (dayForStopId, the server weave, replay) see a
+  // record-filed memory on the right day instead of dropping it silently.
+  for (const rt of recordEntryTargets(day)) ids.add(rt.id)
   return ids
 }
 
@@ -310,11 +391,16 @@ export function buildDayIndex(trip) {
     const dayBase = baseTemplate && !isHomeDay(day)
       ? { ...baseTemplate, id: implicitBaseIdForDay(day.isoDate) }
       : null
+    // Named settle-sheet moments join the base/nearest GPS scan (allStops) ONLY
+    // — like the implicit base, they carry no clock time, so they never enter
+    // sortedClockStops/looseStops/polyline (which would warp the day's time
+    // windows + the route-deviation line). Record bridge, SPEC §5 D.
+    const recordTargets = recordEntryTargets(day)
     out.set(day.isoDate, {
       day,
       sortedClockStops,
       looseStops,
-      allStops: dayBase ? [...allStops, dayBase] : allStops,
+      allStops: [...allStops, ...(dayBase ? [dayBase] : []), ...recordTargets],
       polyline,
       isStay: stay,
     })

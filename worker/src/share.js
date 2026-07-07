@@ -16,6 +16,7 @@
 //     field are simply never read here.
 
 import { isSurprise, isTripSurprise, isStopSurprise } from './surprises.js'
+import { isRecordTargetId, parseRecordTargetId, recordEntryTargets } from './dayStopIds.js'
 
 // The gate. memory is the rowToMemory shape (so `revealed` / `deletedAt` /
 // `hideFrom` are already surfaced). Conservative on purpose: an UNREVEALED
@@ -78,6 +79,14 @@ export function findStopName(trip, stopId) {
     for (const s of d?.stops || []) {
       if (s && s.id === stopId) return s.name || undefined
     }
+  }
+  // A photo hand-filed / healed to a named settle-sheet moment (record bridge)
+  // carries a `__record__:<iso>:<entryId>` id — resolve it to the moment's name
+  // so the public share card shows the place (the moment IS named), not a blank.
+  if (isRecordTargetId(stopId)) {
+    const parsed = parseRecordTargetId(stopId)
+    const day = parsed && trip.days.find((d) => d?.isoDate === parsed.isoDate)
+    return (day && recordEntryTargets(day).find((t) => t.id === stopId)?.name) || undefined
   }
   return undefined
 }

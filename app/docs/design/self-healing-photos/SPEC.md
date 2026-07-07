@@ -237,9 +237,23 @@ moments. Keyless, no deps, idempotent, resumable — but honest small yield, not
 - **Convergence:** overlapping runs need a quiesce loop (after applying, re-read the trip row stamp; if it
   moved during the run, re-run) — the guarded-UPDATE alone silently drops the *fresher* decision (appendix
   critique-0 #7). Never orphan-repair off a base id that resolved within the last M minutes.
-- **Record bridge (settled into v1):** kept record entries (stable id, lat/lng, span) join the target set
-  alongside `dayStopIds`. Precedence + id-space rules to be designed in this stage's plan pass — every
-  consumer of `stopId` must resolve or gracefully label a record-entry id before one can be written.
+- **Record bridge (settled into v1) — DESIGNED + LIVE (2026-07-07):** NAMED + LOCATED record entries
+  (`day.record.entries`) join the matcher target set via `dayStopIds.recordEntryTargets(day)` — a synthetic
+  SPECIFIC (non-base) stop per entry, id-spaced `__record__:<isoDate>:<entryId>` (date-scoped → O(1) day
+  resolution, never collides with a stop/base id). Folded into `buildDayIndex.allStops` + `dayStopIds` in
+  BOTH the client (`app/src/lib/photoMatch.js`) and worker (`worker/src/dayStopIds.js`) mirror, parity-tested.
+  - **Precedence:** a record moment competes on distance like any specific stop (base-yield applies); it
+    NEVER wins a no-GPS time-only default (only its OWN GPS files a photo to it — strict/repair-first). Joins
+    `allStops` only (never the polyline / clock-window math). The heal gate is unchanged — `stopExists`
+    resolves a record id because it's in `allStops`; `labelForStop` snapshots the entry name for the ledger/note.
+  - **Eligibility:** NAMED (a person affirmed it — an unnamed evidence DRAFT recomputes, so targeting it
+    would break order-independence) AND LOCATED (finite lat/lng; `null`/`''` must NOT coerce to 0).
+  - **Consumers resolved:** `groupByStop` (album section, sorted after planned stops), `buildMoveTargets` +
+    the Move-to picker (kind `moment`), `ReplayView` chip, `dayForStopId`, worker `labelForStop`, and weave
+    membership (via `dayStopIds`) + hidden-day mapping. Safe fallback anywhere = the "Unfiled" drawer.
+  - **Deferred (named):** first-class reconcileDraft triage cards for a record-id match at IMPORT time (rare
+    naming-then-import order; the raw-match fallback files + displays it correctly, just not as its own
+    triage card).
 - **Knob:** worker secret `PHOTO_HEAL_MODE` = `off | shadow | on`. Shadow computes + writes the would-move
   ledger only. **Enable order: deploy off → shadow period on real trips → Jonathan reviews the ledger →
   on.** Auto-apply does not enable until the SW fleet has saturated past the mixed-fleet window.

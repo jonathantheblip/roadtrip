@@ -166,6 +166,67 @@ export function isImplicitBaseId(id) {
   return typeof id === 'string' && id.startsWith(`${IMPLICIT_BASE_PREFIX}:`)
 }
 
+// ── The RECORD BRIDGE (self-healing-photos SPEC §5 D) — server mirror of the ──
+// client photoMatch.js helpers. Named settle-sheet moments (day.record.entries)
+// become photo-filing targets: on a hangout day the agenda is never back-edited,
+// the day is NAMED in the evening settle sheet (which writes day.record, never
+// day.stops), so a photo taken at a named moment had nowhere to heal to but the
+// base. A target entry is NAMED (a person affirmed it — a draft with name:'' is
+// a machine guess that recomputes) AND LOCATED. The id is date-scoped so every
+// consumer resolves it to a day in O(1) and it can't collide with a stop/base id.
+// Change either side → keep the client copy in step (photoMatch parity test).
+export const RECORD_TARGET_PREFIX = '__record__'
+export function recordTargetId(isoDate, entryId) {
+  return `${RECORD_TARGET_PREFIX}:${isoDate}:${entryId}`
+}
+export function isRecordTargetId(id) {
+  return typeof id === 'string' && id.startsWith(`${RECORD_TARGET_PREFIX}:`)
+}
+export function parseRecordTargetId(id) {
+  if (!isRecordTargetId(id)) return null
+  const rest = id.slice(RECORD_TARGET_PREFIX.length + 1)
+  const isoDate = rest.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate) || rest.charAt(10) !== ':') return null
+  const entryId = rest.slice(11)
+  return entryId ? { isoDate, entryId } : null
+}
+
+// The day's kept record moments that can HOLD a photo: NAMED and LOCATED. Reads
+// day.record shape-agnostically (the {entries} object OR a legacy bare array).
+// Returns synthetic "stop" shapes the matcher + weave membership treat like a
+// specific located stop. Faithful mirror of the client recordEntryTargets.
+export function recordEntryTargets(day) {
+  if (!day || !day.isoDate) return []
+  const r = day.record
+  const entries = r && typeof r === 'object' && !Array.isArray(r)
+    ? (Array.isArray(r.entries) ? r.entries : [])
+    : (Array.isArray(r) ? r : [])
+  // A coordinate that is genuinely present + numeric — mirroring
+  // dayRecord.normalizeRecordEntry, so a coordless entry (`lat:null`/`''`, the
+  // common chat/manual case) is NOT coerced to 0 (Number(null)===0 is finite —
+  // the trap) and is correctly excluded from the target set.
+  const coord = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
+  const out = []
+  for (const e of entries) {
+    const name = (e?.name || '').trim()
+    const lat = coord(e?.lat)
+    const lng = coord(e?.lng)
+    if (!name || !e?.id || lat == null || lng == null) continue
+    out.push({
+      id: recordTargetId(day.isoDate, e.id),
+      name,
+      lat,
+      lng,
+      time: (e?.time || '').trim(),
+      isBase: false,
+      _recordEntry: true,
+      _recordEntryId: e.id,
+      _recordStartMs: Number.isFinite(e?.span?.startMs) ? e.span.startMs : NaN,
+    })
+  }
+  return out
+}
+
 // A stop is a "BASE" — a place you're staying/hanging out at. A place you STAY
 // is a base automatically (kind 'lodging'); an explicit `isBase` (true OR
 // false) always overrides that default.
@@ -230,5 +291,9 @@ export function dayStopIds(trip, day) {
   if (day?.isoDate && !isHomeDay(day) && tripImplicitBase(trip)) {
     ids.add(implicitBaseIdForDay(day.isoDate))
   }
+  // Named settle-sheet moments are filing targets too (record bridge, §5 D), so
+  // the server weave's membership read counts a record-filed memory on its day
+  // instead of dropping it (the same silent-drop the implicit base once caused).
+  for (const rt of recordEntryTargets(day)) ids.add(rt.id)
   return ids
 }

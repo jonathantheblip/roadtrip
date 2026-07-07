@@ -33,6 +33,7 @@ import {
   isHomeDay,
   tripImplicitBase,
   isStayTrip,
+  recordEntryTargets,
 } from './dayStopIds.js'
 
 // ── parseStopTime (mirror of app/src/lib/photoBackfill.js:201) ───────────────
@@ -210,11 +211,15 @@ export function buildDayIndex(trip) {
     const dayBase = baseTemplate && !isHomeDay(day)
       ? { ...baseTemplate, id: implicitBaseIdForDay(day.isoDate) }
       : null
+    // Named settle-sheet moments join the base/nearest GPS scan (allStops) ONLY
+    // — no clock time, so never sortedClockStops/looseStops/polyline. Record
+    // bridge, SPEC §5 D. Faithful mirror of the client buildDayIndex.
+    const recordTargets = recordEntryTargets(day)
     out.set(day.isoDate, {
       day,
       sortedClockStops,
       looseStops,
-      allStops: dayBase ? [...allStops, dayBase] : allStops,
+      allStops: [...allStops, ...(dayBase ? [dayBase] : []), ...recordTargets],
       polyline,
       isStay: stay,
     })
