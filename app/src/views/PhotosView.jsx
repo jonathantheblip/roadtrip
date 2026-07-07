@@ -4,6 +4,7 @@ import { listMemoriesForTrip, subscribeMemoriesChanged } from '../lib/memoryStor
 import { ImportFlow, ImportToast } from '../components/ImportFlow'
 import { PhotoTile, PhotoLightbox, GridPausedProvider } from '../components/PhotoAlbum'
 import { flattenPhotoEntries, groupByStop, buildMoveTargets } from '../lib/photoEntries'
+import { SuggestionBanner } from '../components/SuggestionBanner'
 import { useFaceTags } from '../lib/useFaceTags'
 import { tripImplicitBase } from '../lib/photoMatch'
 import { refileTripToPlaces } from '../lib/refilePlaces'
@@ -423,6 +424,17 @@ export function PhotosView({ trip, traveler, onBack, tripsApi }) {
               )}
             </div>
           )}
+          {/* Stage 0c — the adult-only near-miss suggestion offer. Self-gates on
+              isAdult + DARK-until-`on` (renders null otherwise); Rafa/Aurelia
+              never see it. onChanged bumps memoryTick so an accepted move
+              repaints the album (a local updateMemoryStop does NOT fire the A-3
+              channel — that's mergeFromRemote-only), and the banner refetches. */}
+          <SuggestionBanner
+            trip={trip}
+            traveler={traveler}
+            memoryTick={memoryTick}
+            onChanged={() => setMemoryTick((t) => t + 1)}
+          />
           {groups.length === 0 ? (
             <EmptyState />
           ) : (

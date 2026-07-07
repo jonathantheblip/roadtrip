@@ -223,6 +223,38 @@ export async function shareMemory(memoryId, layout) {
   return r.json()
 }
 
+// ─── Self-healing SUGGESTIONS (Stage 0c) ────────────────────────────────────
+// Adults-only near-miss offers. DARK until the worker's PHOTO_HEAL_MODE is `on`
+// (the worker returns [] in off/shadow, so the client needs no separate flag).
+// ADVISORY only: any failure returns [] / false so the album never breaks over a
+// suggestion. The caller gates on isAdult before ever calling (a kid never asks).
+export async function fetchSuggestions(tripId, { asTraveler } = {}) {
+  if (!isWorkerConfigured() || !tripId) return []
+  try {
+    const r = await workerFetch(`/suggestions?trip=${encodeURIComponent(tripId)}`, {}, { asTraveler })
+    if (!r.ok) return []
+    const data = await r.json()
+    return Array.isArray(data?.suggestions) ? data.suggestions : []
+  } catch {
+    return []
+  }
+}
+
+// A synced, FAMILY-WIDE "Not now" (migration 018) — one decline quiets the
+// (memoryId, toStop) suggestion on every device. Returns true on success.
+export async function dismissSuggestion(memoryId, toStop, { asTraveler } = {}) {
+  if (!isWorkerConfigured() || !memoryId || !toStop) return false
+  try {
+    const r = await workerFetch('/suggestions/dismiss', {
+      method: 'POST',
+      body: JSON.stringify({ memoryId, toStop }),
+    }, { asTraveler })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
 // ─── Surprises: Claude cover-assist (Slice 3) ───────────────────────────────
 // Ask the worker to draft a believable cover story for a surprise. The worker
 // owns the prompt + the Anthropic key. Returns the 6 normalized cover fields, or

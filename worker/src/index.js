@@ -36,6 +36,7 @@ import { createWave, listUnseenWaves, markWavesSeen, runWavePurge } from './wave
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode } from './photoHealRunner.js'
+import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -190,6 +191,17 @@ export default {
       }
       if (path === '/memories' && request.method === 'POST') {
         return await postMemory(env, traveler, request, url, cors, ctx)
+      }
+
+      // Self-healing SUGGESTIONS (Stage 0c). Adults-only near-miss offers,
+      // DARK until PHOTO_HEAL_MODE === 'on' (the compute returns [] otherwise).
+      // A separate endpoint, NOT a change to the /memories pull shape — the pull
+      // stays a bare array so no client breaks.
+      if (path === '/suggestions' && request.method === 'GET') {
+        return await getSuggestions(env, traveler, url, cors)
+      }
+      if (path === '/suggestions/dismiss' && request.method === 'POST') {
+        return await dismissSuggestion(env, traveler, request, cors)
       }
       const memMatch = path.match(/^\/memories\/([^/]+)$/)
       if (memMatch && request.method === 'DELETE') {
@@ -878,6 +890,37 @@ async function getMemories(env, traveler, url, cors) {
   // onto this — pulls must always be fresh, not the snapshot whoever
   // fetched first happened to see.
   return json(out, 200, { ...cors, 'Cache-Control': 'no-store' })
+}
+
+// GET /suggestions?trip=<id> — the adult-only near-miss suggestions for one
+// trip, projected for THIS viewer (photoSuggest.js). ADULTS ONLY: a kid lens
+// gets [] (a quiet no-op, never a 403 that a stray poll would surface as an
+// error). DARK until PHOTO_HEAL_MODE === 'on' is enforced inside the compute.
+async function getSuggestions(env, traveler, url, cors) {
+  const headers = { ...cors, 'Cache-Control': 'no-store' }
+  if (!isAdult(traveler)) return json({ suggestions: [] }, 200, headers)
+  const tripId = url.searchParams.get('trip') || ''
+  try {
+    const suggestions = await computeSuggestionsForViewer(env, tripId, traveler)
+    return json({ suggestions }, 200, headers)
+  } catch (e) {
+    // A suggestion is advisory — never fail the album over it. Log + return [].
+    console.error('getSuggestions failed', tripId, e?.stack || e)
+    return json({ suggestions: [] }, 200, headers)
+  }
+}
+
+// POST /suggestions/dismiss { memoryId, toStop } — a synced, FAMILY-WIDE "Not
+// now" (migration 018). Adults only (a decline is a write). Idempotent.
+async function dismissSuggestion(env, traveler, request, cors) {
+  if (!isAdult(traveler)) return json({ error: 'adults only' }, 403, cors)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad json' }, 400, cors) }
+  const memoryId = typeof body?.memoryId === 'string' ? body.memoryId : ''
+  const toStop = typeof body?.toStop === 'string' ? body.toStop : ''
+  if (!memoryId || !toStop) return json({ error: 'memoryId + toStop required' }, 400, cors)
+  const res = await recordDismissal(env, memoryId, toStop, traveler)
+  return json(res, 200, cors)
 }
 
 async function postMemory(env, traveler, request, url, cors, ctx) {

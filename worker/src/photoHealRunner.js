@@ -80,7 +80,7 @@ export function rowToHealMemory(r) {
 // moved-note (an orphan move's old stop may no longer resolve later, so we can't
 // look it up at render time — SPEC §4). Agenda stops carry a name/title; an
 // implicit-base id labels as the day's base place.
-function labelForStop(trip, dayIndex, stopId) {
+export function labelForStop(trip, dayIndex, stopId) {
   if (!stopId) return null
   for (const day of trip?.days || []) {
     for (const s of day?.stops || []) {
@@ -159,7 +159,7 @@ async function appendLedgerRow(env, entry, now) {
 // Load the trip + its live memories and DECIDE every one (via healMemories in
 // its 'shadow' apply-mode = "compute the moves, mutate nothing"). Returns the
 // bundle { trip, tripRev, dayIndex, rows, moves, suggestions } or null (no trip).
-async function loadAndDecide(env, tripId, { evidenceFreshIds, now, cooldownEnabled }) {
+export async function loadAndDecide(env, tripId, { evidenceFreshIds, now, cooldownEnabled }) {
   const tripRow = await env.DB.prepare(
     'SELECT data_json, updated_at FROM trips WHERE id = ? AND deleted_at IS NULL'
   ).bind(tripId).first()
