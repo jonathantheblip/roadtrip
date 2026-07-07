@@ -531,6 +531,18 @@ button { font: inherit; }
      A solid --bg makes the contrast deterministic AND axe-verifiable for all 4. */
   background: var(--bg);
   border-top: 1px solid var(--border, rgba(127,127,127,0.18));
+  /* iOS WebKit can fail to keep a position:fixed bar painted at the viewport
+     bottom during MOMENTUM scroll on a long page: it detaches mid-flick and
+     appears part-way up the screen with content below it, then snaps back when
+     the scroll settles (reported 2026-07-07 on the Photos album, which scrolls
+     far more than the pill dock ever does — same fixed/bottom CSS, but the dock
+     never triggers it). A layout trap is impossible here (the bar's only
+     ancestors are #root/body/html, none containing-block-forming), so this is a
+     compositing/paint issue, not layout. Promoting the bar to its own GPU layer
+     makes WebKit composite it independently and keeps it glued. translateZ(0)
+     is a no-op move — position:fixed;bottom:0 and every dimension are unchanged. */
+  transform: translateZ(0);
+  will-change: transform;
 }
 .stay-tab {
   all: unset;
