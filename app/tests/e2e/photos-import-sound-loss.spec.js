@@ -84,10 +84,11 @@ test('a clip importing without its sound: no smart-skip, the amber banner says i
   await expect(banner).toContainText(/sound couldn.t come along/i)
   await expect(banner).toContainText(/camera roll still has its sound/i)
 
-  // Confirm the import — the completion toast must carry the honest suffix,
-  // not a clean "1 photo added".
+  // Confirm the import — the completion toast must carry the honest suffix AND
+  // name the kind honestly: this is a VIDEO, so "1 video added", never the old
+  // "1 photo added" that called a video a photo (the 2026-07-07 wrong-noun bug).
   await page.getByTestId('import-confirm-go').click()
   const toast = page.getByTestId('import-toast')
   await expect(toast).toBeVisible({ timeout: 20000 })
-  await expect(toast).toContainText(/1 photo added · 1 without its sound/)
+  await expect(toast).toContainText(/1 video added · 1 without its sound/)
 })

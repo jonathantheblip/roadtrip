@@ -10,19 +10,37 @@ export function importToastProps(r, traveler) {
   if (!r) return null
   if (r.nothingNew) return { message: 'Nothing new to import' }
   if (r.ok > 0) {
-    // Sound honesty: a clip that imported WITHOUT the sound its source had
-    // must show in the one-line summary too — "3 photos added · 1 without its
-    // sound" — never a bare success count. Absent/zero keeps the classic shape.
-    // Rafa's lens is the one exception: he never meets a sound-loss notice
-    // (his videoCopy deck nulls every soundLost string — banner and tile chip
-    // included); the honest line surfaces on a parent's lens instead.
+    // `r.ok` counts every new item — photos AND videos. Split them so the line
+    // never calls a video a "photo" ("3 photos · 1 video"). The video count
+    // rides in on `r.videos` (threaded from the import summary in ImportFlow's
+    // doSave); clamp to `r.ok` so a partial-failure batch can never show more
+    // videos than items actually saved. Absent `r.videos` → 0 → the classic
+    // photos-only shape, byte-identical to before.
+    const videos = Math.min(r.videos || 0, r.ok)
+    const photos = r.ok - videos
+    const pPart = photos > 0 ? `${photos} ${photos === 1 ? 'photo' : 'photos'}` : ''
+    const vPart = videos > 0 ? `${videos} ${videos === 1 ? 'video' : 'videos'}` : ''
+    const base = [pPart, vPart].filter(Boolean).join(' · ')
+    // Sound honesty: a clip that imported WITHOUT the sound its source had must
+    // show in the one-line summary too — appended to the honest count, never a
+    // bare success count. Rafa's lens is the one exception: he never meets a
+    // sound-loss notice (his videoCopy deck nulls every soundLost string —
+    // banner and tile chip included); the honest line surfaces on a parent's
+    // lens instead. (The photo/video split itself is just honest counting, so
+    // it applies on every lens.)
     if (r.soundLost > 0 && traveler !== 'rafa') {
       return {
-        message: `${r.ok} ${r.ok === 1 ? 'photo' : 'photos'} added · ${r.soundLost} without ${r.soundLost === 1 ? 'its' : 'their'} sound`,
+        message: `${base} added · ${r.soundLost} without ${r.soundLost === 1 ? 'its' : 'their'} sound`,
         syncing: r.queued || 0,
       }
     }
-    return { count: r.ok, noun: r.ok === 1 ? 'photo' : 'photos', syncing: r.queued || 0 }
+    // Photos-only keeps the classic count/noun shape (the ImportToast component
+    // renders `${count} ${noun} added`); any batch with a video uses the split
+    // message so both kinds are named honestly.
+    if (videos === 0) {
+      return { count: r.ok, noun: r.ok === 1 ? 'photo' : 'photos', syncing: r.queued || 0 }
+    }
+    return { message: `${base} added`, syncing: r.queued || 0 }
   }
   if (r.reattached > 0) {
     return { message: `${r.reattached} re-attached` }

@@ -344,7 +344,11 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         },
       })
       if (isCancelled?.()) return
-      onComplete?.(results)
+      // `results.ok` counts every new item — photos AND videos — but carries no
+      // photo/video split, so the toast used to call a video a "photo". Thread
+      // the batch's video count from the analysis summary so the summary line
+      // can be honest ("N photos · M videos").
+      onComplete?.({ ...results, videos: data.summary?.videos || 0 })
     } catch (err) {
       savingRef.current = false
       setError(err?.message || String(err))

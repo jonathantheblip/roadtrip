@@ -91,6 +91,71 @@ test("importToastProps: Rafa's lens never meets the sound-loss suffix — same r
   })
 })
 
+test('importToastProps: a mixed batch names photos AND videos, never calls a video a photo', () => {
+  // Live bug (2026-07-07, Rafa's 5th-birthday upload): "N photos added" even
+  // when some of the N were videos. `r.ok` is the combined count; `r.videos`
+  // carries the split.
+  assert.deepEqual(importToastProps({ ok: 4, queued: 0, reattached: 0, failed: 0, videos: 1 }), {
+    message: '3 photos · 1 video added',
+    syncing: 0,
+  })
+  assert.deepEqual(importToastProps({ ok: 5, queued: 2, reattached: 0, failed: 0, videos: 2 }), {
+    message: '3 photos · 2 videos added',
+    syncing: 2,
+  })
+})
+
+test('importToastProps: a videos-only batch says videos, not photos', () => {
+  assert.deepEqual(importToastProps({ ok: 2, queued: 0, reattached: 0, failed: 0, videos: 2 }), {
+    message: '2 videos added',
+    syncing: 0,
+  })
+  assert.deepEqual(importToastProps({ ok: 1, queued: 0, reattached: 0, failed: 0, videos: 1 }), {
+    message: '1 video added',
+    syncing: 0,
+  })
+})
+
+test('importToastProps: a single silent VIDEO reads "1 video added · …" (the e2e-pinned wrong-noun bug)', () => {
+  // Mirrors tests/e2e/photos-import-sound-loss.spec.js end-to-end: one video
+  // that lost its sound. It must NOT read "1 photo added" (calling a video a
+  // photo) — the 2026-07-07 field report.
+  assert.deepEqual(importToastProps({ ok: 1, queued: 0, reattached: 0, failed: 0, videos: 1, soundLost: 1 }), {
+    message: '1 video added · 1 without its sound',
+    syncing: 0,
+  })
+})
+
+test('importToastProps: a photos-only batch keeps the classic shape even with videos:0', () => {
+  assert.deepEqual(importToastProps({ ok: 3, queued: 0, reattached: 0, failed: 0, videos: 0 }), {
+    count: 3,
+    noun: 'photos',
+    syncing: 0,
+  })
+})
+
+test('importToastProps: the video count is clamped to ok (a partial-failure batch never over-counts videos)', () => {
+  // If more items were videos in the batch than actually saved (some failed),
+  // never show more videos than `ok` — clamp so photos can't go negative.
+  assert.deepEqual(importToastProps({ ok: 1, queued: 0, reattached: 0, failed: 2, videos: 3 }), {
+    message: '1 video added',
+    syncing: 0,
+  })
+})
+
+test('importToastProps: a mixed batch that also lost sound names both kinds AND the sound loss', () => {
+  assert.deepEqual(importToastProps({ ok: 3, queued: 0, reattached: 0, failed: 0, videos: 2, soundLost: 1 }), {
+    message: '1 photo · 2 videos added · 1 without its sound',
+    syncing: 0,
+  })
+  // Rafa still never meets the sound-loss suffix, but the honest photo/video
+  // count is not a notice — he gets the plain split.
+  assert.deepEqual(importToastProps({ ok: 4, queued: 0, reattached: 0, failed: 0, videos: 1, soundLost: 1 }, 'rafa'), {
+    message: '3 photos · 1 video added',
+    syncing: 0,
+  })
+})
+
 test('importToastProps: soundLost absent or zero keeps the classic count shape byte-identical', () => {
   assert.deepEqual(importToastProps({ ok: 3, queued: 0, reattached: 0, failed: 0, soundLost: 0 }), {
     count: 3,
