@@ -18,25 +18,18 @@
 // This scorer does NOT enforce manual-lock / masking / surprise / kid-lens — those
 // are the existing safety gates that WRAP a decision (a manual-locked memory is
 // never a candidate; a masked target is dropped). The scorer only reconstructs
-// "what happened"; the gates decide what may be shown/applied. Pure, deterministic,
-// self-contained (own haversine) → the worker referee mirrors it, parity-tested.
+// "what happened"; the gates decide what may be shown/applied.
+//
+// GPS resolution is NOT done here: the adapter runs a located session's centroid
+// through v1's tuned `matchPhotoToStop` (radius/margin/base-yield, already
+// parity-tested — never reinvented) and hands the scorer the resolved
+// `gpsPlaceId`. So this module carries no haversine and needs no geo-tuning; it's
+// pure decision-logic → the worker referee mirrors it exactly.
 
 export const SCORE_DEFAULTS = {
-  gpsRadiusMeters: 250, // a located session within this of a place → GPS match
   autoNearMin: 45, // time within this of an evidenced place → auto-eligible
   confirmNearMin: 90, // within this → confirm; beyond → leave (base)
   clearMarginMin: 60, // runner-up must be at least this much farther for auto
-}
-
-function haversineMeters(lat1, lng1, lat2, lng2) {
-  const R = 6371000
-  const toRad = (d) => (d * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)))
 }
 
 const isNum = (x) => Number.isFinite(x)
@@ -45,7 +38,9 @@ const isNum = (x) => Number.isFinite(x)
 const intrinsicEvidence = (place) =>
   place.kind === 'base' ? 'base' : place.kind === 'record' ? 'record' : null
 
-// sessions: [{ id, photoIds, memoryIds, count, location:{lat,lng}|null, medianMin }]
+// sessions: [{ photoIds, memoryIds, count, medianMin, gpsPlaceId?:string|null,
+//             locatedCount? }]  — gpsPlaceId is v1's resolved GPS match (adapter),
+//             null when the burst had no GPS or v1 found no confident stop.
 // places:   [{ id, name, lat|null, lng|null, timeMin|null, kind:'stop'|'base'|'record' }]
 // → decisions: [{ photoIds, memoryIds, count, place:{id,name}|null, tier, confidence, signals, reason }]
 export function scoreDay(sessions, places, opts = {}) {
@@ -57,7 +52,7 @@ export function scoreDay(sessions, places, opts = {}) {
     inferred: false,
     gpsEvidenced: false,
   }))
-  const located = P.filter((p) => isNum(p.lat) && isNum(p.lng))
+  const placeById = new Map(P.map((p) => [p.id, p]))
 
   // deterministic session order (median, then first id)
   const order = [...S].sort(
@@ -67,26 +62,18 @@ export function scoreDay(sessions, places, opts = {}) {
   const decisions = new Map() // session -> decision
   const gpsMatch = new Map() // session -> place
 
-  // ---- Pass 1: GPS (own or inherited) → nearest place within radius ----------
+  // ---- Pass 1: pre-resolved GPS (v1's matcher, via the adapter) --------------
   for (const s of order) {
-    if (!s.location) continue
-    let best = null
-    let bestM = Infinity
-    for (const p of located) {
-      const m = haversineMeters(s.location.lat, s.location.lng, p.lat, p.lng)
-      if (m < bestM) {
-        bestM = m
-        best = p
-      }
-    }
-    if (best && bestM <= o.gpsRadiusMeters) {
-      gpsMatch.set(s, best)
-      best.gpsEvidenced = true
-      // agenda-time inference: a vague place learns its time from the session on it
-      if (!isNum(best.effTimeMin)) {
-        best.effTimeMin = s.medianMin
-        best.inferred = true
-      }
+    const p = s.gpsPlaceId ? placeById.get(s.gpsPlaceId) : null
+    if (!p) continue
+    gpsMatch.set(s, p)
+    p.gpsEvidenced = true
+    // agenda-time inference: a vague STOP learns its time from the session on it
+    // (the "Afternoon" fix). NEVER the base — it's all-day, not a moment, so
+    // inferring a base time would make other sessions spuriously "time-fit" it.
+    if (p.kind === 'stop' && !isNum(p.effTimeMin)) {
+      p.effTimeMin = s.medianMin
+      p.inferred = true
     }
   }
 
@@ -94,9 +81,7 @@ export function scoreDay(sessions, places, opts = {}) {
   for (const s of order) {
     const p = gpsMatch.get(s)
     if (!p) continue
-    const meters = Math.round(
-      haversineMeters(s.location.lat, s.location.lng, p.lat, p.lng)
-    )
+    const inherited = (s.locatedCount ?? 0) < s.count
     decisions.set(s, {
       photoIds: s.photoIds,
       memoryIds: s.memoryIds,
@@ -104,16 +89,11 @@ export function scoreDay(sessions, places, opts = {}) {
       place: { id: p.id, name: p.name },
       tier: 'auto',
       confidence: 0.9,
-      signals: {
-        evidence: 'gps',
-        gpsMeters: meters,
-        inheritedGps: (s.locatedCount ?? 0) < s.count,
-        placeKind: p.kind,
-      },
+      signals: { evidence: 'gps', inheritedGps: inherited, placeKind: p.kind },
       reason:
         p.kind === 'base'
           ? 'located at the base'
-          : `located at ${p.name}${(s.locatedCount ?? 0) < s.count ? ' (GPS inherited across the burst)' : ''}`,
+          : `located at ${p.name}${inherited ? ' (GPS inherited across the burst)' : ''}`,
     })
   }
 
