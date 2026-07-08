@@ -317,13 +317,22 @@ principles that govern everything here (each was a real gap in this section's ea
   Jonathan: "let's do all of the options" — a **4-phase program**: (1) the engine, (2) keep more GPS,
   (3) the surfaces (auto + one-tap confirm + settle-the-day), (4) vision (cloud default). Spec:
   [app/docs/design/self-healing-photos/SPEC_V2_TIME_AND_EVIDENCE.md](app/docs/design/self-healing-photos/SPEC_V2_TIME_AND_EVIDENCE.md).
-- ⏳ **Self-healing photo↔agenda matching — v1 LIVE (shadow) + v2 ENGINE LIVE (shadow) as of 2026-07-07.**
-  v1 (the strict GPS+time matcher, provenance-locked, `PHOTO_HEAL_MODE` off/shadow/on knob) shipped and is
-  in shadow. v2 (the reframe above) Phase-1 engine shipped `aea5b34` and records its would-decisions to the
-  `memory_heal_decisions` learning ledger in shadow (records only, moves nothing). Manual-lock supremacy,
-  order-independence, kid-lens, masking, the knob — all preserved. Jonathan reviews the ledger, then trusts
-  it up before any auto-file. ⚠ carry-forward: restore v1's surprise/mask gate before any *family-visible*
-  surface reads the v2 ledger.
+- ✅ **Self-healing v2 — MULTI-DIMENSIONAL + the trip names itself (LIVE + POPULATED, shadow, 2026-07-08).**
+  The reframe matured past "time+evidence first" into its real form (Jonathan drove it): a moment must
+  **EMERGE from the OVERLAP of every available dimension at once** — time · GPS · **composition** (a
+  perceptual scene hash) · faces · **vision** (what the photo shows) — each votes, a missing one abstains,
+  and naming comes from whichever dimension can supply it. Never lean on a single axis (the agenda least of
+  all — hangout trips have no plan). All three metadata-independent dimensions are now LIVE + populated on
+  real data: the engine (`buildMoments`, weighted clustering), the composition backfill (263/263 photos,
+  from the pixels that survived upload), and vision naming (263/263). On the real Provincetown weekend the
+  shadow ledger went **2 auto · 17 confirm · 22 leave → 5 · 35 · 0** — every moment now has a place or a
+  name (the 28-photo beach afternoon = "Sand dune adventure"). ⚠ **The load-bearing lesson: each dimension
+  has a distinct job** — composition = COHERENCE (groups, doesn't file), vision = the NAMING leaf-reducer,
+  GPS = LOCATION (and it dissolves over-splitting, so "combine these into one event" is not a heuristic —
+  it falls out of GPS). Still shadow (records to `memory_heal_decisions`, moves/writes nothing
+  family-visible). ⚠ carry-forward: restore the surprise/mask gate before any *family-visible* reader of the
+  ledger. NEXT levers need a **device**: re-source GPS+offset from the on-device originals (mechanism built),
+  then faces. Full state: `CARRYOVER_DOCUMENT_THE_TRIP.md`, `memory/self-healing-agenda-free.md`.
 - ⏳ **Finish-the-story (retro-settle), the resolver, the record bridge, kid read-faces** — sequenced as
   V1–V5 in VISION.md §5.
 
