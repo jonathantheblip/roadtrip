@@ -52,7 +52,4 @@ PHOTO_VISION_BACKFILL_LIMIT = "90"
 # → runNightlyWeave, which pre-assembles the active trip's freshest day into a
 # stored weave so the page is already woven when the family next opens the app.
 [triggers]
-# TEMPORARY NUDGE (2026-07-08): the every-10-min trigger populates the one-time vision
-# backfill now (~250 photos over a few fires). REVERT to ["0 8 * * *"] once vision is
-# filled (PHOTO_VISION_MODE stays on — it's the steady state for new photos).
-crons = ["0 8 * * *", "*/10 * * * *"]
+crons = ["0 8 * * *"]
