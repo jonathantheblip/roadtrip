@@ -25,7 +25,7 @@ import { sceneSignatureFromBytes } from './sceneSignature.js'
 // emits {key:'…mp4', mime:'video/…', posterKey} with NO kind), so relying on kind alone
 // would feed an .mp4 to the decoder — which can panic the WASM instance for the rest of
 // the run. Skip anything carrying a poster or a video/* mime too.
-function isStillPhoto(ref) {
+export function isStillPhoto(ref) {
   if (ref.kind && ref.kind !== 'photo') return false
   if (ref.posterKey) return false
   const mime = typeof ref.mime === 'string' ? ref.mime : ''

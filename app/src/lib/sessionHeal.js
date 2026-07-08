@@ -54,6 +54,28 @@ function placeKind(st) {
   return 'stop'
 }
 
+// The moment's VISION name: the most common Claude-vision name across its photos (the
+// content dimension). Used to NAME a moment with no located/agenda place — turning an
+// unplaced burst ("leave") into a named one to confirm ("At the beach"). null when no
+// photo in the moment carries a vision name.
+function momentVisionName(photoIds, meta) {
+  const counts = new Map()
+  for (const pid of photoIds || []) {
+    const v = meta.get(pid)?.vision
+    const name = v && typeof v.name === 'string' ? v.name.trim() : ''
+    if (name) counts.set(name, (counts.get(name) || 0) + 1)
+  }
+  let best = null
+  let bestN = 0
+  for (const [name, n] of counts) {
+    if (n > bestN) {
+      best = name
+      bestN = n
+    }
+  }
+  return best
+}
+
 // trip + its memories → [{ isoDate, decisions: [...] }]. `defaultOffset` (min)
 // is used only when a ref carries no offsetMinutes (legacy) — 0 = prior UTC behavior.
 export function buildTripDecisions(trip, memories, opts = {}) {
@@ -87,7 +109,7 @@ export function buildTripDecisions(trip, memories, opts = {}) {
         // later brick); absent → the dimension simply abstains from the clustering.
         faces: Array.isArray(ref.faces) && ref.faces.length ? ref.faces : undefined,
       })
-      meta.set(id, { capturedAt: ref.capturedAt, offsetMinutes: off })
+      meta.set(id, { capturedAt: ref.capturedAt, offsetMinutes: off, vision: ref.vision })
     }
   }
 
@@ -157,6 +179,7 @@ export function buildTripDecisions(trip, memories, opts = {}) {
     // how strongly they cohere — into each decision's signals, so the ledger records
     // why a group formed (which dimensions agreed), not just where it filed.
     const byFirst = new Map(scored.map((m) => [m.photoIds[0], m]))
+    let visSeq = 0
     for (const d of decisions) {
       const m = byFirst.get(d.photoIds[0])
       if (m) {
@@ -164,6 +187,20 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           ...d.signals,
           dims: m.dims,
           cohesion: m.cohesion == null ? null : Math.round(m.cohesion * 100) / 100,
+        }
+      }
+      // A moment with no located/agenda place would LEAVE — but if vision can NAME it,
+      // surface it as a named moment to CONFIRM (content-inferred, never a silent auto).
+      // This is what turns the no-GPS beach afternoons into "At the beach".
+      if (d.tier === 'leave') {
+        const vn = momentVisionName(d.photoIds, meta)
+        if (vn) {
+          d.place = { id: `__vision__:${iso}:${visSeq++}`, name: vn }
+          d.tier = 'confirm'
+          d.naming = 'named'
+          d.confidence = 0.5
+          d.signals = { ...d.signals, evidence: 'vision', visionName: vn }
+          d.reason = `looks like ${vn} — confirm it`
         }
       }
     }

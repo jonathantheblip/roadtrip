@@ -131,6 +131,32 @@ describe('recordHealDecisions — v2 shadow learning ledger', () => {
     expect(rows[0].evidence).toBe('gps')
   })
 
+  it('vision NAMES an otherwise-unplaced moment: a no-GPS burst with a vision label → confirm at that name', async () => {
+    // a hangout day with no stops and no GPS → the burst would LEAVE; vision rescues it
+    await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?, ?, ?)')
+      .bind('t1', JSON.stringify({ id: 't1', shape: 'stay', days: [{ n: 1, isoDate: '2026-07-01', stops: [] }] }), 200)
+      .run()
+    await seedMemory({
+      id: 'm1',
+      refs: [
+        {
+          key: 'k1',
+          capturedAt: '2026-07-01T15:00:00.000Z',
+          offsetMinutes: 0,
+          vision: { name: 'At the beach', labels: ['beach'], setting: 'outdoor' },
+        },
+      ],
+    })
+    const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+    expect(r.recorded).toBe(1)
+    const rows = await decisions()
+    expect(rows.length).toBe(1)
+    expect(rows[0].tier).toBe('confirm')
+    expect(rows[0].place_name).toBe('At the beach')
+    expect(rows[0].place_id).toMatch(/^__vision__:/)
+    expect(rows[0].evidence).toBe('vision')
+  })
+
   it('mode off records nothing', async () => {
     await seedTrip()
     await seedMemory({ id: 'm1', refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30, lng: -90 }] })

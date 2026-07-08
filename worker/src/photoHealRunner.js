@@ -29,6 +29,7 @@ import { isStopSurprise } from './surprises.js'
 import { isImplicitBaseId, isRecordTargetId, parseRecordTargetId } from './dayStopIds.js'
 import { buildTripDecisions } from './sessionHeal.js'
 import { backfillSceneSignatures } from './sceneBackfill.js'
+import { backfillVisionLabels } from './visionBackfill.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -357,6 +358,15 @@ export async function healSweep(env, { now = Date.now() } = {}) {
       console.error('[scene-backfill] sweep failed', e?.stack || e)
     }
   }
+  // Populate the VISION dimension too — gated by its OWN consent/cost knob
+  // (PHOTO_VISION_MODE, default off → a no-op until Jonathan enables it, since vision
+  // sends photos to the cloud and costs per call). Best-effort + bounded.
+  let visionBackfill = null
+  try {
+    visionBackfill = await backfillVisionLabels(env)
+  } catch (e) {
+    console.error('[vision-backfill] sweep failed', e?.stack || e)
+  }
   const { results: trips } = await env.DB.prepare(
     'SELECT id FROM trips WHERE deleted_at IS NULL'
   ).all()
@@ -380,7 +390,7 @@ export async function healSweep(env, { now = Date.now() } = {}) {
       console.error('[photo-heal-v2] trip failed', t.id, e?.stack || e)
     }
   }
-  return { mode, trips: trips?.length || 0, tripsWithMoves, totalMoves, v2Recorded, sceneBackfill }
+  return { mode, trips: trips?.length || 0, tripsWithMoves, totalMoves, v2Recorded, sceneBackfill, visionBackfill }
 }
 
 // ── v2 SHADOW LEARNING ledger (SPEC_V2 Phase 1) ──────────────────────────────
