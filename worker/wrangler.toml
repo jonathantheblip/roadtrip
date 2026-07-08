@@ -47,4 +47,8 @@ ALLOWED_ORIGINS = "https://jonathantheblip.github.io,http://localhost:5173,http:
 # → runNightlyWeave, which pre-assembles the active trip's freshest day into a
 # stored weave so the page is already woven when the family next opens the app.
 [triggers]
-crons = ["0 8 * * *"]
+# TEMPORARY NUDGE (2026-07-08): the extra every-10-min trigger fires healSweep soon
+# so the one-time scene-signature backfill (+ the multi-dimensional shadow ledger)
+# populates now instead of waiting ~22h for the daily run. healSweep is idempotent +
+# shadow, so repeated fires are harmless. REVERT to ["0 8 * * *"] once scene is filled.
+crons = ["0 8 * * *", "*/10 * * * *"]
