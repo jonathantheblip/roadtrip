@@ -1,0 +1,110 @@
+// v2 shadow LEARNING ledger — recordHealDecisions against REAL D1 (migration 019).
+// Seeds a trip + memories, drives the recorder, and asserts the table holds the
+// engine's tiered would-decisions, replaces per-trip, and respects the knob.
+
+import { env } from 'cloudflare:test'
+import { beforeEach, describe, it, expect } from 'vitest'
+import { applySchema } from './helpers/schema.js'
+import { recordHealDecisions } from '../src/photoHealRunner.js'
+
+const NOW = 1_700_000_000_000
+
+const tripJson = () =>
+  JSON.stringify({
+    id: 't1',
+    shape: 'route',
+    days: [
+      {
+        n: 1,
+        isoDate: '2026-07-01',
+        stops: [{ id: 's-a', title: 'The museum', time: '10:00 AM', lat: 30.0, lng: -90.0 }],
+      },
+    ],
+  })
+
+async function seedTrip() {
+  await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?, ?, ?)')
+    .bind('t1', tripJson(), 200)
+    .run()
+}
+
+// a memory with one photo ref (capturedAt + optional GPS + offset)
+async function seedMemory({ id, refs }) {
+  await env.DB.prepare(
+    'INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+  )
+    .bind(id, 't1', 'jonathan', 'shared', 'photo', JSON.stringify(refs), 1, 1)
+    .run()
+}
+
+async function decisions() {
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM memory_heal_decisions WHERE trip_id = ? ORDER BY id'
+  )
+    .bind('t1')
+    .all()
+  return results
+}
+
+beforeEach(async () => {
+  await applySchema(env.DB)
+  // miniflare storage persists across tests; start each one clean.
+  for (const t of ['memory_heal_decisions', 'memories', 'trips']) {
+    await env.DB.prepare(`DELETE FROM ${t}`).run()
+  }
+})
+
+describe('recordHealDecisions — v2 shadow learning ledger', () => {
+  it('a GPS session on a stop records an AUTO decision with signals', async () => {
+    await seedTrip()
+    // a burst at the museum: one geotagged photo → the whole session is located
+    await seedMemory({
+      id: 'm1',
+      refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30.0, lng: -90.0 }],
+    })
+    const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+    expect(r.recorded).toBe(1)
+
+    const rows = await decisions()
+    expect(rows.length).toBe(1)
+    expect(rows[0].tier).toBe('auto')
+    expect(rows[0].place_id).toBe('s-a')
+    expect(rows[0].evidence).toBe('gps')
+    expect(rows[0].mode).toBe('shadow')
+    expect(rows[0].run_at).toBe(NOW)
+    expect(JSON.parse(rows[0].memory_ids)).toEqual(['m1'])
+    expect(JSON.parse(rows[0].signals_json).evidence).toBe('gps')
+  })
+
+  it('a no-GPS session time-fitting a planned stop records a CONFIRM (never auto)', async () => {
+    await seedTrip()
+    await seedMemory({
+      id: 'm2',
+      refs: [{ key: 'k2', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0 }], // no GPS
+    })
+    await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+    const rows = await decisions()
+    expect(rows.length).toBe(1)
+    expect(rows[0].tier).toBe('confirm')
+    expect(rows[0].place_id).toBe('s-a')
+    expect(rows[0].evidence).toBe('time-only')
+  })
+
+  it('REPLACES the trip rows each run (bounded current-state, no duplication)', async () => {
+    await seedTrip()
+    await seedMemory({ id: 'm1', refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30, lng: -90 }] })
+    await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+    await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW + 1000 })
+    const rows = await decisions()
+    expect(rows.length).toBe(1) // not 2 — replaced, not appended
+    expect(rows[0].run_at).toBe(NOW + 1000)
+  })
+
+  it('mode off records nothing', async () => {
+    await seedTrip()
+    await seedMemory({ id: 'm1', refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30, lng: -90 }] })
+    const r = await recordHealDecisions(env, 't1', { mode: 'off', now: NOW })
+    expect(r.skipped).toBe('off')
+    expect((await decisions()).length).toBe(0)
+  })
+})

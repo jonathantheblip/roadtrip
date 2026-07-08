@@ -27,6 +27,7 @@
 import { healMemories, buildDayIndex } from './photoHeal.js'
 import { isStopSurprise } from './surprises.js'
 import { isImplicitBaseId, isRecordTargetId, parseRecordTargetId } from './dayStopIds.js'
+import { buildTripDecisions } from './sessionHeal.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -338,6 +339,7 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   ).all()
   let tripsWithMoves = 0
   let totalMoves = 0
+  let v2Recorded = 0
   for (const t of trips || []) {
     try {
       const r = await runHealForTrip(env, t.id, { mode, now })
@@ -346,6 +348,78 @@ export async function healSweep(env, { now = Date.now() } = {}) {
     } catch (e) {
       console.error('[photo-heal-sweep] trip failed', t.id, e?.stack || e)
     }
+    // v2 shadow learning ledger — independent of v1 (a v2 failure can't stop the
+    // sweep or perturb v1's would-move accounting).
+    try {
+      const v2 = await recordHealDecisions(env, t.id, { mode, now })
+      v2Recorded += v2?.recorded || 0
+    } catch (e) {
+      console.error('[photo-heal-v2] trip failed', t.id, e?.stack || e)
+    }
   }
-  return { mode, trips: trips?.length || 0, tripsWithMoves, totalMoves }
+  return { mode, trips: trips?.length || 0, tripsWithMoves, totalMoves, v2Recorded }
+}
+
+// ── v2 SHADOW LEARNING ledger (SPEC_V2 Phase 1) ──────────────────────────────
+// Compute the v2 engine's would-decisions for a trip and REPLACE the trip's rows
+// in memory_heal_decisions (migration 019) so the table always shows the CURRENT
+// would-state. RECORDS ONLY — applies nothing, ever (that's a later phase). Runs
+// alongside v1 whenever the knob is not off, so the existing shadow period lights
+// up BOTH ledgers: v1's would-moves (near-empty on this data) and v2's rich
+// tiered decisions (the learning tool, decision #1). Atomic DELETE+INSERT batch.
+// defaultOffset is 0 (UTC) — offset-bearing refs (ea2296a) are exact; legacy
+// offset-less archive photos are approximate in the ledger, acceptable for shadow.
+export async function recordHealDecisions(env, tripId, { now = Date.now(), mode } = {}) {
+  const activeMode = mode || photoHealMode(env)
+  if (activeMode === 'off') return { skipped: 'off' }
+  const tripRow = await env.DB.prepare(
+    'SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL'
+  ).bind(tripId).first()
+  if (!tripRow) return { mode: activeMode, recorded: 0, noTrip: true }
+  let trip
+  try { trip = JSON.parse(tripRow.data_json) } catch { return { mode: activeMode, recorded: 0, badTrip: true } }
+  const { results: rows } = await env.DB.prepare(
+    'SELECT id, photo_r2_keys_json, author_traveler FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
+  ).bind(tripId).all()
+
+  let days
+  try {
+    days = buildTripDecisions(trip, rows || [])
+  } catch (e) {
+    console.error('[photo-heal-v2] decide failed', tripId, e?.stack || e)
+    return { mode: activeMode, recorded: 0, error: true }
+  }
+
+  const del = env.DB.prepare('DELETE FROM memory_heal_decisions WHERE trip_id = ?').bind(tripId)
+  const ins = env.DB.prepare(
+    `INSERT INTO memory_heal_decisions
+       (trip_id, iso_date, memory_ids, photo_count, place_id, place_name, tier, confidence, evidence, signals_json, reason, mode, run_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  )
+  const tiers = { auto: 0, confirm: 0, leave: 0 }
+  const batch = [del]
+  for (const d of days) {
+    for (const dec of d.decisions) {
+      tiers[dec.tier] = (tiers[dec.tier] || 0) + 1
+      batch.push(
+        ins.bind(
+          tripId,
+          d.isoDate,
+          JSON.stringify(dec.memoryIds || []),
+          dec.count || 0,
+          dec.place?.id ?? null,
+          dec.place?.name ?? null,
+          dec.tier,
+          Number.isFinite(dec.confidence) ? dec.confidence : null,
+          dec.signals?.evidence ?? null,
+          JSON.stringify(dec.signals || {}),
+          dec.reason ?? null,
+          activeMode,
+          now
+        )
+      )
+    }
+  }
+  await env.DB.batch(batch)
+  return { mode: activeMode, recorded: batch.length - 1, tiers }
 }

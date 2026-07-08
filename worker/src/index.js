@@ -35,7 +35,7 @@ import { forecastUrl, marineUrl, buildConditions } from './conditions.js'
 import { createWave, listUnseenWaves, markWavesSeen, runWavePurge } from './waves.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
 import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
-import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode } from './photoHealRunner.js'
+import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode, recordHealDecisions } from './photoHealRunner.js'
 import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -1321,6 +1321,14 @@ async function postMemory(env, traveler, request, url, cors, ctx) {
       runHealForTrip(env, healTripId, { evidenceFreshIds: [body.id] }).then(
         (r) => console.log('[photo-heal-evidence]', JSON.stringify(r)),
         (e) => console.error('[photo-heal-evidence] failed', e?.stack || e)
+      )
+    )
+    // v2 shadow learning ledger — refresh the trip's would-decisions on this
+    // import (independent of v1; a v2 failure never affects the save or v1).
+    ctx.waitUntil(
+      recordHealDecisions(env, healTripId, {}).then(
+        (r) => console.log('[photo-heal-v2]', JSON.stringify(r)),
+        (e) => console.error('[photo-heal-v2] failed', e?.stack || e)
       )
     )
   }

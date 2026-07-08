@@ -28,6 +28,7 @@ import presenceMigration from '../../migrations/015_presence.sql?raw'
 import wavesMigration from '../../migrations/016_waves.sql?raw'
 import stopProvMigration from '../../migrations/017_memory_stop_provenance.sql?raw'
 import suggestionDismissalsMigration from '../../migrations/018_memory_suggestion_dismissals.sql?raw'
+import healDecisionsMigration from '../../migrations/019_memory_heal_decisions.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -96,6 +97,8 @@ const STATEMENTS = [
   ...splitStatements(wavesMigration),
   // 018 (suggestion dismissals) — CREATE TABLE/INDEX IF NOT EXISTS, idempotent.
   ...splitStatements(suggestionDismissalsMigration),
+  // 019 (v2 heal-decisions learning ledger) — CREATE TABLE/INDEX IF NOT EXISTS, idempotent.
+  ...splitStatements(healDecisionsMigration),
 ]
 
 export async function applySchema(db) {
