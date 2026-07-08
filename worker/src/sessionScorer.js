@@ -33,10 +33,26 @@ export const SCORE_DEFAULTS = {
 }
 
 const isNum = (x) => Number.isFinite(x)
-// A place is INTRINSICALLY evidenced (auto-eligible) if it's the base or a named
-// record moment — a person affirmed it. Planned stops earn evidence only via GPS.
+// A place is INTRINSICALLY evidenced (auto-eligible) if it's the base, a named
+// record moment (a person affirmed it), or a DISCOVERED spot — a place GPS proved
+// the family visited, with no stop ever entered (the agenda-free spine). Planned
+// stops earn evidence only via GPS.
 const intrinsicEvidence = (place) =>
-  place.kind === 'base' ? 'base' : place.kind === 'record' ? 'record' : null
+  place.kind === 'base'
+    ? 'base'
+    : place.kind === 'record'
+      ? 'record'
+      : place.kind === 'discovered'
+        ? 'discovered'
+        : null
+
+// The NAMING state of a decision's target, for the "give this moment a name" surface:
+// a DISCOVERED spot has only coordinates → 'needs-name' (a human — probably Jonathan —
+// names it, and that name then behaves like a record moment for future filings); any
+// real place → 'named'; an unfiled leave → null. Overlapping dimensions decide WHERE
+// a moment happened; naming is the one thing the family still supplies when the
+// machine has a coherent group but no words for it.
+const namingOf = (place) => (!place ? null : place.kind === 'discovered' ? 'needs-name' : 'named')
 
 // sessions: [{ photoIds, memoryIds, count, medianMin, gpsPlaceId?:string|null,
 //             locatedCount? }]  — gpsPlaceId is v1's resolved GPS match (adapter),
@@ -82,6 +98,7 @@ export function scoreDay(sessions, places, opts = {}) {
     const p = gpsMatch.get(s)
     if (!p) continue
     const inherited = (s.locatedCount ?? 0) < s.count
+    const naming = namingOf(p)
     decisions.set(s, {
       photoIds: s.photoIds,
       memoryIds: s.memoryIds,
@@ -89,7 +106,8 @@ export function scoreDay(sessions, places, opts = {}) {
       place: { id: p.id, name: p.name },
       tier: 'auto',
       confidence: 0.9,
-      signals: { evidence: 'gps', inheritedGps: inherited, placeKind: p.kind },
+      naming,
+      signals: { evidence: 'gps', inheritedGps: inherited, placeKind: p.kind, naming },
       reason:
         p.kind === 'base'
           ? 'located at the base'
@@ -114,16 +132,22 @@ export function scoreDay(sessions, places, opts = {}) {
         place: null, // leave at base / unfiled
         tier: 'leave',
         confidence: 0.2,
-        signals: { evidence: 'none', nearestMin: best ? best.d : null },
+        naming: null,
+        signals: { evidence: 'none', nearestMin: best ? best.d : null, naming: null },
         reason: 'no evidenced moment fits this time',
       })
       continue
     }
-    const ev = best.p.gpsEvidenced ? 'gps' : intrinsicEvidence(best.p) // 'gps'|'record'|'base'|null
+    const ev = best.p.gpsEvidenced ? 'gps' : intrinsicEvidence(best.p) // 'gps'|'record'|'base'|'discovered'|null
     const clear = !runnerUp || runnerUp.d - best.d >= o.clearMarginMin
     // AUTO only when the place has positive evidence (gps/record/base) AND the
-    // time fit is close AND unambiguous. A time-only planned stop → CONFIRM.
-    const canAuto = !!ev && best.d <= o.autoNearMin && clear && !best.p.inferred
+    // time fit is close AND unambiguous. A time-only planned stop → CONFIRM. A
+    // DISCOVERED spot is GPS-proven, but a burst reaching it by TIME ONLY (its own
+    // GPS absent) still gets a one-tap — evidence-over-plan holds for the agenda-
+    // free spine too, so only the GPS-anchoring burst auto-files a discovered spot.
+    const canAuto =
+      !!ev && best.d <= o.autoNearMin && clear && !best.p.inferred && best.p.kind !== 'discovered'
+    const naming = namingOf(best.p)
     decisions.set(s, {
       photoIds: s.photoIds,
       memoryIds: s.memoryIds,
@@ -131,12 +155,14 @@ export function scoreDay(sessions, places, opts = {}) {
       place: { id: best.p.id, name: best.p.name },
       tier: canAuto ? 'auto' : 'confirm',
       confidence: canAuto ? 0.75 : ev ? 0.55 : 0.4,
+      naming,
       signals: {
         evidence: ev || 'time-only',
         timeFitMin: best.d,
         runnerUpMin: runnerUp ? runnerUp.d : null,
         inferredTime: best.p.inferred,
         placeKind: best.p.kind,
+        naming,
       },
       reason: ev
         ? `${best.d}m from ${best.p.name}${clear ? ', clear' : ', close call'}`

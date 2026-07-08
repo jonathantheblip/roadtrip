@@ -100,6 +100,37 @@ describe('recordHealDecisions — v2 shadow learning ledger', () => {
     expect(rows[0].run_at).toBe(NOW + 1000)
   })
 
+  it('agenda-free: a GPS burst with no NAMED stop records a DISCOVERED auto (files where it WAS, not the base)', async () => {
+    // A hangout day: a stay trip with lodging (the ~1km implicit base) and NO named
+    // stops at all. A located photo ~85m from the lodging used to dissolve into
+    // "the base"; now it files to a DISCOVERED spot at its own coordinates — the
+    // trip documenting itself from where the photo was, with no stop ever entered.
+    await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?, ?, ?)')
+      .bind(
+        't1',
+        JSON.stringify({
+          id: 't1',
+          shape: 'stay',
+          lodging: { lat: 30.0, lng: -90.0 },
+          days: [{ n: 1, isoDate: '2026-07-01', stops: [] }],
+        }),
+        200
+      )
+      .run()
+    await seedMemory({
+      id: 'm1',
+      refs: [{ key: 'k1', capturedAt: '2026-07-01T15:00:00.000Z', offsetMinutes: 0, lat: 30.0006, lng: -90.0006 }],
+    })
+    const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+    expect(r.recorded).toBe(1)
+    const rows = await decisions()
+    expect(rows.length).toBe(1)
+    expect(rows[0].tier).toBe('auto')
+    expect(rows[0].place_id).toMatch(/^__discovered__:/)
+    expect(rows[0].place_name).toMatch(/a place near/)
+    expect(rows[0].evidence).toBe('gps')
+  })
+
   it('mode off records nothing', async () => {
     await seedTrip()
     await seedMemory({ id: 'm1', refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30, lng: -90 }] })

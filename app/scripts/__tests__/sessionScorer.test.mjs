@@ -89,3 +89,45 @@ test('the base never gets an INFERRED time — a later no-GPS session does not s
   assert.equal(d.tier, 'leave') // no inferred base time → nothing to match → base by default
   assert.equal(d.place, null)
 })
+
+test('agenda-free spine: a GPS burst at a DISCOVERED spot → auto, evidence gps (no stop entered)', () => {
+  const s = sess({ id: 's', gpsPlaceId: '__discovered__:d:0', medianMin: 800, count: 5, locatedCount: 1 })
+  const p = place({ id: '__discovered__:d:0', name: 'a place near 42.0621, -70.1634', lat: 42.0621, lng: -70.1634, timeMin: 800, kind: 'discovered' })
+  const [d] = scoreDay([s], [p])
+  assert.equal(d.tier, 'auto')
+  assert.equal(d.place.id, '__discovered__:d:0')
+  assert.equal(d.signals.evidence, 'gps')
+  assert.equal(d.signals.placeKind, 'discovered')
+})
+
+test('a no-GPS burst time-fitting a DISCOVERED spot → CONFIRM, never auto (evidence-over-plan on the agenda-free spine)', () => {
+  // s1 GPS-anchors the discovered spot at 800 (→ auto); s2 has no GPS and sits 5m
+  // later — close + unambiguous, yet a discovered spot reached by TIME ONLY still
+  // earns a one-tap, exactly like a planned stop would.
+  const s1 = sess({ id: 's1', photoIds: ['a'], gpsPlaceId: '__discovered__:d:0', medianMin: 800 })
+  const s2 = sess({ id: 's2', photoIds: ['b'], medianMin: 805 })
+  const p = place({ id: '__discovered__:d:0', name: 'a place near 42.0621, -70.1634', lat: 42.0621, lng: -70.1634, timeMin: 800, kind: 'discovered' })
+  const out = scoreDay([s1, s2], [p])
+  const d1 = out.find((d) => d.photoIds[0] === 'a')
+  const d2 = out.find((d) => d.photoIds[0] === 'b')
+  assert.equal(d1.tier, 'auto') // GPS-anchored this burst
+  assert.equal(d2.place.id, '__discovered__:d:0')
+  assert.equal(d2.tier, 'confirm') // time-only reach → one-tap, not silent auto
+})
+
+test('naming state surfaces the "give this moment a name" work: discovered → needs-name, named → named, leave → null', () => {
+  const disc = sess({ id: 's1', photoIds: ['a'], gpsPlaceId: '__discovered__:d:0', medianMin: 800 })
+  const named = sess({ id: 's2', photoIds: ['b'], gpsPlaceId: 'trucks', medianMin: 900 })
+  const far = sess({ id: 's3', photoIds: ['c'], medianMin: 100 }) // no GPS, hours from any place
+  const pDisc = place({ id: '__discovered__:d:0', name: 'a place near 1.0, 2.0', lat: 1, lng: 2, timeMin: 800, kind: 'discovered' })
+  const pNamed = place({ id: 'trucks', name: 'Monster Trucks', lat: 0, lng: 0, timeMin: 900, kind: 'stop' })
+  const out = scoreDay([disc, named, far], [pDisc, pNamed])
+  const d1 = out.find((d) => d.photoIds[0] === 'a')
+  const d2 = out.find((d) => d.photoIds[0] === 'b')
+  const d3 = out.find((d) => d.photoIds[0] === 'c')
+  assert.equal(d1.naming, 'needs-name') // a GPS-proven spot with only coordinates
+  assert.equal(d1.signals.naming, 'needs-name') // persisted for the surface (no migration)
+  assert.equal(d2.naming, 'named') // a real place already has words
+  assert.equal(d3.tier, 'leave')
+  assert.equal(d3.naming, null) // nothing filed → nothing to name
+})

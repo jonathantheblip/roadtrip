@@ -13,7 +13,7 @@
 // Imports v1's client matcher; the worker adapter mirrors this against the worker
 // matcher (the photoHealRunner precedent). Deterministic given its inputs.
 
-import { buildSessions } from './sessions.js'
+import { buildMoments } from './sessions.js'
 import { scoreDay } from './sessionScorer.js'
 import { buildDayIndex, matchPhotoToStop, isImplicitBaseId, isRecordTargetId } from './photoMatch.js'
 import { parseStopTime } from './photoBackfill.js'
@@ -80,6 +80,12 @@ export function buildTripDecisions(trip, memories, opts = {}) {
         lat: numOrU(ref.lat),
         lng: numOrU(ref.lng),
         author: m.author || m.authorTraveler || m.author_traveler,
+        // the COMPOSITION dimension (sceneHash.js) — a sidecar like lat/lng, absent
+        // until the import/backfill computes it from the surviving pixels.
+        scene: typeof ref.scene === 'string' && ref.scene ? ref.scene : undefined,
+        // the PEOPLE dimension — face ids on the ref (wired from the face model in a
+        // later brick); absent → the dimension simply abstains from the clustering.
+        faces: Array.isArray(ref.faces) && ref.faces.length ? ref.faces : undefined,
       })
       meta.set(id, { capturedAt: ref.capturedAt, offsetMinutes: off })
     }
@@ -88,10 +94,32 @@ export function buildTripDecisions(trip, memories, opts = {}) {
   const out = []
   for (const [iso, pts] of pointsByDay) {
     const entry = dayIndex.get(iso)
-    const sessions = buildSessions(pts, opts)
+    const moments = buildMoments(pts, opts)
 
-    // 2. resolve GPS for located sessions via v1's tuned matcher (GPS hits only)
-    const scored = sessions.map((s) => {
+    // 2. the day's AGENDA places (v1's allStops: planned + base + record). Built
+    //    BEFORE resolving sessions so a located burst can prefer a real NAMED stop,
+    //    and so we can tell a base match (the ~1km all-day catch-all) from a
+    //    specific one.
+    const places = (entry?.allStops || []).map((st) => ({
+      id: st.id,
+      name: st.name || st.title || '',
+      lat: numOrU(st.lat),
+      lng: numOrU(st.lng),
+      timeMin: placeTimeMin(st.time, iso),
+      kind: placeKind(st),
+    }))
+    const kindById = new Map(places.map((p) => [p.id, p.kind]))
+
+    // 3. resolve GPS for located sessions. A burst prefers a real NAMED agenda stop
+    //    (v1's confident, parity-tested match). When none matches — only the all-day
+    //    base, or nothing at all (the hangout case: the family entered no plan) —
+    //    the burst files to a DISCOVERED place at its OWN coordinates, so the photo
+    //    lands where it ACTUALLY was instead of dissolving into the base's ~1km
+    //    catch-all. This is the agenda-free spine: the trip documents itself from
+    //    where the photos were, with no stop ever entered. A discovered spot is
+    //    unnamed (coords only) pending naming (geocode/vision — a later phase).
+    let discSeq = 0
+    const scored = moments.map((s) => {
       let gpsPlaceId = null
       if (s.located) {
         const medId = s.photoIds[Math.floor((s.count - 1) / 2)]
@@ -103,22 +131,43 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           offsetMinutes: mm.offsetMinutes,
         }
         const match = matchPhotoToStop(synthetic, dayIndex)
-        if (match && match.matchType === 'gps+time') gpsPlaceId = match.stopId
+        const agendaId = match && match.matchType === 'gps+time' ? match.stopId : null
+        const agendaKind = agendaId ? kindById.get(agendaId) : undefined
+        if (agendaId && agendaKind && agendaKind !== 'base') {
+          gpsPlaceId = agendaId // a real named place — keep v1's confident match
+        } else {
+          const { lat, lng } = s.location
+          const id = `__discovered__:${iso}:${discSeq++}`
+          places.push({
+            id,
+            name: `a place near ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+            lat,
+            lng,
+            timeMin: localMin(s.medianMs),
+            kind: 'discovered',
+          })
+          gpsPlaceId = id
+        }
       }
       return { ...s, medianMin: localMin(s.medianMs), gpsPlaceId }
     })
 
-    // 3. normalize the day's places (v1's allStops: planned + base + record)
-    const places = (entry?.allStops || []).map((st) => ({
-      id: st.id,
-      name: st.name || st.title || '',
-      lat: numOrU(st.lat),
-      lng: numOrU(st.lng),
-      timeMin: placeTimeMin(st.time, iso),
-      kind: placeKind(st),
-    }))
-
-    out.push({ isoDate: iso, decisions: scoreDay(scored, places, opts) })
+    const decisions = scoreDay(scored, places, opts)
+    // Fold the moment's multi-dimensional provenance — WHICH signals were present and
+    // how strongly they cohere — into each decision's signals, so the ledger records
+    // why a group formed (which dimensions agreed), not just where it filed.
+    const byFirst = new Map(scored.map((m) => [m.photoIds[0], m]))
+    for (const d of decisions) {
+      const m = byFirst.get(d.photoIds[0])
+      if (m) {
+        d.signals = {
+          ...d.signals,
+          dims: m.dims,
+          cohesion: m.cohesion == null ? null : Math.round(m.cohesion * 100) / 100,
+        }
+      }
+    }
+    out.push({ isoDate: iso, decisions })
   }
   out.sort((a, b) => a.isoDate.localeCompare(b.isoDate))
   return out

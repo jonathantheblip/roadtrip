@@ -46,6 +46,16 @@ const CORPUS = [
     points: [p('a', 0, { lat: 42.0621, lng: -70.1633 }), p('b', 20, { lat: 42.3554, lng: -71.0656 })],
     expect: [{ count: 2, located: false, split: true }],
   },
+  {
+    name: 'scene-consistent burst (composition dimension agrees)',
+    points: [p('a', 0, { scene: 'ffffffffffffffff' }), p('b', 3, { scene: 'ffffffffffffffef' })],
+    expect: [{ count: 2, located: false, sceneConsistent: true }],
+  },
+  {
+    name: 'scene-divergent burst flagged (two backgrounds in one time-window)',
+    points: [p('a', 0, { scene: '0000000000000000' }), p('b', 3, { scene: 'ffffffffffffffff' })],
+    expect: [{ count: 2, located: false, sceneConsistent: false }],
+  },
 ]
 
 describe('sessions parity (worker mirror ≡ client)', () => {
