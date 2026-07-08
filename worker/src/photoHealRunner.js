@@ -28,6 +28,7 @@ import { healMemories, buildDayIndex } from './photoHeal.js'
 import { isStopSurprise } from './surprises.js'
 import { isImplicitBaseId, isRecordTargetId, parseRecordTargetId } from './dayStopIds.js'
 import { buildTripDecisions } from './sessionHeal.js'
+import { backfillSceneSignatures } from './sceneBackfill.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -331,9 +332,31 @@ export async function scheduleAgendaHeal(env, tripId, { now = Date.now(), quiesc
 // evidenceFresh + no stamp bump — pure repair + agenda-freshness convergence,
 // the net that catches anything an event trigger missed. Per-trip failures are
 // logged and skipped so one bad trip never stops the sweep.
+// The scene-backfill batch size per sweep — tunable without a deploy (WEAVE_MODEL
+// precedent). Photon WASM decode is CPU-heavy, so we bound it and let the pass RESUME
+// across nights (it's idempotent); a generous default covers this family's ~270 refs
+// in a run or two. 0 disables the backfill.
+export function sceneBackfillLimit(env) {
+  const raw = env?.PHOTO_SCENE_BACKFILL_LIMIT
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
+  return Number.isFinite(n) && n >= 0 ? n : 120
+}
+
 export async function healSweep(env, { now = Date.now() } = {}) {
   const mode = photoHealMode(env)
   if (mode === 'off') return { skipped: 'off' }
+  // Populate the COMPOSITION dimension FIRST, so THIS sweep's decisions can already
+  // overlap it. Best-effort + bounded + idempotent — a backfill failure must never
+  // stop the sweep, and it resumes where a bounded run left off.
+  let sceneBackfill = null
+  const limit = sceneBackfillLimit(env)
+  if (limit > 0) {
+    try {
+      sceneBackfill = await backfillSceneSignatures(env, { limit })
+    } catch (e) {
+      console.error('[scene-backfill] sweep failed', e?.stack || e)
+    }
+  }
   const { results: trips } = await env.DB.prepare(
     'SELECT id FROM trips WHERE deleted_at IS NULL'
   ).all()
@@ -357,7 +380,7 @@ export async function healSweep(env, { now = Date.now() } = {}) {
       console.error('[photo-heal-v2] trip failed', t.id, e?.stack || e)
     }
   }
-  return { mode, trips: trips?.length || 0, tripsWithMoves, totalMoves, v2Recorded }
+  return { mode, trips: trips?.length || 0, tripsWithMoves, totalMoves, v2Recorded, sceneBackfill }
 }
 
 // ── v2 SHADOW LEARNING ledger (SPEC_V2 Phase 1) ──────────────────────────────
