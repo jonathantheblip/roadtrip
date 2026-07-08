@@ -302,10 +302,28 @@ principles that govern everything here (each was a real gap in this section's ea
   exempt prints; NULL-signature rows converge.
 - ✅ **Memory-sync integrity — SHIPPED 2026-07-06** (`ea502d0`): photo edits are remembered/retried
   honestly, delete-safe, move-safe — the foundation auto-healing runs on.
-- ⏳ **Self-healing photo↔agenda matching — foundation in progress; the flag design is settled** (auto
-  vs manual provenance = migration 017 + worker-enforced "manual beats auto"; strict + repair-first
-  gates; worker is the single referee behind an off/shadow/on knob; every auto-move carries a visible
-  "moved because…" note naming the human act it follows). Jonathan's auto-apply decision stands.
+- 🔭 **SELF-HEALING TRIPS — the reframe (Jonathan, 2026-07-07), the fullest form of this whole section.**
+  Following the thread — keep GPS, spread it across a moment, infer the agenda's times from the photos,
+  recognize places by sight, let a tap name the rest — lands somewhere bigger than "photos file themselves":
+  **the whole trip documents itself.** The agenda corrects to what happened, the photos land on it, the
+  moments name themselves, the Weave follows — continuously, from accumulating evidence, no bookkeeping.
+  WHY the reimagining: v1's matcher was GPS-first and *inert* on this family's data (only ~10 of 235 photos
+  carry GPS — the pipeline strips it; v1 auto-moved 0, only ever suggested "→ base"), and its "safety" was
+  *refusing to act* — useless. v2 makes **time + evidence** first-class and redefines *safe* as **reversible
+  + confirmable, not inert**: sessions (bursts) are the unit; one located photo anchors a whole moment (GPS
+  inheritance); a place auto-files only with positive evidence (GPS / a named record moment / the base) —
+  a planned stop matched by time-only is a *one-tap confirm*, never a silent auto (kills "files to the trip
+  you *planned*"); the metadata-blind archive (no GPS + no time) is reachable only by vision or naming.
+  Jonathan: "let's do all of the options" — a **4-phase program**: (1) the engine, (2) keep more GPS,
+  (3) the surfaces (auto + one-tap confirm + settle-the-day), (4) vision (cloud default). Spec:
+  [app/docs/design/self-healing-photos/SPEC_V2_TIME_AND_EVIDENCE.md](app/docs/design/self-healing-photos/SPEC_V2_TIME_AND_EVIDENCE.md).
+- ⏳ **Self-healing photo↔agenda matching — v1 LIVE (shadow) + v2 ENGINE LIVE (shadow) as of 2026-07-07.**
+  v1 (the strict GPS+time matcher, provenance-locked, `PHOTO_HEAL_MODE` off/shadow/on knob) shipped and is
+  in shadow. v2 (the reframe above) Phase-1 engine shipped `aea5b34` and records its would-decisions to the
+  `memory_heal_decisions` learning ledger in shadow (records only, moves nothing). Manual-lock supremacy,
+  order-independence, kid-lens, masking, the knob — all preserved. Jonathan reviews the ledger, then trusts
+  it up before any auto-file. ⚠ carry-forward: restore v1's surprise/mask gate before any *family-visible*
+  surface reads the v2 ledger.
 - ⏳ **Finish-the-story (retro-settle), the resolver, the record bridge, kid read-faces** — sequenced as
   V1–V5 in VISION.md §5.
 

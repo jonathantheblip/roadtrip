@@ -304,6 +304,12 @@ change; v2 is a new gate + a new unit inside the same guardrails.**
    absence-of-photos wrongly hid Rothko/Rice; the tier model replaces it.)*
 2. **Session-confirm surface** (Pillar 3 medium tier) — Design prompt → build. The "not manual" payoff, and the
    only reach into the metadata-blind archive short of vision (name a session → its photos land).
+   ⚠ **GATING PRECONDITION (adversarial review, 2026-07-07):** the Phase-1 shadow ledger `memory_heal_decisions`
+   records surprise/masked stop names with NO surprise/mask filter (the scorer by design doesn't gate masking;
+   `buildDayIndex` includes every stop). Safe while nothing reads it — but **before ANY family-visible surface
+   reads that table, RESTORE v1's per-viewer surprise/mask gate** (v1's runner has it via `buildHealCtx`/
+   `isSurpriseStop`; project it per-viewer so counts/names never leak surprise shape). Non-negotiable, else a
+   surface leaks a hidden surprise.
 3. **Vision tier** (§6) — **elevated: essential, not last.** For the EXIF-stripped archive (no GPS, no time) it
    is the *only* automatic signal. Consent surface designed first; cloud default (decision #4); own shadow.
    May run in parallel with 2 rather than strictly after, given how much of the archive it alone can reach.
