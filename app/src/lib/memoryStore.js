@@ -1419,6 +1419,57 @@ export function applyRefGps(memoryId, refKey, { lat, lng } = {}) {
   return null
 }
 
+// Sibling of applyRefGps for the re-source scan (Album System Ch 04): write a
+// recovered capture-time OFFSET (minutes, e.g. -240 for EDT) onto a photo ref AFTER
+// the fact, so the engine files by the correct LOCAL wall clock (the archive's ~74%
+// with no offset default to UTC — 4h wrong). Identified by the ref's stable R2 `key`.
+// Idempotent: only a ref that LACKS an offset is patched, so a re-run (or a 409
+// re-push) never overwrites one another device set, and a same-stop re-save trips
+// provenance rule 1 (preserve). Never patches a masked projection. Mirrors applyRefGps.
+export function applyRefOffset(memoryId, refKey, offsetMinutes) {
+  if (!memoryId || !refKey) return null
+  if (!Number.isFinite(offsetMinutes)) return null
+  const matches = (r) => !!r && typeof r === 'object' && r.key === refKey
+  const needsOffset = (r) => matches(r) && !Number.isFinite(r.offsetMinutes)
+  const patchRef = (r) => (needsOffset(r) ? { ...r, offsetMinutes } : r)
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    if (list[idx].masked) return list[idx] // never patch a masked projection
+    const m = list[idx]
+    const hasTarget =
+      needsOffset(m.photoRef) || (Array.isArray(m.photoRefs) && m.photoRefs.some(needsOffset))
+    if (!hasTarget) return m
+    const now = new Date().toISOString()
+    const patched = { ...m, updatedAt: now }
+    if (m.photoRef) patched.photoRef = patchRef({ ...m.photoRef })
+    if (Array.isArray(m.photoRefs)) patched.photoRefs = m.photoRefs.map((r) => patchRef({ ...r }))
+    list[idx] = patched
+    writeJson(key, list)
+    scheduleMirror({
+      type: 'save',
+      record: patched,
+      // 409 re-push: gap-fill ONLY where the fresh ref still lacks an offset, so a
+      // concurrent enrichment from another device is never clobbered.
+      reapply: (fresh) => {
+        const f = { ...fresh, updatedAt: new Date().toISOString() }
+        if (fresh.photoRef) f.photoRef = patchRef({ ...fresh.photoRef })
+        if (Array.isArray(fresh.photoRefs)) f.photoRefs = fresh.photoRefs.map((r) => patchRef({ ...r }))
+        return f
+      },
+    })
+    return patched
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return null
+}
+
 // ── "Add it again with sound" — in-place video-ref replacement ─────────────
 //
 // Four stored videos are permanently silent (ref.sound === 'lost'): their
