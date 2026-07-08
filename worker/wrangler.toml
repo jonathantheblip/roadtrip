@@ -41,10 +41,18 @@ binding = "BROWSER"
 # so no family token rides along in the iCloud-distributed Shortcut.
 [vars]
 ALLOWED_ORIGINS = "https://jonathantheblip.github.io,http://localhost:5173,http://localhost:4173,http://localhost:5180"
+# Vision dimension ENABLED (Jonathan's explicit consent 2026-07-08 to cloud vision +
+# spend). 'shadow' = compute + store vision labels for the shadow engine; nothing
+# family-visible. A plain var (not sensitive); the backfill is bounded per sweep.
+PHOTO_VISION_MODE = "shadow"
+PHOTO_VISION_BACKFILL_LIMIT = "90"
 
 # Nightly auto-weave (WEAVE_SCOPE slice 3). 08:00 UTC ≈ 2-4am US overnight —
 # after the day's memories have settled. Fires the worker `scheduled` handler
 # → runNightlyWeave, which pre-assembles the active trip's freshest day into a
 # stored weave so the page is already woven when the family next opens the app.
 [triggers]
-crons = ["0 8 * * *"]
+# TEMPORARY NUDGE (2026-07-08): the every-10-min trigger populates the one-time vision
+# backfill now (~250 photos over a few fires). REVERT to ["0 8 * * *"] once vision is
+# filled (PHOTO_VISION_MODE stays on — it's the steady state for new photos).
+crons = ["0 8 * * *", "*/10 * * * *"]
