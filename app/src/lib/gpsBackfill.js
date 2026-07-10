@@ -1,6 +1,14 @@
 // Archive GPS backfill (Stage C-b) — recover location for the SUBSET of already-
 // uploaded photos whose R2 asset still carries EXIF.
 //
+// ⚠ NO PRODUCT CALLER as of the Ch-04 re-source scan. The Settings tool that ran
+// this ("Locate archived photos") was renamed in place to "Find your photos'
+// locations" and re-pointed at the DEVICE ORIGINALS (lib/resourceScan.js), where
+// the GPS and the capture offset actually survive. This module + its tests are
+// kept, unwired, because the dry well is real but not empty: the odd-format files
+// that slipped past the shrink still hold EXIF on R2, and recovering them needs no
+// device. Retire it, or give it a door, deliberately — don't let it rot silently.
+//
 // THE HONEST SCOPE (verified, 2026-07-06): the upload pipeline shrinks every
 // photo through a canvas re-encode, which STRIPS EXIF — so the R2 copy of a
 // normally-imported photo has no GPS to recover. The only archive photos that

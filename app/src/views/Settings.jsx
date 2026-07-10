@@ -18,9 +18,8 @@ import {
 } from '../lib/workerSync'
 import { enrolledTravelers, isAdult, defaultDeviceLabel, hasSession } from '../lib/auth'
 import { isTripMaskedFrom } from '../lib/surprises'
-import { listAllLocalMemories, mergeFromRemote, drainMemorySyncQueue, applyRefGps } from '../lib/memoryStore'
-import { runGpsBackfill } from '../lib/gpsBackfill'
-import { loadExifTags } from '../lib/exifRead'
+import { listAllLocalMemories, mergeFromRemote, drainMemorySyncQueue } from '../lib/memoryStore'
+import { LocateOriginalsFlow } from '../components/LocateOriginalsFlow'
 import {
   clearUploadLog,
   isDevModeEnabled,
@@ -128,7 +127,7 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
   const [weaveRegen, setWeaveRegen] = useState({ status: 'idle', message: null })
   const [seeding, setSeeding] = useState(false)
   const [pushAllState, setPushAllState] = useState({ status: 'idle', message: null })
-  const [locateState, setLocateState] = useState({ status: 'idle', message: null })
+  const [locateOpen, setLocateOpen] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [archiving, setArchiving] = useState(false)
   const [confirmDeleteTrip, setConfirmDeleteTrip] = useState(false)
@@ -253,46 +252,6 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
       })
     } catch (err) {
       setPushAllState({ status: 'error', message: err?.message || String(err) })
-    }
-  }
-
-  // Locate archived photos (Stage C-b) — a one-time, adults-only pass that
-  // re-reads each already-uploaded photo's own bytes and, for the SUBSET whose
-  // location tag survived upload (a full-size original that slipped past the
-  // shrink), fills in where it was taken so it can settle into place. It reports
-  // the honest count — a handful, not the whole archive (normal uploads had
-  // their location stripped by the shrink; new photos keep it via the importer
-  // fix). Resumable + idempotent; enriched photos re-mirror to the family.
-  async function runLocatePhotos() {
-    setLocateState({ status: 'running', message: 'Looking through your photos…' })
-    try {
-      const memories = listAllLocalMemories(traveler)
-      const res = await runGpsBackfill({
-        memories,
-        fetchImpl: (url) => fetch(url),
-        loadTags: loadExifTags,
-        apply: applyRefGps,
-        storage: window.localStorage,
-        onProgress: ({ done, total, found }) => {
-          setLocateState({
-            status: 'running',
-            message: total
-              ? `Checked ${done} of ${total}${found ? ` · found ${found} so far` : ''}…`
-              : 'Nothing to check.',
-          })
-        },
-      })
-      let message
-      if (res.total === 0) {
-        message = 'No archived photos needed locating — you’re all set.'
-      } else if (res.found === 0) {
-        message = `Looked through ${res.checked} photo${res.checked === 1 ? '' : 's'} — none of the older ones still carried a location (the upload shrink had removed it). New photos keep theirs from now on.`
-      } else {
-        message = `Found the location for ${res.found} photo${res.found === 1 ? '' : 's'} and filled it in — they can settle into place now.`
-      }
-      setLocateState({ status: 'done', message })
-    } catch (err) {
-      setLocateState({ status: 'error', message: err?.message || String(err) })
     }
   }
 
@@ -719,6 +678,73 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
         </section>
       )}
 
+      {/* "Find your photos' locations" — the re-source scan (Album System Ch 04).
+          The honest evolution of the old "Locate archived photos" tool, renamed in
+          place: that one re-read the R2 UPLOADED copies, a dry well (the upload
+          shrink strips EXIF — its own message admitted it only ever found a
+          handful). This one reads the ORIGINALS in the adult's own photo library,
+          where GPS + the capture-time offset still live, and matches each to its
+          imported photo by capture instant (lib/resourceScan.js). Adults only —
+          the kids never see the section; the flow itself refuses them too. */}
+      {isAdult(traveler) && (
+        <section className="px-6 py-8 border-b surface-rule" data-testid="settings-your-photos">
+          <div className="flex items-center gap-2 mb-3">
+            <MapPin size={14} />
+            <p className="smallcaps f-dm text-[11px] opacity-70">Your photos</p>
+          </div>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+            <button
+              type="button"
+              onClick={() => setLocateOpen(true)}
+              data-testid="settings-locate-photos"
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                padding: '15px 15px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 13,
+                borderBottom: '1px solid var(--border)',
+                color: 'inherit',
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{ width: 38, height: 38, borderRadius: 'calc(max(7px, var(--radius) - 8px))', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >
+                <MapPin size={19} color="var(--accent-ink)" />
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="f-dm" style={{ display: 'block', fontSize: 14.5, fontWeight: 600, lineHeight: 1.25 }}>
+                  Find your photos’ locations
+                </span>
+                <span className="f-dm" style={{ display: 'block', fontSize: 11.5, opacity: 0.7, marginTop: 2, lineHeight: 1.35 }}>
+                  {traveler === 'jonathan'
+                    ? 'Recover GPS + time from the originals in your roll.'
+                    : 'Fill in your trip map from the originals on your phone.'}
+                </span>
+              </span>
+              <ChevronRight size={17} style={{ opacity: 0.5, flexShrink: 0 }} />
+            </button>
+            <div style={{ padding: '10px 15px', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)' }}>
+              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--good)', flexShrink: 0 }} />
+              <span className="f-mono" style={{ fontSize: 9, letterSpacing: 0.3, opacity: 0.7 }}>
+                {traveler === 'jonathan' ? 'READS THE ORIGINALS ON THIS DEVICE' : 'reads the originals on this phone'}
+              </span>
+            </div>
+          </div>
+          <p className="f-mono" style={{ fontSize: 8.5, letterSpacing: 0.6, opacity: 0.5, textAlign: 'center', marginTop: 14, lineHeight: 1.6 }}>
+            {traveler === 'jonathan' ? 'ADULTS ONLY · NOT SHOWN TO THE KIDS' : 'a grown-up tool · the kids never see it'}
+          </p>
+        </section>
+      )}
+      {locateOpen && isAdult(traveler) && (
+        <LocateOriginalsFlow trip={trip} traveler={traveler} onClose={() => setLocateOpen(false)} />
+      )}
+
       <section className="px-6 py-8 border-b surface-rule">
         <div className="flex items-center gap-2 mb-3">
           {workerStatus.status === 'synced' ? <Cloud size={14} /> : <CloudOff size={14} />}
@@ -792,28 +818,7 @@ export function Settings({ trip, traveler, dark, tripsApi, onBack, onChangeTrave
                   <RefreshCw size={12} /> {weaveRegen.status === 'running' ? 'Rewriting…' : 'Rewrite saved Weave pages'}
                 </button>
               )}
-              {isAdult(traveler) && (
-                <button
-                  type="button"
-                  className="btn-pill"
-                  onClick={runLocatePhotos}
-                  disabled={locateState.status === 'running'}
-                  data-testid="settings-locate-photos"
-                  title="Re-read older photos' own files to recover a location the upload shrink may have left behind, so they can settle into place. One-time, resumable; new photos already keep their location."
-                >
-                  <MapPin size={12} /> {locateState.status === 'running' ? 'Locating…' : 'Locate archived photos'}
-                </button>
-              )}
             </div>
-            {locateState.message && (
-              <p
-                className="f-dm text-[12px] mt-3 italic"
-                data-testid="settings-locate-msg"
-                style={{ opacity: 0.8, color: locateState.status === 'error' ? 'var(--accent)' : 'inherit' }}
-              >
-                {locateState.message}
-              </p>
-            )}
             {syncMsg && (
               <p className="f-dm text-[12px] opacity-70 mt-3 italic">{syncMsg}</p>
             )}

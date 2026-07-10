@@ -5,41 +5,152 @@
 // still live, matches each original to its imported memory by CAPTURE INSTANT, and
 // fills in the recovered { lat, lng } + offsetMinutes additively.
 //
-// THE MATCH KEY. The imported ref's `capturedAt` was computed at import as
-// exifDateToDate(DateTimeOriginal).toISOString(). We recompute it here the SAME way
-// from the same original's EXIF, so — on the phone the photo came from — the two
-// resolve to the identical instant. A near-miss (an edited/re-exported copy whose
-// timestamp drifted) simply doesn't match: "unplaced", never a wrong write.
+// ⚠ THIS TOOL IS ARCHAEOLOGY, NOT ARCHITECTURE. It exists only because
+// photoPipeline.readExif() didn't capture OffsetTimeOriginal at import until this
+// same change closed that gap (see photoPipeline.js readExif). Every photo imported
+// from here forward already carries its offset — needsOffset is false at import
+// time, so this scan is a no-op for it. What remains for this tool to serve is the
+// BACKLOG: everything imported before the fix. Once that backlog is scanned by every
+// device that holds originals, this tool has no more work, ever again.
 //
-// All I/O is injected (loadTags / applyGps / applyOffset) so the engine unit-tests
-// without real files or the DOM. Pure helpers (parseOffsetMinutes, originalToRecovered,
-// buildRefIndex, matchRecovered) carry the logic.
+// THE MATCH KEY. The imported ref's `capturedAt` was computed at import as
+// exifDateToDate(DateTimeOriginal ?? CreateDate).toISOString() — a LOCAL-time parse,
+// so it carries the tz the importing device was in. We recompute it the SAME way,
+// and — when the original still carries its OffsetTimeOriginal — we ALSO derive the
+// photo's TRUE instant (wall clock minus its own offset). Which of the two is the
+// real one depends on where the phone was at IMPORT vs at SCAN, and we cannot know:
+// import-at-home → the device-local reading is right; import-abroad, scan-at-home →
+// the true instant is. Both are exact instants, never a guess.
+//
+// THE REAL PROOF OF IDENTITY IS CONTENT, NOT A LABEL. Three rounds of review tried
+// to prove "this original belongs to that ref" from TIMING + AUTHORSHIP alone, and
+// every version broke: `authorTraveler` records who IMPORTED a memory, not who took
+// the photo (an AirDropped or shared-album photo is authored by whoever added it),
+// so "same author, same second" can still be two different photos. No refinement of
+// the time key fixes this — the index can hold exactly ONE candidate at a key and
+// still be the wrong photo. Writes are additive, so a wrong one is permanent.
+//
+// The fix: verify CONTENT. `ref.scene` is a perceptual hash (sceneHash.js, dHash
+// over a 9×8 grayscale grid) the composition backfill already computed for the
+// whole archive from each stored photo's surviving pixels. This scan computes the
+// SAME hash from the picked original (sceneHashFromFile) and requires it to match
+// the candidate's stored hash before writing ANYTHING — regardless of who imported
+// it. Content match is proof; a content MISMATCH is proof of the opposite (refuse,
+// don't fall through to a guess) — this is what closes the collision class no
+// author/timing rule could: two of the SAME author's photos landing on one instant,
+// or an imported photo whose real author differs from the record's authorTraveler.
+//
+// THE RESIDUAL, NAMED HONESTLY: a ref not yet composition-backfilled has no
+// `ref.scene` to check against. For that narrow, self-healing window (the daily
+// cron closes it), the scan falls back to the OLD, weaker rule — fill only refs the
+// scanner authored — which still carries the theoretical same-author-collision risk
+// review round 4 found. It does not fall back for another adult's or a kid's ref:
+// those still require content proof, full stop.
+//
+// MASKING UPSTREAM. `masked` lives only on worker-emitted projections; a surprise a
+// person authored on their OWN device is a raw, unflagged row. So a viewer is passed
+// in and `isMaskedFrom` is the real guard — a recovered field must never touch,
+// count, or hint at a photo hidden from whoever is running the scan.
+//
+// All I/O is injected (loadTags / loadSceneHash / applyGps / applyOffset) so the
+// engine unit-tests without real files or the DOM. Pure helpers carry the logic.
 
-import { exifReaderToRaw } from './exifRead.js'
+import { exifReaderToRaw, parseOffsetMinutes } from './exifRead.js'
+import { isMaskedFrom } from './surprises.js'
+import { sceneHashFromGray, sceneSimilar, SCENE_DEFAULTS } from './sceneHash.js'
+import { loadImageBitmap } from './photoPipeline.js'
 
-// "-04:00" → -240 ; "+05:30" → 330 ; missing/invalid → null.
-export function parseOffsetMinutes(offsetStr) {
-  if (typeof offsetStr !== 'string') return null
-  const m = offsetStr.trim().match(/^([+-])(\d{2}):(\d{2})$/)
-  if (!m) return null
-  const sign = m[1] === '-' ? -1 : 1
-  const mins = sign * (parseInt(m[2], 10) * 60 + parseInt(m[3], 10))
-  return Number.isFinite(mins) ? mins : null
+export { parseOffsetMinutes }
+
+// Decode a picked original File into the SAME perceptual scene hash the composition
+// backfill computed for the stored copy (sceneSignature.js, worker-side, via Photon
+// `resize(gridW, gridH, SamplingFilter.Nearest)`).
+//
+// EMPIRICALLY VERIFIED, not assumed: an earlier version of this function drew the
+// bitmap through `ctx.drawImage(bitmap, 0, 0, gridW, gridH)` with smoothing off,
+// expecting that to be the browser's nearest-neighbor equivalent. On the app's real
+// fixture it diverged from Photon's real output by 25 of 64 bits — nowhere near
+// SCENE_DEFAULTS.sameMaxBits (10). At a ~450:1 reduction (a 4032×3024 photo → 9×8),
+// browsers do NOT guarantee true point-sampling from drawImage regardless of the
+// smoothing flag. Tracing Photon's actual output pinned its exact formula: PIXEL-
+// CENTER nearest-neighbor, `floor((x + 0.5) * srcW / gridW)` — reproducing that by
+// hand, sampling directly from a 1:1 (unscaled) getImageData read, matched Photon's
+// hash of the same raw bytes BIT-FOR-BIT. That is what this function does; it never
+// asks the browser to resize for us. (The remaining ~9-bit gap between a hash of
+// the raw original and one of the recompressed, downscaled STORED copy is real but
+// small — dHash's tolerance for recompression, not a decoder disagreement — and
+// sits well inside sameMaxBits.) Returns null (never throws) on any decode failure
+// — the scan degrades to the fallback rule, it never hard-fails the file.
+// A dimension no real phone photo exceeds (comfortably above an iPhone's 48MP
+// mode, 8064px longest edge) but that bounds worst-case memory against a
+// pathological input (a scanned document, a huge screenshot/export) the family
+// could still hand the picker. getImageData at this cap is a fixed ~256MB
+// ceiling; unbounded, a large-enough file could exhaust iOS Safari's decode
+// budget mid-scan (photoPipeline.js's own downscaleImage exists for exactly this
+// reason on the upload path). Above the cap, we accept the browser's own resize
+// (and its precision loss — see the header) rather than risk the crash; below
+// it, EVERY real photo this tool is built for gets the verified, exact 1:1 path.
+const MAX_DECODE_EDGE = 8192
+
+export async function sceneHashFromFile(file, { gridW = SCENE_DEFAULTS.gridW, gridH = SCENE_DEFAULTS.gridH } = {}) {
+  try {
+    const bitmap = await loadImageBitmap(file)
+    const nativeW = bitmap.width || bitmap.naturalWidth
+    const nativeH = bitmap.height || bitmap.naturalHeight
+    if (!nativeW || !nativeH) return null
+    const longest = Math.max(nativeW, nativeH)
+    const scale = longest > MAX_DECODE_EDGE ? MAX_DECODE_EDGE / longest : 1
+    const srcW = Math.max(1, Math.round(nativeW * scale))
+    const srcH = Math.max(1, Math.round(nativeH * scale))
+    const canvas =
+      typeof OffscreenCanvas === 'function'
+        ? new OffscreenCanvas(srcW, srcH)
+        : Object.assign(document.createElement('canvas'), { width: srcW, height: srcH })
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    // 1:1 for every real phone photo (scale === 1) — no browser resize, we pick
+    // the samples ourselves, exactly the path verified bit-for-bit against Photon.
+    // Only a file past MAX_DECODE_EDGE asks the browser to resize first.
+    ctx.drawImage(bitmap, 0, 0, srcW, srcH)
+    const { data } = ctx.getImageData(0, 0, srcW, srcH)
+    const n = gridW * gridH
+    const gray = new Float64Array(n)
+    for (let gy = 0; gy < gridH; gy++) {
+      const sy = Math.min(srcH - 1, Math.floor((gy + 0.5) * srcH / gridH))
+      for (let gx = 0; gx < gridW; gx++) {
+        const sx = Math.min(srcW - 1, Math.floor((gx + 0.5) * srcW / gridW))
+        const o = (sy * srcW + sx) * 4
+        gray[gy * gridW + gx] = 0.299 * data[o] + 0.587 * data[o + 1] + 0.114 * data[o + 2]
+      }
+    }
+    return sceneHashFromGray(gray, gridW, gridH)
+  } catch {
+    return null
+  }
 }
 
 // EXIF raw (exifReaderToRaw output) → the fields we can recover from an original.
-// capturedAt is the same instant the importer would have derived (the match key).
+// `capturedAt` is the instant the importer would have derived on THIS device (the
+// primary key). `capturedAtTrue` is the photo's real instant, derived from its own
+// recorded offset — the key that survives a device timezone change between import
+// and scan. `CreateDate` is the same fallback photoPipeline.readExif uses.
 export function originalToRecovered(raw) {
   const out = {}
-  if (raw?.DateTimeOriginal instanceof Date && !Number.isNaN(raw.DateTimeOriginal.getTime())) {
-    out.capturedAt = raw.DateTimeOriginal.toISOString()
+  const dt = raw?.DateTimeOriginal || raw?.CreateDate
+  if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
+    out.capturedAt = dt.toISOString()
+    const off = parseOffsetMinutes(raw?.OffsetTimeOriginal)
+    if (Number.isFinite(off)) {
+      out.offsetMinutes = off
+      // The wall clock read as UTC, then shifted by the photo's own offset.
+      const wallClockAsUtcMs = dt.getTime() - dt.getTimezoneOffset() * 60000
+      out.capturedAtTrue = new Date(wallClockAsUtcMs - off * 60000).toISOString()
+    }
   }
   if (Number.isFinite(raw?.GPSLatitude) && Number.isFinite(raw?.GPSLongitude)) {
     out.lat = raw.GPSLatitude
     out.lng = raw.GPSLongitude
   }
-  const off = parseOffsetMinutes(raw?.OffsetTimeOriginal)
-  if (Number.isFinite(off)) out.offsetMinutes = off
   return out
 }
 
@@ -51,40 +162,192 @@ export function instantKey(capturedAt) {
   return Number.isFinite(t) ? new Date(Math.floor(t / 1000) * 1000).toISOString().slice(0, 19) : null
 }
 
+// The keys one original may legitimately be filed under: the device-local reading
+// (what the importer computed if it ran in this same timezone) and, when the offset
+// survived, the photo's true instant. Both exact; deduped, order = preference.
+export function candidateKeys(recovered) {
+  const keys = []
+  for (const iso of [recovered?.capturedAt, recovered?.capturedAtTrue]) {
+    const k = instantKey(iso)
+    if (k && !keys.includes(k)) keys.push(k)
+  }
+  return keys
+}
+
+// The refs a memory really owns. `photoRef` is a back-compat MIRROR of photoRefs[0]
+// — and after the M2 write path the two can hold different R2 keys for one image.
+// flattenPhotoEntries (the canonical enumerator) ignores photoRef whenever
+// photoRefs[] is populated; do the same, or every single-photo memory is counted,
+// filled, and REPORTED twice.
+function refsOf(m) {
+  if (Array.isArray(m?.photoRefs) && m.photoRefs.length) return m.photoRefs.filter(Boolean)
+  return m?.photoRef ? [m.photoRef] : []
+}
+
 // Index the LOCAL memories' real photo refs by capture instant → the refs at that
-// instant, each tagged with what it still needs (GPS / offset). Masked memories are
-// skipped entirely (a recovered field must never touch a hidden/surprise photo).
-export function buildRefIndex(memories) {
+// instant, each tagged with what it still needs (GPS / offset) and who took it.
+// Skipped entirely: memories masked from `viewer` (raw surprise rows included —
+// `masked` alone is not the predicate), deleted rows, non-r2 refs, and VIDEO refs
+// (the picker hands over images; a video original can never arrive here, so counting
+// one as "needy" would promise a number that can never drain).
+// An ALREADY-COMPLETE ref is indexed too (complete: true) — the scan must tell
+// "this original's photo already knows where it was" apart from "this original
+// matches nothing we imported", or a finished photo gets reported as unmatched.
+export function buildRefIndex(memories, viewer) {
   const idx = new Map()
   for (const m of memories || []) {
     if (!m || m.masked || m.deletedAt) continue
-    const refs = []
-    if (m.photoRef) refs.push(m.photoRef)
-    if (Array.isArray(m.photoRefs)) refs.push(...m.photoRefs)
-    for (const r of refs) {
+    if (viewer && isMaskedFrom(m, viewer)) continue
+    for (const r of refsOf(m)) {
       if (!r || r.storage !== 'r2' || !r.key || !r.capturedAt) continue
+      if (r.kind === 'video') continue
       const key = instantKey(r.capturedAt)
       if (!key) continue
       const needsGps = !(Number.isFinite(r.lat) && Number.isFinite(r.lng))
       const needsOffset = !Number.isFinite(r.offsetMinutes)
-      if (!needsGps && !needsOffset) continue // already complete
       if (!idx.has(key)) idx.set(key, [])
-      idx.get(key).push({ memoryId: m.id, refKey: r.key, tripId: m.tripId || null, needsGps, needsOffset })
+      idx.get(key).push({
+        memoryId: m.id,
+        refKey: r.key,
+        tripId: m.tripId || null,
+        author: m.authorTraveler || null,
+        scene: typeof r.scene === 'string' && r.scene ? r.scene : null,
+        needsGps,
+        needsOffset,
+        complete: !needsGps && !needsOffset,
+      })
     }
   }
   return idx
 }
 
-// Pair one recovered original to the ref(s) at its instant, returning the writes it
-// enables. A recovered original with GPS fills every ref at that instant that lacks
-// GPS; likewise its offset. Returns { matched:boolean, writes:[{memoryId,refKey,lat?,lng?,offsetMinutes?}] }.
-export function matchRecovered(recovered, refIndex) {
-  const key = instantKey(recovered?.capturedAt)
-  const cands = key ? refIndex.get(key) : null
-  if (!cands || !cands.length) return { matched: false, writes: [] }
+// THE FALLBACK RULE — used only when content proof is unavailable (neither side has
+// a scene hash to compare). Fill only refs the scanner authored. This is weaker than
+// content verification (authorTraveler is the importer, not provably the
+// photographer) but it's the best available signal when pixels can't be compared,
+// and it's the same rule three review rounds already hardened: never another
+// adult's ref, never a kid's (the index only contains IMPORTED photos, so "nothing
+// of the scanner's is here" is not proof nothing of theirs was ever taken here —
+// see the module header), never an author-less ref (author_traveler is NOT NULL in
+// the schema; defensive only). Returns [] when nothing here is theirs to fill.
+function fillableByAuthorOnly(candidates, scanner) {
+  if (!scanner) return candidates // unit-test convenience; production always passes one
+  return candidates.filter((c) => c.author && c.author === scanner)
+}
+
+// How many indexed refs still need something. The surface asks this before the
+// grant: zero → "everything here already knows where it was", no pick needed.
+export function countNeedyRefs(refIndex) {
+  let n = 0
+  for (const cands of refIndex.values()) {
+    for (const c of cands) if (!c.complete) n += 1
+  }
+  return n
+}
+
+// Do two candidate lists refer to the exact same set of refs? (order-independent).
+function sameRefSet(a, b) {
+  if (a.length !== b.length) return false
+  const keyOf = (c) => c.memoryId + ' ' + c.refKey
+  const bKeys = new Set(b.map(keyOf))
+  return a.every((c) => bKeys.has(keyOf(c)))
+}
+
+// Pair one recovered original to the ref(s) at its instant. Returns
+// { matched, reason, writes } where `reason` says exactly why nothing was written,
+// so the surface never has to guess (and never tells the family a photo "already
+// knew where it was" when the truth is one of the others):
+//   'unmatched'  — no imported photo sits at either reading of this instant, OR
+//                  content was checkable and every checkable candidate is a
+//                  DIFFERENT photo (content disproves this original belongs here)
+//   'ambiguous'  — either: content matched MORE THAN ONE candidate (never
+//                  auto-resolved — see the comment below); OR no content proof
+//                  was available and two readings land on two DIFFERENT candidate
+//                  sets — either way, which is real is unknowable, nothing is touched
+//   'not-yours'  — (fallback rule only) the photos there were taken on someone
+//                  else's phone; only that phone's own scan can fill them in
+//   'complete'   — the photo there already knows where and when it was
+//   'nothing'    — the photo still needs something, but this original has nothing
+//                  this scan can add (no location to give, or it only carries a
+//                  field the photo already has). We do NOT claim which — the
+//                  surface must not assert a cause we cannot know.
+//   null         — writes were produced
+export function matchRecovered(recovered, refIndex, scanner) {
+  const keys = candidateKeys(recovered)
+  const hits = keys.map((key) => refIndex.get(key) || []).filter((cands) => cands.length)
+  if (!hits.length) return { matched: false, reason: 'unmatched', writes: [] }
+
+  // Union across every hit key, deduped — once content can prove identity it no
+  // longer matters which TIME reading led here.
+  const seen = new Set()
+  const allCandidates = []
+  for (const cands of hits) {
+    for (const c of cands) {
+      const dk = c.memoryId + ' ' + c.refKey
+      if (seen.has(dk)) continue
+      seen.add(dk)
+      allCandidates.push(c)
+    }
+  }
+
+  // Content, checked per-candidate. A MATCH is proof — resolves even a same-second
+  // collision or a two-key ambiguity no timing rule could. A DISPROOF is also
+  // proof (of the opposite): that specific candidate is excluded PERMANENTLY,
+  // regardless of what the weaker fallback rule below would otherwise allow — a
+  // negative content result is never overridden by authorship. A candidate this
+  // scan simply couldn't check (missing a scene hash on either side) is untouched
+  // by either verdict and remains eligible for the fallback rule.
+  const verified = recovered.scene ? allCandidates.filter((c) => c.scene && sceneSimilar(recovered.scene, c.scene)) : []
+  let target
+  if (verified.length === 1) {
+    target = verified
+  } else if (verified.length > 1) {
+    // MORE THAN ONE candidate content-matched. Round 5 found this writes the same
+    // coordinates onto every independently-close candidate — a coincidental
+    // near-duplicate collision (burst frames, two people photographing the same
+    // static backdrop) could silently, permanently mis-fill the wrong one. Round
+    // 6 found the OBVIOUS fix — require the verified set to also be mutually close
+    // to each other, on the theory that "the same real photo, filed twice" would
+    // be — is UNSOUND: Hamming distance obeys the triangle inequality, not
+    // equality, so two genuinely DIFFERENT candidates A and B can each
+    // independently sit within sameMaxBits of the recovered hash R AND be within
+    // sameMaxBits of EACH OTHER, whenever their respective bit-differences from R
+    // happen to overlap rather than compound. Verified, not assumed: constructed
+    // and ran a real A/B pair through this exact code where d(R,A)=6, d(R,B)=6,
+    // d(A,B)=6 — all within the 10-bit tolerance, yet A and B differ from R in
+    // non-overlapping ways (genuinely distinct content), and the "mutually close"
+    // check passed anyway. There is no cheap discriminator here — ANY threshold
+    // on mutual distance can be defeated the same way. So: multiple content
+    // matches always refuse, full stop. This costs the rare legitimate case (the
+    // same real photo filed into two memories) — acceptable, since "prefer
+    // nothing to a guess" is this module's own stated invariant, and a refused
+    // scan can always be re-run later once other evidence disambiguates it.
+    return { matched: true, reason: 'ambiguous', writes: [] }
+  } else {
+    const disproved = recovered.scene ? new Set(allCandidates.filter((c) => c.scene && !sceneSimilar(recovered.scene, c.scene))) : new Set()
+    const remaining = allCandidates.filter((c) => !disproved.has(c))
+    if (!remaining.length) {
+      // Content was checkable for every candidate here, and none matched — this
+      // original simply isn't any of them.
+      return { matched: false, reason: 'unmatched', writes: [] }
+    }
+    // No content proof settled it for what's left. Two distinct readings landing
+    // on two DIFFERENT (post-disproof) candidate sets is the one case content
+    // can't resolve — preferring either key writes the wrong photo in the
+    // other's scenario, and the write is permanent. Refuse.
+    const remainingHits = hits.map((cands) => cands.filter((c) => !disproved.has(c))).filter((cands) => cands.length)
+    if (remainingHits.length > 1 && !sameRefSet(remainingHits[0], remainingHits[1])) {
+      return { matched: true, reason: 'ambiguous', writes: [] }
+    }
+    target = fillableByAuthorOnly(remaining, scanner)
+  }
+
+  if (!target.length) return { matched: true, reason: 'not-yours', writes: [] }
+  if (target.every((c) => c.complete)) return { matched: true, reason: 'complete', writes: [] }
+
   const writes = []
-  for (const c of cands) {
-    const w = { memoryId: c.memoryId, refKey: c.refKey }
+  for (const c of target) {
+    const w = { memoryId: c.memoryId, refKey: c.refKey, tripId: c.tripId, candidate: c }
     if (c.needsGps && Number.isFinite(recovered.lat) && Number.isFinite(recovered.lng)) {
       w.lat = recovered.lat
       w.lng = recovered.lng
@@ -92,23 +355,62 @@ export function matchRecovered(recovered, refIndex) {
     if (c.needsOffset && Number.isFinite(recovered.offsetMinutes)) w.offsetMinutes = recovered.offsetMinutes
     if ('lat' in w || 'offsetMinutes' in w) writes.push(w)
   }
-  return { matched: true, writes }
+  if (!writes.length) return { matched: true, reason: 'nothing', writes: [] }
+  return { matched: true, reason: null, writes }
 }
 
 // Run the scan over a batch of device-original Files. Injected I/O:
 //   files      — File[] the family granted (their originals)
 //   memories   — the local memory set to match against
+//   scanner    — the traveler running it (fallback-rule affinity + masking)
 //   loadTags   — File → ExifReader tags (loadExifTags in production)
-//   applyGps    — (memoryId, refKey, {lat,lng}) → void
-//   applyOffset — (memoryId, refKey, offsetMinutes) → void
-//   onProgress — ({ done, total, matched, gpsFilled, offsetFilled }) → void
+//   loadSceneHash — File → hex scene hash | null (sceneHashFromFile in production;
+//                   optional — omitting it degrades every match to the fallback
+//                   rule, never throws)
+//   applyGps    — (memoryId, refKey, {lat,lng}) → the patched record, or null if gone
+//   applyOffset — (memoryId, refKey, offsetMinutes) → same contract
+//   onProgress — ({ done, total, ...stats }) → void
 //   signal     — optional AbortSignal (stop between files)
-// Returns { total, matched, gpsFilled, offsetFilled, unplaced, perTrip }.
-export async function runResourceScan({ files, memories, loadTags, applyGps, applyOffset, onProgress, signal } = {}) {
-  const refIndex = buildRefIndex(memories)
+//
+// Returns per-FILE buckets (what the family reads) plus per-REF write counts. Every
+// bucket maps to exactly ONE honest sentence — nothing is conflated:
+//   matched          — filled at least one field on at least one photo
+//   alreadyKnown     — that photo already knew where and when it was
+//   nothingToRecover — the photo still needs something; this original had none of it
+//   notYours         — (fallback rule only) those photos belong to someone else
+//   ambiguous        — (fallback rule only) two readings, two photos, unknowable
+//                       which; nothing touched
+//   unmatched        — no imported photo at this instant, OR content was checkable
+//                       and proved this original is none of the candidates there
+//   failed           — it had something to add and saving it FAILED — never silent
+// A write only counts once it has LANDED, and the index is updated as it goes, so a
+// second original at the same instant reports "already known", not a second find.
+export async function runResourceScan({ files, memories, scanner, loadTags, loadSceneHash, applyGps, applyOffset, onProgress, signal } = {}) {
+  const refIndex = buildRefIndex(memories, scanner)
   const list = Array.isArray(files) ? files : []
   const total = list.length
-  const stats = { total, matched: 0, gpsFilled: 0, offsetFilled: 0, unplaced: 0, perTrip: {} }
+  const stats = {
+    total,
+    matched: 0,
+    alreadyKnown: 0,
+    nothingToRecover: 0,
+    notYours: 0,
+    ambiguous: 0,
+    unmatched: 0,
+    failed: 0,
+    gpsFilled: 0,
+    offsetFilled: 0,
+    filesLocated: 0,
+    filesTimeFixed: 0,
+    perTrip: {},
+  }
+  const BUCKET = {
+    unmatched: 'unmatched',
+    ambiguous: 'ambiguous',
+    'not-yours': 'notYours',
+    complete: 'alreadyKnown',
+    nothing: 'nothingToRecover',
+  }
   let done = 0
   for (const file of list) {
     if (signal?.aborted) break
@@ -119,20 +421,65 @@ export async function runResourceScan({ files, memories, loadTags, applyGps, app
     } catch {
       recovered = {}
     }
-    const { matched, writes } = matchRecovered(recovered, refIndex)
-    if (!matched) {
-      stats.unplaced += 1
+    // Content hash runs independently of EXIF — a photo can be scene-hashed even
+    // when its EXIF is unreadable, and a hash failure must never block the EXIF
+    // match from proceeding (sceneHashFromFile itself never throws; the try/catch
+    // is only for a hostile injected loadSceneHash in tests).
+    try {
+      const scene = await loadSceneHash?.(file)
+      if (typeof scene === 'string' && scene) recovered.scene = scene
+    } catch {
+      /* no content proof available for this file — matchRecovered degrades to the fallback rule */
+    }
+    const { reason, writes } = matchRecovered(recovered, refIndex, scanner)
+    if (reason) {
+      stats[BUCKET[reason]] += 1
     } else {
-      stats.matched += 1
+      let gpsHere = 0
+      let offsetHere = 0
+      let saveThrew = false
+      // A write only counts once it LANDED. Two ways it may not, and they are NOT
+      // the same story: the store THROWS when localStorage is full (a real failure
+      // the family must be told about, and can retry), and returns null when the
+      // memory is simply gone — a background pull deleted it mid-scan. A deleted
+      // photo is not an out-of-space error, and neither may kill the scan.
       for (const w of writes) {
+        let touched = false
         if (Number.isFinite(w.lat) && Number.isFinite(w.lng)) {
-          applyGps?.(w.memoryId, w.refKey, { lat: w.lat, lng: w.lng })
-          stats.gpsFilled += 1
+          try {
+            if (applyGps?.(w.memoryId, w.refKey, { lat: w.lat, lng: w.lng }) !== null) {
+              w.candidate.needsGps = false
+              stats.gpsFilled += 1
+              gpsHere += 1
+              touched = true
+            }
+          } catch {
+            saveThrew = true
+          }
         }
         if (Number.isFinite(w.offsetMinutes)) {
-          applyOffset?.(w.memoryId, w.refKey, w.offsetMinutes)
-          stats.offsetFilled += 1
+          try {
+            if (applyOffset?.(w.memoryId, w.refKey, w.offsetMinutes) !== null) {
+              w.candidate.needsOffset = false
+              stats.offsetFilled += 1
+              offsetHere += 1
+              touched = true
+            }
+          } catch {
+            saveThrew = true
+          }
         }
+        w.candidate.complete = !w.candidate.needsGps && !w.candidate.needsOffset
+        if (touched && w.tripId) stats.perTrip[w.tripId] = (stats.perTrip[w.tripId] || 0) + 1
+      }
+      if (gpsHere || offsetHere) {
+        stats.matched += 1
+        if (gpsHere) stats.filesLocated += 1
+        if (offsetHere) stats.filesTimeFixed += 1
+      } else if (saveThrew) {
+        stats.failed += 1 // it had something to give; saving it failed
+      } else {
+        stats.nothingToRecover += 1 // the photo vanished mid-scan; nothing was changed
       }
     }
     done += 1
