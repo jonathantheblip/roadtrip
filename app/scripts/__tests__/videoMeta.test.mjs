@@ -40,6 +40,21 @@ function realFixtureAsFile(name) {
   return bufferAsFile(buf)
 }
 
+// The four iphone-video-*.mov fixtures are Git-LFS-tracked (repo-root
+// .gitattributes); CI's checkout does not fetch LFS content (no `lfs: true`),
+// so on CI the file on disk is a tiny text pointer ("version
+// https://git-lfs.github.com/spec/v1\n..."), not the real ~5-100MB clip. A
+// developer machine with `git lfs pull` run (see tests/fixtures/media/
+// README.md) always has the real bytes. Detect the pointer shape and skip
+// the real-decode assertion rather than fail on content that was never
+// fetched — this is an environment gap, not a parser regression. Enabling
+// LFS fetch in CI is a separate decision (real GitHub LFS bandwidth cost on
+// every push) — not made here.
+const LFS_POINTER_PREFIX = 'version https://git-lfs.github.com/spec/v1'
+function isLfsPointer(buf) {
+  return buf.subarray(0, LFS_POINTER_PREFIX.length).toString('utf8') === LFS_POINTER_PREFIX
+}
+
 // MP4 atoms: [size:4][type:4][payload...].
 function atom(type, payload) {
   const size = 8 + payload.length
@@ -230,7 +245,7 @@ test('parseIso6709: malformed/garbage input rejected, never throws', () => {
   assert.equal(parseIso6709('+'.repeat(40) + '1/'), null) // over the length cap — rejected outright
 })
 
-test('extractVideoCreationDate threads real lat/lng from a REAL iPhone .mov fixture (ISO6709 in the Keys/Values atom)', async () => {
+test('extractVideoCreationDate threads real lat/lng from a REAL iPhone .mov fixture (ISO6709 in the Keys/Values atom)', async (t) => {
   // Real bytes, not synthetic — the house standard. These are actual iPhone
   // camera clips (tests/fixtures/media), Location Services on. Coordinates
   // pinned from the parser's own real-decode output (cross-checked: they land
@@ -242,8 +257,18 @@ test('extractVideoCreationDate threads real lat/lng from a REAL iPhone .mov fixt
     ['iphone-video-portrait.mov', 41.3224, -72.0944],
     ['iphone-video-landscape.mov', 41.3224, -72.0944],
   ]
+  let skippedAll = true
   for (const [name, lat, lng] of cases) {
-    const file = realFixtureAsFile(name)
+    const buf = readFileSync(resolve(MEDIA, name))
+    if (isLfsPointer(buf)) {
+      // Environment gap (LFS content not fetched here), not a parser defect —
+      // see isLfsPointer's comment. The synthetic Keys/Values tests below still
+      // fully exercise this same code path with real assertions.
+      await t.test(`${name} — SKIPPED: Git LFS content not present (pointer file only)`, (t2) => t2.skip())
+      continue
+    }
+    skippedAll = false
+    const file = bufferAsFile(buf)
     const meta = await extractVideoCreationDate(file)
     assert.ok(meta, `${name} must produce a meta object`)
     assert.ok(Number.isFinite(meta.lat), `${name} lat must be finite, got ${meta.lat}`)
@@ -254,6 +279,13 @@ test('extractVideoCreationDate threads real lat/lng from a REAL iPhone .mov fixt
     // additive, never a replacement for the existing date extraction.
     assert.equal(typeof meta.capturedAt, 'string')
     assert.equal(meta.offsetMinutes, -240) // EDT, same as the photo fixtures
+  }
+  if (skippedAll) {
+    console.warn(
+      '[videoMeta.test.mjs] All real .mov fixtures were Git LFS pointers — ' +
+        'this environment has never actually decoded a real iPhone video for ' +
+        'this test. Run `git lfs pull` to get real coverage.'
+    )
   }
 })
 

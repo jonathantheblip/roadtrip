@@ -369,16 +369,18 @@ export function matchRecovered(recovered, refIndex, scanner) {
   }
 
   if (!target.length) return { matched: true, reason: 'not-yours', writes: [] }
-  // `meta` gates whether this original has ANY sidecar to give — srcName/
-  // srcMod/atSrc never trigger a write on their own (capturedAtSource is set
-  // on almost every recovered original with a real date, so gating on it
-  // alone would turn "photo already knows where/when it was" into "matched"
-  // for nearly every re-scan of an already-complete archive; `meta` requires
-  // actual Make/Model/exposure/etc data, a much rarer, meaningful signal).
-  const sidecarAvailable = Boolean(recovered.meta)
-  if (target.every((c) => c.complete && (!c.needsMeta || !sidecarAvailable))) {
-    return { matched: true, reason: 'complete', writes: [] }
-  }
+  // GPS+offset completeness — "where and when" — is the ONLY thing that
+  // decides the classification below, never the sidecar. A photo that
+  // already knew where and when it was stays "already known" even when
+  // this pass silently backfills its Build-1 metadata sidecar underneath;
+  // the sidecar can still ride along on the SAME write (see the loop
+  // below), it just never flips the family-facing story. Same rule
+  // buildRefIndex's needsMeta comment states for the needy-count; this is
+  // its write-side twin. (A prior version of this check also required the
+  // sidecar to already be filled before calling a photo "complete" — that
+  // silently reclassified a bare sidecar backfill as "matched" and
+  // wrongly fired the settle note; see the e2e regression this replaced.)
+  const wasComplete = target.every((c) => c.complete)
 
   const writes = []
   for (const c of target) {
@@ -390,9 +392,10 @@ export function matchRecovered(recovered, refIndex, scanner) {
     if (c.needsOffset && Number.isFinite(recovered.offsetMinutes)) w.offsetMinutes = recovered.offsetMinutes
     // The never-discard sidecar (Build 1) — same target, same safety logic
     // above (content-verified or the author-only fallback); this just adds
-    // one more field to the same write when the ref doesn't have it yet.
-    // Gated on `recovered.meta` (see sidecarAvailable above) — srcName/
-    // srcMod/atSrc ride along ONLY when there's real meta to accompany them.
+    // one more field to the same write when the ref doesn't have it yet,
+    // regardless of whether GPS/offset were already known (wasComplete).
+    // srcName/srcMod/atSrc ride along ONLY when there's real meta to
+    // accompany them.
     if (c.needsMeta && recovered.meta) {
       const sidecar = sanitizeSidecar({
         meta: recovered.meta,
@@ -404,8 +407,8 @@ export function matchRecovered(recovered, refIndex, scanner) {
     }
     if ('lat' in w || 'offsetMinutes' in w || 'sidecar' in w) writes.push(w)
   }
-  if (!writes.length) return { matched: true, reason: 'nothing', writes: [] }
-  return { matched: true, reason: null, writes }
+  if (!writes.length) return { matched: true, reason: wasComplete ? 'complete' : 'nothing', writes: [] }
+  return { matched: true, reason: wasComplete ? 'complete' : null, writes }
 }
 
 // Run the scan over a batch of device-original Files. Injected I/O:
@@ -426,9 +429,14 @@ export function matchRecovered(recovered, refIndex, scanner) {
 //
 // Returns per-FILE buckets (what the family reads) plus per-REF write counts. Every
 // bucket maps to exactly ONE honest sentence — nothing is conflated:
-//   matched          — filled at least one field on at least one photo
-//   alreadyKnown     — that photo already knew where and when it was
-//   nothingToRecover — the photo still needs something; this original had none of it
+//   matched          — filled GPS and/or the capture-time offset on at least one
+//                      photo that didn't already have it (a sidecar backfill never
+//                      triggers this on its own — see alreadyKnown/nothingToRecover)
+//   alreadyKnown     — that photo already knew where and when it was (a Build-1
+//                      sidecar may have silently backfilled underneath — still this
+//                      bucket, never "matched", never trips the settle note)
+//   nothingToRecover — the photo still needs GPS/time; this original had none of it
+//                      to give (it may still have silently backfilled the sidecar)
 //   notYours         — (fallback rule only) those photos belong to someone else
 //   ambiguous        — (fallback rule only) two readings, two photos, unknowable
 //                       which; nothing touched
@@ -492,12 +500,13 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
       /* no content proof available for this file — matchRecovered degrades to the fallback rule */
     }
     const { reason, writes } = matchRecovered(recovered, refIndex, scanner)
-    if (reason) {
+    if (!writes.length) {
+      // No write was even proposed — a plain named outcome (unmatched /
+      // ambiguous / not-yours / complete-with-nothing-to-add-either / nothing).
       stats[BUCKET[reason]] += 1
     } else {
       let gpsHere = 0
       let offsetHere = 0
-      let metaHere = 0
       let saveThrew = false
       // A write only counts once it LANDED. Two ways it may not, and they are NOT
       // the same story: the store THROWS when localStorage is full (a real failure
@@ -541,7 +550,6 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
             if (applySidecar(w.memoryId, w.refKey, w.sidecar) !== null) {
               w.candidate.needsMeta = false
               stats.metaFilled += 1
-              metaHere += 1
               touched = true
             }
           } catch {
@@ -551,14 +559,26 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
         w.candidate.complete = !w.candidate.needsGps && !w.candidate.needsOffset
         if (touched && w.tripId) stats.perTrip[w.tripId] = (stats.perTrip[w.tripId] || 0) + 1
       }
-      if (gpsHere || offsetHere || metaHere) {
+      if (reason === 'complete') {
+        // GPS+offset were already known BEFORE this pass (see matchRecovered's
+        // wasComplete) — the only write possible here is a silent sidecar
+        // backfill. It may land or fail; either way the family-facing story
+        // stays "already known" — never surfaced as "matched", never trips
+        // the settle note. Retriable later (idempotent, gap-fill-only) if it
+        // failed, same as every other sidecar write.
+        stats.alreadyKnown += 1
+      } else if (gpsHere || offsetHere) {
         stats.matched += 1
         if (gpsHere) stats.filesLocated += 1
         if (offsetHere) stats.filesTimeFixed += 1
       } else if (saveThrew) {
         stats.failed += 1 // it had something to give; saving it failed
       } else {
-        stats.nothingToRecover += 1 // the photo vanished mid-scan; nothing was changed
+        // Not already complete, and this original gave nothing for GPS/time —
+        // whether it silently backfilled the sidecar (metaHere) or the memory
+        // vanished mid-scan, neither changes the family-facing "nothing to
+        // add" story.
+        stats.nothingToRecover += 1
       }
     }
     done += 1
