@@ -331,8 +331,17 @@ principles that govern everything here (each was a real gap in this section's ea
   GPS = LOCATION (and it dissolves over-splitting, so "combine these into one event" is not a heuristic —
   it falls out of GPS). Still shadow (records to `memory_heal_decisions`, moves/writes nothing
   family-visible). ⚠ carry-forward: restore the surprise/mask gate before any *family-visible* reader of the
-  ledger. NEXT levers need a **device**: re-source GPS+offset from the on-device originals (mechanism built),
-  then faces. Full state: `CARRYOVER_DOCUMENT_THE_TRIP.md`, `memory/self-healing-agenda-free.md`.
+  ledger.
+- ✅ **The GPS lever — SHIPPED 2026-07-10:** the live capture-offset leak (every new photo shot outside home
+  timezone, not just archived ones) is plugged at import (`photoPipeline.js readExif`, plus the bulk
+  importer's own separate parser hardened to match). The re-source scan SURFACE ("Find your photos'
+  locations," Settings, adults-only) is deployed: an adult hands over device originals, matched to imported
+  photos by **content** (a perceptual scene hash, not just timing/authorship — proven the hard way across
+  eight adversarial review rounds that "same author, same second" is not proof of identity), recovered GPS
+  + offset filled in. **The archive itself is unchanged** — the tool has shipped but not yet been run by a
+  family member; that's the next real step (Jonathan holds 98 of 118 real Provincetown photos, Helen 20).
+  Full state + the review saga's hard-won lessons: `CARRYOVER_DOCUMENT_THE_TRIP.md`.
+  Faces is the remaining parallel device-lever, same shape, still unbuilt.
 - ⏳ **Finish-the-story (retro-settle), the resolver, the record bridge, kid read-faces** — sequenced as
   V1–V5 in VISION.md §5.
 
