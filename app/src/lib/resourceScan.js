@@ -290,47 +290,61 @@ export function matchRecovered(recovered, refIndex, scanner) {
     }
   }
 
-  // Content, checked per-candidate. A MATCH is proof — resolves even a same-second
-  // collision or a two-key ambiguity no timing rule could. A DISPROOF is also
-  // proof (of the opposite): that specific candidate is excluded PERMANENTLY,
-  // regardless of what the weaker fallback rule below would otherwise allow — a
-  // negative content result is never overridden by authorship. A candidate this
-  // scan simply couldn't check (missing a scene hash on either side) is untouched
-  // by either verdict and remains eligible for the fallback rule.
-  const verified = recovered.scene ? allCandidates.filter((c) => c.scene && sceneSimilar(recovered.scene, c.scene)) : []
+  // Content, checked per-candidate, computed ONCE against every live candidate at
+  // this instant. A DISPROOF is proof (of the opposite): that specific candidate
+  // is excluded PERMANENTLY, regardless of what the weaker fallback rule would
+  // otherwise allow — a negative content result is never overridden by
+  // authorship. `remaining` is everyone NOT disproved — this includes both
+  // content-VERIFIED candidates and candidates this scan simply couldn't check
+  // (no scene hash on either side), because "couldn't check" is not the same as
+  // "ruled out": an unchecked sibling at the same instant could still be the true
+  // match, and must stay visible to the safety logic below rather than silently
+  // vanishing the moment something else happens to verify.
+  const disproved = recovered.scene ? new Set(allCandidates.filter((c) => c.scene && !sceneSimilar(recovered.scene, c.scene))) : new Set()
+  const remaining = allCandidates.filter((c) => !disproved.has(c))
+  if (!remaining.length) {
+    // Content was checkable for every candidate here, and none matched — this
+    // original simply isn't any of them.
+    return { matched: false, reason: 'unmatched', writes: [] }
+  }
+  const verified = recovered.scene ? remaining.filter((c) => c.scene && sceneSimilar(recovered.scene, c.scene)) : []
+
   let target
-  if (verified.length === 1) {
+  if (verified.length === 1 && remaining.length === 1) {
+    // A MATCH is proof — resolves even a same-second collision or a two-key
+    // ambiguity no timing rule could — but ONLY when it is the sole live
+    // candidate at this instant. A single verified match sitting alongside an
+    // UNCHECKED sibling (found live, review round 7: the composition backfill
+    // runs on an ongoing bounded cron, so "some refs here have a scene hash,
+    // others don't yet" is a routine, recurring state, not a rare edge case) is
+    // NOT safe to auto-fill — the coincidental match could be a false positive
+    // while the real match is the one we simply haven't hashed yet. Content
+    // proof only counts once it has ruled out every OTHER live possibility, not
+    // merely the ones it happened to be able to check.
     target = verified
-  } else if (verified.length > 1) {
-    // MORE THAN ONE candidate content-matched. Round 5 found this writes the same
-    // coordinates onto every independently-close candidate — a coincidental
-    // near-duplicate collision (burst frames, two people photographing the same
-    // static backdrop) could silently, permanently mis-fill the wrong one. Round
-    // 6 found the OBVIOUS fix — require the verified set to also be mutually close
-    // to each other, on the theory that "the same real photo, filed twice" would
-    // be — is UNSOUND: Hamming distance obeys the triangle inequality, not
+  } else if (verified.length >= 1) {
+    // Either MORE THAN ONE candidate content-matched, or exactly one did but a
+    // still-live, unverifiable sibling remains at the same instant. Round 5
+    // found writing the same coordinates onto every independently-close
+    // candidate silently, permanently mis-fills whichever one isn't real. Round
+    // 6 found the obvious fix — require mutual closeness among the verified set
+    // — is UNSOUND: Hamming distance obeys the triangle inequality, not
     // equality, so two genuinely DIFFERENT candidates A and B can each
     // independently sit within sameMaxBits of the recovered hash R AND be within
-    // sameMaxBits of EACH OTHER, whenever their respective bit-differences from R
-    // happen to overlap rather than compound. Verified, not assumed: constructed
-    // and ran a real A/B pair through this exact code where d(R,A)=6, d(R,B)=6,
-    // d(A,B)=6 — all within the 10-bit tolerance, yet A and B differ from R in
-    // non-overlapping ways (genuinely distinct content), and the "mutually close"
-    // check passed anyway. There is no cheap discriminator here — ANY threshold
-    // on mutual distance can be defeated the same way. So: multiple content
-    // matches always refuse, full stop. This costs the rare legitimate case (the
-    // same real photo filed into two memories) — acceptable, since "prefer
-    // nothing to a guess" is this module's own stated invariant, and a refused
-    // scan can always be re-run later once other evidence disambiguates it.
+    // sameMaxBits of EACH OTHER, whenever their bit-differences from R happen to
+    // overlap rather than compound (verified, not assumed: a real A/B pair with
+    // d(R,A)=6, d(R,B)=6, d(A,B)=6 — all within the 10-bit tolerance — where A
+    // and B differ from R in non-overlapping, genuinely distinct ways). There is
+    // no cheap discriminator here — ANY threshold on mutual distance, or on
+    // "how many other candidates exist," can be defeated the same way. So:
+    // anything less than total, unambiguous certainty always refuses. This costs
+    // the rare legitimate case (the same real photo filed into two memories, or
+    // a coincidental match resolved a moment too early) — acceptable, since
+    // "prefer nothing to a guess" is this module's own stated invariant, and a
+    // refused scan can always be re-run later once backfill or other evidence
+    // catches up.
     return { matched: true, reason: 'ambiguous', writes: [] }
   } else {
-    const disproved = recovered.scene ? new Set(allCandidates.filter((c) => c.scene && !sceneSimilar(recovered.scene, c.scene))) : new Set()
-    const remaining = allCandidates.filter((c) => !disproved.has(c))
-    if (!remaining.length) {
-      // Content was checkable for every candidate here, and none matched — this
-      // original simply isn't any of them.
-      return { matched: false, reason: 'unmatched', writes: [] }
-    }
     // No content proof settled it for what's left. Two distinct readings landing
     // on two DIFFERENT (post-disproof) candidate sets is the one case content
     // can't resolve — preferring either key writes the wrong photo in the

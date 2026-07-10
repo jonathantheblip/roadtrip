@@ -368,6 +368,40 @@ test('matchRecovered: ANY multiple content match refuses, even hash-identical ca
   assert.equal(res.writes.length, 0)
 })
 
+test('matchRecovered: a lone verified match is NOT proof when an UNCHECKED sibling shares the instant (round 7 — found live, post-push)', () => {
+  // The composition backfill runs on an ongoing bounded cron, so "one ref here
+  // has a scene hash, another at the same instant doesn't yet" is a routine,
+  // recurring state — not rare. X coincidentally content-matches the recovered
+  // hash (a false positive, exactly the near-duplicate class rounds 5/6 already
+  // proved is real); Y is the TRUE match but hasn't been backfilled, so it has
+  // no scene to compare at all. An earlier version of this code only ever
+  // looked at scene-bearing candidates when deciding whether a single verified
+  // match was safe — Y was invisible to that decision, so X got the write and
+  // the real match was silently skipped. A single match is only trusted when it
+  // is the ONLY live candidate at the instant, checked or not.
+  const idx = buildRefIndex([
+    { id: 'X-coincidental-match', authorTraveler: 'jonathan', photoRefs: [r2({ key: 'kx', scene: SCENE_NEAR })] },
+    { id: 'Y-true-match-unbackfilled', authorTraveler: 'jonathan', photoRefs: [r2({ key: 'ky' })] }, // no scene yet
+  ])
+  const res = matchRecovered({ capturedAt: '2026-07-05T17:42:00Z', lat: 42, lng: -70, scene: SCENE_A }, idx, 'helen')
+  assert.equal(res.reason, 'ambiguous')
+  assert.equal(res.writes.length, 0)
+})
+
+test('matchRecovered: a verified match with a DISPROVED sibling (not merely unchecked) is still safe — disproof genuinely rules a candidate out', () => {
+  // Contrast with the test above: here the sibling isn't unverifiable, it was
+  // actively content-checked and ruled OUT (has a scene, and it does not match).
+  // A disproof is real information, unlike silence — the verified match remains
+  // the sole LIVE candidate and should still fill.
+  const idx = buildRefIndex([
+    { id: 'X-verified', authorTraveler: 'jonathan', photoRefs: [r2({ key: 'kx', scene: SCENE_NEAR })] },
+    { id: 'Z-disproved', authorTraveler: 'jonathan', photoRefs: [r2({ key: 'kz', scene: SCENE_B })] }, // maximally far — genuinely ruled out
+  ])
+  const res = matchRecovered({ capturedAt: '2026-07-05T17:42:00Z', lat: 42, lng: -70, scene: SCENE_A }, idx, 'helen')
+  assert.equal(res.reason, null)
+  assert.deepEqual(res.writes.map((w) => w.memoryId), ['X-verified'])
+})
+
 test('matchRecovered: no scene data anywhere degrades EXACTLY to the pre-content-verification fallback rule', () => {
   // Regression pin: every test above this block (and the whole author-affinity
   // suite) never sets scene on either side and must behave identically to before
