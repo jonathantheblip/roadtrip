@@ -9,6 +9,7 @@ import {
 } from '../lib/memoryStore'
 import { transcribeWithStatus, isWhisperConfigured } from '../lib/whisper'
 import { saveAsset, loadAsset, makeAssetKey } from '../lib/memAssets'
+import { sanitizeSidecar } from '../lib/exifRead'
 import { refIdbAssetKey } from '../lib/photoEntries'
 import { hasPendingPoster } from '../lib/posterRetry'
 import { Avatar, AvatarStack } from './Avatar'
@@ -184,6 +185,16 @@ export function ThreadedMemories({ trip, stop, traveler }) {
         const lat = prepared?.exif?.lat
         const lng = prepared?.exif?.lng
         const offsetMinutes = prepared?.exif?.offsetMinutes
+        // The never-discard sidecar (Build 1) — Make/Model/exposure/etc.
+        // (`meta`), the original filename + mtime (`srcName`/`srcMod`), and
+        // which capturedAt candidate won (`atSrc`). Whitelisted + bounded by
+        // sanitizeSidecar before it ever touches the ref.
+        const sidecar = sanitizeSidecar({
+          meta: prepared?.exif?.meta,
+          srcName: p.file?.name,
+          srcMod: p.file?.lastModified,
+          atSrc: prepared?.exif?.capturedAtSource,
+        })
         refs.push({
           storage: 'idb',
           key,
@@ -192,6 +203,7 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           ...(Number.isFinite(lat) ? { lat } : {}),
           ...(Number.isFinite(lng) ? { lng } : {}),
           ...(Number.isFinite(offsetMinutes) ? { offsetMinutes } : {}),
+          ...sidecar,
         })
       }
       saveMemory({

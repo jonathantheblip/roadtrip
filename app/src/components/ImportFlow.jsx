@@ -119,6 +119,11 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
               const vmeta = await metaPromise
               const capturedAt = vmeta?.capturedAt ?? null
               const offsetMinutes = vmeta?.offsetMinutes ?? null
+              // Build 1 — the clip's real GPS, when its Keys/Values atom
+              // carried a location (readAppleQuickTimeLocation / ISO6709).
+              // Previously hard-coded null: a videos-only day never healed.
+              const lat = Number.isFinite(vmeta?.lat) ? vmeta.lat : null
+              const lng = Number.isFinite(vmeta?.lng) ? vmeta.lng : null
               // SANITY CAP: large videos upload via multipart now (uploadAssetBlob), so
               // only a pathologically huge encode (over the 2GB cap) is refused up front
               // + REMEMBERED so the summary can say so honestly, instead of churning.
@@ -158,8 +163,8 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
                   durationMs: enc.durationMs,
                   sound: enc.sound || null, // 'carried' | 'none' | 'lost'
                 },
-                exif: { capturedAt, lat: null, lng: null, offsetMinutes },
-                photo: { id, capturedAt, lat: null, lng: null, offsetMinutes },
+                exif: { capturedAt, lat, lng, offsetMinutes },
+                photo: { id, capturedAt, lat, lng, offsetMinutes },
               })
             } catch (err) {
               // #2 honesty: a shrink failure is NEVER silently dropped. Classify it so
@@ -373,6 +378,9 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         const vmeta = await extractVideoCreationDate(clip.file).catch(() => null)
         const capturedAt = vmeta?.capturedAt ?? null
         const offsetMinutes = vmeta?.offsetMinutes ?? null
+        // Build 1 — same GPS threading as the PREPARE-phase encode above.
+        const lat = Number.isFinite(vmeta?.lat) ? vmeta.lat : null
+        const lng = Number.isFinite(vmeta?.lng) ? vmeta.lng : null
         const enc = await encodeVideo(clip.file)
         if (enc.blob && enc.blob.size > VIDEO_MAX_UPLOAD_BYTES) {
           stillFailed.push(clip)
@@ -382,7 +390,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           kind: 'video',
           file: clip.file,
           encoded: { blob: enc.blob, posterBlob: enc.posterBlob || null, mime: 'video/mp4', width: enc.width, height: enc.height, durationMs: enc.durationMs, sound: enc.sound || null },
-          exif: { capturedAt, lat: null, lng: null, offsetMinutes },
+          exif: { capturedAt, lat, lng, offsetMinutes },
           match: undefined,
           reattachOf: null,
           stopId: null,

@@ -39,6 +39,7 @@ import { maskForViewer, isSurprise } from './surprises.js'
 import { markDeleted, clearDeleted, isDeleted } from './deleteTombstones.js'
 import { mergeSaveOverFresh, moveReapply, readMemoryPushResult, sameStopId } from './memorySyncFlow.js'
 import * as memoryQueue from './memorySyncQueue.js'
+import { sanitizeSidecar } from './exifRead.js'
 
 const SHARED_KEY = 'rt_memories_shared_v1'
 const PRIVATE_KEY = (traveler) => `rt_memories_private_${traveler}_v1`
@@ -1460,6 +1461,104 @@ export function applyRefOffset(memoryId, refKey, offsetMinutes) {
       },
     })
     return patched
+  }
+  const inShared = tryUpdateIn(SHARED_KEY)
+  if (inShared) return inShared
+  for (const traveler of ['jonathan', 'helen', 'aurelia', 'rafa']) {
+    const result = tryUpdateIn(PRIVATE_KEY(traveler))
+    if (result) return result
+  }
+  return null
+}
+
+// Pure: gap-fill sidecar fields (meta/srcName/srcMod/atSrc) onto whichever
+// ref on `record` matches `refKey` — per FIELD, never overwriting one
+// already present. Shared by applyRefSidecar's direct write AND its 409
+// reapply (applyRefSidecarReapply below) — exactly one source of truth for
+// what "gap-fill" means, mirroring replaceVideoRefInRecord's reuse by
+// replaceMemoryVideoRef + replaceVideoRefReapply, so the two paths can never
+// drift apart. `clean` is an ALREADY-sanitized sidecar (sanitizeSidecar's
+// output) — this function does no bounds-checking of its own. Returns
+// { record, patched }; `record` comes back BY REFERENCE, byte-identical,
+// when patched:false.
+function patchSidecarOntoRecord(record, refKey, clean) {
+  if (!record || typeof record !== 'object') return { record, patched: false }
+  const matches = (r) => !!r && typeof r === 'object' && r.key === refKey
+  const fieldsToFill = (r) => {
+    const add = {}
+    if (clean.meta && !r.meta) add.meta = clean.meta
+    if (clean.srcName && !r.srcName) add.srcName = clean.srcName
+    if (Number.isFinite(clean.srcMod) && !Number.isFinite(r.srcMod)) add.srcMod = clean.srcMod
+    if (clean.atSrc && !r.atSrc) add.atSrc = clean.atSrc
+    return add
+  }
+  let patched = false
+  const patchRef = (r) => {
+    if (!matches(r)) return r
+    const add = fieldsToFill(r)
+    if (!Object.keys(add).length) return r
+    patched = true
+    return { ...r, ...add }
+  }
+  const out = { ...record }
+  if (record.photoRef) out.photoRef = patchRef(record.photoRef)
+  if (Array.isArray(record.photoRefs)) out.photoRefs = record.photoRefs.map(patchRef)
+  return patched ? { record: out, patched: true } : { record, patched: false }
+}
+
+// The 409 reapply for the sidecar gap-fill (exported for unit tests, like
+// moveReapply / replaceVideoRefReapply): on a conflict, re-run the SAME
+// per-field gap-fill against the FRESH server row, so a field another device
+// already wrote (or the family's own newer edit) is never clobbered.
+// Matches applyRefGps/applyRefOffset's existing reapply shape: unlike
+// replaceVideoRefReapply, this never returns null — it always re-pushes a
+// stamped copy of fresh (a no-op gap-fill still re-asserts our copy), so a
+// caller relying on "returns null → adopt fresh, push nothing" would be
+// wrong here; that's inherited behavior from the GPS/offset siblings, not
+// changed by this refactor.
+export function applyRefSidecarReapply(refKey, sidecar) {
+  const clean = sanitizeSidecar(sidecar)
+  return (fresh) => {
+    const { record } = patchSidecarOntoRecord(fresh, refKey, clean)
+    return { ...record, updatedAt: new Date().toISOString() }
+  }
+}
+
+// Sibling of applyRefGps/applyRefOffset for the never-discard sidecar (Build 1):
+// write the recovered `meta`/`srcName`/`srcMod`/`atSrc` onto a photo ref AFTER
+// the fact — the re-source scan (resourceScan.js) recovers these from a
+// re-granted original the same way it recovers GPS/offset. Identified by the
+// ref's stable R2 `key`. Idempotent PER FIELD (not all-or-nothing): a ref that
+// already carries `meta` keeps its stored meta even if `srcName` is still
+// missing, so a partial prior write (or a field another device already filled)
+// is never re-clobbered — matching applyRefGps/applyRefOffset's "only fill
+// absent" contract. Never patches a masked projection. `sidecar` is
+// re-sanitized here (bounded + whitelisted) even though callers already ran it
+// through sanitizeSidecar — defense in depth for this write path specifically.
+export function applyRefSidecar(memoryId, refKey, sidecar) {
+  if (!memoryId || !refKey) return null
+  const clean = sanitizeSidecar(sidecar)
+  if (!Object.keys(clean).length) return null
+  const tryUpdateIn = (key) => {
+    const list = readJson(key)
+    const idx = list.findIndex((m) => m.id === memoryId)
+    if (idx < 0) return null
+    if (list[idx].masked) return list[idx] // never patch a masked projection
+    const m = list[idx]
+    const { record: candidate, patched } = patchSidecarOntoRecord(m, refKey, clean)
+    if (!patched) return m
+    const now = new Date().toISOString()
+    const result = { ...candidate, updatedAt: now }
+    list[idx] = result
+    writeJson(key, list)
+    scheduleMirror({
+      type: 'save',
+      record: result,
+      // 409 re-push: gap-fill ONLY the fields the fresh ref still lacks, so a
+      // concurrent enrichment from another device is never clobbered.
+      reapply: applyRefSidecarReapply(refKey, sidecar),
+    })
+    return result
   }
   const inShared = tryUpdateIn(SHARED_KEY)
   if (inShared) return inShared

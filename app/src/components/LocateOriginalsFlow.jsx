@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, MapPin, Camera, Lock, Clock, Check } from 'lucide-react'
 import { TRAVELERS, TRAVELER_DOT } from '../data/travelers'
 import { isAdult } from '../lib/auth'
-import { listAllLocalMemories, listMemoriesForTrip, applyRefGps, applyRefOffset } from '../lib/memoryStore'
+import { listAllLocalMemories, listMemoriesForTrip, applyRefGps, applyRefOffset, applyRefSidecar } from '../lib/memoryStore'
 import { maskForViewer } from '../lib/surprises'
 import { buildRefIndex, countNeedyRefs, runResourceScan, sceneHashFromFile } from '../lib/resourceScan'
 import { loadExifTags } from '../lib/exifRead'
@@ -504,6 +504,7 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
         loadSceneHash: sceneHashFromFile,
         applyGps: applyRefGps,
         applyOffset: applyRefOffset,
+        applySidecar: applyRefSidecar,
         onProgress: (p) => setProgress(p),
         signal: controller.signal,
       })

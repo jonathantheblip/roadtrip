@@ -55,7 +55,7 @@
 // All I/O is injected (loadTags / loadSceneHash / applyGps / applyOffset) so the
 // engine unit-tests without real files or the DOM. Pure helpers carry the logic.
 
-import { exifReaderToRaw, parseOffsetMinutes } from './exifRead.js'
+import { exifReaderToRaw, exifReaderToMeta, sanitizeSidecar, parseOffsetMinutes } from './exifRead.js'
 import { isMaskedFrom } from './surprises.js'
 import { sceneHashFromGray, sceneSimilar, SCENE_DEFAULTS } from './sceneHash.js'
 import { loadImageBitmap } from './photoPipeline.js'
@@ -139,6 +139,9 @@ export function originalToRecovered(raw) {
   const dt = raw?.DateTimeOriginal || raw?.CreateDate
   if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
     out.capturedAt = dt.toISOString()
+    // Which candidate won — threaded onto a filled ref as `atSrc` (Build 1),
+    // same enum photoBackfill.js's parseExifData tracks.
+    out.capturedAtSource = raw?.DateTimeOriginal ? 'exif-original' : 'exif-create'
     const off = parseOffsetMinutes(raw?.OffsetTimeOriginal)
     if (Number.isFinite(off)) {
       out.offsetMinutes = off
@@ -205,6 +208,14 @@ export function buildRefIndex(memories, viewer) {
       if (!key) continue
       const needsGps = !(Number.isFinite(r.lat) && Number.isFinite(r.lng))
       const needsOffset = !Number.isFinite(r.offsetMinutes)
+      // The never-discard sidecar (Build 1) — a ref with no `meta` yet is
+      // eligible for a gap-fill from this scan's original. Deliberately NOT
+      // part of `complete`/needy-count below: the tool's own completion
+      // signal ("this photo already knows where and when it was") is scoped
+      // to GPS+time, matching every existing bucket message; sidecar
+      // enrichment rides along as a free extra whenever a target is found,
+      // never gates whether a photo counts as needing something.
+      const needsMeta = !r.meta
       if (!idx.has(key)) idx.set(key, [])
       idx.get(key).push({
         memoryId: m.id,
@@ -214,6 +225,7 @@ export function buildRefIndex(memories, viewer) {
         scene: typeof r.scene === 'string' && r.scene ? r.scene : null,
         needsGps,
         needsOffset,
+        needsMeta,
         complete: !needsGps && !needsOffset,
       })
     }
@@ -357,7 +369,16 @@ export function matchRecovered(recovered, refIndex, scanner) {
   }
 
   if (!target.length) return { matched: true, reason: 'not-yours', writes: [] }
-  if (target.every((c) => c.complete)) return { matched: true, reason: 'complete', writes: [] }
+  // `meta` gates whether this original has ANY sidecar to give — srcName/
+  // srcMod/atSrc never trigger a write on their own (capturedAtSource is set
+  // on almost every recovered original with a real date, so gating on it
+  // alone would turn "photo already knows where/when it was" into "matched"
+  // for nearly every re-scan of an already-complete archive; `meta` requires
+  // actual Make/Model/exposure/etc data, a much rarer, meaningful signal).
+  const sidecarAvailable = Boolean(recovered.meta)
+  if (target.every((c) => c.complete && (!c.needsMeta || !sidecarAvailable))) {
+    return { matched: true, reason: 'complete', writes: [] }
+  }
 
   const writes = []
   for (const c of target) {
@@ -367,7 +388,21 @@ export function matchRecovered(recovered, refIndex, scanner) {
       w.lng = recovered.lng
     }
     if (c.needsOffset && Number.isFinite(recovered.offsetMinutes)) w.offsetMinutes = recovered.offsetMinutes
-    if ('lat' in w || 'offsetMinutes' in w) writes.push(w)
+    // The never-discard sidecar (Build 1) — same target, same safety logic
+    // above (content-verified or the author-only fallback); this just adds
+    // one more field to the same write when the ref doesn't have it yet.
+    // Gated on `recovered.meta` (see sidecarAvailable above) — srcName/
+    // srcMod/atSrc ride along ONLY when there's real meta to accompany them.
+    if (c.needsMeta && recovered.meta) {
+      const sidecar = sanitizeSidecar({
+        meta: recovered.meta,
+        srcName: recovered.srcName,
+        srcMod: recovered.srcMod,
+        atSrc: recovered.capturedAtSource,
+      })
+      if (Object.keys(sidecar).length) w.sidecar = sidecar
+    }
+    if ('lat' in w || 'offsetMinutes' in w || 'sidecar' in w) writes.push(w)
   }
   if (!writes.length) return { matched: true, reason: 'nothing', writes: [] }
   return { matched: true, reason: null, writes }
@@ -383,6 +418,9 @@ export function matchRecovered(recovered, refIndex, scanner) {
 //                   rule, never throws)
 //   applyGps    — (memoryId, refKey, {lat,lng}) → the patched record, or null if gone
 //   applyOffset — (memoryId, refKey, offsetMinutes) → same contract
+//   applySidecar — (memoryId, refKey, {meta,srcName,srcMod,atSrc}) → same contract
+//                  (Build 1 — the never-discard sidecar; optional, defaults to a
+//                  no-op so existing callers/tests need not supply it)
 //   onProgress — ({ done, total, ...stats }) → void
 //   signal     — optional AbortSignal (stop between files)
 //
@@ -399,7 +437,7 @@ export function matchRecovered(recovered, refIndex, scanner) {
 //   failed           — it had something to add and saving it FAILED — never silent
 // A write only counts once it has LANDED, and the index is updated as it goes, so a
 // second original at the same instant reports "already known", not a second find.
-export async function runResourceScan({ files, memories, scanner, loadTags, loadSceneHash, applyGps, applyOffset, onProgress, signal } = {}) {
+export async function runResourceScan({ files, memories, scanner, loadTags, loadSceneHash, applyGps, applyOffset, applySidecar, onProgress, signal } = {}) {
   const refIndex = buildRefIndex(memories, scanner)
   const list = Array.isArray(files) ? files : []
   const total = list.length
@@ -414,6 +452,7 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
     failed: 0,
     gpsFilled: 0,
     offsetFilled: 0,
+    metaFilled: 0,
     filesLocated: 0,
     filesTimeFixed: 0,
     perTrip: {},
@@ -431,7 +470,14 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
     onProgress?.({ done, total, ...stats })
     let recovered = {}
     try {
-      recovered = originalToRecovered(exifReaderToRaw(await loadTags(file)))
+      const tags = await loadTags(file)
+      recovered = originalToRecovered(exifReaderToRaw(tags))
+      // The never-discard sidecar (Build 1) — read off the SAME tags object
+      // (no extra decode) plus the File itself for name/mtime.
+      const meta = exifReaderToMeta(tags)
+      if (meta) recovered.meta = meta
+      if (typeof file?.name === 'string') recovered.srcName = file.name
+      if (Number.isFinite(file?.lastModified)) recovered.srcMod = file.lastModified
     } catch {
       recovered = {}
     }
@@ -451,6 +497,7 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
     } else {
       let gpsHere = 0
       let offsetHere = 0
+      let metaHere = 0
       let saveThrew = false
       // A write only counts once it LANDED. Two ways it may not, and they are NOT
       // the same story: the store THROWS when localStorage is full (a real failure
@@ -483,10 +530,28 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
             saveThrew = true
           }
         }
+        // The never-discard sidecar (Build 1) — same target, additive, never
+        // gates completeness (see needsMeta's comment in buildRefIndex).
+        // Guarded on `applySidecar` actually being supplied (unlike
+        // applyGps/applyOffset above, existing callers/tests predate this
+        // field and legitimately omit it) — `undefined !== null` would
+        // otherwise count a no-op as a landed write.
+        if (w.sidecar && applySidecar) {
+          try {
+            if (applySidecar(w.memoryId, w.refKey, w.sidecar) !== null) {
+              w.candidate.needsMeta = false
+              stats.metaFilled += 1
+              metaHere += 1
+              touched = true
+            }
+          } catch {
+            saveThrew = true
+          }
+        }
         w.candidate.complete = !w.candidate.needsGps && !w.candidate.needsOffset
         if (touched && w.tripId) stats.perTrip[w.tripId] = (stats.perTrip[w.tripId] || 0) + 1
       }
-      if (gpsHere || offsetHere) {
+      if (gpsHere || offsetHere || metaHere) {
         stats.matched += 1
         if (gpsHere) stats.filesLocated += 1
         if (offsetHere) stats.filesTimeFixed += 1

@@ -1,0 +1,197 @@
+// Build 1 — the never-discard metadata sidecar (meta/srcName/srcMod/atSrc)
+// survives the sync round-trip, AND a garbage/oversized sidecar is sanitized
+// server-side rather than failing the whole memory write.
+//
+// Mirrors test/memory-sound-roundtrip.test.js's shape. Server-side validation
+// (photoSidecar.js) is independent of the client's own bounds-check
+// (app/src/lib/exifRead.js) — this file proves the WORKER never trusts the
+// client blob, per the house rule (an unbounded parser shipped TWICE, in two
+// separate parsers, before either was bounds-checked).
+
+import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { beforeEach, describe, it, expect } from 'vitest'
+import worker from '../src/index.js'
+import { applySchema } from './helpers/schema.js'
+import { seedSession } from './helpers/auth.js'
+
+const TOKENS = { jonathan: 'tok-jonathan' }
+function authEnv() {
+  return { ...env, DB: env.DB, FAMILY_TOKEN_JONATHAN: TOKENS.jonathan }
+}
+
+async function call(path, { method = 'GET', token, body, origin = 'http://localhost:5173' } = {}) {
+  const headers = { Origin: origin }
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (body !== undefined) headers['content-type'] = 'application/json'
+  const req = new Request('https://worker.test' + path, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  const ctx = createExecutionContext()
+  const res = await worker.fetch(req, authEnv(), ctx)
+  await waitOnExecutionContext(ctx)
+  return res
+}
+
+const VALID_META = {
+  make: 'Apple', model: 'iPhone 16 Pro', lens: 'iPhone 16 Pro back triple camera 6.765mm f/1.78',
+  focalMm: 6.76, iso: 1600, fnum: 1.8, expMs: 50, flash: 16,
+  altM: 11.78, headingDeg: 250.4, w: 4032, h: 3024, orient: 1,
+  createdAt: '2026-05-24T22:49:12.000Z', modifiedAt: '2026-05-24T22:49:12.000Z',
+}
+
+describe('the never-discard sidecar — meta/srcName/srcMod/atSrc survive postMemory → rowToMemory', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await env.DB.prepare('DELETE FROM memories').run()
+  })
+
+  it('round-trips a full valid sidecar via photoRefs[]', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-sc',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [
+          {
+            storage: 'r2', key: 'jonathan/m-sc/p0', mime: 'image/jpeg',
+            meta: VALID_META, srcName: 'IMG_1234.HEIC', srcMod: 1748000000000, atSrc: 'exif-original',
+          },
+        ],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs).toHaveLength(1)
+    expect(mem.photoRefs[0].meta).toEqual(VALID_META)
+    expect(mem.photoRefs[0].srcName).toBe('IMG_1234.HEIC')
+    expect(mem.photoRefs[0].srcMod).toBe(1748000000000)
+    expect(mem.photoRefs[0].atSrc).toBe('exif-original')
+
+    // A SECOND device's pull (GET, a fresh rowToMemory) sees it too.
+    const pull = await call('/memories', { token: TOKENS.jonathan })
+    expect(pull.status).toBe(200)
+    const pulled = (await pull.json()).find((m) => m.id === 'm-sc')
+    expect(pulled.photoRefs[0].meta).toEqual(VALID_META)
+    expect(pulled.photoRefs[0].srcName).toBe('IMG_1234.HEIC')
+    expect(pulled.photoRefs[0].atSrc).toBe('exif-original')
+  })
+
+  it('round-trips the sidecar on a video PIECE (E4 heterogeneous moment)', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-sc-piece',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        pieces: [
+          { kind: 'video', storage: 'r2', key: 'jonathan/m-sc-piece/v', mime: 'video/mp4', srcName: 'IMG_5678.MOV', atSrc: 'file-mtime' },
+          { kind: 'note', text: 'the waterfall was louder in person' },
+        ],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.pieces[0].srcName).toBe('IMG_5678.MOV')
+    expect(mem.photoRefs[0].srcName).toBe('IMG_5678.MOV') // the photo/video subset carries it too
+  })
+
+  it('sanitizes an oversized/garbage sidecar server-side — the photo still saves', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-sc-bad',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [
+          {
+            storage: 'r2', key: 'jonathan/m-sc-bad/p0', mime: 'image/jpeg',
+            meta: {
+              make: 'Apple', // valid — survives
+              model: 'x'.repeat(500), // over the 64-char cap — dropped
+              iso: 9e18, // absurd — the offset-leak class of bug — dropped
+              headingDeg: 9999, // out of [0,360] — dropped
+              evil: 'DROP TABLE memories', // not on the whitelist — dropped
+              orient: 1, // valid — survives
+            },
+            srcName: 'y'.repeat(500), // over the 200-char cap — dropped
+            srcMod: -1, // not positive — dropped
+            atSrc: 'made-up-source', // not on the value whitelist — dropped
+          },
+        ],
+      },
+    })
+    expect(res.status).toBe(200) // the write is NEVER failed for a garbage sidecar
+    const mem = await res.json()
+    const ref = mem.photoRefs[0]
+    expect(ref.meta.make).toBe('Apple')
+    expect(ref.meta.orient).toBe(1)
+    expect(ref.meta.model).toBeUndefined()
+    expect(ref.meta.iso).toBeUndefined()
+    expect(ref.meta.headingDeg).toBeUndefined()
+    expect('evil' in ref.meta).toBe(false)
+    expect(ref.srcName).toBeUndefined()
+    expect(ref.srcMod).toBeUndefined()
+    expect(ref.atSrc).toBeUndefined()
+
+    // The stored JSON itself never took the garbage values either — this is
+    // server-side sanitization, not just a read-side filter.
+    const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-sc-bad').first()
+    const stored = JSON.parse(row.photo_r2_keys_json)[0]
+    expect(stored.meta.model).toBeUndefined()
+    expect(stored.meta.iso).toBeUndefined()
+    expect('evil' in stored.meta).toBe(false)
+    expect(stored.srcName).toBeUndefined()
+    expect(stored.atSrc).toBeUndefined()
+  })
+
+  it('a non-object meta (hostile/malformed) is dropped entirely, never crashes the write', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-sc-hostile',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [
+          { storage: 'r2', key: 'jonathan/m-sc-hostile/p0', mime: 'image/jpeg', meta: 'not-an-object', srcMod: 'not-a-number', atSrc: 12345 },
+        ],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect('meta' in mem.photoRefs[0]).toBe(false)
+    expect('srcMod' in mem.photoRefs[0]).toBe(false)
+    expect('atSrc' in mem.photoRefs[0]).toBe(false)
+  })
+
+  it('keeps a sidecar-less ref byte-identical to the legacy stored shape (no null pollution)', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-sc-legacy',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-sc-legacy/p0', mime: 'image/jpeg' }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect('meta' in mem.photoRefs[0]).toBe(false)
+    expect('srcName' in mem.photoRefs[0]).toBe(false)
+    const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-sc-legacy').first()
+    expect(row.photo_r2_keys_json).toBe(JSON.stringify([{ key: 'jonathan/m-sc-legacy/p0', mime: 'image/jpeg' }]))
+  })
+})

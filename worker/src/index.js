@@ -44,6 +44,7 @@ import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
 // (~250 KB compressed). CPU per resize at 5712×4284 → 2048: roughly
 // 100 ms — fine under the Workers Standard plan (30s CPU/request).
 import { PhotonImage, resize, SamplingFilter } from '@cf-wasm/photon'
+import { sanitizeSidecarServer } from './photoSidecar.js'
 
 export default {
   async fetch(request, env, ctx) {
@@ -1048,6 +1049,15 @@ async function postMemory(env, traveler, request, url, cors, ctx) {
     // Value-whitelisted: any other value is never written, so a garbage flag
     // can't persist and a soundless ref stays byte-identical to legacy rows.
     if (r.sound === 'carried' || r.sound === 'none' || r.sound === 'lost') e.sound = r.sound
+    // The never-discard metadata sidecar (Build 1, §13) — meta/srcName/
+    // srcMod/atSrc, whitelisted + bounded INDEPENDENTLY server-side
+    // (photoSidecar.js) — the client's own bounds-check is never trusted.
+    // A ref carrying none of these stays byte-identical to before this build.
+    const sidecar = sanitizeSidecarServer(r)
+    if (sidecar.meta) e.meta = sidecar.meta
+    if (sidecar.srcName) e.srcName = sidecar.srcName
+    if (Number.isFinite(sidecar.srcMod)) e.srcMod = sidecar.srcMod
+    if (sidecar.atSrc) e.atSrc = sidecar.atSrc
     return e
   }
   const refHasExif = (r) =>
@@ -1544,6 +1554,14 @@ function rowToMemory(r, origin) {
         // (photoEntry): both directions must pass it or the flag dies on the
         // first round-trip. Omit when absent so legacy rows stay byte-identical.
         if (a.sound === 'carried' || a.sound === 'none' || a.sound === 'lost') ref.sound = a.sound
+        // The never-discard sidecar — same independent server-side bounds
+        // check as the write side (photoEntry): both directions must pass it
+        // or the fields die on the first round-trip. Omit when absent.
+        const sidecar = sanitizeSidecarServer(a)
+        if (sidecar.meta) ref.meta = sidecar.meta
+        if (sidecar.srcName) ref.srcName = sidecar.srcName
+        if (Number.isFinite(sidecar.srcMod)) ref.srcMod = sidecar.srcMod
+        if (sidecar.atSrc) ref.atSrc = sidecar.atSrc
         refs.push(ref)
         ordered.push({ kind: ref.posterUrl ? 'video' : 'photo', ...ref })
       }

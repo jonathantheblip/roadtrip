@@ -88,7 +88,16 @@ export async function importComposerFile(file, { trip, traveler, onProgress } = 
     const encoded = await encodeForImport(file, onProgress)
     const saved = await saveImportedMedia({
       file, kind: 'video',
-      exif: { capturedAt: vmeta?.capturedAt ?? null, offsetMinutes: vmeta?.offsetMinutes ?? null },
+      exif: {
+        capturedAt: vmeta?.capturedAt ?? null,
+        offsetMinutes: vmeta?.offsetMinutes ?? null,
+        // Build 1 — the clip's real GPS, when its Keys/Values atom carried a
+        // location. Previously dropped entirely on this surface (ImportFlow's
+        // two video sites already read it); a composer-imported video with
+        // Location Services on never healed until now.
+        lat: Number.isFinite(vmeta?.lat) ? vmeta.lat : null,
+        lng: Number.isFinite(vmeta?.lng) ? vmeta.lng : null,
+      },
       encoded, trip, traveler,
     })
     return pieceFromImport(saved)

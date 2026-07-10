@@ -112,3 +112,165 @@ export function exifReaderToRaw(tags) {
 
   return raw
 }
+
+// ─── The never-discard metadata sidecar (Build 1, FAMILY_TRIPS_VISION §13) ──
+//
+// Import today keeps ~7 EXIF tags and throws the rest away before the
+// downscale/re-encode destroys the original bytes forever. This is the ONE
+// bounded, whitelisted extraction of "everything else useful" — Make/Model/
+// lens/exposure/GPS altitude+heading/pixel dims/orientation/the CreateDate
+// and ModifyDate values distinct from DateTimeOriginal — landing in a small
+// `meta` object that rides the ref additively (worker/src/index.js's
+// `photoEntry`/`rowToMemory` whitelists + `photoSidecar.js` re-validate
+// independently server-side; never trust the client blob).
+//
+// Apple's Live-Photo/burst pairing id (MakerNote `ContentIdentifier`/
+// `MediaGroupUUID`) was investigated and is NOT available here: ExifReader
+// has no Apple MakerNote decoder (only Canon/Pentax get one — see
+// node_modules/exifreader/src/*-tags.js), so `tags.exif.MakerNote` comes back
+// as an opaque raw byte blob ("[Raw maker note data]"), never a named field.
+// Getting at it would mean writing a bespoke Apple MakerNote binary-plist
+// parser — out of scope per the build plan ("if unavailable without a new
+// dependency: note it and move on — do NOT add a dep for it"). `contentId`
+// is therefore never populated; `META_KEYS` below omits it entirely rather
+// than carrying a field that would always be absent.
+//
+// BOUNDS, matching the house rule (the unbounded-offset bug shipped TWICE in
+// two separate parsers before this): every key is whitelisted; strings are
+// capped at META_STRING_MAX; every number must be finite AND fall inside a
+// physically-plausible range; a value that fails validation is dropped
+// field-by-field — the whole `meta` object is never rejected for one bad key.
+export const META_STRING_MAX = 64
+const META_STRING_KEYS = new Set(['make', 'model', 'lens'])
+const META_DATE_KEYS = new Set(['createdAt', 'modifiedAt'])
+// [min, max] inclusive, physically-plausible ranges (not just "finite") —
+// e.g. a corrupt/garbage ISO of 9e18 must never ride onto a photo the same
+// way a corrupt "+99:99" offset once did.
+const META_NUMBER_BOUNDS = {
+  focalMm: [0, 2000],
+  iso: [0, 500000],
+  fnum: [0, 100],
+  expMs: [0, 3_600_000], // 1 hour ceiling — real shutter speeds never approach this
+  flash: [0, 255], // EXIF Flash is a bitmask/code, 0-255 covers every real value
+  altM: [-1000, 9000], // Dead Sea ≈ -430m; Everest ≈ 8849m; margin both ways
+  headingDeg: [0, 360],
+  w: [1, 20000],
+  h: [1, 20000],
+  orient: [1, 8], // EXIF Orientation is 1-8 per spec
+}
+// Order here IS the whitelist — sanitizeMeta only ever reads these keys, so a
+// stray/malicious extra key on an object never rides through.
+const META_KEYS = [
+  'make', 'model', 'lens',
+  'focalMm', 'iso', 'fnum', 'expMs', 'flash',
+  'altM', 'headingDeg',
+  'w', 'h', 'orient',
+  'createdAt', 'modifiedAt',
+]
+
+// Whitelist + bounds-check an arbitrary candidate object down to the sidecar
+// shape. Shared by the client extraction below AND (independently
+// duplicated, never imported — separate deployable) by
+// worker/src/photoSidecar.js, which re-validates every field server-side
+// rather than trusting this function ran, or ran correctly, on the client.
+export function sanitizeMeta(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const out = {}
+  for (const key of META_KEYS) {
+    if (!(key in input)) continue
+    const v = input[key]
+    if (META_STRING_KEYS.has(key)) {
+      if (typeof v === 'string' && v.length > 0 && v.length <= META_STRING_MAX) out[key] = v
+    } else if (META_DATE_KEYS.has(key)) {
+      if (typeof v === 'string' && v.length <= META_STRING_MAX && Number.isFinite(Date.parse(v))) out[key] = v
+    } else if (key in META_NUMBER_BOUNDS) {
+      const [lo, hi] = META_NUMBER_BOUNDS[key]
+      if (Number.isFinite(v) && v >= lo && v <= hi) out[key] = v
+    }
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+// A [numerator, denominator] EXIF rational → a plain number. ExifReader hands
+// these back for FocalLength/FNumber/ExposureTime/GPSImgDirection. Some tags
+// (ISOSpeedRatings, Flash, pixel dims, Orientation) are already scalar, so
+// this also passes a finite scalar straight through.
+function rationalToNumber(value) {
+  if (Array.isArray(value) && value.length === 2 && Number.isFinite(value[0]) && Number.isFinite(value[1]) && value[1] !== 0) {
+    return value[0] / value[1]
+  }
+  return Number.isFinite(value) ? value : undefined
+}
+
+// Full extraction: ExifReader's `expanded` tags → the bounded `meta` sidecar.
+// Pure and tolerant of a null/partial `tags`, like `exifReaderToRaw`. Reads
+// straight off `tags.exif`/`tags.gps` (not the narrowed `raw` intermediate)
+// since the fields here are never carried by `exifReaderToRaw`.
+export function exifReaderToMeta(tags) {
+  if (!tags) return undefined
+  const exif = tags.exif || {}
+  const candidate = {}
+
+  if (typeof exif.Make?.description === 'string') candidate.make = exif.Make.description
+  if (typeof exif.Model?.description === 'string') candidate.model = exif.Model.description
+  if (typeof exif.LensModel?.description === 'string') candidate.lens = exif.LensModel.description
+
+  const focalMm = rationalToNumber(exif.FocalLength?.value)
+  if (focalMm !== undefined) candidate.focalMm = focalMm
+  const iso = rationalToNumber(exif.ISOSpeedRatings?.value)
+  if (iso !== undefined) candidate.iso = iso
+  const fnum = rationalToNumber(exif.FNumber?.value)
+  if (fnum !== undefined) candidate.fnum = fnum
+  const expSeconds = rationalToNumber(exif.ExposureTime?.value)
+  if (expSeconds !== undefined) candidate.expMs = expSeconds * 1000
+  const flash = rationalToNumber(exif.Flash?.value)
+  if (flash !== undefined) candidate.flash = flash
+
+  // Altitude already carries GPSAltitudeRef's sign (ExifReader's composite
+  // gps group applies it — see node_modules/exifreader/src/exif-reader.js).
+  const altM = rationalToNumber(tags.gps?.Altitude)
+  if (altM !== undefined) candidate.altM = altM
+  const headingDeg = rationalToNumber(exif.GPSImgDirection?.value)
+  if (headingDeg !== undefined) candidate.headingDeg = headingDeg
+
+  const w = rationalToNumber(exif.PixelXDimension?.value)
+  if (w !== undefined) candidate.w = w
+  const h = rationalToNumber(exif.PixelYDimension?.value)
+  if (h !== undefined) candidate.h = h
+  const orient = rationalToNumber(exif.Orientation?.value)
+  if (orient !== undefined) candidate.orient = orient
+
+  // Distinct from DateTimeOriginal (which becomes `capturedAt` on the ref
+  // itself) — CreateDate/ModifyDate as their OWN values, previously read
+  // then dropped at ref-build.
+  const created = exifDateToDate(exif.DateTimeDigitized?.description)
+  if (created instanceof Date && !Number.isNaN(created.getTime())) candidate.createdAt = created.toISOString()
+  const modified = exifDateToDate(exif.DateTime?.description)
+  if (modified instanceof Date && !Number.isNaN(modified.getTime())) candidate.modifiedAt = modified.toISOString()
+
+  return sanitizeMeta(candidate)
+}
+
+// The other three sidecar fields (srcName/srcMod/atSrc) aren't EXIF at all —
+// srcName/srcMod come from the File object itself, atSrc from whichever
+// capturedAt candidate won (already tracked as `capturedAtSource` in
+// photoBackfill.js's parseExifData). Bounded the same way as `meta`.
+export const SRC_NAME_MAX = 200
+export const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modify', 'file-mtime', 'test'])
+
+// Whitelist + bound the full sidecar `{ meta, srcName, srcMod, atSrc }` in one
+// call — the single seam every ref-build site (and the gap-fill seam in
+// memoryStore.js) spreads onto a ref, so the bounds live in exactly one place
+// client-side. Returns only the keys that passed; never throws.
+export function sanitizeSidecar(input) {
+  const out = {}
+  if (!input || typeof input !== 'object') return out
+  const meta = sanitizeMeta(input.meta)
+  if (meta) out.meta = meta
+  if (typeof input.srcName === 'string' && input.srcName.length > 0 && input.srcName.length <= SRC_NAME_MAX) {
+    out.srcName = input.srcName
+  }
+  if (Number.isFinite(input.srcMod) && input.srcMod > 0) out.srcMod = input.srcMod
+  if (typeof input.atSrc === 'string' && ATSRC_VALUES.has(input.atSrc)) out.atSrc = input.atSrc
+  return out
+}

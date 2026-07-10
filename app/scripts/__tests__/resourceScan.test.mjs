@@ -449,6 +449,91 @@ test('runResourceScan end-to-end (injected IO): matched / unmatched / gpsFilled 
   assert.equal(off[0].o, -240)
 })
 
+test('runResourceScan end-to-end: applySidecar fills meta/atSrc when supplied, never gates completeness', async () => {
+  // Build 1 — the sidecar rides the SAME target-selection safety logic as
+  // gps/offset; this proves the plumbing end-to-end (buildRefIndex's
+  // needsMeta → matchRecovered's writes → the applier).
+  const cap = new Date(2026, 6, 5, 17, 42, 0).toISOString()
+  const mems = [
+    // Already has GPS+offset (so gps/offset appliers must NOT fire — proves
+    // the sidecar write is independent) but no meta yet.
+    { id: 'm1', tripId: 't', photoRefs: [r2({ key: 'k1', capturedAt: cap, lat: 42, lng: -70, offsetMinutes: -240 })] },
+  ]
+  const tag = {
+    exif: {
+      DateTimeOriginal: { description: '2026:07:05 17:42:00' },
+      OffsetTimeOriginal: { description: '-04:00' },
+      Make: { description: 'Apple' },
+      Model: { description: 'iPhone 16 Pro' },
+    },
+    gps: { Latitude: 42, Longitude: -70 },
+  }
+  const sidecarWrites = []
+  const stats = await runResourceScan({
+    files: ['A'],
+    memories: mems,
+    loadTags: async () => tag,
+    applyGps: () => { throw new Error('already complete — must not write GPS again') },
+    applyOffset: () => { throw new Error('already complete — must not write offset again') },
+    applySidecar: (id, k, sc) => { sidecarWrites.push({ id, k, sc }); return { id } },
+  })
+  assert.equal(sidecarWrites.length, 1)
+  assert.equal(sidecarWrites[0].sc.meta.make, 'Apple')
+  assert.equal(sidecarWrites[0].sc.meta.model, 'iPhone 16 Pro')
+  assert.equal(sidecarWrites[0].sc.atSrc, 'exif-original')
+  assert.equal(stats.metaFilled, 1)
+  assert.equal(stats.matched, 1)
+  // it had something to give (meta), so it's 'matched', not 'alreadyKnown' —
+  // even though gps+offset were already complete before this scan ran.
+  assert.equal(stats.alreadyKnown, 0)
+})
+
+test('runResourceScan: a pre-existing caller that never supplies applySidecar is unaffected (no phantom writes)', async () => {
+  // Regression guard for the exact bug this test file caught during Build 1:
+  // `applySidecar?.(...) !== null` would count a MISSING applier as a landed
+  // write (undefined !== null is true). Every caller/test written BEFORE this
+  // build omits applySidecar entirely (no Make/Model in their tag fixtures
+  // either, so `recovered.meta` stays absent) — that combination must stay a
+  // true no-op, exactly like the other pre-existing tests in this file that
+  // never mention sidecar at all.
+  const cap = new Date(2026, 6, 5, 17, 42, 0).toISOString()
+  const mems = [{ id: 'm1', tripId: 't', photoRefs: [r2({ key: 'k1', capturedAt: cap, lat: 42, lng: -70, offsetMinutes: -240 })] }]
+  const tag = { exif: { DateTimeOriginal: { description: '2026:07:05 17:42:00' } }, gps: { Latitude: 42, Longitude: -70 } }
+  const stats = await runResourceScan({
+    files: ['A'],
+    memories: mems,
+    loadTags: async () => tag,
+    applyGps: () => { throw new Error('must not write a complete ref') },
+    applyOffset: () => { throw new Error('must not write a complete ref') },
+    // applySidecar deliberately omitted
+  })
+  assert.equal(stats.metaFilled, 0)
+  assert.equal(stats.matched, 0)
+  assert.equal(stats.alreadyKnown, 1)
+})
+
+test('runResourceScan: real meta available but applySidecar omitted — honestly reported as nothing landed, never a phantom "alreadyKnown"', async () => {
+  // The companion case: recovered.meta IS present (Make/Model in the tag) but
+  // no applier is wired. Before the fix this counted as a landed write
+  // (metaFilled=1) purely from `undefined !== null`; the honest outcome is
+  // that nothing landed — same bucket as an applier returning null mid-scan.
+  const cap = new Date(2026, 6, 5, 17, 42, 0).toISOString()
+  const mems = [{ id: 'm1', tripId: 't', photoRefs: [r2({ key: 'k1', capturedAt: cap, lat: 42, lng: -70, offsetMinutes: -240 })] }]
+  const tag = { exif: { DateTimeOriginal: { description: '2026:07:05 17:42:00' }, Make: { description: 'Apple' } }, gps: { Latitude: 42, Longitude: -70 } }
+  const stats = await runResourceScan({
+    files: ['A'],
+    memories: mems,
+    loadTags: async () => tag,
+    applyGps: () => { throw new Error('must not write a complete ref') },
+    applyOffset: () => { throw new Error('must not write a complete ref') },
+    // applySidecar deliberately omitted
+  })
+  assert.equal(stats.metaFilled, 0)
+  assert.equal(stats.matched, 0)
+  assert.equal(stats.alreadyKnown, 0)
+  assert.equal(stats.nothingToRecover, 1)
+})
+
 test('runResourceScan end-to-end: two readings, two real photos → ambiguous, nothing written', async () => {
   // The photo's offset is derived from the HOST's own offset ±1h, so the two
   // readings are guaranteed to differ no matter what zone this machine runs in

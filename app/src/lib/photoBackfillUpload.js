@@ -19,11 +19,16 @@
 
 import { saveAsset, makeAssetKey } from './memAssets'
 import { saveMemory } from './memoryStore'
-import { mergeRefIntoExisting } from './photoRefMerge'
+import { mergeRefIntoExisting, buildReattachRef, buildNewPhotoBaseRef, buildNewVideoBaseRef } from './photoRefMerge'
 import { preparePhotoForUpload } from './photoPipeline'
 import { enqueue, registerBackgroundSync } from './uploadQueue'
 import { workerFetch, uploadAssetBlob } from './workerSync'
 import { uploadPosterOrQueue } from './posterRetry'
+
+// entrySidecar / buildReattachRef (the never-discard Build 1 sidecar ride)
+// now live in photoRefMerge.js — moved so the reattach branch's ref literal
+// is independently Node-testable (this module can't be imported under plain
+// `node --test`; see photoRefMerge.js's header). Behavior unchanged.
 
 function makeMemoryId() {
   return `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
@@ -97,11 +102,7 @@ export async function uploadBackfillPhotos({
         // edge (existing metadata row, missing bytes).
         const assetKey = makeAssetKey('photo')
         const { mime } = await saveAsset('photo', assetKey, entry.file)
-        const ref = {
-          key: assetKey, storage: 'idb', mime, capturedAt,
-          ...(lat != null ? { lat } : {}), ...(lng != null ? { lng } : {}),
-          ...(offsetMinutes != null ? { offsetMinutes } : {}),
-        }
+        const ref = buildReattachRef({ entry, assetKey, mime, capturedAt, lat, lng, offsetMinutes })
         const existing = entry.reattachOf
         const merged = mergeRefIntoExisting(existing, ref)
         saveMemory({
@@ -205,11 +206,7 @@ async function uploadOrQueueNewPhoto({
   // too — matching AddDispatchModal.queueSilently. (The importer used to
   // diverge here, going IDB-only with no pill, which read as "saved, nothing
   // syncing" in a worker-less build.)
-  const baseRef = {
-    kind: 'photo', mime, capturedAt,
-    ...(Number.isFinite(lat) ? { lat } : {}), ...(Number.isFinite(lng) ? { lng } : {}),
-    ...(Number.isFinite(offsetMinutes) ? { offsetMinutes } : {}),
-  }
+  const baseRef = buildNewPhotoBaseRef({ entry, mime, capturedAt, lat, lng, offsetMinutes })
   try {
     const r = await workerFetch(
       `/assets/photo/${encodeURIComponent(memoryId)}`,
@@ -286,30 +283,9 @@ async function uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, cap
   const enc = entry.encoded || {}
   const blob = enc.blob
   const posterBlob = enc.posterBlob || null
-  const baseRef = {
-    kind: 'video',
-    mime: enc.mime || 'video/mp4',
-    width: enc.width,
-    height: enc.height,
-    durationMs: enc.durationMs,
-    // Per-photo GPS (Stage C-a) — a video shot on the trip carries its location
-    // the same as a still, so a videos-only day still heals. Finite-only.
-    ...(Number.isFinite(lat) ? { lat } : {}),
-    ...(Number.isFinite(lng) ? { lng } : {}),
-    // Capture-time offset (from the clip's Apple creationdate) so the matcher
-    // files the video by LOCAL wall-clock time, not UTC.
-    ...(Number.isFinite(offsetMinutes) ? { offsetMinutes } : {}),
-    // The shrunk byte size — the design's "proof" value (#2). Persisted on the
-    // ref (not just local) so the saved-tile size chip shows for every viewer and
-    // survives the worker round-trip, exactly like width/height/durationMs. Rides
-    // through the queue's item.ref → the drain re-save keeps it (no re-encode).
-    bytes: Number.isFinite(blob?.size) ? blob.size : null,
-    // The sound outcome ('carried' | 'none' | 'lost') persists the same way, so
-    // every viewer's tile can tell "source had no sound" from "sound couldn't
-    // come along". Absent on legacy refs = unknown → no tag, never a guess.
-    sound: typeof enc.sound === 'string' ? enc.sound : null,
-    capturedAt,
-  }
+  // GPS (Stage C-a) + capture-offset + the Build 1 sidecar — see
+  // buildNewVideoBaseRef (photoRefMerge.js) for field-by-field commentary.
+  const baseRef = buildNewVideoBaseRef({ entry, capturedAt, lat, lng, offsetMinutes })
   // Build the offline/render-only pending ref. The video TILE renders the
   // poster still (posterUrl), so we also copy the poster jpeg into the idb
   // asset store (the `photo` store — a poster is an image; no new store / no DB
@@ -408,10 +384,17 @@ export async function saveImportedMedia({ file, kind, exif, encoded, trip, trave
   const offsetMinutes = Number.isFinite(exif?.offsetMinutes) ? exif.offsetMinutes : null
   const stopId = null
   const results = { ok: 0, reattached: 0, queued: 0, failed: 0, errors: [] }
+  // Carry BOTH `file` and `exif` on the entry, for both kinds — entrySidecar
+  // (the never-discard Build 1 sidecar) reads entry.exif.meta/capturedAtSource
+  // AND entry.file.name/lastModified, exactly like ImportFlow's payload items
+  // do. Previously this built a bare { encoded } / { file } entry with no
+  // .exif at all, so entrySidecar always saw an empty sidecar on this surface
+  // (the composer) even though readExifForImport had already computed it.
+  const entry = { file, exif, encoded }
   const ref =
     kind === 'video'
-      ? await uploadOrQueueVideo({ entry: { encoded }, memoryId, trip, traveler, stopId, capturedAt, lat, lng, offsetMinutes, results })
-      : await uploadOrQueueNewPhoto({ entry: { file }, memoryId, trip, traveler, stopId, capturedAt, lat, lng, offsetMinutes, results })
+      ? await uploadOrQueueVideo({ entry, memoryId, trip, traveler, stopId, capturedAt, lat, lng, offsetMinutes, results })
+      : await uploadOrQueueNewPhoto({ entry, memoryId, trip, traveler, stopId, capturedAt, lat, lng, offsetMinutes, results })
   // A video is stored as a kind:'photo' memory whose photoRef carries the video
   // (ref.kind/mime/posterUrl distinguish it) — mirroring uploadBackfillPhotos.
   saveMemory({

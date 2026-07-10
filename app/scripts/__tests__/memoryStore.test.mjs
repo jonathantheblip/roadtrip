@@ -31,6 +31,8 @@ const {
   updateMemoryCapturedAt,
   backfillCapturedAt,
   mergeFromRemote,
+  resolveSaveConflict,
+  applyRefSidecarReapply,
 } = await import('../../src/lib/memoryStore.js')
 const { markDeleted, isDeleted } = await import('../../src/lib/deleteTombstones.js')
 
@@ -774,4 +776,132 @@ test('applyRefGps: matches the right ref by key inside a photoRefs[] album', asy
   assert.equal(patched.photoRefs[0].lat, 10, 'the already-located ref is untouched')
   assert.equal(patched.photoRefs[1].lat, 5)
   assert.equal(patched.photoRefs[1].lng, 6)
+})
+
+// ── applyRefSidecar (Build 1 — the never-discard sidecar's re-source scan) ──
+
+test('applyRefSidecar: per-field gap-fill — fills only ABSENT fields, never overwrites a present one', async () => {
+  const { applyRefSidecar } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('ms', {
+    photoRef: {
+      storage: 'r2', key: 'kk', url: 'uu',
+      meta: { make: 'Apple', model: 'iPhone 11' }, // already has meta
+      atSrc: 'exif-original', // already has atSrc
+      // srcName / srcMod are absent — the gap-fill targets
+    },
+  })])
+  const patched = applyRefSidecar('ms', 'kk', {
+    meta: { make: 'Canon', model: 'EOS R5' }, // must NOT clobber the stored meta
+    srcName: 'IMG_0042.HEIC',
+    srcMod: 1700000000000,
+    atSrc: 'exif-create', // must NOT clobber the stored atSrc
+  })
+  assert.deepEqual(patched.photoRef.meta, { make: 'Apple', model: 'iPhone 11' }, 'existing meta stands')
+  assert.equal(patched.photoRef.atSrc, 'exif-original', 'existing atSrc stands')
+  assert.equal(patched.photoRef.srcName, 'IMG_0042.HEIC', 'the absent field is filled')
+  assert.equal(patched.photoRef.srcMod, 1700000000000, 'the absent field is filled')
+
+  // Idempotent: a second call with different values changes nothing further —
+  // every field is now present.
+  const again = applyRefSidecar('ms', 'kk', { srcName: 'other.jpg', srcMod: 1 })
+  assert.equal(again.photoRef.srcName, 'IMG_0042.HEIC', 'already-filled fields never re-clobbered')
+
+  // Unknown memory / an all-empty sidecar → null (nothing to do at all).
+  assert.equal(applyRefSidecar('nope', 'kk', { srcName: 'x' }), null)
+  assert.equal(applyRefSidecar('ms', 'kk', {}), null)
+  assert.equal(applyRefSidecar('ms', 'kk', { srcName: '' }), null, 'a sidecar that sanitizes to empty is a no-op null')
+
+  // A wrong key on an existing memory is a no-op — the record comes back, its
+  // ref untouched (nothing matched to write).
+  const noMatch = applyRefSidecar('ms', 'other-key', { srcName: 'zzz' })
+  assert.equal(noMatch.photoRef.srcName, 'IMG_0042.HEIC', 'no ref matched → nothing written')
+})
+
+test('applyRefSidecar: matches the right ref by key inside a photoRefs[] album', async () => {
+  const { applyRefSidecar } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('msa', {
+    photoRefs: [
+      { storage: 'r2', key: 'a1', url: 'ua1', srcName: 'already-tagged.jpg' }, // already carries sidecar
+      { storage: 'r2', key: 'a2', url: 'ua2' },                                 // bare → target
+    ],
+  })])
+  const patched = applyRefSidecar('msa', 'a2', { srcName: 'IMG_1.jpg', srcMod: 5, atSrc: 'file-mtime' })
+  assert.equal(patched.photoRefs[0].srcName, 'already-tagged.jpg', 'the already-tagged ref is untouched')
+  assert.equal(patched.photoRefs[1].srcName, 'IMG_1.jpg')
+  assert.equal(patched.photoRefs[1].srcMod, 5)
+  assert.equal(patched.photoRefs[1].atSrc, 'file-mtime')
+})
+
+test('applyRefSidecar: never patches a masked projection', async () => {
+  const { applyRefSidecar } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([{ ...remoteMem('mk', { photoRef: { storage: 'r2', key: 'kk', url: 'uu' } }), masked: true }])
+  const result = applyRefSidecar('mk', 'kk', { srcName: 'nope.jpg' })
+  assert.equal(result.masked, true)
+  assert.equal(result.photoRef.srcName, undefined, 'the masked stub is never patched')
+})
+
+// The 409 reapply — exported the same way as moveReapply / replaceVideoRefReapply
+// (memorySyncFlow.js / memoryStore.js) specifically so it's independently
+// testable: scheduleMirror's real Worker push can't run under `node --test`
+// (workerSync.js pulls in browser-only deps and its dynamic import always
+// fails here — the same pre-existing constraint memorySyncGuard.test.mjs and
+// replaceVideoRef.test.mjs already document), so the reapply closure itself
+// must be reachable directly rather than only through the live network path.
+
+test('applyRefSidecarReapply: re-gap-fills onto a FRESH row, honoring fields the other device already filled', () => {
+  const fresh = {
+    id: 'mr', tripId: 't1', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+    caption: 'renamed on the iPad', // another device's newer edit — must survive
+    updatedAt: '2026-07-06T09:00:00.000Z',
+    photoRef: {
+      storage: 'r2', key: 'kk', url: 'uu',
+      atSrc: 'exif-original', // the OTHER device already filled this — must not be clobbered
+    },
+  }
+  const merged = applyRefSidecarReapply('kk', {
+    meta: { make: 'Apple', model: 'iPhone 15' },
+    srcName: 'IMG_0099.HEIC',
+    atSrc: 'file-mtime', // would be wrong to land — fresh's atSrc already stands
+  })(fresh)
+  assert.equal(merged.caption, 'renamed on the iPad', 'the fresh edit rides through untouched')
+  assert.deepEqual(merged.photoRef.meta, { make: 'Apple', model: 'iPhone 15' }, 'the absent field gap-fills')
+  assert.equal(merged.photoRef.srcName, 'IMG_0099.HEIC', 'the absent field gap-fills')
+  assert.equal(merged.photoRef.atSrc, 'exif-original', 'the already-filled field on fresh is never clobbered')
+  assert.ok(merged.updatedAt > fresh.updatedAt, 'the reapply stamps a fresh edit time')
+})
+
+test('409 recovery: applyRefSidecar\'s reapply lands the gap-fill on the FRESH server row after a conflict', async () => {
+  const { applyRefSidecar } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('mrs', {
+    updatedAt: '2030-01-01T00:00:00.000Z',
+    serverUpdatedAt: '2026-01-01T00:00:00.000Z',
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu' },
+  })])
+  const stale = applyRefSidecar('mrs', 'kk', { srcName: 'IMG_0007.HEIC', srcMod: 42 })
+  assert.equal(stale.photoRef.srcName, 'IMG_0007.HEIC', 'the local write landed first')
+
+  // Simulate a concurrent edit: the server's fresh row has a NEWER caption AND
+  // already carries a DIFFERENT sidecar field (atSrc) that must survive.
+  const fresh = {
+    id: 'mrs', tripId: 't1', authorTraveler: 'helen', visibility: 'shared', kind: 'photo',
+    caption: 'edited on another device',
+    updatedAt: '2026-07-06T09:00:00.000Z',
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', atSrc: 'exif-create' },
+  }
+  const calls = { pull: [], push: [] }
+  const sync = {
+    async pullAll(opts) { calls.pull.push(opts || {}); return [fresh] },
+    async pushMemory(rec, opts) { calls.push.push({ rec, opts: opts || {} }); return { ...rec, updatedAt: '2026-07-06T09:00:05.000Z' } },
+  }
+  const out = await resolveSaveConflict(
+    sync,
+    { type: 'save', record: stale, reapply: applyRefSidecarReapply('kk', { srcName: 'IMG_0007.HEIC', srcMod: 42 }) },
+  )
+  assert.equal(out.status, 'synced')
+  assert.equal(calls.push[0].rec.caption, 'edited on another device', 'fresh content rides')
+  assert.equal(calls.push[0].rec.photoRef.srcName, 'IMG_0007.HEIC', 'our gap-fill rides too')
+  assert.equal(calls.push[0].rec.photoRef.atSrc, 'exif-create', 'freshs own sidecar field is preserved, not clobbered')
+  const local = listMemoriesForTrip('t1', 'helen').find((m) => m.id === 'mrs')
+  assert.equal(local.photoRef.srcName, 'IMG_0007.HEIC')
+  assert.equal(local.caption, 'edited on another device')
 })

@@ -14,7 +14,7 @@
 //     out from the file-reading wrapper so tests can mock EXIF data
 //     directly without a real File.
 
-import { loadExifTags, exifReaderToRaw, parseOffsetMinutes } from './exifRead.js'
+import { loadExifTags, exifReaderToRaw, exifReaderToMeta, parseOffsetMinutes } from './exifRead.js'
 
 // Pure parser. Takes the exifr-shaped intermediate the EXIF adapter
 // produces (an object, undefined, or null) plus the originating file
@@ -30,6 +30,7 @@ import { loadExifTags, exifReaderToRaw, parseOffsetMinutes } from './exifRead.js
 //     lat: number | null,
 //     lng: number | null,
 //     orientation: number | null,     // 1-8 per EXIF spec; null when missing
+//     meta: object | undefined,       // Build 1 sidecar (bounded); set by readPhotoExif, not this pure fn
 //   }
 export function parseExifData(rawData, file) {
   const data = rawData || {}
@@ -106,8 +107,14 @@ export async function readPhotoExif(file) {
     // its own lazy chunk) and returns the exifr-shaped intermediate
     // parseExifData consumes — so GPS arrives as finite signed decimals
     // and HEIC is read natively, neither of which the old exifr managed.
-    const raw = exifReaderToRaw(await loadExifTags(file))
-    return parseExifData(raw, file)
+    const tags = await loadExifTags(file)
+    const raw = exifReaderToRaw(tags)
+    const out = parseExifData(raw, file)
+    // The never-discard sidecar (Build 1) — read off the SAME tags object
+    // (no extra decode), bounded + whitelisted by exifReaderToMeta.
+    const meta = exifReaderToMeta(tags)
+    if (meta) out.meta = meta
+    return out
   } catch {
     return parseExifData(null, file)
   }

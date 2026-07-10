@@ -16,7 +16,15 @@ import { dirname, resolve } from 'node:path'
 
 import { readExif } from '../../src/lib/photoPipeline.js'
 import { readPhotoExif } from '../../src/lib/photoBackfill.js'
-import { exifReaderToRaw, exifDateToDate, parseOffsetMinutes } from '../../src/lib/exifRead.js'
+import {
+  exifReaderToRaw,
+  exifDateToDate,
+  parseOffsetMinutes,
+  exifReaderToMeta,
+  sanitizeMeta,
+  sanitizeSidecar,
+  loadExifTags,
+} from '../../src/lib/exifRead.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const MEDIA = resolve(here, '../../tests/fixtures/media')
@@ -156,4 +164,165 @@ test('readExif: a file with no OffsetTimeOriginal omits offsetMinutes (never a f
   if (!Number.isFinite(out.offsetMinutes)) {
     assert.equal('offsetMinutes' in out, false)
   }
+})
+
+// ─── Build 1 — the never-discard metadata sidecar: real-fixture extraction ──
+//
+// Pinned against the ACTUAL fixture bytes (dumped via ExifReader directly,
+// not invented) — see BUILD_PLAN_SIGNAL_FLEET.md Build 1 step 5. Date fields
+// use `startsWith` rather than an exact instant, matching this file's
+// existing house style (exifDateToDate parses EXIF's wall clock in the
+// RUNNING MACHINE's local timezone, so the exact ISO instant is only
+// TZ-independent under `TZ=UTC`, which the local gate runs under, but a
+// stray local run must not spuriously fail).
+const EXPECT_META = {
+  jpeg: {
+    make: 'Apple',
+    model: 'iPhone 16 Pro',
+    lens: 'iPhone 16 Pro back triple camera 6.765mm f/1.78',
+    focalMm: 6.764999865652793,
+    iso: 1600,
+    fnum: 1.7799999713880652,
+    expMs: 50,
+    flash: 16,
+    altM: 11.776095009806058,
+    headingDeg: 250.40327471194664,
+    w: 4032,
+    h: 3024,
+    orient: 1,
+  },
+  heic: {
+    make: 'Apple',
+    model: 'iPhone 16 Pro',
+    lens: 'iPhone 16 Pro back triple camera 15.66mm f/2.8',
+    focalMm: 15.659999847383,
+    iso: 320,
+    fnum: 2.8,
+    expMs: 16.666666666666668,
+    flash: 16,
+    altM: 14.209949445600918,
+    headingDeg: 133.99714656290533,
+    w: 4032,
+    h: 3024,
+    orient: 6,
+  },
+}
+
+for (const [label, e] of Object.entries(EXPECT)) {
+  test(`exifReaderToMeta — ${label} real decode: pinned Make/Model/lens/exposure/GPS-altitude+heading/dims`, async () => {
+    const tags = await loadExifTags(fixtureBlob(e.file, e.type))
+    const meta = exifReaderToMeta(tags)
+    assert.ok(meta, `${label} must produce a meta object`)
+    const want = EXPECT_META[label]
+    for (const [key, value] of Object.entries(want)) {
+      if (typeof value === 'number') {
+        assert.ok(Math.abs(meta[key] - value) < 1e-6, `${label} meta.${key} ≈ ${value}, got ${meta[key]}`)
+      } else {
+        assert.equal(meta[key], value, `${label} meta.${key}`)
+      }
+    }
+    assert.ok(meta.createdAt.startsWith('2026-05'), `${label} meta.createdAt is the EXIF date, got ${meta.createdAt}`)
+    assert.ok(meta.modifiedAt.startsWith('2026-05'), `${label} meta.modifiedAt is the EXIF date, got ${meta.modifiedAt}`)
+    // No Apple Live-Photo/burst content-identifier field — investigated and
+    // confirmed unavailable via ExifReader (no Apple MakerNote decoder); must
+    // never be silently invented.
+    assert.equal('contentId' in meta, false)
+  })
+
+  test(`readExif (dispatch reader) — ${label} threads meta + capturedAtSource onto the sidecar`, async () => {
+    const out = await readExif(fixtureBlob(e.file, e.type))
+    assert.ok(out.meta, `${label} readExif must carry a meta sidecar`)
+    assert.equal(out.meta.make, 'Apple')
+    assert.equal(out.meta.model, 'iPhone 16 Pro')
+    assert.equal(out.capturedAtSource, 'exif-original')
+  })
+
+  test(`readPhotoExif (backfill reader) — ${label} threads meta onto the sidecar`, async () => {
+    const out = await readPhotoExif(fixtureBlob(e.file, e.type))
+    assert.ok(out.meta, `${label} readPhotoExif must carry a meta sidecar`)
+    assert.equal(out.meta.make, 'Apple')
+    assert.equal(out.meta.iso, EXPECT_META[label].iso)
+  })
+}
+
+test('exifReaderToMeta tolerates a null/empty tags object', () => {
+  assert.equal(exifReaderToMeta(null), undefined)
+  assert.equal(exifReaderToMeta({}), undefined)
+  assert.equal(exifReaderToMeta({ exif: {}, gps: {} }), undefined)
+})
+
+// ─── sanitizeMeta / sanitizeSidecar — the bounds-check (house rule: the
+// unbounded-offset bug shipped TWICE in two separate parsers). Every field
+// whitelisted, every string capped, every number range-checked — never just
+// "finite". A field-level failure drops that field, never the whole object.
+
+test('sanitizeMeta keeps a fully-valid candidate untouched', () => {
+  const candidate = {
+    make: 'Apple', model: 'iPhone 16 Pro', lens: 'back triple camera',
+    focalMm: 6.76, iso: 1600, fnum: 1.8, expMs: 50, flash: 16,
+    altM: 11.7, headingDeg: 250.4, w: 4032, h: 3024, orient: 1,
+    createdAt: '2026-05-24T22:49:12.000Z', modifiedAt: '2026-05-24T22:49:12.000Z',
+  }
+  assert.deepEqual(sanitizeMeta(candidate), candidate)
+})
+
+test('sanitizeMeta drops a stray/unknown key (whitelist, not blacklist)', () => {
+  const meta = sanitizeMeta({ make: 'Apple', evil: 'DROP TABLE memories', __proto__: { polluted: true } })
+  assert.deepEqual(meta, { make: 'Apple' })
+  assert.equal('evil' in meta, false)
+})
+
+test('sanitizeMeta drops an over-length string field, keeps the rest', () => {
+  const meta = sanitizeMeta({ make: 'A'.repeat(65), model: 'iPhone 16 Pro' })
+  assert.equal(meta.make, undefined)
+  assert.equal(meta.model, 'iPhone 16 Pro')
+})
+
+test('sanitizeMeta drops a non-finite / out-of-range number field, keeps the rest — the offset-leak class of bug, closed for every numeric field', () => {
+  const cases = [
+    ['iso', Infinity], ['iso', NaN], ['iso', 9e18], ['iso', -1],
+    ['fnum', -5], ['fnum', 1000],
+    ['expMs', -1], ['expMs', 999_999_999],
+    ['headingDeg', -1], ['headingDeg', 361],
+    ['altM', -50000], ['altM', 50000],
+    ['orient', 0], ['orient', 9],
+    ['w', 0], ['w', 9_999_999],
+  ]
+  for (const [key, value] of cases) {
+    const meta = sanitizeMeta({ model: 'iPhone 16 Pro', [key]: value })
+    assert.equal(meta[key], undefined, `${key}=${value} must be dropped`)
+    assert.equal(meta.model, 'iPhone 16 Pro', `${key}=${value} must not poison sibling fields`)
+  }
+})
+
+test('sanitizeMeta drops an unparseable createdAt/modifiedAt, keeps the rest', () => {
+  const meta = sanitizeMeta({ make: 'Apple', createdAt: 'not a date', modifiedAt: 'A'.repeat(100) })
+  assert.equal(meta.createdAt, undefined)
+  assert.equal(meta.modifiedAt, undefined)
+  assert.equal(meta.make, 'Apple')
+})
+
+test('sanitizeMeta rejects non-object / array input entirely', () => {
+  assert.equal(sanitizeMeta(null), undefined)
+  assert.equal(sanitizeMeta(undefined), undefined)
+  assert.equal(sanitizeMeta('garbage'), undefined)
+  assert.equal(sanitizeMeta([1, 2, 3]), undefined)
+  assert.equal(sanitizeMeta({}), undefined) // empty → undefined, not {}
+})
+
+test('sanitizeSidecar bounds srcName/srcMod/atSrc independently of meta', () => {
+  assert.deepEqual(sanitizeSidecar({ srcName: 'IMG_1234.HEIC', srcMod: 1748000000000, atSrc: 'exif-original' }), {
+    srcName: 'IMG_1234.HEIC', srcMod: 1748000000000, atSrc: 'exif-original',
+  })
+  // Over-length name dropped.
+  assert.equal(sanitizeSidecar({ srcName: 'x'.repeat(201) }).srcName, undefined)
+  // Non-finite / non-positive mtime dropped.
+  assert.equal(sanitizeSidecar({ srcMod: NaN }).srcMod, undefined)
+  assert.equal(sanitizeSidecar({ srcMod: -1 }).srcMod, undefined)
+  // atSrc is a VALUE whitelist, not just a string check.
+  assert.equal(sanitizeSidecar({ atSrc: 'made-up-source' }).atSrc, undefined)
+  assert.equal(sanitizeSidecar({ atSrc: 'file-mtime' }).atSrc, 'file-mtime')
+  // Garbage input never throws.
+  assert.deepEqual(sanitizeSidecar(null), {})
+  assert.deepEqual(sanitizeSidecar('garbage'), {})
 })

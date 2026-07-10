@@ -1,6 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const MEDIA = resolve(here, '../../tests/fixtures/media')
 
 // videoMeta.extractVideoCreationDate is exercised with synthetic
 // MP4-ish byte buffers. Real iPhone footage would also work but we
@@ -27,7 +33,12 @@ function bufferAsFile(buf) {
   }
 }
 
-const { extractVideoCreationDate } = await import('../../src/lib/videoMeta.js')
+const { extractVideoCreationDate, parseIso6709 } = await import('../../src/lib/videoMeta.js')
+
+function realFixtureAsFile(name) {
+  const buf = readFileSync(resolve(MEDIA, name))
+  return bufferAsFile(buf)
+}
 
 // MP4 atoms: [size:4][type:4][payload...].
 function atom(type, payload) {
@@ -179,4 +190,187 @@ test('extractVideoCreationDate finds moov at the END of the file, past the 4MB m
   const file = bufferAsFile(makeMp4([mvhdV0(captured)], [bigMdat]))
   const meta = await extractVideoCreationDate(file)
   assert.equal(meta.capturedAt, captured.toISOString())
+})
+
+// ─── Build 1 — video GPS via ISO 6709: the plan's single highest-value line ─
+//
+// "One located video anchors a whole moment later." The parser is bounded
+// and STRICT: lat ∈ [-90,90], lng ∈ [-180,180], reject and drop (never throw)
+// on anything malformed. Mutation-test candidate: temporarily loosen the
+// range checks in parseIso6709 (videoMeta.js) and confirm the out-of-range
+// cases below go red.
+
+test('parseIso6709: valid strings → { lat, lng }, with and without altitude', () => {
+  assert.deepEqual(parseIso6709('+41.32245-072.09434+011.776/'), { lat: 41.32245, lng: -72.09434 })
+  assert.deepEqual(parseIso6709('+41.32245-072.09434/'), { lat: 41.32245, lng: -72.09434 })
+  assert.deepEqual(parseIso6709('+41.32245-072.09434'), { lat: 41.32245, lng: -72.09434 }) // trailing '/' optional
+  assert.deepEqual(parseIso6709('-33.8688+151.2093+025.0/'), { lat: -33.8688, lng: 151.2093 }) // Sydney (S/E)
+  assert.deepEqual(parseIso6709('+00.0000+000.0000/'), { lat: 0, lng: 0 }) // Null Island — a real, valid value
+  assert.deepEqual(parseIso6709('+90.0000+180.0000/'), { lat: 90, lng: 180 }) // exact boundary — inclusive
+  assert.deepEqual(parseIso6709('-90.0000-180.0000/'), { lat: -90, lng: -180 })
+})
+
+test('parseIso6709: out-of-range lat/lng rejected — never a garbage coordinate stamped onto a photo', () => {
+  assert.equal(parseIso6709('+90.0001+000.0000/'), null) // lat just over the pole
+  assert.equal(parseIso6709('-90.0001+000.0000/'), null)
+  assert.equal(parseIso6709('+45.0000+180.0001/'), null) // lng just over the date line
+  assert.equal(parseIso6709('+45.0000-180.0001/'), null)
+  assert.equal(parseIso6709('+99.0000+999.0000/'), null) // wildly out of range
+})
+
+test('parseIso6709: malformed/garbage input rejected, never throws', () => {
+  assert.equal(parseIso6709('garbage'), null)
+  assert.equal(parseIso6709(''), null)
+  assert.equal(parseIso6709(null), null)
+  assert.equal(parseIso6709(undefined), null)
+  assert.equal(parseIso6709(41.32245), null) // not even a string
+  assert.equal(parseIso6709('41.32245,-72.09434'), null) // comma-separated, not ISO 6709 shape
+  assert.equal(parseIso6709('+41.32245'), null) // lat only, no lng — incomplete
+  assert.equal(parseIso6709('41.32245-072.09434/'), null) // missing leading sign
+  assert.equal(parseIso6709('+'.repeat(40) + '1/'), null) // over the length cap — rejected outright
+})
+
+test('extractVideoCreationDate threads real lat/lng from a REAL iPhone .mov fixture (ISO6709 in the Keys/Values atom)', async () => {
+  // Real bytes, not synthetic — the house standard. These are actual iPhone
+  // camera clips (tests/fixtures/media), Location Services on. Coordinates
+  // pinned from the parser's own real-decode output (cross-checked: they land
+  // in the same small area as the iphone-jpeg-fullres.jpg fixture, ~41.32,
+  // -72.09 — consistent with "shot on the same outing").
+  const cases = [
+    ['iphone-video-1080p-5s.mov', 41.3225, -72.0943],
+    ['iphone-video-4k-30s.mov', 41.3224, -72.0944],
+    ['iphone-video-portrait.mov', 41.3224, -72.0944],
+    ['iphone-video-landscape.mov', 41.3224, -72.0944],
+  ]
+  for (const [name, lat, lng] of cases) {
+    const file = realFixtureAsFile(name)
+    const meta = await extractVideoCreationDate(file)
+    assert.ok(meta, `${name} must produce a meta object`)
+    assert.ok(Number.isFinite(meta.lat), `${name} lat must be finite, got ${meta.lat}`)
+    assert.ok(Number.isFinite(meta.lng), `${name} lng must be finite, got ${meta.lng}`)
+    assert.ok(Math.abs(meta.lat - lat) < 0.001, `${name} lat ≈ ${lat}, got ${meta.lat}`)
+    assert.ok(Math.abs(meta.lng - lng) < 0.001, `${name} lng ≈ ${lng}, got ${meta.lng}`)
+    // Same fixtures' capturedAt/offsetMinutes contract stays intact — GPS is
+    // additive, never a replacement for the existing date extraction.
+    assert.equal(typeof meta.capturedAt, 'string')
+    assert.equal(meta.offsetMinutes, -240) // EDT, same as the photo fixtures
+  }
+})
+
+test('extractVideoCreationDate: a synthetic clip with an Apple location Keys/Values entry threads lat/lng', async () => {
+  const captured = new Date('2026-05-24T22:58:05.000Z')
+  const dateKey = 'com.apple.quicktime.creationdate'
+  const dateIso = '2026-05-24T18:58:05-0400'
+  const locKey = 'com.apple.quicktime.location.ISO6709'
+  const locValue = '+41.32245-072.09434+011.776/'
+  const metaPayload = Buffer.concat([
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(dateKey, 'ascii'),
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(dateIso, 'ascii'),
+    Buffer.from([0, 0]),
+    Buffer.from(locKey, 'ascii'),
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(locValue, 'ascii'),
+    Buffer.from([0, 0]),
+  ])
+  const metaAtom = atom('meta', metaPayload)
+  const file = bufferAsFile(makeMp4([mvhdV0(captured), metaAtom]))
+  const meta = await extractVideoCreationDate(file)
+  assert.equal(meta.capturedAt, captured.toISOString())
+  assert.equal(meta.offsetMinutes, -240)
+  assert.equal(meta.lat, 41.32245)
+  assert.equal(meta.lng, -72.09434)
+})
+
+test('extractVideoCreationDate: a clip with no location key omits lat/lng (never a false 0,0)', async () => {
+  const captured = new Date('2026-04-17T11:23:45.000Z')
+  const file = bufferAsFile(makeMp4([mvhdV0(captured)]))
+  const meta = await extractVideoCreationDate(file)
+  assert.equal(meta.capturedAt, captured.toISOString())
+  assert.equal('lat' in meta, false)
+  assert.equal('lng' in meta, false)
+})
+
+// ─── Blocker 2 — a rejected/missing date must not discard a parsed location ──
+//
+// The function's own documented invariant (top of file): `location` is
+// computed independently of which date source wins. The two early-return
+// points on the mvhd-fallback path used to short-circuit `null` whenever the
+// date wasn't usable, discarding a successfully-parsed GPS fix along with it
+// — a camera with a corrupted/reset clock but a good location fix lost real
+// GPS data. Mutation-test candidate: revert the `mvhd ? ... : null` /
+// `location ? {...} : null` change back to a bare `if (!mvhd) return null` /
+// `return iso ? withLocation(...) : null` and confirm these go red.
+
+test('extractVideoCreationDate: a dead-clock mvhd (creation_time=0) still returns its parsed location', async () => {
+  const locKey = 'com.apple.quicktime.location.ISO6709'
+  const locValue = '+41.32245-072.09434+011.776/'
+  const metaPayload = Buffer.concat([
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(locKey, 'ascii'),
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(locValue, 'ascii'),
+    Buffer.from([0, 0]),
+  ])
+  const metaAtom = atom('meta', metaPayload)
+  // mvhd creation_time stays 0 (dead clock) — parseMvhdCreationDate rejects
+  // it — and no Apple Keys creationdate is present either.
+  const deadMvhd = Buffer.alloc(100) // version=0, all-zero payload
+  const file = bufferAsFile(makeMp4([atom('mvhd', deadMvhd), metaAtom]))
+  const meta = await extractVideoCreationDate(file)
+  assert.ok(meta, 'must not discard the whole record — location survives with no valid date')
+  assert.equal(meta.capturedAt, null)
+  assert.equal(meta.offsetMinutes, null)
+  assert.equal(meta.lat, 41.32245)
+  assert.equal(meta.lng, -72.09434)
+})
+
+test('extractVideoCreationDate: no mvhd atom AT ALL still returns a parsed location', async () => {
+  const locKey = 'com.apple.quicktime.location.ISO6709'
+  const locValue = '+41.32245-072.09434+011.776/'
+  const metaPayload = Buffer.concat([
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(locKey, 'ascii'),
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(locValue, 'ascii'),
+    Buffer.from([0, 0]),
+  ])
+  const metaAtom = atom('meta', metaPayload)
+  const file = bufferAsFile(makeMp4([metaAtom])) // no mvhd atom in this moov at all
+  const meta = await extractVideoCreationDate(file)
+  assert.ok(meta, 'must not discard the whole record — location survives with no mvhd at all')
+  assert.equal(meta.capturedAt, null)
+  assert.equal(meta.offsetMinutes, null)
+  assert.equal(meta.lat, 41.32245)
+  assert.equal(meta.lng, -72.09434)
+})
+
+test('extractVideoCreationDate: genuinely nothing (no valid date, no location) still returns null', async () => {
+  // The pre-existing "dead clock, no location atom" tests above (line ~146)
+  // already cover this, but restated here explicitly alongside the new
+  // location-survival tests so the full truth table for this branch is
+  // legible in one place.
+  const deadMvhd = Buffer.alloc(100)
+  const file = bufferAsFile(makeMp4([atom('mvhd', deadMvhd)]))
+  const meta = await extractVideoCreationDate(file)
+  assert.equal(meta, null)
+})
+
+test('extractVideoCreationDate: a corrupt location value in the Keys/Values atom is dropped, date extraction still succeeds', async () => {
+  const captured = new Date('2026-05-24T22:58:05.000Z')
+  const locKey = 'com.apple.quicktime.location.ISO6709'
+  const metaPayload = Buffer.concat([
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from(locKey, 'ascii'),
+    Buffer.from([0, 0, 0, 0]),
+    Buffer.from('+9999.9999garbage/', 'ascii'), // malformed — must not throw, must not stamp
+    Buffer.from([0, 0]),
+  ])
+  const metaAtom = atom('meta', metaPayload)
+  const file = bufferAsFile(makeMp4([mvhdV0(captured), metaAtom]))
+  const meta = await extractVideoCreationDate(file)
+  assert.equal(meta.capturedAt, captured.toISOString())
+  assert.equal('lat' in meta, false)
+  assert.equal('lng' in meta, false)
 })

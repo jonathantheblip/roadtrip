@@ -5,7 +5,7 @@
 // reused by future surfaces (Aurelia's PostcardComposer, automated
 // share-in importers).
 
-import { loadExifTags, exifReaderToRaw, parseOffsetMinutes } from './exifRead.js'
+import { loadExifTags, exifReaderToRaw, exifReaderToMeta, parseOffsetMinutes } from './exifRead.js'
 
 // Max edge length per the punchlist: 2048px on the longest side, JPEG
 // q=0.85. Tuned for a good balance between fidelity (group photos
@@ -65,11 +65,15 @@ export async function readExif(file) {
     // (exifRead.js → ExifReader, lazy chunk). preparePhotoForUpload
     // calls this in parallel with the canvas downscale, so the canvas
     // is never the EXIF source.
-    const raw = exifReaderToRaw(await loadExifTags(file))
+    const tags = await loadExifTags(file)
+    const raw = exifReaderToRaw(tags)
     const out = {}
     const dt = raw.DateTimeOriginal || raw.CreateDate
     if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
       out.capturedAt = dt.toISOString()
+      // Which candidate won — threaded onto the ref as `atSrc` (Build 1) so a
+      // future consumer can tell "the real capture instant" from "a fallback".
+      out.capturedAtSource = raw.DateTimeOriginal ? 'exif-original' : 'exif-create'
     }
     if (Number.isFinite(raw.GPSLatitude)) out.lat = raw.GPSLatitude
     if (Number.isFinite(raw.GPSLongitude)) out.lng = raw.GPSLongitude
@@ -83,6 +87,12 @@ export async function readExif(file) {
     // imported before this line existed).
     const offsetMinutes = parseOffsetMinutes(raw.OffsetTimeOriginal)
     if (Number.isFinite(offsetMinutes)) out.offsetMinutes = offsetMinutes
+    // The never-discard metadata sidecar (Build 1) — Make/Model/lens/exposure/
+    // GPS altitude+heading/pixel dims/orientation/distinct CreateDate+ModifyDate,
+    // bounded + whitelisted. Read from the SAME tags object, so this costs no
+    // extra decode.
+    const meta = exifReaderToMeta(tags)
+    if (meta) out.meta = meta
     return out
   } catch {
     // Non-image files / unreadable EXIF — treat as "no EXIF" and move on.

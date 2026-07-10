@@ -21,11 +21,20 @@
 // epoch). The mvhd atom stamps in MP4 epoch.
 const MP4_TO_UNIX_EPOCH_SECONDS = 2_082_844_800
 
-// Returns { capturedAt: ISO-UTC string, offsetMinutes: number|null } or null.
-// `offsetMinutes` is the clip's LOCAL UTC offset (from Apple's creationdate,
-// e.g. "-0400"), which the matcher needs to file by local wall-clock time — the
-// mvhd fallback CANNOT recover it (Apple writes local-as-UTC there), so it
-// returns null offset and the matcher degrades to UTC for that clip.
+// Returns { capturedAt: ISO-UTC string|null, offsetMinutes: number|null,
+// lat?: number, lng?: number } or null (only when there is truly nothing at
+// all — no date AND no location). `offsetMinutes` is the clip's LOCAL
+// UTC offset (from Apple's creationdate, e.g. "-0400"), which the matcher
+// needs to file by local wall-clock time — the mvhd fallback CANNOT recover
+// it (Apple writes local-as-UTC there), so it returns null offset and the
+// matcher degrades to UTC for that clip. `lat`/`lng` come from Apple's
+// `com.apple.quicktime.location.ISO6709` key in the SAME Keys/Values atom
+// (Build 1) — present whenever the clip's recording device had Location
+// Services on; a video with no location key simply omits lat/lng, exactly
+// like a photo with no GPS EXIF. `capturedAt` can be null WITH lat/lng
+// present — a camera with a dead/reset clock but a good GPS fix still
+// hands back its coordinates rather than losing them (both mvhd-missing and
+// mvhd-rejected are treated identically here).
 export async function extractVideoCreationDate(file) {
   // Test seam (PROD-INERT): the synthetic-encode path (videoPipeline's
   // __RT_VIDEO_ENCODE_STUB) hands over a fake file with no real mvhd/Keys atom, so
@@ -34,7 +43,11 @@ export async function extractVideoCreationDate(file) {
   // Never set in any shipped surface.
   const stub = typeof window !== 'undefined' ? window.__RT_VIDEO_ENCODE_STUB : null
   if (stub && typeof stub.capturedAt === 'string') {
-    return { capturedAt: stub.capturedAt, offsetMinutes: Number.isFinite(stub.offsetMinutes) ? stub.offsetMinutes : null }
+    return {
+      capturedAt: stub.capturedAt,
+      offsetMinutes: Number.isFinite(stub.offsetMinutes) ? stub.offsetMinutes : null,
+      ...(Number.isFinite(stub.lat) && Number.isFinite(stub.lng) ? { lat: stub.lat, lng: stub.lng } : {}),
+    }
   }
   if (!file) return null
   try {
@@ -45,16 +58,29 @@ export async function extractVideoCreationDate(file) {
     const buf = await file.slice(moov.dataStart, moov.dataEnd).arrayBuffer()
     const view = new DataView(buf)
 
+    // The clip's GPS, if the Keys/Values atom carries it — independent of
+    // which date source wins below, so a video with mvhd-only dates (no
+    // Apple Keys date) can still carry location if the key is present.
+    const location = readAppleQuickTimeLocation(view, 0, view.byteLength)
+    const withLocation = (out) => (location ? { ...out, lat: location.lat, lng: location.lng } : out)
+
     // Apple Keys / Values metadata is the higher-fidelity source — it
     // includes the original timezone, which mvhd discards. Look first.
     const apple = readAppleQuickTimeCreationDate(view, 0, view.byteLength)
-    if (apple) return apple
+    if (apple) return withLocation(apple)
 
     // Fallback: mvhd creation_time (UTC seconds since 1904) — no offset available.
     const mvhd = findAtom(view, 0, view.byteLength, 'mvhd')
-    if (!mvhd) return null
-    const iso = parseMvhdCreationDate(view, mvhd.start, mvhd.end)
-    return iso ? { capturedAt: iso, offsetMinutes: null } : null
+    const iso = mvhd ? parseMvhdCreationDate(view, mvhd.start, mvhd.end) : null
+    if (iso) return withLocation({ capturedAt: iso, offsetMinutes: null })
+    // No valid date from EITHER source (missing mvhd atom, OR a dead-clock
+    // mvhd parseMvhdCreationDate rejected: seconds<=0, pre-2000, >24h future).
+    // `location` was computed above independently of which date source wins
+    // (this function's own documented invariant) — a camera with a corrupted
+    // clock but a good GPS fix must still hand back its coordinates rather
+    // than losing them to this null short-circuit. Only truly empty (no date
+    // AND no location) returns null.
+    return location ? { capturedAt: null, offsetMinutes: null, lat: location.lat, lng: location.lng } : null
   } catch {
     return null
   }
@@ -211,6 +237,74 @@ function readAppleQuickTimeCreationDate(view, start, end) {
     }
   }
   return null
+}
+
+// Bounded ISO 6709 parser: "+41.32245-072.09434+011.776/" → { lat, lng }.
+// STRICT and bounded, per the build plan — this is the single highest-value
+// line of Build 1, so it must never throw, never crash import, and never
+// stamp a garbage coordinate: lat must parse to a finite number in
+// [-90, 90], lng to a finite number in [-180, 180]; the input string is
+// capped at 32 chars (a real ISO 6709 string, with altitude, is ~27 chars —
+// anything longer is not a real one); anything that doesn't match the shape
+// (missing sign, malformed number, truncated) is rejected and dropped —
+// never guessed at, never partially accepted.
+const ISO6709_RE = /^([+-]\d{1,2}(?:\.\d+)?)([+-]\d{1,3}(?:\.\d+)?)(?:[+-]\d+(?:\.\d+)?)?\/?$/
+const ISO6709_MAX_LEN = 32
+
+export function parseIso6709(str) {
+  if (typeof str !== 'string') return null
+  const s = str.trim()
+  if (s.length === 0 || s.length > ISO6709_MAX_LEN) return null
+  const m = ISO6709_RE.exec(s)
+  if (!m) return null
+  const lat = parseFloat(m[1])
+  const lng = parseFloat(m[2])
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (lat < -90 || lat > 90) return null
+  if (lng < -180 || lng > 180) return null
+  return { lat, lng }
+}
+
+// Parse Apple's `com.apple.quicktime.location.ISO6709` Keys/Values entry —
+// same moov/meta structure as `com.apple.quicktime.creationdate` above, so
+// this mirrors readAppleQuickTimeCreationDate's byte-scan approach rather
+// than fully parsing the keys/values structure.
+function readAppleQuickTimeLocation(view, start, end) {
+  const meta = findAtom(view, start, end, 'meta')
+  if (!meta) return null
+  const KEY = 'com.apple.quicktime.location.ISO6709'
+  const idx = findAsciiSubstring(view, meta.start, meta.end, KEY)
+  if (idx < 0) return null
+  const scanEnd = Math.min(end, idx + 4096)
+  for (let i = idx + KEY.length; i < scanEnd; i++) {
+    if (!looksLikeIso6709Start(view, i, scanEnd)) continue
+    const raw = readAsciiRun(view, i, scanEnd, ISO6709_MAX_LEN)
+    const parsed = parseIso6709(raw)
+    if (parsed) return parsed
+    // A false start (a +/- digit run that isn't really the location value,
+    // e.g. inside an unrelated nearby field) — keep scanning; bounded by
+    // scanEnd above so this can't spin.
+  }
+  return null
+}
+
+// '+'/'-' followed by a digit — the start of a signed ISO 6709 latitude.
+function looksLikeIso6709Start(view, off, end) {
+  if (off + 2 > end) return false
+  const c0 = view.getUint8(off)
+  if (c0 !== 0x2b && c0 !== 0x2d) return false // '+' or '-'
+  return isDigit(view, off + 1)
+}
+
+// Pull a printable-ASCII run, capped at `maxLen` chars.
+function readAsciiRun(view, start, end, maxLen) {
+  let out = ''
+  for (let i = start; i < end && out.length < maxLen; i++) {
+    const c = view.getUint8(i)
+    if (c < 0x20 || c > 0x7e) break
+    out += String.fromCharCode(c)
+  }
+  return out
 }
 
 function findAsciiSubstring(view, start, end, needle) {
