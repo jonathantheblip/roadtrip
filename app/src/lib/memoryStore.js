@@ -1364,32 +1364,66 @@ export function updateMemoryPoster(memoryId, posterKey, posterUrl) {
   return null
 }
 
+// The provenance-aware write-seam rule (Build 2, FAMILY_TRIPS_VISION §14) shared
+// by applyRefGps/applyRefOffset — the only two write seams that can ever land on
+// a ref that ALREADY carries a value for the field they're about to write
+// (organic import writes always land on a brand-new ref; the worker-side
+// inference engine only ever targets refs currently LACKING the field, so
+// neither of those needs this — only an OCC race guard). The rule:
+//   • no existing value → always write (first-write, unchanged from before).
+//   • existing value, REFERENCE-tier prov ('exif'/'scan') → refuse. Real data
+//     is never overwritten by anything, guess or read.
+//   • existing value, prov ABSENT → refuse (defensive: predates this build's
+//     tagging pass — "prefer nothing to a guess" until it's classified).
+//   • existing value, INFERRED-tier prov (anything else, e.g.
+//     'inferred-manual'/'inferred-place') → a REFERENCE-tier new source
+//     upgrades it (a real read beats a guess); another inferred source is
+//     refused (never replace one guess with another, avoid thrashing).
+// `referenceValues` is the set of prov tags that field treats as reference
+// tier. GPS has no inferred-* source yet (this build never infers GPS), so its
+// inferred branch is unreachable today — the shape is just ready for it.
+function tieredWriteAllowed(hasExistingValue, existingProv, newSource, referenceValues) {
+  if (!hasExistingValue) return true
+  if (!existingProv) return false
+  if (referenceValues.has(existingProv)) return false
+  return referenceValues.has(newSource)
+}
+
+const GPS_REFERENCE_PROV = new Set(['exif', 'scan'])
+const OFFSET_REFERENCE_PROV = new Set(['exif', 'scan'])
+
 // Fill in a photo/video ref's GPS (lat/lng) AFTER the fact — the archive
 // backfill (Stage C-b): a ref whose R2 asset still carried EXIF (a full-size
 // upload that slipped past the shrink) gets its coords re-read and written here,
 // then re-mirrored so every device's copy gains the location. Identified by the
-// ref's stable R2 `key`. Idempotent: only a ref that LACKS coords is patched, so
-// a re-run (or a 409 re-push) never overwrites coords another device set, and
-// the same-stop re-save trips provenance rule 1 (preserve) — GPS enrichment
-// never manual-locks a photo. Mirrors updateMemoryPoster's shape.
-export function applyRefGps(memoryId, refKey, { lat, lng } = {}) {
+// ref's stable R2 `key`. Idempotent: a ref that already carries REFERENCE-tier
+// coords is never overwritten (provenance-aware write rule above), so a re-run
+// (or a 409 re-push) never clobbers coords another device set, and the same-stop
+// re-save trips provenance rule 1 (preserve) — GPS enrichment never manual-locks
+// a photo. `source` (default 'exif', reference tier) tags which tier the WRITTEN
+// value belongs to — every current caller writes a real read; no inferred-GPS
+// source exists yet, but the param is here so one can be added without another
+// signature change. Mirrors updateMemoryPoster's shape.
+export function applyRefGps(memoryId, refKey, { lat, lng } = {}, source = 'exif') {
   if (!memoryId || !refKey) return null
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
   const matches = (r) => !!r && typeof r === 'object' && r.key === refKey
-  const needsGps = (r) => matches(r) && !(Number.isFinite(r.lat) && Number.isFinite(r.lng))
-  const patchRef = (r) => (needsGps(r) ? { ...r, lat, lng } : r)
+  const canWrite = (r) => {
+    if (!matches(r)) return false
+    const hasExisting = Number.isFinite(r.lat) && Number.isFinite(r.lng)
+    return tieredWriteAllowed(hasExisting, r.prov?.gps, source, GPS_REFERENCE_PROV)
+  }
+  const patchRef = (r) => (canWrite(r) ? { ...r, lat, lng, prov: { ...r.prov, gps: source } } : r)
   const tryUpdateIn = (key) => {
     const list = readJson(key)
     const idx = list.findIndex((m) => m.id === memoryId)
     if (idx < 0) return null
     if (list[idx].masked) return list[idx] // never patch a masked projection
     const m = list[idx]
-    // No-op guard: if no container ref both matches the key AND lacks coords,
+    // No-op guard: if no container ref is both matched AND write-allowed,
     // there's nothing to write — don't bump updatedAt or re-mirror (idempotent
     // resume must not churn the whole archive on every run).
-    const hasTarget =
-      needsGps(m.photoRef) ||
-      (Array.isArray(m.photoRefs) && m.photoRefs.some(needsGps))
+    const hasTarget = canWrite(m.photoRef) || (Array.isArray(m.photoRefs) && m.photoRefs.some(canWrite))
     if (!hasTarget) return m
     const now = new Date().toISOString()
     const patched = { ...m, updatedAt: now }
@@ -1400,8 +1434,9 @@ export function applyRefGps(memoryId, refKey, { lat, lng } = {}) {
     scheduleMirror({
       type: 'save',
       record: patched,
-      // 409 re-push: gap-fill coords ONLY where the fresh ref still lacks them,
-      // so a concurrent enrichment from another device is never clobbered.
+      // 409 re-push: apply the SAME tiered rule against the FRESH server row —
+      // a concurrent write (another device's own gap-fill, or a real EXIF
+      // upgrade) is re-evaluated on its own terms, never blindly clobbered.
       reapply: (fresh) => {
         const f = { ...fresh, updatedAt: new Date().toISOString() }
         if (fresh.photoRef) f.photoRef = patchRef({ ...fresh.photoRef })
@@ -1420,27 +1455,35 @@ export function applyRefGps(memoryId, refKey, { lat, lng } = {}) {
   return null
 }
 
-// Sibling of applyRefGps for the re-source scan (Album System Ch 04): write a
-// recovered capture-time OFFSET (minutes, e.g. -240 for EDT) onto a photo ref AFTER
-// the fact, so the engine files by the correct LOCAL wall clock (the archive's ~74%
-// with no offset default to UTC — 4h wrong). Identified by the ref's stable R2 `key`.
-// Idempotent: only a ref that LACKS an offset is patched, so a re-run (or a 409
-// re-push) never overwrites one another device set, and a same-stop re-save trips
-// provenance rule 1 (preserve). Never patches a masked projection. Mirrors applyRefGps.
-export function applyRefOffset(memoryId, refKey, offsetMinutes) {
+// Sibling of applyRefGps for the re-source scan (Album System Ch 04) AND the
+// Build 2 offset-inference engine's client-side write shape: write a recovered
+// or inferred capture-time OFFSET (minutes, e.g. -240 for EDT) onto a photo ref
+// AFTER the fact, so the engine files by the correct LOCAL wall clock. Identified
+// by the ref's stable R2 `key`. Provenance-aware (see tieredWriteAllowed above):
+// a REFERENCE-tier existing offset ('exif'/'scan') is never overwritten; an
+// INFERRED-tier existing offset ('inferred-manual'/'inferred-place') yields to a
+// new REFERENCE-tier write (a real read upgrades a guess) but refuses another
+// guess. `source` is one of the 4 prov.off enum values; default 'exif' (existing
+// callers that don't pass it keep exactly the old "gap-fill only" behavior, since
+// a first write always succeeds regardless of source). Never patches a masked
+// projection. Mirrors applyRefGps.
+export function applyRefOffset(memoryId, refKey, offsetMinutes, source = 'exif') {
   if (!memoryId || !refKey) return null
   if (!Number.isFinite(offsetMinutes)) return null
   const matches = (r) => !!r && typeof r === 'object' && r.key === refKey
-  const needsOffset = (r) => matches(r) && !Number.isFinite(r.offsetMinutes)
-  const patchRef = (r) => (needsOffset(r) ? { ...r, offsetMinutes } : r)
+  const canWrite = (r) => {
+    if (!matches(r)) return false
+    const hasExisting = Number.isFinite(r.offsetMinutes)
+    return tieredWriteAllowed(hasExisting, r.prov?.off, source, OFFSET_REFERENCE_PROV)
+  }
+  const patchRef = (r) => (canWrite(r) ? { ...r, offsetMinutes, prov: { ...r.prov, off: source } } : r)
   const tryUpdateIn = (key) => {
     const list = readJson(key)
     const idx = list.findIndex((m) => m.id === memoryId)
     if (idx < 0) return null
     if (list[idx].masked) return list[idx] // never patch a masked projection
     const m = list[idx]
-    const hasTarget =
-      needsOffset(m.photoRef) || (Array.isArray(m.photoRefs) && m.photoRefs.some(needsOffset))
+    const hasTarget = canWrite(m.photoRef) || (Array.isArray(m.photoRefs) && m.photoRefs.some(canWrite))
     if (!hasTarget) return m
     const now = new Date().toISOString()
     const patched = { ...m, updatedAt: now }
@@ -1451,8 +1494,8 @@ export function applyRefOffset(memoryId, refKey, offsetMinutes) {
     scheduleMirror({
       type: 'save',
       record: patched,
-      // 409 re-push: gap-fill ONLY where the fresh ref still lacks an offset, so a
-      // concurrent enrichment from another device is never clobbered.
+      // 409 re-push: apply the SAME tiered rule against the FRESH server row, so
+      // a concurrent enrichment from another device is re-evaluated, not clobbered.
       reapply: (fresh) => {
         const f = { ...fresh, updatedAt: new Date().toISOString() }
         if (fresh.photoRef) f.photoRef = patchRef({ ...fresh.photoRef })

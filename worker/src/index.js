@@ -1058,6 +1058,11 @@ async function postMemory(env, traveler, request, url, cors, ctx) {
     if (sidecar.srcName) e.srcName = sidecar.srcName
     if (Number.isFinite(sidecar.srcMod)) e.srcMod = sidecar.srcMod
     if (sidecar.atSrc) e.atSrc = sidecar.atSrc
+    // Provenance tags (Build 2, §14) — which TIER lat/lng and offsetMinutes
+    // came from (real read vs. inferred guess). Same independent server-side
+    // whitelist as the rest of the sidecar; a ref carrying none stays byte-
+    // identical to before this build.
+    if (sidecar.prov) e.prov = sidecar.prov
     return e
   }
   const refHasExif = (r) =>
@@ -1562,6 +1567,10 @@ function rowToMemory(r, origin) {
         if (sidecar.srcName) ref.srcName = sidecar.srcName
         if (Number.isFinite(sidecar.srcMod)) ref.srcMod = sidecar.srcMod
         if (sidecar.atSrc) ref.atSrc = sidecar.atSrc
+        // Provenance tags — same independent server-side bounds check as the
+        // write side (photoEntry): both directions must pass it or the tags
+        // die on the first round-trip. Omit when absent.
+        if (sidecar.prov) ref.prov = sidecar.prov
         refs.push(ref)
         ordered.push({ kind: ref.posterUrl ? 'video' : 'photo', ...ref })
       }

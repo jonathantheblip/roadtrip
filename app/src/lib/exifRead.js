@@ -258,8 +258,25 @@ export function exifReaderToMeta(tags) {
 export const SRC_NAME_MAX = 200
 export const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modify', 'file-mtime', 'test'])
 
-// Whitelist + bound the full sidecar `{ meta, srcName, srcMod, atSrc }` in one
-// call — the single seam every ref-build site (and the gap-fill seam in
+// `prov` (Build 2, FAMILY_TRIPS_VISION §14) — which TIER each of a ref's
+// lat/lng and offsetMinutes actually came from: a real read (`exif`/`scan`) vs
+// a computed guess (`inferred-manual`/`inferred-place`). Sparse — a key is
+// omitted when that field isn't set on the ref at all. STRICT enum on both
+// sub-keys: anything not in these two sets is dropped, never passed through
+// (mirrors every other sidecar field's whitelist-not-blocklist shape).
+export const PROV_GPS_VALUES = new Set(['exif', 'scan'])
+export const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
+
+export function sanitizeProv(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const out = {}
+  if (typeof input.gps === 'string' && PROV_GPS_VALUES.has(input.gps)) out.gps = input.gps
+  if (typeof input.off === 'string' && PROV_OFF_VALUES.has(input.off)) out.off = input.off
+  return Object.keys(out).length ? out : undefined
+}
+
+// Whitelist + bound the full sidecar `{ meta, srcName, srcMod, atSrc, prov }` in
+// one call — the single seam every ref-build site (and the gap-fill seam in
 // memoryStore.js) spreads onto a ref, so the bounds live in exactly one place
 // client-side. Returns only the keys that passed; never throws.
 export function sanitizeSidecar(input) {
@@ -272,5 +289,7 @@ export function sanitizeSidecar(input) {
   }
   if (Number.isFinite(input.srcMod) && input.srcMod > 0) out.srcMod = input.srcMod
   if (typeof input.atSrc === 'string' && ATSRC_VALUES.has(input.atSrc)) out.atSrc = input.atSrc
+  const prov = sanitizeProv(input.prov)
+  if (prov) out.prov = prov
   return out
 }

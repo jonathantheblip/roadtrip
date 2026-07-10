@@ -63,7 +63,23 @@ export function sanitizeMetaServer(input) {
 const SRC_NAME_MAX = 200
 const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modify', 'file-mtime', 'test'])
 
-// Whitelist + bound `{ meta, srcName, srcMod, atSrc }` off an arbitrary
+// `prov` (Build 2) — mirrors app/src/lib/exifRead.js's PROV_GPS_VALUES/
+// PROV_OFF_VALUES/sanitizeProv exactly (independent copy, never imported —
+// separate deployable, same house rule as every other sidecar field: the
+// client's own bounds-check is never trusted). Sparse; strict enum on both
+// sub-keys.
+const PROV_GPS_VALUES = new Set(['exif', 'scan'])
+const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
+
+export function sanitizeProvServer(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const out = {}
+  if (typeof input.gps === 'string' && PROV_GPS_VALUES.has(input.gps)) out.gps = input.gps
+  if (typeof input.off === 'string' && PROV_OFF_VALUES.has(input.off)) out.off = input.off
+  return Object.keys(out).length ? out : undefined
+}
+
+// Whitelist + bound `{ meta, srcName, srcMod, atSrc, prov }` off an arbitrary
 // (client-supplied, or D1-stored-then-reparsed) object. Returns only the
 // keys that passed; never throws on hostile input.
 export function sanitizeSidecarServer(input) {
@@ -76,5 +92,7 @@ export function sanitizeSidecarServer(input) {
   }
   if (Number.isFinite(input.srcMod) && input.srcMod > 0) out.srcMod = input.srcMod
   if (typeof input.atSrc === 'string' && ATSRC_VALUES.has(input.atSrc)) out.atSrc = input.atSrc
+  const prov = sanitizeProvServer(input.prov)
+  if (prov) out.prov = prov
   return out
 }

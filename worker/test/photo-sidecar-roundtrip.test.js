@@ -175,6 +175,74 @@ describe('the never-discard sidecar — meta/srcName/srcMod/atSrc survive postMe
     expect('atSrc' in mem.photoRefs[0]).toBe(false)
   })
 
+  it('Build 2 (§14): a full valid prov tag round-trips via photoRefs[] alongside the rest of the sidecar', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-prov',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [
+          {
+            storage: 'r2', key: 'jonathan/m-prov/p0', mime: 'image/jpeg',
+            lat: 42.06, lng: -70.16, offsetMinutes: -240,
+            srcName: 'IMG_9999.HEIC', prov: { gps: 'exif', off: 'inferred-place' },
+          },
+        ],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs[0].prov).toEqual({ gps: 'exif', off: 'inferred-place' })
+
+    const pull = await call('/memories', { token: TOKENS.jonathan })
+    const pulled = (await pull.json()).find((m) => m.id === 'm-prov')
+    expect(pulled.photoRefs[0].prov).toEqual({ gps: 'exif', off: 'inferred-place' })
+  })
+
+  it('Build 2 (§14): a prov with an unwhitelisted value is dropped per-key server-side, never silently passed through', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-prov-bad',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [
+          {
+            storage: 'r2', key: 'jonathan/m-prov-bad/p0', mime: 'image/jpeg',
+            prov: { gps: 'made-up', off: 'inferred-manual' }, // gps invalid, off valid
+          },
+        ],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs[0].prov).toEqual({ off: 'inferred-manual' })
+    const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-prov-bad').first()
+    expect(JSON.parse(row.photo_r2_keys_json)[0].prov).toEqual({ off: 'inferred-manual' })
+  })
+
+  it('Build 2 (§14): a totally garbage prov (non-object) is dropped entirely, never crashes the write', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-prov-hostile',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-prov-hostile/p0', mime: 'image/jpeg', prov: 'DROP TABLE memories' }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect('prov' in mem.photoRefs[0]).toBe(false)
+  })
+
   it('keeps a sidecar-less ref byte-identical to the legacy stored shape (no null pollution)', async () => {
     const res = await call('/memories', {
       method: 'POST',

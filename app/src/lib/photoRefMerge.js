@@ -28,6 +28,18 @@ export function entrySidecar(entry) {
   })
 }
 
+// Build 2 (§14): the `prov` tag for a NEW ref built straight from real EXIF/
+// video-container metadata — 'exif' tier for whichever of gps/off the ref
+// actually carries (sparse; a field the ref doesn't have gets no prov key at
+// all). Every organic ref-build site attaches this — a fresh import's lat/lng/
+// offset are always a real read, never a guess.
+function newRefProv({ lat, lng, offsetMinutes }) {
+  const prov = {}
+  if (Number.isFinite(lat) && Number.isFinite(lng)) prov.gps = 'exif'
+  if (Number.isFinite(offsetMinutes)) prov.off = 'exif'
+  return Object.keys(prov).length ? { prov } : {}
+}
+
 // Pure: build a NEW photo's baseRef (GPS/offset + the Build 1 sidecar) —
 // exactly what uploadOrQueueNewPhoto attaches before the Worker push/queue
 // attempt. Extracted so BOTH callers that reach it — the bulk importer
@@ -42,6 +54,7 @@ export function buildNewPhotoBaseRef({ entry, mime, capturedAt, lat, lng, offset
     ...(Number.isFinite(lng) ? { lng } : {}),
     ...(Number.isFinite(offsetMinutes) ? { offsetMinutes } : {}),
     ...entrySidecar(entry),
+    ...newRefProv({ lat, lng, offsetMinutes }),
   }
 }
 
@@ -49,7 +62,9 @@ export function buildNewPhotoBaseRef({ entry, mime, capturedAt, lat, lng, offset
 // carries `.encoded` (the WebCodecs output) for width/height/durationMs/
 // bytes/sound, and `.file`/`.exif` for the sidecar (a video's own File still
 // has a real name/mtime even though its `meta` naturally stays absent —
-// entrySidecar's own EXIF reader doesn't apply to video containers).
+// entrySidecar's own EXIF reader doesn't apply to video containers). Real
+// video GPS (the QuickTime ISO6709 atom, Build 1) is ALSO 'exif' provenance —
+// same trust tier as photo EXIF, real container metadata either way.
 export function buildNewVideoBaseRef({ entry, capturedAt, lat, lng, offsetMinutes }) {
   const enc = entry?.encoded || {}
   return {
@@ -65,6 +80,7 @@ export function buildNewVideoBaseRef({ entry, capturedAt, lat, lng, offsetMinute
     sound: typeof enc.sound === 'string' ? enc.sound : null,
     capturedAt,
     ...entrySidecar(entry),
+    ...newRefProv({ lat, lng, offsetMinutes }),
   }
 }
 
@@ -83,6 +99,7 @@ export function buildReattachRef({ entry, assetKey, mime, capturedAt, lat, lng, 
     ...(lng != null ? { lng } : {}),
     ...(offsetMinutes != null ? { offsetMinutes } : {}),
     ...entrySidecar(entry),
+    ...newRefProv({ lat, lng, offsetMinutes }),
   }
 }
 

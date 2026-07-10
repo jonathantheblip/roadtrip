@@ -419,8 +419,12 @@ export function matchRecovered(recovered, refIndex, scanner) {
 //   loadSceneHash — File → hex scene hash | null (sceneHashFromFile in production;
 //                   optional — omitting it degrades every match to the fallback
 //                   rule, never throws)
-//   applyGps    — (memoryId, refKey, {lat,lng}) → the patched record, or null if gone
-//   applyOffset — (memoryId, refKey, offsetMinutes) → same contract
+//   applyGps    — (memoryId, refKey, {lat,lng}, source) → the patched record, or
+//                 null if gone. This call site always passes source:'scan' (a
+//                 re-granted device original is a real read, REFERENCE tier —
+//                 Build 2's provenance-aware write rule in memoryStore.js).
+//   applyOffset — (memoryId, refKey, offsetMinutes, source) → same contract,
+//                 always called with source:'scan'
 //   applySidecar — (memoryId, refKey, {meta,srcName,srcMod,atSrc}) → same contract
 //                  (Build 1 — the never-discard sidecar; optional, defaults to a
 //                  no-op so existing callers/tests need not supply it)
@@ -517,7 +521,7 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
         let touched = false
         if (Number.isFinite(w.lat) && Number.isFinite(w.lng)) {
           try {
-            if (applyGps?.(w.memoryId, w.refKey, { lat: w.lat, lng: w.lng }) !== null) {
+            if (applyGps?.(w.memoryId, w.refKey, { lat: w.lat, lng: w.lng }, 'scan') !== null) {
               w.candidate.needsGps = false
               stats.gpsFilled += 1
               gpsHere += 1
@@ -529,7 +533,7 @@ export async function runResourceScan({ files, memories, scanner, loadTags, load
         }
         if (Number.isFinite(w.offsetMinutes)) {
           try {
-            if (applyOffset?.(w.memoryId, w.refKey, w.offsetMinutes) !== null) {
+            if (applyOffset?.(w.memoryId, w.refKey, w.offsetMinutes, 'scan') !== null) {
               w.candidate.needsOffset = false
               stats.offsetFilled += 1
               offsetHere += 1

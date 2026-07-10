@@ -778,6 +778,108 @@ test('applyRefGps: matches the right ref by key inside a photoRefs[] album', asy
   assert.equal(patched.photoRefs[1].lng, 6)
 })
 
+test('applyRefGps: a first write with no existing coords tags prov.gps to whatever source was passed', async () => {
+  const { applyRefGps } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('mgp', { photoRef: { storage: 'r2', key: 'kk', url: 'uu' } })])
+  const patched = applyRefGps('mgp', 'kk', { lat: 1, lng: 2 }, 'scan')
+  assert.equal(patched.photoRef.lat, 1)
+  assert.deepEqual(patched.photoRef.prov, { gps: 'scan' })
+})
+
+// ── Build 2 (§14): the provenance-aware write-seam rule ─────────────────────
+// applyRefGps/applyRefOffset share ONE tiering rule (tieredWriteAllowed in
+// memoryStore.js): no existing value → always write; existing REFERENCE-tier
+// ('exif'/'scan') → refuse, always; existing value with prov ABSENT → refuse
+// (defensive — "prefer nothing to a guess"); existing INFERRED-tier
+// ('inferred-manual'/'inferred-place') → a new REFERENCE-tier source upgrades
+// it, a new INFERRED-tier source is refused. Exercised on applyRefOffset
+// (which actually has inferred sources today); the reference-blocks-reference
+// and reference-blocks-absent-prov cases are proven on BOTH functions for
+// symmetry, since GPS shares the exact same rule shape even with no live
+// inferred-GPS source yet.
+
+test('write-seam rule: REFERENCE blocks REFERENCE — an exif-tagged offset is never overwritten by a fresh exif/scan read', async () => {
+  const { applyRefOffset } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wr1', {
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', offsetMinutes: -240, prov: { off: 'exif' } },
+  })])
+  const bySameTier = applyRefOffset('wr1', 'kk', -300, 'exif')
+  assert.equal(bySameTier.photoRef.offsetMinutes, -240, 'exif never overwrites exif')
+  const byScan = applyRefOffset('wr1', 'kk', -300, 'scan')
+  assert.equal(byScan.photoRef.offsetMinutes, -240, 'scan never overwrites exif either — reference blocks reference')
+  assert.deepEqual(byScan.photoRef.prov, { off: 'exif' }, 'prov itself is untouched by the refused write')
+})
+
+test('write-seam rule: REFERENCE blocks ABSENT prov — a legacy value with no prov tag is treated as reference tier', async () => {
+  const { applyRefOffset } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wr2', {
+    // A pre-Build-2 ref: has an offset, but no prov at all (predates the
+    // retroactive tagging pass) — "prefer nothing to a guess".
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', offsetMinutes: -240 },
+  })])
+  const patched = applyRefOffset('wr2', 'kk', -300, 'inferred-place')
+  assert.equal(patched.photoRef.offsetMinutes, -240, 'an absent prov defensively refuses a guess')
+  assert.equal(patched.photoRef.prov, undefined, 'no prov is fabricated onto a refused write')
+})
+
+test('write-seam rule: INFERRED yields to REFERENCE — a real read upgrades a guess and updates prov', async () => {
+  const { applyRefOffset } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wr3', {
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', offsetMinutes: -240, prov: { off: 'inferred-place' } },
+  })])
+  const patched = applyRefOffset('wr3', 'kk', -300, 'exif')
+  assert.equal(patched.photoRef.offsetMinutes, -300, 'a real read overwrites the inferred guess')
+  assert.deepEqual(patched.photoRef.prov, { off: 'exif' }, 'prov is upgraded to the new reference-tier source')
+})
+
+test('write-seam rule: INFERRED blocks INFERRED — never replace one guess with another (avoid thrashing)', async () => {
+  const { applyRefOffset } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wr4', {
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', offsetMinutes: -240, prov: { off: 'inferred-manual' } },
+  })])
+  const patched = applyRefOffset('wr4', 'kk', -300, 'inferred-place')
+  assert.equal(patched.photoRef.offsetMinutes, -240, 'a second guess never replaces the first')
+  assert.deepEqual(patched.photoRef.prov, { off: 'inferred-manual' }, 'prov is untouched by the refused write')
+})
+
+test('write-seam rule: a first write (no existing offset) always lands regardless of source, and tags prov.off', async () => {
+  const { applyRefOffset } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wr5', { photoRef: { storage: 'r2', key: 'kk', url: 'uu' } })])
+  const patched = applyRefOffset('wr5', 'kk', -240, 'inferred-place')
+  assert.equal(patched.photoRef.offsetMinutes, -240)
+  assert.deepEqual(patched.photoRef.prov, { off: 'inferred-place' })
+})
+
+test('write-seam rule: applyRefGps — REFERENCE blocks REFERENCE (symmetry with applyRefOffset)', async () => {
+  const { applyRefGps } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wg1', {
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', lat: 1, lng: 2, prov: { gps: 'exif' } },
+  })])
+  const patched = applyRefGps('wg1', 'kk', { lat: 9, lng: 9 }, 'scan')
+  assert.equal(patched.photoRef.lat, 1, 'a reference-tier GPS value is never overwritten by another reference-tier read')
+  assert.deepEqual(patched.photoRef.prov, { gps: 'exif' })
+})
+
+test('write-seam rule: applyRefGps — REFERENCE blocks ABSENT prov (symmetry with applyRefOffset)', async () => {
+  const { applyRefGps } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wg2', {
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', lat: 1, lng: 2 }, // legacy, no prov
+  })])
+  const patched = applyRefGps('wg2', 'kk', { lat: 9, lng: 9 }, 'exif')
+  assert.equal(patched.photoRef.lat, 1, 'a legacy coord with no prov defensively refuses a fresh write too')
+})
+
+test('write-seam rule: prov.gps and prov.off coexist independently — writing one never disturbs the other', async () => {
+  const { applyRefGps, applyRefOffset } = await import('../../src/lib/memoryStore.js')
+  mergeFromRemote([remoteMem('wg3', {
+    photoRef: { storage: 'r2', key: 'kk', url: 'uu', offsetMinutes: -240, prov: { off: 'inferred-place' } },
+  })])
+  const withGps = applyRefGps('wg3', 'kk', { lat: 5, lng: 6 }, 'exif')
+  assert.deepEqual(withGps.photoRef.prov, { off: 'inferred-place', gps: 'exif' }, 'the pre-existing off tag survives a gps write')
+  const upgraded = applyRefOffset('wg3', 'kk', -300, 'scan')
+  assert.deepEqual(upgraded.photoRef.prov, { off: 'scan', gps: 'exif' }, 'the gps tag survives the offset upgrade')
+})
+
 // ── applyRefSidecar (Build 1 — the never-discard sidecar's re-source scan) ──
 
 test('applyRefSidecar: per-field gap-fill — fills only ABSENT fields, never overwrites a present one', async () => {

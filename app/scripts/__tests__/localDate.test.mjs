@@ -9,7 +9,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { localDateIso, todayLocalIso, nowMinutesInZone, clockInZone, viewerZone } from '../../src/lib/localDate.js'
+import { localDateIso, todayLocalIso, nowMinutesInZone, clockInZone, viewerZone, tzOffsetMinutes } from '../../src/lib/localDate.js'
 
 // localDateIso reads getFullYear/getMonth/getDate — i.e. the LOCAL calendar
 // fields of the Date. To assert the midnight boundary deterministically on
@@ -108,4 +108,45 @@ test('clockInZone: applies the zone (two zones, same instant → different strin
 
 test('viewerZone: returns a string (the host IANA zone or "")', () => {
   assert.equal(typeof viewerZone(), 'string')
+})
+
+// ── tzOffsetMinutes: DST-correct zone math (Build 2 §14 offset-inference) ──
+// A US Eastern photo in January must get a DIFFERENT offset than one in
+// July — the whole point is real Intl-resolved DST rules, not a static
+// UTC-5/UTC-4 lookup table.
+
+test('tzOffsetMinutes: New York — EST (-300) in January, EDT (-240) in July', () => {
+  assert.equal(tzOffsetMinutes(new Date('2026-01-15T12:00:00.000Z'), 'America/New_York'), -300)
+  assert.equal(tzOffsetMinutes(new Date('2026-07-15T12:00:00.000Z'), 'America/New_York'), -240)
+})
+
+test('tzOffsetMinutes: an EAST-of-UTC zone returns a positive offset', () => {
+  // Rome: CET (+60) in January, CEST (+120) in July.
+  assert.equal(tzOffsetMinutes(new Date('2026-01-15T12:00:00.000Z'), 'Europe/Rome'), 60)
+  assert.equal(tzOffsetMinutes(new Date('2026-07-15T12:00:00.000Z'), 'Europe/Rome'), 120)
+})
+
+test('tzOffsetMinutes: exactly at the US spring-forward boundary (2026-03-08 07:00 UTC = 2:00 AM EST → springs to 3:00 AM EDT)', () => {
+  // One minute before the transition: still EST (-300).
+  assert.equal(tzOffsetMinutes(new Date('2026-03-08T06:59:00.000Z'), 'America/New_York'), -300)
+  // At/after the transition instant: EDT (-240) — the wall clock jumped, but
+  // the UTC instant is continuous, so this is still a well-defined answer.
+  assert.equal(tzOffsetMinutes(new Date('2026-03-08T07:00:00.000Z'), 'America/New_York'), -240)
+})
+
+test('tzOffsetMinutes: exactly at the US fall-back boundary (2026-11-01 06:00 UTC = 2:00 AM EDT falls back to 1:00 AM EST)', () => {
+  assert.equal(tzOffsetMinutes(new Date('2026-11-01T05:59:00.000Z'), 'America/New_York'), -240)
+  assert.equal(tzOffsetMinutes(new Date('2026-11-01T06:00:00.000Z'), 'America/New_York'), -300)
+})
+
+test('tzOffsetMinutes: UTC itself is always 0, any season', () => {
+  assert.equal(tzOffsetMinutes(new Date('2026-01-15T12:00:00.000Z'), 'UTC'), 0)
+  assert.equal(tzOffsetMinutes(new Date('2026-07-15T12:00:00.000Z'), 'UTC'), 0)
+})
+
+test('tzOffsetMinutes: bad input degrades to null, never throws', () => {
+  assert.equal(tzOffsetMinutes(null, 'America/New_York'), null)
+  assert.equal(tzOffsetMinutes(new Date('2026-01-15T12:00:00.000Z'), ''), null)
+  assert.equal(tzOffsetMinutes(new Date('2026-01-15T12:00:00.000Z'), 'Not/AZone'), null)
+  assert.equal(tzOffsetMinutes(new Date('not-a-date'), 'America/New_York'), null)
 })

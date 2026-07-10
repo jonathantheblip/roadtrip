@@ -243,3 +243,78 @@ describe('healSweep (the daily backstop)', () => {
     expect((await memRow('m1')).stop_id).toBe('s-a')
   })
 })
+
+// ── Build 2 (§14) — shadow REALLY means shadow for the offset-inference
+// engine ──────────────────────────────────────────────────────────────────
+// THE EXACT BUG: healSweep called backfillOffsetInference(env) unconditionally
+// (default dryRun=false), so a corroborated candidate landed a REAL write to
+// photo_r2_keys_json the moment PHOTO_HEAL_MODE was anything but 'off' —
+// including 'shadow', directly contradicting this file's own header comment,
+// worker/src/index.js's comment on the same knob, and
+// BUILD_PLAN_SIGNAL_FLEET.md's explicit "shadow: nothing family-visible
+// moves." This is the live-armed reproduction: the SAME corroborated
+// candidate run through healSweep under 'shadow' must leave the ref
+// byte-identical; under 'on' it must actually write. Both cases live here so
+// the contrast is explicit — the real sun-math (Provincetown, 2026-07-04) is
+// the same corpus offset-inference.test.js uses.
+describe('healSweep — the offset-inference engine obeys shadow (Build 2 regression)', () => {
+  const OI_TZ = 'America/New_York'
+  const OI_PTOWN = { lat: 42.0621405, lng: -70.1633884 }
+  const OI_DAY = '2026-07-04T16:00:00.000Z' // real midday EDT at Provincetown
+
+  async function seedOffsetTrip(id, stamp = 300) {
+    const trip = { id, tz: OI_TZ, lodging: { lat: OI_PTOWN.lat, lng: OI_PTOWN.lng, name: 'Stay' }, days: [] }
+    await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?,?,?)')
+      .bind(id, JSON.stringify(trip), stamp)
+      .run()
+  }
+  // A corroborated candidate: an outdoor-labeled photo at a real local
+  // daylight instant, no offsetMinutes yet — exactly what CORROBORATED-tags
+  // in offset-inference.test.js.
+  function offsetCandidateRefsJson() {
+    return JSON.stringify([{ key: 'k1', capturedAt: OI_DAY, vision: { setting: 'outdoor' } }])
+  }
+  async function seedOffsetMemory(id, tripId, stamp = 60) {
+    await env.DB.prepare(
+      `INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).bind(id, tripId, 'jonathan', 'shared', 'photo', offsetCandidateRefsJson(), 1, stamp).run()
+  }
+  async function rawRefsJson(id) {
+    const r = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id=?').bind(id).first()
+    return r.photo_r2_keys_json
+  }
+
+  it('mode="shadow": the SAME corroborated candidate leaves photo_r2_keys_json BYTE-IDENTICAL, stats report the would-be tier breakdown', async () => {
+    await seedOffsetTrip('t-oi-shadow')
+    await seedOffsetMemory('m-oi-shadow', 't-oi-shadow')
+    const before = await rawRefsJson('m-oi-shadow')
+    // Scene backfill is a SEPARATE, unrelated best-effort pass that also
+    // touches photo_r2_keys_json (marking sceneFail on a ref with no real R2
+    // asset) — disable it here so the byte-identical assertion below isolates
+    // the offset-inference engine specifically, not scene's own unrelated write.
+    const r = await healSweep({ ...env, PHOTO_HEAL_MODE: 'shadow', PHOTO_SCENE_BACKFILL_LIMIT: 0 }, { now: NOW })
+    expect(r.mode).toBe('shadow')
+    // Reported would-be tier breakdown — the review deliverable for shadow.
+    expect(r.offsetInference.corroborated).toBe(1)
+    expect(r.offsetInference.wrote).toBe(1)
+    expect(r.offsetInference.memsWritten).toBe(0)
+    const after = await rawRefsJson('m-oi-shadow')
+    expect(after).toBe(before) // byte-identical — a true DB no-op
+    const refs = JSON.parse(after)
+    expect(refs[0].offsetMinutes).toBeUndefined()
+    expect(refs[0].prov).toBeUndefined()
+  })
+
+  it('mode="on": the IDENTICAL candidate IS updated with offsetMinutes + prov.off="inferred-place"', async () => {
+    await seedOffsetTrip('t-oi-on')
+    await seedOffsetMemory('m-oi-on', 't-oi-on')
+    const r = await healSweep({ ...env, PHOTO_HEAL_MODE: 'on', PHOTO_SCENE_BACKFILL_LIMIT: 0 }, { now: NOW })
+    expect(r.mode).toBe('on')
+    expect(r.offsetInference.corroborated).toBe(1)
+    expect(r.offsetInference.memsWritten).toBe(1)
+    const refs = JSON.parse(await rawRefsJson('m-oi-on'))
+    expect(refs[0].offsetMinutes).toBe(-240)
+    expect(refs[0].prov).toEqual({ off: 'inferred-place' })
+  })
+})

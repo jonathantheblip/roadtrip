@@ -30,6 +30,9 @@ import { isImplicitBaseId, isRecordTargetId, parseRecordTargetId } from './daySt
 import { buildTripDecisions } from './sessionHeal.js'
 import { backfillSceneSignatures } from './sceneBackfill.js'
 import { backfillVisionLabels } from './visionBackfill.js'
+import { backfillProvenanceTags } from './provenanceBackfill.js'
+import { backfillTripTimezones } from './tripTzBackfill.js'
+import { backfillOffsetInference } from './offsetInference.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -367,6 +370,50 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   } catch (e) {
     console.error('[vision-backfill] sweep failed', e?.stack || e)
   }
+  // Build 2 (§14) — retroactively tag every existing ref's SOURCE (real EXIF
+  // read vs. an inferred/manual guess) before deriving anything new, then
+  // derive the STAY timezone for any trip still missing one, then run the
+  // offset-inference engine (needs trip.tz, so it rides last). All three are
+  // best-effort + bounded, matching the scene/vision backfills above — a
+  // failure in any one must never stop the sweep. UNLIKE the scene/vision
+  // backfills (which only ever feed an internal shadow ledger nothing
+  // currently surfaces), trip.tz and offsetMinutes are each family-visible
+  // TODAY (album day-attribution + time labels, and photoMatch/sessionHeal's
+  // time reasoning respectively) — so those two, and ONLY those two, are
+  // gated on `mode` below and write for real only when mode==='on'.
+  // provenanceBackfill is NOT gated: it only ever labels the SOURCE of a
+  // value a ref already carries — zero behavior change today (verified: the
+  // only consumer of `ref.prov` is memoryStore.js's tieredWriteAllowed write
+  // gate, never anything rendered) — so it stays always-on, same posture as
+  // scene/vision.
+  let provenanceBackfill = null
+  try {
+    provenanceBackfill = await backfillProvenanceTags(env)
+  } catch (e) {
+    console.error('[provenance-backfill] sweep failed', e?.stack || e)
+  }
+  // trip.tz is NOT inert either: photoEntries.js's buildDayTz/dayForCapture
+  // reads it directly to decide which DAY a photo's album section falls under
+  // and what its time-band label reads — a real, TODAY, family-visible
+  // consequence, independent of the offset-inference engine below. So this
+  // backfill gets the exact same off/shadow/on write discipline: 'mode' is
+  // threaded through, real writes only when mode==='on'.
+  let tripTzBackfill = null
+  try {
+    tripTzBackfill = await backfillTripTimezones(env, { mode })
+  } catch (e) {
+    console.error('[trip-tz-backfill] sweep failed', e?.stack || e)
+  }
+  // offsetMinutes is likewise family-visible (drives photoMatch.js's day
+  // binning + sessionHeal.js's time reasoning) — same 'mode' threading, real
+  // writes only on 'on' (see offsetInference.js's header for the full
+  // contract this closes a real live bug in).
+  let offsetInference = null
+  try {
+    offsetInference = await backfillOffsetInference(env, { mode })
+  } catch (e) {
+    console.error('[offset-inference] sweep failed', e?.stack || e)
+  }
   const { results: trips } = await env.DB.prepare(
     'SELECT id FROM trips WHERE deleted_at IS NULL'
   ).all()
@@ -390,7 +437,18 @@ export async function healSweep(env, { now = Date.now() } = {}) {
       console.error('[photo-heal-v2] trip failed', t.id, e?.stack || e)
     }
   }
-  return { mode, trips: trips?.length || 0, tripsWithMoves, totalMoves, v2Recorded, sceneBackfill, visionBackfill }
+  return {
+    mode,
+    trips: trips?.length || 0,
+    tripsWithMoves,
+    totalMoves,
+    v2Recorded,
+    sceneBackfill,
+    visionBackfill,
+    provenanceBackfill,
+    tripTzBackfill,
+    offsetInference,
+  }
 }
 
 // ── v2 SHADOW LEARNING ledger (SPEC_V2 Phase 1) ──────────────────────────────

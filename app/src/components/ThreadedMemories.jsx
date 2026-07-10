@@ -195,6 +195,12 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           srcMod: p.file?.lastModified,
           atSrc: prepared?.exif?.capturedAtSource,
         })
+        // Build 2 (§14) provenance — a fresh import's lat/lng/offset are always
+        // a real EXIF read, never a guess. Sparse: only the keys this ref
+        // actually carries get tagged.
+        const prov = {}
+        if (Number.isFinite(lat) && Number.isFinite(lng)) prov.gps = 'exif'
+        if (Number.isFinite(offsetMinutes)) prov.off = 'exif'
         refs.push({
           storage: 'idb',
           key,
@@ -204,6 +210,7 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           ...(Number.isFinite(lng) ? { lng } : {}),
           ...(Number.isFinite(offsetMinutes) ? { offsetMinutes } : {}),
           ...sidecar,
+          ...(Object.keys(prov).length ? { prov } : {}),
         })
       }
       saveMemory({

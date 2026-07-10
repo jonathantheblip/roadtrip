@@ -84,3 +84,42 @@ export function viewerZone() {
     return ''
   }
 }
+
+// The UTC offset (in minutes, positive = east of UTC) an IANA zone was AT a
+// specific instant — DST-correct, so a US Eastern photo in January (-300) and
+// one in July (-240) get different answers even though it's "the same zone".
+// Build 2's offset-inference engine (§14): given a photo's real capturedAt
+// instant and the trip's stay zone, this is "what would a clock on the wall
+// there have read" as an offset, no DST table hand-rolled — Intl's formatter
+// already resolves the zone's real rules for that date. Keyless; returns null
+// on an unknown/invalid zone or a bad date rather than guessing 0 (UTC).
+//
+// Technique: format the SAME instant twice — once as UTC field values, once as
+// the target zone's field values — and diff the two as if both were UTC
+// instants. The difference IS the zone's offset at that moment.
+export function tzOffsetMinutes(date, tz) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime()) || !tz) return null
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hourCycle: 'h23',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    })
+    const parts = {}
+    for (const p of dtf.formatToParts(date)) {
+      if (p.type !== 'literal') parts[p.type] = p.value
+    }
+    // formatToParts renders hour 24 for midnight under hourCycle:'h23' in some
+    // engines — Date.UTC normalizes that (hour:24 rolls into the next day the
+    // same way the wall clock would), so no special-case needed.
+    const asUTC = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour), Number(parts.minute), Number(parts.second)
+    )
+    if (!Number.isFinite(asUTC)) return null
+    return Math.round((asUTC - date.getTime()) / 60000)
+  } catch {
+    return null
+  }
+}
