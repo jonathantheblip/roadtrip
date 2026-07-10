@@ -347,8 +347,72 @@ principles that govern everything here (each was a real gap in this section's ea
 
 ---
 
+## 13. THE SIGNAL FLEET — many unreliable witnesses, never discard a signal again (decided 2026-07-10)
+
+**The decision (Jonathan, 2026-07-10, SETTLED — do not relitigate):** the archive is healed from signals
+the app **already holds** — never from asking the family to redo work. He opened the shipped re-source
+picker on his phone and called it what it is: dead on arrival — nobody re-selects an unsorted camera roll
+from memory, and a workaround that is also a chore "isn't the way to get back to good." The picker stays
+as an optional power tool; **nothing load-bearing rests on human archaeology again.**
+
+Two governing principles, his words' spirit:
+
+1. **Many partially-reliable witnesses, in overlap.** No source is ever 100% reliable, so the trip is
+   organized by "2 or 6 or 14" dimensions at once (the numbers illustrative, the plurality not) — each
+   votes, a missing one abstains, every inferred fact carries provenance and is reversible. The agenda is
+   one witness among many: a weak prior that trips wander away from (the way the family wandered around
+   Provincetown), never the reference — §12's agenda-free rule stands untouched.
+2. **Never throw away a signal at intake.** The upload pipeline stripping EXIF is the original sin this
+   whole arc exists to repair; it must never happen to another signal class.
+
+**What the 2026-07-10 audit found (4-reader fan-out over live code — the concrete shape of the sin):**
+import parses the **entire** EXIF tag set, then keeps five fields (`capturedAt`, `lat`, `lng`,
+`offsetMinutes`, `mime`) and discards the rest in memory: camera make/model (whose phone really took it —
+`authorTraveler` records the importer, a known trap), burst / Live-Photo pairing IDs, the original
+filename (a per-device monotonic sequence — true ORDER even when clocks lie), lens/focal length
+(front-vs-back camera), ISO/flash/exposure (indoor/outdoor, dark/bright), altitude/heading, even the
+`capturedAtSource` provenance the bulk importer computes. **Videos are worse: iPhone clips carry GPS in
+the QuickTime location atom and import never reads it** — video refs are hard-coded `lat: null`. The fix
+is cheap because every one of these is already in hand at import: persist the full parsed tag set as a
+small additive sidecar on the ref (`photo_r2_keys_json` is the proven migration-less home — GPS, offset,
+poster, sound, scene, vision all rode it; mind its two constraints: the push/pull whitelists strip unknown
+fields, and a client re-save clobbers worker-only fields, so a non-recomputable sidecar must ride the
+whitelists). The rule applies to **every** intake path, including the picker tool itself.
+
+**The signal map — where witnesses live (open-ended; add witnesses, never bet on one):**
+- **In the file** (import-time only; gone for the archive): capture instant + zone, GPS/altitude/heading,
+  camera model, front/back camera, burst & Live-Photo links, filename sequence, exposure, video location.
+- **In the pixels** (held forever — works on the whole archive): scene fingerprint (live), vision naming
+  (live) and scene TYPE, readable signage (storefronts name the place), faces (today local-only under an
+  explicit privacy promise), light/weather in frame.
+- **In the app's context**: the stay's coords (`stayPlaceCoords`), the agenda as weak prior (planned stops
+  mostly carry coords), cross-device echoes (two phones, one scene), created-at clustering, the
+  manual-moves ledger + dismissals (append-only human ground truth), notes/captions/the Record's entries.
+- **In the world's records** (free): sunrise/sunset per place+date (a daylight sanity-check on any clock —
+  the sun math is already on-device, `sunTimes.js`), historical weather (rain in frame = the rainy
+  afternoon; external), place databases (find-places, live).
+- **From the family, cheaply** (the ask-economy holds): confirm-tier answers accumulate as anchors.
+
+**Two structural gaps the audit exposed (both feed the near-term work):**
+1. **Per-photo signal fields carry NO source tag** — a ref's `lat`/`offsetMinutes` look identical whether
+   EXIF-read, scan-recovered, or inferred. Anything inferred must carry provenance and always yield to
+   reference data; building that tag precedes any inferred write.
+2. **A trip doesn't reliably know its timezone** — `trip.tz` is read but never written; only AI-created
+   international legs carry one. The clocks fix derives it from the stay's coords and writes it durably.
+
+**Near-term sequence (tracked as tasks; verify against memory, this ages):** the intake sidecar (stop the
+bleeding, all paths, incl. video GPS) → the clocks fix (infer archive offsets from the stay's zone,
+photo-corroborated, provenance-tagged, tiered through the existing ledger, shadow-first) → vision
+place-sameness (bridge the town-wander fragments; only within the same few hours, the window GPS would
+have had) → landmark pinning (find-places on vision's names) → sparse-GPS spreading (one located photo
+places its whole scene-cluster). Faces remains the parallel device-lever.
+
+---
+
 *Sources of truth for this doc: Jonathan, session `a50cb529` (2026-06-19) and on-device feedback
 (2026-06-20). §12 added 2026-07-05 per Jonathan's own extension of The Record's three-tenses framing (his
 words, not a proposed reframe — see `memory/the-record-three-tenses.md`'s prior standing-amendment note,
-which this settles). Related durable memory: `all-family-trips-not-roadtrips`, `family-trips-place-model`,
-`recenter-on-family-trips`, `the-record-three-tenses`, `document-the-trip-we-had`.*
+which this settles). §13 added 2026-07-10 per Jonathan's signal-fleet direction, the same night as his
+picker-DOA verdict — see `memory/self-healing-agenda-free.md`. Related durable memory:
+`all-family-trips-not-roadtrips`, `family-trips-place-model`, `recenter-on-family-trips`,
+`the-record-three-tenses`, `document-the-trip-we-had`.*
