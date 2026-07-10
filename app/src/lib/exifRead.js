@@ -36,6 +36,28 @@ export async function loadExifTags(file) {
   return ExifReader.load(input, { expanded: true })
 }
 
+// The widest real UTC offset is ±14:00. Anything beyond that (a corrupt exporter
+// writing "+99:99") is garbage that must never be additively stamped onto a photo —
+// an absurd offset would file it days off its true local wall clock, and being
+// additive, it would block the correct offset from ever landing later.
+const MAX_OFFSET_MINUTES = 14 * 60
+
+// "-04:00" → -240 ; "+05:30" → 330 ; missing/invalid/out-of-range → null. The one
+// shared parser for EXIF's OffsetTimeOriginal/OffsetTime string — both the live
+// import path (readExif below) and the re-source scan (resourceScan.js) key off
+// this, so a bounds bug or format change only needs fixing once.
+export function parseOffsetMinutes(offsetStr) {
+  if (typeof offsetStr !== 'string') return null
+  const m = offsetStr.trim().match(/^([+-])(\d{2}):(\d{2})$/)
+  if (!m) return null
+  const hours = parseInt(m[2], 10)
+  const minutes = parseInt(m[3], 10)
+  if (minutes > 59) return null
+  const mins = (m[1] === '-' ? -1 : 1) * (hours * 60 + minutes)
+  if (!Number.isFinite(mins) || Math.abs(mins) > MAX_OFFSET_MINUTES) return null
+  return mins
+}
+
 // EXIF stores dates as "YYYY:MM:DD HH:MM:SS" (colon-separated date part),
 // which `new Date()` rejects as Invalid Date. Parse the components
 // explicitly into a LOCAL-time Date — matching the behavior of exifr's

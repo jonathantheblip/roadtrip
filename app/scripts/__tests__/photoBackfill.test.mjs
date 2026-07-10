@@ -121,6 +121,30 @@ test('parseExifData ignores malformed offset strings', () => {
   assert.equal(result.offsetMinutes, null)
 })
 
+// Review round 5: this parser used to be its own inline regex with no range
+// check, on the BULK importer's path (ImportFlow.jsx → photoBackfill.js) — the
+// highest-traffic way photos enter the app. A corrupt exporter's out-of-range
+// OffsetTimeOriginal would silently become a nonsensical offset, additively and
+// permanently stamped onto every photo in the batch. Now shares exifRead.js's
+// bounds-checked parseOffsetMinutes with the re-source scan (resourceScan.js) —
+// one parser, one set of rules, everywhere an offset is read.
+test('parseExifData rejects an out-of-range offset (was silently 6039 minutes ≈ 4.2 days)', () => {
+  const result = parseExifData({ OffsetTimeOriginal: '+99:99' }, null)
+  assert.equal(result.offsetMinutes, null)
+})
+
+test('parseExifData rejects an invalid minutes field (was silently accepted)', () => {
+  const result = parseExifData({ OffsetTimeOriginal: '+05:60' }, null)
+  assert.equal(result.offsetMinutes, null)
+})
+
+test('parseExifData rejects an offset beyond the real ±14:00 range', () => {
+  assert.equal(parseExifData({ OffsetTimeOriginal: '+15:00' }, null).offsetMinutes, null)
+  assert.equal(parseExifData({ OffsetTimeOriginal: '-14:30' }, null).offsetMinutes, null)
+  // The widest REAL offset is still accepted.
+  assert.equal(parseExifData({ OffsetTimeOriginal: '+14:00' }, null).offsetMinutes, 840)
+})
+
 // ─── filterByTripRange ────────────────────────────────────────────
 
 function photo(id, iso) {

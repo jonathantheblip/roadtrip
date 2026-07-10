@@ -5,7 +5,7 @@
 // reused by future surfaces (Aurelia's PostcardComposer, automated
 // share-in importers).
 
-import { loadExifTags, exifReaderToRaw } from './exifRead.js'
+import { loadExifTags, exifReaderToRaw, parseOffsetMinutes } from './exifRead.js'
 
 // Max edge length per the punchlist: 2048px on the longest side, JPEG
 // q=0.85. Tuned for a good balance between fidelity (group photos
@@ -73,6 +73,16 @@ export async function readExif(file) {
     }
     if (Number.isFinite(raw.GPSLatitude)) out.lat = raw.GPSLatitude
     if (Number.isFinite(raw.GPSLongitude)) out.lng = raw.GPSLongitude
+    // The capture-time OFFSET — e.g. a photo shot at 17:42 local while traveling
+    // carries "-04:00" here. Without this, a trip in another timezone imports with
+    // capturedAt read as if it were LOCAL-to-home (exifDateToDate parses the wall
+    // clock in whatever zone the IMPORTING device is in), silently filing the photo
+    // hours off its real time — exactly the bug that hit 87/118 Provincetown photos
+    // before this fix. Capturing it here, at import, means it never needs archival
+    // repair again (see lib/resourceScan.js, the one-time recovery for photos
+    // imported before this line existed).
+    const offsetMinutes = parseOffsetMinutes(raw.OffsetTimeOriginal)
+    if (Number.isFinite(offsetMinutes)) out.offsetMinutes = offsetMinutes
     return out
   } catch {
     // Non-image files / unreadable EXIF — treat as "no EXIF" and move on.
@@ -83,8 +93,10 @@ export async function readExif(file) {
 // Decode a File into an HTMLImageElement. Wraps the FileReader →
 // `new Image()` dance with a single Promise that resolves once the
 // pixels are decodable. Rejects with a typed reason code so callers
-// can surface the right copy.
-function loadImageBitmap(file) {
+// can surface the right copy. Exported: resourceScan.js reuses this
+// exact decode (HEIC handling + typed errors included) rather than a
+// second, subtly different implementation.
+export function loadImageBitmap(file) {
   // Prefer createImageBitmap when available — it offloads decode to
   // a worker thread and handles HEIC on iOS 17+ without
   // <img>-element quirks. Falls back to <img>.decode() when not

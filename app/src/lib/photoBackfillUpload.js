@@ -100,6 +100,7 @@ export async function uploadBackfillPhotos({
         const ref = {
           key: assetKey, storage: 'idb', mime, capturedAt,
           ...(lat != null ? { lat } : {}), ...(lng != null ? { lng } : {}),
+          ...(offsetMinutes != null ? { offsetMinutes } : {}),
         }
         const existing = entry.reattachOf
         const merged = mergeRefIntoExisting(existing, ref)

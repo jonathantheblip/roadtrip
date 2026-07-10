@@ -14,7 +14,7 @@
 //     out from the file-reading wrapper so tests can mock EXIF data
 //     directly without a real File.
 
-import { loadExifTags, exifReaderToRaw } from './exifRead.js'
+import { loadExifTags, exifReaderToRaw, parseOffsetMinutes } from './exifRead.js'
 
 // Pure parser. Takes the exifr-shaped intermediate the EXIF adapter
 // produces (an object, undefined, or null) plus the originating file
@@ -65,20 +65,14 @@ export function parseExifData(rawData, file) {
     }
   }
 
-  // Offset (timezone). `OffsetTimeOriginal` is a string like "-05:00".
-  // Convert to signed minutes for downstream math; null if missing or
-  // malformed.
-  if (typeof data.OffsetTimeOriginal === 'string') {
-    const m = data.OffsetTimeOriginal.match(/^([+-])(\d{2}):(\d{2})$/)
-    if (m) {
-      const sign = m[1] === '-' ? -1 : 1
-      const hh = parseInt(m[2], 10)
-      const mm = parseInt(m[3], 10)
-      if (Number.isFinite(hh) && Number.isFinite(mm)) {
-        out.offsetMinutes = sign * (hh * 60 + mm)
-      }
-    }
-  }
+  // Offset (timezone). `OffsetTimeOriginal` is a string like "-05:00". The shared,
+  // bounds-checked parser (exifRead.js) — this used to be its own inline regex with
+  // no range check, so a corrupt exporter's "+99:99" silently became a ~4-day
+  // offset stamped onto every photo in a bulk import (review round 5). Convert to
+  // signed minutes for downstream math; null if missing, malformed, or out of the
+  // real ±14:00 range.
+  const offset = parseOffsetMinutes(data.OffsetTimeOriginal)
+  if (Number.isFinite(offset)) out.offsetMinutes = offset
 
   if (Number.isFinite(data.GPSLatitude)) out.lat = data.GPSLatitude
   if (Number.isFinite(data.GPSLongitude)) out.lng = data.GPSLongitude

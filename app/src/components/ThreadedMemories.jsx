@@ -170,17 +170,20 @@ export function ThreadedMemories({ trip, stop, traveler }) {
         // saveAsset auto-downscales photos via preparePhotoForUpload and
         // returns `prepared` (the pipeline result, incl. exif). We read the
         // mime so the photoRef tracks the actual stored bytes (image/jpeg),
-        // plus the capture date AND the GPS lat/lng the pipeline extracted
-        // from the original file's EXIF. Both were dropped here — the date
-        // made albums sort by upload time, the lat/lng left every photo
-        // with no location label and nothing for the auto-filer to match.
-        // Mirrors AddDispatchModal's single-photo path. Per-ref, and omitted
-        // (not null) when absent so memoryStore's derivation falls back
-        // instead of short-circuiting.
+        // plus the capture date, GPS lat/lng, AND the capture-time offset the
+        // pipeline extracted from the original file's EXIF. All three were
+        // missing here at one point or another — the date made albums sort by
+        // upload time, the lat/lng left every photo with no location label and
+        // nothing for the auto-filer to match, and the missing offset silently
+        // filed a photo hours off its real time on any trip outside home
+        // timezone (see photoPipeline.readExif). Mirrors AddDispatchModal's
+        // single-photo path. Per-ref, and omitted (not null) when absent so
+        // memoryStore's derivation falls back instead of short-circuiting.
         const { mime, prepared } = await saveAsset('photo', key, p.file, p.file.type)
         const capturedAt = prepared?.exif?.capturedAt
         const lat = prepared?.exif?.lat
         const lng = prepared?.exif?.lng
+        const offsetMinutes = prepared?.exif?.offsetMinutes
         refs.push({
           storage: 'idb',
           key,
@@ -188,6 +191,7 @@ export function ThreadedMemories({ trip, stop, traveler }) {
           ...(capturedAt ? { capturedAt } : {}),
           ...(Number.isFinite(lat) ? { lat } : {}),
           ...(Number.isFinite(lng) ? { lng } : {}),
+          ...(Number.isFinite(offsetMinutes) ? { offsetMinutes } : {}),
         })
       }
       saveMemory({
