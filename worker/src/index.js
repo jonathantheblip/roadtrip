@@ -37,6 +37,7 @@ import { renderSharePage, renderShareError, renderShareCard } from './sharePage.
 import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode, recordHealDecisions } from './photoHealRunner.js'
 import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
+import { geocodePlace, placesTextSearch } from './placesGeocode.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
 // so `PhotonImage.new_from_byteslice(...)` works on the first call
@@ -2769,106 +2770,9 @@ async function getPlacesPhoto(env, url, cors) {
   return new Response(res.body, { status: 200, headers })
 }
 
-// Core Places (New) text search with optional distance bias. Shared by
-// the /places/nearby HTTP endpoint (always centered — it validates
-// lat/lng first) and the find_places chat tool (centered when `near`
-// geocodes, text-only fallback otherwise). The API key never leaves the
-// worker. Returns the {results, radiusMeters} shape both callers consume.
-// Throws on a non-2xx Places response (error carries .status) so the
-// caller can map it to its own error surface.
-async function placesTextSearch(env, { query, lat, lng, radius, limit, languageCode, regionCode }) {
-  const hasCenter = Number.isFinite(lat) && Number.isFinite(lng)
-  const clampedRadius = Math.max(
-    100,
-    Math.min(50000, Number.isFinite(Number(radius)) ? Number(radius) : 1500)
-  )
-  const cappedLimit = Math.max(1, Math.min(10, Number(limit) || 5))
-
-  const reqBody = { textQuery: query, maxResultCount: cappedLimit }
-  // Localize to the DESTINATION, not Cloudflare's edge default (which skews
-  // English/US): languageCode → result names + hours in the local language;
-  // regionCode (a CLDR region like "IT") → local address conventions + ranking.
-  // Both optional — omitted leaves today's behavior byte-for-byte unchanged.
-  if (languageCode) reqBody.languageCode = String(languageCode)
-  if (regionCode) reqBody.regionCode = String(regionCode)
-  if (hasCenter) {
-    // DISTANCE ranking + a circular bias is what powers the "nearest one
-    // right now" ordering. Without a center (tool fallback) we let Places
-    // rank by relevance; the caller folds the location into the query text.
-    reqBody.rankPreference = 'DISTANCE'
-    reqBody.locationBias = {
-      circle: { center: { latitude: lat, longitude: lng }, radius: clampedRadius },
-    }
-  }
-
-  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
-      'x-goog-fieldmask':
-        'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber,places.photos.name',
-    },
-    body: JSON.stringify(reqBody),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    const err = new Error(`places ${res.status}: ${text.slice(0, 200)}`)
-    err.status = res.status
-    throw err
-  }
-  const data = await res.json().catch(() => ({}))
-  const places = Array.isArray(data?.places) ? data.places : []
-
-  const results = places
-    .map((p) => {
-      const pLat = p?.location?.latitude
-      const pLng = p?.location?.longitude
-      if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) return null
-      return {
-        placeId: p.id || null,
-        name: p.displayName?.text || '(unnamed)',
-        address: p.formattedAddress || null,
-        lat: pLat,
-        lng: pLng,
-        distanceMeters: hasCenter
-          ? Math.round(haversineMeters(lat, lng, pLat, pLng))
-          : null,
-        openNow:
-          p?.currentOpeningHours?.openNow ??
-          p?.regularOpeningHours?.openNow ??
-          null,
-        businessStatus: p.businessStatus || null,
-        phone: p.nationalPhoneNumber || null,
-        // The first photo's resource name ("places/X/photos/Y"); the HTTP
-        // handler turns it into a key-safe proxied URL. null when none.
-        photoName: (Array.isArray(p.photos) && p.photos[0]?.name) || null,
-      }
-    })
-    .filter(Boolean)
-    // Filter out NOT operational; CLOSED_TEMPORARILY/PERMANENTLY_CLOSED
-    // are useless for "I need this NOW" queries.
-    .filter((r) => !r.businessStatus || r.businessStatus === 'OPERATIONAL')
-
-  if (hasCenter) results.sort((a, b) => a.distanceMeters - b.distanceMeters)
-
-  return { results, radiusMeters: hasCenter ? clampedRadius : null }
-}
-
-function haversineMeters(lat1, lng1, lat2, lng2) {
-  const R = 6371000
-  const toRad = (d) => (d * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
-}
+// placesTextSearch — extracted to ./placesGeocode.js (Build 4a,
+// BUILD_PLAN_SIGNAL_FLEET.md) so photoHealRunner's stop-geocode/landmark
+// backfills can reuse it without a circular import. Imported above.
 
 // ─── Share-In v2 ──────────────────────────────────────────────────────
 //
@@ -3913,36 +3817,8 @@ function humanizeMinutes(min) {
   return r ? `${h}h ${r}m` : `${h}h`
 }
 
-// Resolve free text (a place name, address, or city) to coordinates via
-// Places (New) text search — the seam that lets the chat tools accept the
-// names the model has instead of the lat/lng it never sees. Returns null
-// on no match (the caller turns that into an { error } the model relays).
-async function geocodePlace(env, query) {
-  const q = typeof query === 'string' ? query.trim() : ''
-  if (!q) return null
-  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
-      'x-goog-fieldmask': 'places.id,places.displayName,places.formattedAddress,places.location',
-    },
-    body: JSON.stringify({ textQuery: q, maxResultCount: 1 }),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    const err = new Error(`geocode ${res.status}: ${text.slice(0, 160)}`)
-    err.status = res.status
-    throw err
-  }
-  const data = await res.json().catch(() => ({}))
-  const p = (data?.places || [])[0]
-  const lat = p?.location?.latitude
-  const lng = p?.location?.longitude
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-  return { lat, lng, name: p.displayName?.text || q, address: p.formattedAddress || null }
-}
-
+// geocodePlace — extracted to ./placesGeocode.js (Build 4a,
+// BUILD_PLAN_SIGNAL_FLEET.md) alongside placesTextSearch. Imported above.
 async function toolComputeDriveTime(env, input) {
   if (!env.GOOGLE_PLACES_API_KEY) return { error: 'Routes API not configured on worker.' }
   const origin = typeof input?.origin === 'string' ? input.origin.trim() : ''

@@ -1,14 +1,18 @@
 // visionLabel.js — WORKER. Ask Claude (vision) what a family-trip photo SHOWS: a short
 // album-ready MOMENT NAME + a few content labels + indoor/outdoor + a constrained
-// PLACE-TYPE. The name/labels/setting are the dimension that can NAME a coherent-but-
-// unplaced moment — a no-GPS beach burst becomes "At the beach". placeType (§16, BUILD 3)
-// is a DIFFERENT, narrower dimension: a fixed enum so two different photos of "a shop on
-// the same walk" reliably emit the IDENTICAL token instead of free-text variety
-// (retail/shopping/storefront) — the caption field is deliberately optimized for
-// variety, which is the opposite of what place-sameness matching needs. Reuses the
+// PLACE-TYPE + readable SIGNAGE text. The name/labels/setting are the dimension that can
+// NAME a coherent-but-unplaced moment — a no-GPS beach burst becomes "At the beach".
+// placeType (§16, BUILD 3) is a DIFFERENT, narrower dimension: a fixed enum so two
+// different photos of "a shop on the same walk" reliably emit the IDENTICAL token instead
+// of free-text variety (retail/shopping/storefront) — the caption field is deliberately
+// optimized for variety, which is the opposite of what place-sameness matching needs.
+// signage (BUILD 4c) is narrower still: the VERBATIM readable business/place text in
+// frame, when there is any — a real searchable name, unlike the warmth-optimized caption
+// ("Spiritus Pizza Visit" carries no queryable venue name; its signage does). Reuses the
 // worker's existing Anthropic key + Messages endpoint (the weave/chat/cover path); cheap
-// model. Returns a compact {name, labels, setting, placeType} or null on any failure (it
-// must never throw into the heal sweep). `parseVisionReply` is pure → unit-testable.
+// model. Returns a compact {name, labels, setting, placeType, signage} or null on any
+// failure (it must never throw into the heal sweep). `parseVisionReply` is pure →
+// unit-testable.
 
 const VISION_MODEL = 'claude-haiku-4-5-20251001'
 
@@ -31,6 +35,16 @@ export function isValidPlaceType(v) {
   return typeof v === 'string' && PLACE_TYPE_SET.has(v)
 }
 
+// signage (BUILD 4c) — bounded length, non-empty when present. Same posture as
+// every other bounded field this arc has shipped (offsetMinutes, sound, prov
+// tiers, placeType): an out-of-bounds or non-string value is DROPPED to null,
+// never truncated-and-kept or guessed. Exported for the same independent
+// server-side-style re-validation reason as isValidPlaceType.
+const SIGNAGE_MAX = 60
+export function isValidSignage(v) {
+  return typeof v === 'string' && v.trim().length > 0 && v.trim().length <= SIGNAGE_MAX
+}
+
 const VISION_PROMPT =
   'This is one photo from a family trip. Reply with ONLY a compact JSON object, no prose:\n' +
   '{"name": a 2-5 word moment name for a family photo album (e.g. "At the beach", ' +
@@ -39,7 +53,10 @@ const VISION_PROMPT =
   '"placeType": the SINGLE closest match from this exact list — ' +
   `${PLACE_TYPES.map((t) => `"${t}"`).join(', ')} — ` +
   'describing the KIND of place shown (not a caption; use "indoor-other" or ' +
-  '"outdoor-other" only when nothing else fits)}.'
+  '"outdoor-other" only when nothing else fits), ' +
+  '"signage": the EXACT verbatim text of any readable business/place sign, storefront, ' +
+  'or placard visible in the photo (e.g. "Spiritus Pizza"), or null if none is legible — ' +
+  'never guess or paraphrase a name that is not actually readable in the image}.'
 
 // Mirror of index.js anthropicMessagesUrl (kept local to avoid importing the big entry
 // module — same env seam, same default).
@@ -90,7 +107,14 @@ export function parseVisionReply(text) {
   const placeType = typeof obj.placeType === 'string' && PLACE_TYPE_SET.has(obj.placeType)
     ? obj.placeType
     : null
-  return { name, labels, setting, placeType }
+  // BUILD 4c — same bounds-check posture as placeType: an empty/oversized/
+  // non-string value is DROPPED to null, never truncated-and-kept. Validate
+  // the FULL trimmed string (not a pre-sliced one) — slicing first would
+  // silently turn "oversized" into "valid", exactly the truncate-and-keep
+  // bug this arc's bounds-checks exist to prevent.
+  const signageRaw = typeof obj.signage === 'string' ? obj.signage.trim() : ''
+  const signage = isValidSignage(signageRaw) ? signageRaw : null
+  return { name, labels, setting, placeType, signage }
 }
 
 // Independent placeType extraction — a FALLBACK used only when parseVisionReply's
@@ -115,6 +139,26 @@ export function extractPlaceType(text) {
   return isValidPlaceType(obj.placeType) ? obj.placeType : null
 }
 
+// Sibling of extractPlaceType for `signage` (BUILD 4c) — same independent,
+// non-name-gated extraction, same reasoning: a photo can carry confidently
+// readable signage even when the model fails to produce a caption-worthy
+// name, so it must never be lost just because `name` happens to be
+// missing/blank. Same JSON-object extraction, same strict bounds-check (via
+// isValidSignage).
+export function extractSignage(text) {
+  if (typeof text !== 'string' || !text) return null
+  const m = text.match(/\{[\s\S]*?\}/)
+  if (!m) return null
+  let obj
+  try {
+    obj = JSON.parse(m[0])
+  } catch {
+    return null
+  }
+  const sig = typeof obj.signage === 'string' ? obj.signage.trim() : ''
+  return isValidSignage(sig) ? sig : null
+}
+
 export async function visionLabel(env, bytes, { mediaType = 'image/jpeg', model } = {}) {
   if (!env?.ANTHROPIC_API_KEY) return null
   const u8 = bytes instanceof Uint8Array ? bytes : bytes ? new Uint8Array(bytes) : null
@@ -131,7 +175,7 @@ export async function visionLabel(env, bytes, { mediaType = 'image/jpeg', model 
     },
     body: JSON.stringify({
       model: model || VISION_MODEL,
-      max_tokens: 200, // headroom for the added placeType field so the JSON never truncates
+      max_tokens: 220, // headroom for the added placeType + signage fields so the JSON never truncates
       messages: [
         {
           role: 'user',
@@ -153,10 +197,11 @@ export async function visionLabel(env, bytes, { mediaType = 'image/jpeg', model 
   // independently: a reply CAN carry a valid, confident placeType even when name is
   // missing/blank, and that signal must survive (never-discard, FAMILY_TRIPS_VISION
   // §13). name/labels/setting stay empty/null here on purpose — this shape is only ever
-  // consumed by the placeType-only re-run path (visionBackfill.js), which reads
-  // `.placeType` and nothing else; the full-label path's `v.name` check still evaluates
-  // falsy for this shape, so its all-or-nothing behavior for never-labeled refs is
-  // unchanged (same visionFail outcome as the old `null` return).
+  // consumed by the placeType-only / signage-only re-run paths (visionBackfill.js), which
+  // read `.placeType`/`.signage` and nothing else; the full-label path's `v.name` check
+  // still evaluates falsy for this shape, so its all-or-nothing behavior for never-labeled
+  // refs is unchanged (same visionFail outcome as the old `null` return).
   const placeType = extractPlaceType(text)
-  return placeType ? { name: '', labels: [], setting: null, placeType } : null
+  const signage = extractSignage(text)
+  return placeType || signage ? { name: '', labels: [], setting: null, placeType, signage } : null
 }

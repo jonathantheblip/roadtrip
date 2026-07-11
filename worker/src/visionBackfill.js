@@ -24,9 +24,16 @@
 // `placeType` KEY itself is the completion sentinel — its mere presence (even null)
 // means "already asked," so a permanently-ambiguous photo is never re-billed forever.
 //
+// FOURTH backfill-eligible state (BUILD 4c): a ref that already carries `placeType`
+// (i.e. cleared the third state above) but predates `signage` — `'signage' in
+// ref.vision` is false. Same additive-only re-run pattern, one more time: re-asked,
+// reply's name/labels/setting/placeType DISCARDED, only `signage` merged onto the
+// EXISTING vision object. Same completion-sentinel posture (the `signage` key's mere
+// presence, even null, means "already asked").
+//
 // `label` is injectable so the runner unit-tests without hitting the API.
 
-import { visionLabel, isValidPlaceType } from './visionLabel.js'
+import { visionLabel, isValidPlaceType, isValidSignage } from './visionLabel.js'
 import { isStillPhoto } from './sceneBackfill.js'
 
 export function photoVisionMode(env) {
@@ -62,14 +69,19 @@ export async function backfillVisionLabels(
     // predates placeType. Counted separately from `labeled` (a brand-new full label)
     // since it writes only one additive field, never the reviewed name/labels/setting.
     placeTyped: 0, placeTypeFailed: 0,
+    // BUILD 4c — the fourth backfill-eligible state: an already-placeTyped ref that
+    // predates signage. Same posture, one field further.
+    signaged: 0, signageFailed: 0,
   }
   const needsPlaceTypeOnly = (ref) =>
     ref.vision && typeof ref.vision === 'object' && !('placeType' in ref.vision)
+  const needsSignageOnly = (ref) =>
+    ref.vision && typeof ref.vision === 'object' && 'placeType' in ref.vision && !('signage' in ref.vision)
 
   // Gather the refs to label (up to cap), keyed to their memory, so we can label in
   // parallel batches, then write each touched memory once with an OCC guard.
   const parsed = new Map() // memId -> { refs, updated_at }
-  const pending = [] // { memId, ref, placeTypeOnly }
+  const pending = [] // { memId, ref, placeTypeOnly, signageOnly }
   for (const r of rows || []) {
     let refs
     try {
@@ -83,7 +95,8 @@ export async function backfillVisionLabels(
       if (!ref || typeof ref !== 'object' || !isStillPhoto(ref)) continue
       stats.photoRefs++
       const placeTypeOnly = needsPlaceTypeOnly(ref)
-      if ((ref.vision || ref.visionFail) && !placeTypeOnly) {
+      const signageOnly = !placeTypeOnly && needsSignageOnly(ref)
+      if ((ref.vision || ref.visionFail) && !placeTypeOnly && !signageOnly) {
         stats.alreadyHad++
         continue
       }
@@ -92,7 +105,7 @@ export async function backfillVisionLabels(
         stats.hitLimit = true
         continue
       }
-      pending.push({ memId: r.id, ref, placeTypeOnly })
+      pending.push({ memId: r.id, ref, placeTypeOnly, signageOnly })
     }
     if (stats.hitLimit) break
   }
@@ -101,7 +114,7 @@ export async function backfillVisionLabels(
   for (let i = 0; i < pending.length; i += CONCURRENCY) {
     const batch = pending.slice(i, i + CONCURRENCY)
     await Promise.all(
-      batch.map(async ({ memId, ref, placeTypeOnly }) => {
+      batch.map(async ({ memId, ref, placeTypeOnly, signageOnly }) => {
         let bytes = null
         try {
           const obj = await env.ASSETS.get(ref.key)
@@ -119,6 +132,15 @@ export async function backfillVisionLabels(
             stats.placeTypeFailed++
             if (!dryRun) {
               ref.vision = { ...ref.vision, placeType: null }
+              touched.add(memId)
+            }
+            return
+          }
+          if (signageOnly) {
+            // Same permanent-miss sentinel, one field further (BUILD 4c).
+            stats.signageFailed++
+            if (!dryRun) {
+              ref.vision = { ...ref.vision, signage: null }
               touched.add(memId)
             }
             return
@@ -164,10 +186,33 @@ export async function backfillVisionLabels(
           }
           return
         }
+        if (signageOnly) {
+          // BUILD 4c, same rule one field further: ONLY signage is ever written here.
+          // Independent re-validation at the write site (never trust the wired `label`
+          // impl already enforced it), same completion-sentinel posture as placeType.
+          const sig = v && isValidSignage(v.signage) ? v.signage : null
+          if (sig) stats.signaged++
+          else stats.signageFailed++
+          if (!dryRun) {
+            ref.vision = { ...ref.vision, signage: sig }
+            touched.add(memId)
+          }
+          return
+        }
         if (v && typeof v.name === 'string' && v.name) {
           stats.labeled++
           if (!dryRun) {
-            ref.vision = v
+            // Independent re-validation of placeType/signage before storing —
+            // same defense-in-depth posture as the placeTypeOnly/signageOnly
+            // branches below (adversarial review, 2026-07-11: this primary
+            // path was trusting `v` verbatim, the one write site in this file
+            // that didn't re-check). name/labels/setting are the pre-existing,
+            // already-reviewed shape and are stored as-is (unaffected).
+            ref.vision = {
+              ...v,
+              placeType: isValidPlaceType(v.placeType) ? v.placeType : null,
+              signage: isValidSignage(v.signage) ? v.signage : null,
+            }
             touched.add(memId)
           }
         } else {

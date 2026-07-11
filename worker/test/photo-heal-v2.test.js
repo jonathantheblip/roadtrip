@@ -127,7 +127,9 @@ describe('recordHealDecisions — v2 shadow learning ledger', () => {
     expect(rows.length).toBe(1)
     expect(rows[0].tier).toBe('auto')
     expect(rows[0].place_id).toMatch(/^__discovered__:/)
-    expect(rows[0].place_name).toMatch(/a place near/)
+    // BUILD 4b: the discovered spot is ~85m from the (unnamed) lodging — the
+    // ONE nearby trip place — so it's named from that, not left as raw coords.
+    expect(rows[0].place_name).toBe('the place we stayed')
     expect(rows[0].evidence).toBe('gps')
   })
 

@@ -33,6 +33,9 @@ import { backfillVisionLabels } from './visionBackfill.js'
 import { backfillProvenanceTags } from './provenanceBackfill.js'
 import { backfillTripTimezones } from './tripTzBackfill.js'
 import { backfillOffsetInference } from './offsetInference.js'
+import { backfillStopGeocodes, photoStopGeocodeMode } from './stopGeocodeBackfill.js'
+import { nameDiscoveredPlaces, buildPlaceTypeIndex } from './discoveredPlaceNamer.js'
+import { resolveLandmarkPins, buildSignageIndex } from './landmarkSearch.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -414,12 +417,28 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   } catch (e) {
     console.error('[offset-inference] sweep failed', e?.stack || e)
   }
+  // Build 4a (BUILD_PLAN_SIGNAL_FLEET.md) — addresses → coordinates for
+  // agenda stops. ITS OWN knob (PHOTO_STOP_GEOCODE_MODE), defaulting to
+  // inherit `mode` — the per-lever promotion rule (flipping this on must
+  // never also arm v1's photo-moving or the offset engine above). Stop
+  // coordinates feed FOUR-plus ungated family-visible surfaces (photoMatch
+  // GPS filing, evidence pins, LeaveWhen destinations, Build 4b's own-places
+  // resolver), so real writes only when ITS knob resolves to 'on'.
+  let stopGeocode = null
+  try {
+    const stopGeocodeMode = photoStopGeocodeMode(env, mode)
+    stopGeocode = await backfillStopGeocodes(env, { mode: stopGeocodeMode })
+  } catch (e) {
+    console.error('[stop-geocode] sweep failed', e?.stack || e)
+  }
   const { results: trips } = await env.DB.prepare(
     'SELECT id FROM trips WHERE deleted_at IS NULL'
   ).all()
   let tripsWithMoves = 0
   let totalMoves = 0
   let v2Recorded = 0
+  let discoveredRenamed = 0
+  let landmarkPinned = 0
   for (const t of trips || []) {
     try {
       const r = await runHealForTrip(env, t.id, { mode, now })
@@ -429,10 +448,14 @@ export async function healSweep(env, { now = Date.now() } = {}) {
       console.error('[photo-heal-sweep] trip failed', t.id, e?.stack || e)
     }
     // v2 shadow learning ledger — independent of v1 (a v2 failure can't stop the
-    // sweep or perturb v1's would-move accounting).
+    // sweep or perturb v1's would-move accounting). Also carries Build 4b/4c's
+    // per-trip discovered-place-naming + landmark-pin counts (both ledger-only,
+    // computed as part of the same recordHealDecisions call).
     try {
       const v2 = await recordHealDecisions(env, t.id, { mode, now })
       v2Recorded += v2?.recorded || 0
+      discoveredRenamed += v2?.discoveredRenamed || 0
+      landmarkPinned += v2?.landmarkPinned || 0
     } catch (e) {
       console.error('[photo-heal-v2] trip failed', t.id, e?.stack || e)
     }
@@ -443,11 +466,14 @@ export async function healSweep(env, { now = Date.now() } = {}) {
     tripsWithMoves,
     totalMoves,
     v2Recorded,
+    discoveredRenamed,
+    landmarkPinned,
     sceneBackfill,
     visionBackfill,
     provenanceBackfill,
     tripTzBackfill,
     offsetInference,
+    stopGeocode,
   }
 }
 
@@ -464,7 +490,7 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
   const activeMode = mode || photoHealMode(env)
   if (activeMode === 'off') return { skipped: 'off' }
   const tripRow = await env.DB.prepare(
-    'SELECT data_json FROM trips WHERE id = ? AND deleted_at IS NULL'
+    'SELECT data_json, updated_at FROM trips WHERE id = ? AND deleted_at IS NULL'
   ).bind(tripId).first()
   if (!tripRow) return { mode: activeMode, recorded: 0, noTrip: true }
   let trip
@@ -479,6 +505,52 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
   } catch (e) {
     console.error('[photo-heal-v2] decide failed', tripId, e?.stack || e)
     return { mode: activeMode, recorded: 0, error: true }
+  }
+
+  // Build 4b + 4c (BUILD_PLAN_SIGNAL_FLEET.md) — name the __discovered__
+  // clusters from the trip's own places (or, for the residue, a
+  // cached/fresh Nominatim reverse lookup) and resolve any signage-bearing
+  // decision to a real landmark pin, AFTER the pure engine decided but
+  // BEFORE the ledger write below picks up dec.place.name/dec.signals.
+  // Both are ledger-only + REPLACED every run, so neither needs a
+  // PHOTO_HEAL_MODE gate — but both are best-effort: a resolution failure
+  // must never stop the ledger record itself. Their two small worker-only
+  // caches (placeNames, landmarkLookups) are merged into ONE guarded UPDATE
+  // against the SAME stamp read above (no-bump, tz-write precedent) — a
+  // concurrent trip edit just skips this cache write; both caches are fully
+  // clobber-recomputable next run, never a data-loss risk.
+  let discoveredNaming = null
+  let landmarkPins = null
+  const cachePatch = {}
+  // Confirmed fixture/test data (CLAUDE.md's TRAP warning) — never derive or
+  // spend anything (an external Nominatim/Places call) on it, matching every
+  // sibling backfill in this same batch (stopGeocodeBackfill.js,
+  // momentGpsPropagation.js, offsetInference.js, tripTzBackfill.js).
+  if (tripId !== 'volleyball-2026') {
+    try {
+      const placeTypeByRef = buildPlaceTypeIndex(rows)
+      discoveredNaming = await nameDiscoveredPlaces(trip, days, placeTypeByRef)
+      if (discoveredNaming?.placeNames) cachePatch.placeNames = discoveredNaming.placeNames
+    } catch (e) {
+      console.error('[discovered-place-namer] failed', tripId, e?.stack || e)
+    }
+    try {
+      const signageByRef = buildSignageIndex(rows)
+      landmarkPins = await resolveLandmarkPins(env, trip, days, signageByRef)
+      if (landmarkPins?.landmarkLookups) cachePatch.landmarkLookups = landmarkPins.landmarkLookups
+    } catch (e) {
+      console.error('[landmark-search] failed', tripId, e?.stack || e)
+    }
+  }
+  if (Object.keys(cachePatch).length) {
+    try {
+      const updatedTrip = { ...trip, ...cachePatch }
+      await env.DB.prepare(
+        'UPDATE trips SET data_json = ? WHERE id = ? AND updated_at = ? AND deleted_at IS NULL'
+      ).bind(JSON.stringify(updatedTrip), tripId, tripRow.updated_at).run()
+    } catch (e) {
+      console.error('[heal-decisions-cache] write failed', tripId, e?.stack || e)
+    }
   }
 
   const del = env.DB.prepare('DELETE FROM memory_heal_decisions WHERE trip_id = ?').bind(tripId)
@@ -512,5 +584,13 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
     }
   }
   await env.DB.batch(batch)
-  return { mode: activeMode, recorded: batch.length - 1, tiers }
+  return {
+    mode: activeMode,
+    recorded: batch.length - 1,
+    tiers,
+    discoveredRenamed: discoveredNaming?.renamed || 0,
+    discoveredExternal: discoveredNaming?.external || 0,
+    landmarkPinned: landmarkPins?.pinned || 0,
+    landmarkMisses: landmarkPins?.misses || 0,
+  }
 }

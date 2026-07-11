@@ -6,10 +6,16 @@ import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { applySchema } from './helpers/schema.js'
 import { backfillVisionLabels } from '../src/visionBackfill.js'
 
-const V = { name: 'At the beach', labels: ['beach'], setting: 'outdoor', placeType: 'beach' }
+// A fully-processed label — every backfill-eligible field present (signage:
+// null is a real, determined "no legible signage", not "never asked").
+const V = { name: 'At the beach', labels: ['beach'], setting: 'outdoor', placeType: 'beach', signage: null }
 // An OLD-SHAPE label from before placeType existed (BUILD 3, §16) — the third
 // backfill-eligible state.
 const V_OLD_SHAPE = { name: 'At the beach', labels: ['beach'], setting: 'outdoor' }
+// A label that has placeType but predates signage (BUILD 4c) — the fourth
+// backfill-eligible state, and the archive's REAL current shape (the Build 3
+// placeType run already completed 263/263).
+const V_NEEDS_SIGNAGE = { name: 'At the beach', labels: ['beach'], setting: 'outdoor', placeType: 'beach' }
 const stubAssets = { get: async (k) => (k ? { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer } : null) }
 const envOn = (over = {}) => ({ DB: env.DB, ASSETS: stubAssets, PHOTO_VISION_MODE: 'shadow', ANTHROPIC_API_KEY: 'test-key', ...over })
 const label = async () => V
@@ -165,7 +171,10 @@ describe('backfillVisionLabels', () => {
     })
 
     it('a null-shape ref (indistinguishable from "asked, no answer") is idempotent — not re-billed next sweep', async () => {
-      await seedMem('m1', [{ key: 'k1', vision: { ...V_OLD_SHAPE, placeType: null } }])
+      // Also carries signage: null — otherwise this ref would now be eligible
+      // for the signage-only pass below (BUILD 4c added a fourth state), which
+      // isn't what THIS test is checking.
+      await seedMem('m1', [{ key: 'k1', vision: { ...V_OLD_SHAPE, placeType: null, signage: null } }])
       const s = await backfillVisionLabels(envOn(), { label })
       expect(s.alreadyHad).toBe(1)
       expect(s.placeTyped).toBe(0)
@@ -204,6 +213,98 @@ describe('backfillVisionLabels', () => {
 
     it('does not bump updated_at for a placeType-only write either', async () => {
       await seedMem('m1', [{ key: 'k1', vision: V_OLD_SHAPE }], 100)
+      await backfillVisionLabels(envOn(), { label })
+      expect((await memRow('m1')).updated_at).toBe(100)
+    })
+  })
+
+  describe('signage-only re-run (BUILD 4c — the fourth backfill-eligible state)', () => {
+    it('an already-placeTyped ref is re-asked, but ONLY signage is written — name/labels/setting/placeType untouched', async () => {
+      await seedMem('m1', [{ key: 'k1', lat: 42, vision: V_NEEDS_SIGNAGE }])
+      // A completely different fresh reply — if the backfill let ANY of this leak
+      // onto the reviewed fields (including placeType, already reviewed once), this
+      // test catches it.
+      const freshReply = { name: 'A different caption', labels: ['nope'], setting: 'indoor', placeType: 'museum', signage: 'Spiritus Pizza' }
+      const s = await backfillVisionLabels(envOn(), { label: async () => freshReply })
+      expect(s.signaged).toBe(1)
+      expect(s.labeled).toBe(0)
+      expect(s.placeTyped).toBe(0)
+      const ref = (await memRow('m1')).refs[0]
+      expect(ref.vision.name).toBe('At the beach') // untouched
+      expect(ref.vision.placeType).toBe('beach') // untouched — even though the fresh reply said 'museum'
+      expect(ref.vision.signage).toBe('Spiritus Pizza') // the ONE new field
+      expect(ref.lat).toBe(42)
+    })
+
+    it('an invalid/unusable fresh reply stamps signage: null (a determined, permanent non-answer)', async () => {
+      await seedMem('m1', [{ key: 'k1', vision: V_NEEDS_SIGNAGE }])
+      const s = await backfillVisionLabels(envOn(), {
+        label: async () => ({ name: 'x', labels: [], setting: null, placeType: null, signage: null }),
+      })
+      expect(s.signageFailed).toBe(1)
+      expect(s.signaged).toBe(0)
+      const ref = (await memRow('m1')).refs[0]
+      expect('signage' in ref.vision).toBe(true)
+      expect(ref.vision.signage).toBe(null)
+      expect(ref.vision.placeType).toBe('beach') // still untouched
+    })
+
+    it('a hostile/oversized signage from `label` is dropped at the write site, never stored raw', async () => {
+      await seedMem('m1', [{ key: 'k1', vision: V_NEEDS_SIGNAGE }])
+      const s = await backfillVisionLabels(envOn(), {
+        label: async () => ({ name: 'x', labels: [], setting: null, placeType: null, signage: 'A'.repeat(200) }),
+      })
+      expect(s.signageFailed).toBe(1)
+      expect((await memRow('m1')).refs[0].vision.signage).toBe(null)
+    })
+
+    it('a null-shape signage (indistinguishable from "asked, no answer") is idempotent — not re-billed next sweep', async () => {
+      await seedMem('m1', [{ key: 'k1', vision: { ...V_NEEDS_SIGNAGE, signage: null } }])
+      const s = await backfillVisionLabels(envOn(), { label })
+      expect(s.alreadyHad).toBe(1)
+      expect(s.signaged).toBe(0)
+      expect(s.signageFailed).toBe(0)
+    })
+
+    it('an R2 miss on a signage-only ref stamps signage: null WITHOUT touching visionFail or the existing label', async () => {
+      await seedMem('m1', [{ key: 'missing', vision: V_NEEDS_SIGNAGE }])
+      const s = await backfillVisionLabels({ ...envOn(), ASSETS: { get: async () => null } }, { label })
+      expect(s.signageFailed).toBe(1)
+      const ref = (await memRow('m1')).refs[0]
+      expect(ref.visionFail).toBeUndefined()
+      expect(ref.vision.name).toBe('At the beach')
+      expect(ref.vision.signage).toBe(null)
+    })
+
+    it('a RETRYABLE failure on a signage-only ref writes nothing — re-attempted next sweep', async () => {
+      await seedMem('m1', [{ key: 'k1', vision: V_NEEDS_SIGNAGE }])
+      const s = await backfillVisionLabels(envOn(), {
+        label: async () => { throw new Error('vision-api 529') },
+      })
+      expect(s.retryable).toBe(1)
+      expect(s.signaged).toBe(0)
+      expect(s.signageFailed).toBe(0)
+      const ref = (await memRow('m1')).refs[0]
+      expect('signage' in ref.vision).toBe(false)
+    })
+
+    it('a fully unlabeled ref still gets the FULL label (name+labels+setting+placeType+signage), not the signage-only path', async () => {
+      await seedMem('m1', [{ key: 'k1' }])
+      const s = await backfillVisionLabels(envOn(), { label })
+      expect(s.labeled).toBe(1)
+      expect(s.signaged).toBe(0)
+      expect((await memRow('m1')).refs[0].vision).toEqual(V)
+    })
+
+    it('a placeType-only ref (predates BOTH placeType and signage) takes the placeType path, not signage-only', async () => {
+      await seedMem('m1', [{ key: 'k1', vision: V_OLD_SHAPE }])
+      const s = await backfillVisionLabels(envOn(), { label })
+      expect(s.placeTyped).toBe(1)
+      expect(s.signaged).toBe(0)
+    })
+
+    it('does not bump updated_at for a signage-only write either', async () => {
+      await seedMem('m1', [{ key: 'k1', vision: V_NEEDS_SIGNAGE }], 100)
       await backfillVisionLabels(envOn(), { label })
       expect((await memRow('m1')).updated_at).toBe(100)
     })

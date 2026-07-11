@@ -4,7 +4,9 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   parseVisionReply,
   extractPlaceType,
+  extractSignage,
   isValidPlaceType,
+  isValidSignage,
   visionLabel,
   PLACE_TYPES,
 } from '../src/visionLabel.js'
@@ -12,9 +14,9 @@ import {
 describe('parseVisionReply', () => {
   it('parses a clean JSON object', () => {
     const v = parseVisionReply(
-      '{"name":"At the beach","labels":["beach","ocean","sand"],"setting":"outdoor","placeType":"beach"}'
+      '{"name":"At the beach","labels":["beach","ocean","sand"],"setting":"outdoor","placeType":"beach","signage":"Spiritus Pizza"}'
     )
-    expect(v).toEqual({ name: 'At the beach', labels: ['beach', 'ocean', 'sand'], setting: 'outdoor', placeType: 'beach' })
+    expect(v).toEqual({ name: 'At the beach', labels: ['beach', 'ocean', 'sand'], setting: 'outdoor', placeType: 'beach', signage: 'Spiritus Pizza' })
   })
 
   it('extracts JSON wrapped in prose / code fences', () => {
@@ -22,6 +24,7 @@ describe('parseVisionReply', () => {
     expect(v.name).toBe('Dinner out')
     expect(v.setting).toBe(null) // absent → null
     expect(v.placeType).toBe(null) // absent → null, never a guess
+    expect(v.signage).toBe(null) // absent → null, never a guess
   })
 
   it('normalizes labels (lowercase, trim, ≤6) and drops non-strings', () => {
@@ -64,6 +67,35 @@ describe('parseVisionReply', () => {
       expect(parseVisionReply('{"name":"x"}').placeType).toBe(null)
     })
   })
+
+  describe('signage (BUILD 4c) — bounded, non-empty when present, null when absent/oversized', () => {
+    it('accepts a real readable signage string', () => {
+      expect(parseVisionReply('{"name":"x","signage":"Spiritus Pizza"}').signage).toBe('Spiritus Pizza')
+    })
+    it('trims whitespace', () => {
+      expect(parseVisionReply('{"name":"x","signage":"  Spiritus Pizza  "}').signage).toBe('Spiritus Pizza')
+    })
+    it('an empty/blank string → null (no legible signage, not an empty guess)', () => {
+      expect(parseVisionReply('{"name":"x","signage":""}').signage).toBe(null)
+      expect(parseVisionReply('{"name":"x","signage":"   "}').signage).toBe(null)
+    })
+    it('explicit null / missing entirely → null', () => {
+      expect(parseVisionReply('{"name":"x","signage":null}').signage).toBe(null)
+      expect(parseVisionReply('{"name":"x"}').signage).toBe(null)
+    })
+    it('a non-string signage (number/array/object) → null, never coerced', () => {
+      expect(parseVisionReply('{"name":"x","signage":5}').signage).toBe(null)
+      expect(parseVisionReply('{"name":"x","signage":["a"]}').signage).toBe(null)
+    })
+    it('an oversized signage string (>60 chars) → null, never truncated-and-kept', () => {
+      const long = 'A'.repeat(61)
+      expect(parseVisionReply(`{"name":"x","signage":"${long}"}`).signage).toBe(null)
+    })
+    it('exactly 60 chars is accepted (boundary)', () => {
+      const sixty = 'A'.repeat(60)
+      expect(parseVisionReply(`{"name":"x","signage":"${sixty}"}`).signage).toBe(sixty)
+    })
+  })
 })
 
 describe('isValidPlaceType — the one canonical enum validator (write-site re-check)', () => {
@@ -75,6 +107,36 @@ describe('isValidPlaceType — the one canonical enum validator (write-site re-c
     expect(isValidPlaceType(null)).toBe(false)
     expect(isValidPlaceType(undefined)).toBe(false)
     expect(isValidPlaceType(['beach'])).toBe(false)
+  })
+})
+
+describe('isValidSignage — the one canonical validator (write-site re-check)', () => {
+  it('accepts a real string within bounds, rejects empty/oversized/non-string', () => {
+    expect(isValidSignage('Spiritus Pizza')).toBe(true)
+    expect(isValidSignage('')).toBe(false)
+    expect(isValidSignage('   ')).toBe(false)
+    expect(isValidSignage('A'.repeat(61))).toBe(false)
+    expect(isValidSignage('A'.repeat(60))).toBe(true)
+    expect(isValidSignage(5)).toBe(false)
+    expect(isValidSignage(null)).toBe(false)
+    expect(isValidSignage(undefined)).toBe(false)
+  })
+})
+
+describe('extractSignage — independent of `name` (mirrors extractPlaceType)', () => {
+  it('extracts valid signage even when name is blank or absent', () => {
+    expect(extractSignage('{"name":"","signage":"Spiritus Pizza"}')).toBe('Spiritus Pizza')
+    expect(extractSignage('{"labels":["a"],"signage":"Spiritus Pizza"}')).toBe('Spiritus Pizza')
+  })
+  it('still enforces bounds — empty/oversized/non-string → null', () => {
+    expect(extractSignage('{"signage":""}')).toBe(null)
+    expect(extractSignage('{"signage":5}')).toBe(null)
+    expect(extractSignage(`{"signage":"${'A'.repeat(61)}"}`)).toBe(null)
+  })
+  it('null/empty/unparseable text → null, never throws', () => {
+    expect(extractSignage(null)).toBe(null)
+    expect(extractSignage('')).toBe(null)
+    expect(extractSignage('not json {')).toBe(null)
   })
 })
 
@@ -119,9 +181,9 @@ describe('visionLabel (async) — the fallback that recovers placeType from an o
   const testEnv = { ANTHROPIC_API_KEY: 'test-key', ANTHROPIC_BASE_URL: 'https://anthropic.stub' }
 
   it('a normal reply (usable name) still returns the full parseVisionReply shape, untouched', async () => {
-    stubReply('{"name":"At the beach","labels":["beach"],"setting":"outdoor","placeType":"beach"}')
+    stubReply('{"name":"At the beach","labels":["beach"],"setting":"outdoor","placeType":"beach","signage":"Spiritus Pizza"}')
     const v = await visionLabel(testEnv, new Uint8Array([1, 2, 3]))
-    expect(v).toEqual({ name: 'At the beach', labels: ['beach'], setting: 'outdoor', placeType: 'beach' })
+    expect(v).toEqual({ name: 'At the beach', labels: ['beach'], setting: 'outdoor', placeType: 'beach', signage: 'Spiritus Pizza' })
   })
 
   it('THE BLOCKER FIX: blank name + valid placeType → placeType survives (not collapsed to null)', async () => {
@@ -132,7 +194,16 @@ describe('visionLabel (async) — the fallback that recovers placeType from an o
     expect(v.name).toBe('') // deliberately not fabricated — only placeType is recovered
   })
 
-  it('a genuinely useless reply (no name, no valid placeType) still returns null — no invented signal', async () => {
+  it('BUILD 4c: blank name + valid signage (no placeType) → signage survives via the same fallback', async () => {
+    stubReply('{"name":"","labels":[],"signage":"Spiritus Pizza"}')
+    const v = await visionLabel(testEnv, new Uint8Array([1, 2, 3]))
+    expect(v).not.toBe(null)
+    expect(v.signage).toBe('Spiritus Pizza')
+    expect(v.placeType).toBe(null)
+    expect(v.name).toBe('')
+  })
+
+  it('a genuinely useless reply (no name, no valid placeType, no valid signage) still returns null — no invented signal', async () => {
     stubReply('{"labels":["blur"]}')
     const v = await visionLabel(testEnv, new Uint8Array([1, 2, 3]))
     expect(v).toBe(null)
