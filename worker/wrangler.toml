@@ -52,4 +52,4 @@ PHOTO_VISION_BACKFILL_LIMIT = "90"
 # → runNightlyWeave, which pre-assembles the active trip's freshest day into a
 # stored weave so the page is already woven when the family next opens the app.
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["0 8 * * *"]
