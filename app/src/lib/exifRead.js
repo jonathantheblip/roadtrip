@@ -260,11 +260,16 @@ export const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modif
 
 // `prov` (Build 2, FAMILY_TRIPS_VISION §14) — which TIER each of a ref's
 // lat/lng and offsetMinutes actually came from: a real read (`exif`/`scan`) vs
-// a computed guess (`inferred-manual`/`inferred-place`). Sparse — a key is
-// omitted when that field isn't set on the ref at all. STRICT enum on both
-// sub-keys: anything not in these two sets is dropped, never passed through
-// (mirrors every other sidecar field's whitelist-not-blocklist shape).
-export const PROV_GPS_VALUES = new Set(['exif', 'scan'])
+// a computed guess (`inferred-manual`/`inferred-place`/`propagated`). Sparse —
+// a key is omitted when that field isn't set on the ref at all. STRICT enum on
+// both sub-keys: anything not in these two sets is dropped, never passed
+// through (mirrors every other sidecar field's whitelist-not-blocklist shape).
+// 'propagated' (Build 5) — a moment-scoped GPS inheritance from a REFERENCE-
+// tier sibling in the same ledger moment — is deliberately NOT in
+// memoryStore.js's GPS_REFERENCE_PROV: it stays INFERRED-tier (a guess,
+// upgradeable by a later real EXIF/scan read), never itself a propagation
+// source (the cascade-hazard guard, BUILD_PLAN_SIGNAL_FLEET.md BUILD 5).
+export const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated'])
 export const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
 
 export function sanitizeProv(input) {

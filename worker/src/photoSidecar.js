@@ -68,7 +68,11 @@ const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modify', 'fi
 // separate deployable, same house rule as every other sidecar field: the
 // client's own bounds-check is never trusted). Sparse; strict enum on both
 // sub-keys.
-const PROV_GPS_VALUES = new Set(['exif', 'scan'])
+// 'propagated' (Build 5, BUILD_PLAN_SIGNAL_FLEET.md) — a moment-scoped GPS
+// inheritance from a REFERENCE-tier sibling in the same ledger moment. Stays
+// INFERRED-tier in app/src/lib/memoryStore.js's GPS_REFERENCE_PROV (a guess,
+// never itself a propagation source — the cascade-hazard guard).
+const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated'])
 const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
 
 export function sanitizeProvServer(input) {

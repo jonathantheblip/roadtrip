@@ -36,6 +36,7 @@ import { backfillOffsetInference } from './offsetInference.js'
 import { backfillStopGeocodes, photoStopGeocodeMode } from './stopGeocodeBackfill.js'
 import { nameDiscoveredPlaces, buildPlaceTypeIndex } from './discoveredPlaceNamer.js'
 import { resolveLandmarkPins, buildSignageIndex } from './landmarkSearch.js'
+import { propagateMomentGps } from './momentGpsPropagation.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -431,6 +432,17 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   } catch (e) {
     console.error('[stop-geocode] sweep failed', e?.stack || e)
   }
+  // Build 5 (BUILD_PLAN_SIGNAL_FLEET.md) — moment-scoped GPS propagation.
+  // Rides the SAME `mode` as the offset engine above (no independent
+  // pre-authorization to promote separately, per plan) — real writes only
+  // when mode==='on'. Measured reach on today's archive is ZERO (a pure
+  // standing-forward mechanism); best-effort, never stops the sweep.
+  let gpsPropagation = null
+  try {
+    gpsPropagation = await propagateMomentGps(env, { mode })
+  } catch (e) {
+    console.error('[gps-propagation] sweep failed', e?.stack || e)
+  }
   const { results: trips } = await env.DB.prepare(
     'SELECT id FROM trips WHERE deleted_at IS NULL'
   ).all()
@@ -474,6 +486,7 @@ export async function healSweep(env, { now = Date.now() } = {}) {
     tripTzBackfill,
     offsetInference,
     stopGeocode,
+    gpsPropagation,
   }
 }
 
