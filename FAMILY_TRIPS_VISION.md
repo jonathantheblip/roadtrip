@@ -332,16 +332,13 @@ principles that govern everything here (each was a real gap in this section's ea
   it falls out of GPS). Still shadow (records to `memory_heal_decisions`, moves/writes nothing
   family-visible). ⚠ carry-forward: restore the surprise/mask gate before any *family-visible* reader of the
   ledger.
-- ✅ **The GPS lever — SHIPPED 2026-07-10:** the live capture-offset leak (every new photo shot outside home
-  timezone, not just archived ones) is plugged at import (`photoPipeline.js readExif`, plus the bulk
-  importer's own separate parser hardened to match). The re-source scan SURFACE ("Find your photos'
-  locations," Settings, adults-only) is deployed: an adult hands over device originals, matched to imported
-  photos by **content** (a perceptual scene hash, not just timing/authorship — proven the hard way across
-  eight adversarial review rounds that "same author, same second" is not proof of identity), recovered GPS
-  + offset filled in. **The archive itself is unchanged** — the tool has shipped but not yet been run by a
-  family member; that's the next real step (Jonathan holds 98 of 118 real Provincetown photos, Helen 20).
-  Full state + the review saga's hard-won lessons: `CARRYOVER_DOCUMENT_THE_TRIP.md`.
-  Faces is the remaining parallel device-lever, same shape, still unbuilt.
+- ✅ **The GPS lever — SHIPPED 2026-07-10, then SUPERSEDED the same night.** The live capture-offset leak is
+  plugged at import, and a re-source scan SURFACE ("Find your photos' locations," Settings) shipped —
+  content-verified matching, proven the hard way across eight adversarial review rounds. Jonathan then
+  opened it on his own phone and judged it **dead on arrival**: nobody hunts an unsorted camera roll from
+  memory. That verdict is what produced §13 (the signal fleet) — the picker stays as an optional power
+  tool but **nothing load-bearing rests on it**; the archive is healed from §13's builds instead. See §13
+  for what actually shipped after. Faces is the remaining parallel device-lever, same shape, still unbuilt.
 - ⏳ **Finish-the-story (retro-settle), the resolver, the record bridge, kid read-faces** — sequenced as
   V1–V5 in VISION.md §5.
 
@@ -400,12 +397,36 @@ whitelists). The rule applies to **every** intake path, including the picker too
 2. **A trip doesn't reliably know its timezone** — `trip.tz` is read but never written; only AI-created
    international legs carry one. The clocks fix derives it from the stay's coords and writes it durably.
 
-**Near-term sequence (tracked as tasks; verify against memory, this ages):** the intake sidecar (stop the
-bleeding, all paths, incl. video GPS) → the clocks fix (infer archive offsets from the stay's zone,
-photo-corroborated, provenance-tagged, tiered through the existing ledger, shadow-first) → vision
-place-sameness (bridge the town-wander fragments; only within the same few hours, the window GPS would
-have had) → landmark pinning (find-places on vision's names) → sparse-GPS spreading (one located photo
-places its whole scene-cluster). Faces remains the parallel device-lever.
+**Near-term sequence (tracked as tasks; verify against memory, this ages) — THREE OF FIVE SHIPPED
+2026-07-10, same night as this section was written:**
+1. ✅ **The intake sidecar** — every intake path now persists the full useful original-file metadata
+   (camera/lens/exposure/orientation/original filename+mtime/capturedAtSource), plus the video-GPS fix
+   (iPhone clips' QuickTime location atom, previously never read).
+2. ✅ **The clocks fix** — both structural gaps this section named are now CLOSED: every signal field
+   carries a `prov` tag (`exif`/`scan`/`inferred-manual`/`inferred-place`; reference data can never be
+   overwritten by an inferred guess, an inferred guess always yields to reference data on arrival); trip
+   timezone is now derived from the stay's coordinates and written durably. The retroactive backfill
+   labeled the whole existing archive's provenance too (not just new writes), per Jonathan's explicit
+   "future-proof, not just fix moving forward." An offset-inference engine writes corroborated (real
+   sunrise/sunset math vs. the photo's own vision label) capture offsets — gated `mode==='on'` only, a
+   promotion decision that is explicitly NOT this build's to make.
+3. ✅ **Vision place-sameness** — bridges time-adjacent bursts that are probably the same OUTING (not
+   necessarily the same spot) via a new constrained `placeType` field on the vision label. **A second,
+   independent opinion caught a real design flaw before any code was written**: the first-draft gate
+   ("bridge only when GPS AND the scene hash are both absent") was checked against live data and proved a
+   no-op — 116 of 118 Provincetown photos already carry a scene hash. Corrected to gate on GPS-absence
+   only (a scene mismatch never vetoes a place-type match — they answer different questions). **Run for
+   real against the whole archive** (263/263 vision-labeled photos re-processed for the new field,
+   Jonathan-authorized spend): the live Provincetown shadow ledger went from 22 moments to 18 — the
+   fragmented town wander partially healed, the July 4th parade's 13+2 split into one 15-photo moment,
+   July 3rd's beach 6+3 split healed — with every should-stay-separate boundary (including the wander's
+   own adjacent beach burst) correctly staying separate. Still shadow: nothing family-visible moved.
+4. ⏳ **Landmark pinning** (find-places on vision's names) — not yet built.
+5. ⏳ **Sparse-GPS spreading** (one located photo places its whole scene-cluster) — not yet built.
+
+Faces remains the parallel device-lever, still fully unbuilt. Full build-by-build detail, the process
+lessons (including the one caught by a second opinion, not this project's own review apparatus), and the
+real before/after numbers: `memory/self-healing-agenda-free.md`.
 
 ---
 

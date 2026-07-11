@@ -213,8 +213,23 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-10. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-11. Update as these resolve.
 
+- **[OPEN 2026-07-11] Adversarial review checks CODE, not the PLAN a build gets written from — and a real
+  design flaw slipped through until a second, differently-modeled opinion caught it.** Build 3's
+  (vision place-sameness) first-draft spec gated a new feature on a condition ("GPS AND scene both
+  absent") that sounded prudent but was a complete no-op on live data (116/118 of the relevant archive
+  already carried the OTHER signal) — it would have shipped, run, and changed nothing on its own
+  motivating example. This wasn't caught by writing the plan, re-reading the plan, or any part of this
+  project's normal per-push review apparatus — all of that only ever runs against a DIFF. It was caught
+  because Jonathan independently asked a second, differently-modeled agent (Fable) to review the plan
+  BEFORE code was written, and that review checked the central assumption against live production data
+  instead of re-reading the same reasoning that produced it. **Watch for recurrence:** when a build starts
+  from a written plan/spec (not just ad hoc), consider whether the PLAN itself — not just the resulting
+  diff — warrants an adversarial pass, ideally from a source that didn't write it. No standing mechanism
+  for this exists yet; this entry stays OPEN until one does (or until judgment on when it's warranted is
+  demonstrated repeatedly enough to feel settled). See `memory/self-healing-agenda-free.md`'s 2026-07-10
+  "later still" entry for the full incident.
 - **[RESOLVED 2026-07-10] Skipping adversarial review because a fix "felt simple enough" let a real live bug
   ship.** Mid-overnight-run, after round 6 of hardening `resourceScan.js`'s content-match logic, I judged the
   fix small enough to skip the pre-push adversarial-review gate and pushed directly. The harness's auto-mode
