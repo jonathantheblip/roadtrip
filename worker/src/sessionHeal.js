@@ -96,6 +96,13 @@ export function buildTripDecisions(trip, memories, opts = {}) {
         // the PEOPLE dimension — face ids on the ref (wired from the face model in a
         // later brick); absent → the dimension simply abstains from the clustering.
         faces: Array.isArray(ref.faces) && ref.faces.length ? ref.faces : undefined,
+        // the PLACE-TYPE dimension (BUILD 3, §16) — a constrained vision enum, absent
+        // until the vision backfill computes it. Consumed ONLY by the bridge-only path
+        // in sessions.js (never nonTimeAffinity's blend); a missing/catch-all value
+        // simply abstains, same as every other dimension here.
+        placeType: typeof ref.vision?.placeType === 'string' && ref.vision.placeType
+          ? ref.vision.placeType
+          : undefined,
       })
       meta.set(id, { capturedAt: ref.capturedAt, offsetMinutes: off, vision: ref.vision })
     }
@@ -175,6 +182,9 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           ...d.signals,
           dims: m.dims,
           cohesion: m.cohesion == null ? null : Math.round(m.cohesion * 100) / 100,
+          // BUILD 3 (§16): surfaced ONLY when true, so every pre-Build-3 ledger row
+          // (and every moment the vision bridge never touched) stays byte-identical.
+          ...(m.visionBridged ? { visionBridged: true } : {}),
         }
       }
       // A moment with no located/agenda place would LEAVE — but if vision can NAME it,

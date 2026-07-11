@@ -55,6 +55,41 @@ test('the hard span cap holds: a chain of merges cannot exceed maxSpanMinutes', 
   assert.deepEqual(counts(ms), [7, 1]) // 0..180 spans exactly the cap; 210 starts a new moment
 })
 
+// ── BUILD 3 (§16): vision place-type bridging — bridge-branch-ONLY, GPS-absence-gated,
+// catch-all-excluded, never able to trigger a split. See BUILD_PLAN_SIGNAL_FLEET.md
+// BUILD 3 for the twice-corrected design this implements.
+
+test('vision BRIDGES a gap when GPS is absent and placeType matches (the town-wander case)', () => {
+  const ms = buildMoments([p('a', 0, { placeType: 'street' }), p('b', 60, { placeType: 'street' })])
+  assert.deepEqual(counts(ms), [2])
+  assert.equal(ms[0].visionBridged, true)
+  assert.ok(ms[0].dims.includes('placeType'))
+})
+
+test('vision does NOT bridge when GPS is present on BOTH sides — GPS decides, full stop', () => {
+  const ms = buildMoments([
+    p('a', 0, { lat: 42.0, lng: -71.0, placeType: 'shop' }),
+    p('b', 60, { lat: 42.02, lng: -71.0, placeType: 'shop' }), // ~2.2km apart
+  ])
+  assert.deepEqual(counts(ms), [1, 1]) // the two-candy-stores-in-two-towns guard
+})
+
+test('vision does NOT bridge on catch-all placeType values (indoor-other/outdoor-other never match)', () => {
+  const ms = buildMoments([p('a', 0, { placeType: 'outdoor-other' }), p('b', 60, { placeType: 'outdoor-other' })])
+  assert.deepEqual(counts(ms), [1, 1])
+})
+
+test('vision can never SPLIT a time-bonded pair, even on a confident placeType mismatch', () => {
+  const ms = buildMoments([p('a', 0, { placeType: 'beach' }), p('b', 5, { placeType: 'street' })])
+  assert.deepEqual(counts(ms), [2]) // 5m is well within gapMinutes(40); vision cannot veto it
+})
+
+test('the missing coverage gap: GPS ALONE bridges a time gap (no scene/faces/vision present)', () => {
+  const ms = buildMoments([p('a', 0, { lat: 42.0, lng: -71.0 }), p('b', 70, { lat: 42.0004, lng: -71.0 })])
+  assert.deepEqual(counts(ms), [2])
+  assert.equal(ms[0].visionBridged, false) // GPS did the work, not vision
+})
+
 test('provenance: dims lists every present dimension; cohesion reflects agreement', () => {
   const [m] = buildMoments([
     p('a', 0, { lat: 42, lng: -71, scene: 'ffffffffffffffff', faces: ['mom'] }),

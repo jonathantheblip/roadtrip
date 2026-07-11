@@ -99,8 +99,35 @@ function jaccard(a, b) {
   for (const x of a) if (b.has(x)) inter++
   return inter / (a.size + b.size - inter)
 }
+
+// ── VISION PLACE-TYPE bridging (BUILD 3, §16) ────────────────────────────────
+// A DIFFERENT, narrower question than scene: "same KIND of outing?" not "same pixels?"
+// — a town wander crosses many different backdrops (street → shop → street) that scene
+// correctly sees as dissimilar, yet placeType correctly sees as the same continuous
+// walk. Per the twice-corrected design (BUILD_PLAN_SIGNAL_FLEET.md BUILD 3):
+//   • Deliberately NOT folded into nonTimeAffinity's blend — an independent condition,
+//     evaluated ALONGSIDE the blended score, only in the BRIDGE branch of buildMoments.
+//     Never touches the split branch: vision is structurally incapable of SPLITTING an
+//     already time-bonded pair (a fuzzy semantic label is a far riskier signal to let
+//     push two moments apart than to let bridge them).
+//   • GATES ON GPS-ABSENCE ONLY. When real coordinates exist on BOTH points, GPS
+//     decides, full stop — that's the guard for "two candy stores in two towns."
+//   • Catch-all values ('indoor-other' / 'outdoor-other') NEVER count as a match —
+//     clustering is single-linkage, so one bad catch-all pair-match could transitively
+//     staple two real, distinct moments together.
+const CATCHALL_PLACE_TYPES = new Set(['indoor-other', 'outdoor-other'])
+function placeTypeBridges(a, b) {
+  if (isNum(a.lat) && isNum(a.lng) && isNum(b.lat) && isNum(b.lng)) return false // GPS decides
+  const pa = typeof a.placeType === 'string' && a.placeType ? a.placeType : null
+  const pb = typeof b.placeType === 'string' && b.placeType ? b.placeType : null
+  if (!pa || !pb) return false
+  if (CATCHALL_PLACE_TYPES.has(pa) || CATCHALL_PLACE_TYPES.has(pb)) return false
+  return pa === pb
+}
+
 // Weighted agreement of the NON-time dimensions two points SHARE (present on both).
 // null when they share no non-time dimension → the caller falls back to time alone.
+// placeType is DELIBERATELY NOT a term here — see placeTypeBridges above.
 function nonTimeAffinity(a, b, o) {
   let wsum = 0
   let s = 0
@@ -143,6 +170,7 @@ export function buildMoments(points, opts = {}) {
     .sort((a, b) => a.at - b.at || String(a.id).localeCompare(String(b.id)))
   const moments = []
   let cur = []
+  let curVisionBridged = false // did THIS segment ever join via the vision bridge?
   for (const p of pts) {
     if (cur.length) {
       // Single-linkage: nearest current member in time, and the best non-time
@@ -150,38 +178,46 @@ export function buildMoments(points, opts = {}) {
       // not anchor a bridge across a long lull).
       let nearestMs = Infinity
       let bestNonTime = null
+      let visionBridge = false
       for (const m of cur) {
         const dt = p.at - m.at
         if (dt < nearestMs) nearestMs = dt
         if (dt <= bridgeMs) {
           const nt = nonTimeAffinity(p, m, o)
           if (nt != null && (bestNonTime == null || nt > bestNonTime)) bestNonTime = nt
+          if (!visionBridge && placeTypeBridges(p, m)) visionBridge = true
         }
       }
       let join
       if (p.at - cur[0].at > spanMs) {
         join = false // hard physical bound — a moment can't run this long
       } else if (nearestMs <= gapMs) {
-        // time bonds them — unless the present non-time dims CONFIDENTLY disagree
+        // time bonds them — unless the present non-time dims CONFIDENTLY disagree.
+        // Vision is NEVER consulted here — it is structurally incapable of splitting
+        // a time-bonded pair (BUILD 3 rule: bridge-only, never split).
         join = !(bestNonTime != null && bestNonTime < o.splitAffinity)
       } else if (nearestMs <= bridgeMs) {
-        // beyond the time bond — join only if non-time dims BRIDGE the gap
-        join = bestNonTime != null && bestNonTime >= o.bridgeAffinity
+        // beyond the time bond — join if non-time dims BRIDGE the gap, OR (independent
+        // of the blend) the vision place-type bridge fires on its own.
+        const blendBridges = bestNonTime != null && bestNonTime >= o.bridgeAffinity
+        join = blendBridges || visionBridge
+        if (join && visionBridge && !blendBridges) curVisionBridged = true
       } else {
         join = false
       }
       if (!join) {
-        moments.push(finalizeMoment(cur, o))
+        moments.push(finalizeMoment(cur, o, curVisionBridged))
         cur = []
+        curVisionBridged = false
       }
     }
     cur.push(p)
   }
-  if (cur.length) moments.push(finalizeMoment(cur, o))
+  if (cur.length) moments.push(finalizeMoment(cur, o, curVisionBridged))
   return moments
 }
 
-function finalizeMoment(members, o) {
+function finalizeMoment(members, o, visionBridged = false) {
   const radius = o.inheritRadiusMeters ?? SESSION_DEFAULTS.inheritRadiusMeters
   const located = members.filter((p) => isNum(p.lat) && isNum(p.lng))
   let location = null
@@ -217,10 +253,14 @@ function finalizeMoment(members, o) {
   }
   const faceUnion = new Set()
   for (const p of members) for (const f of faceSetOf(p)) faceUnion.add(f)
+  const placeTyped = members.filter(
+    (p) => typeof p.placeType === 'string' && p.placeType && !CATCHALL_PLACE_TYPES.has(p.placeType)
+  )
   const dims = ['time']
   if (located.length) dims.push('gps')
   if (scened.length) dims.push('scene')
   if (faceUnion.size) dims.push('faces')
+  if (placeTyped.length) dims.push('placeType')
   let cohesion = null
   if (members.length >= 2) {
     let s = 0
@@ -253,6 +293,11 @@ function finalizeMoment(members, o) {
     faces: [...faceUnion],
     dims,
     cohesion,
+    // BUILD 3 (§16): true only when THIS moment's formation actually depended on the
+    // vision place-type bridge (not merely alongside an independently-sufficient GPS/
+    // scene/faces bridge) — tier discipline for the ledger: a vision-bridged moment
+    // should never silently read as more confident than the unbridged fragments were.
+    visionBridged,
   }
 }
 
