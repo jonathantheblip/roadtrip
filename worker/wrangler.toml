@@ -46,6 +46,12 @@ ALLOWED_ORIGINS = "https://jonathantheblip.github.io,http://localhost:5173,http:
 # family-visible. A plain var (not sensitive); the backfill is bounded per sweep.
 PHOTO_VISION_MODE = "shadow"
 PHOTO_VISION_BACKFILL_LIMIT = "90"
+# Build 4a promoted (Jonathan's explicit go-ahead, 2026-07-11, after reviewing
+# the shadow report: 13 archive-wide stops with a street address but no
+# coordinates, zero unmarked-stop overwrites, the Provincetown stacked-places
+# case verified live). ITS OWN knob, independent of PHOTO_HEAL_MODE — flipping
+# this on does NOT arm v1's photo-moving or the offset-inference engine.
+PHOTO_STOP_GEOCODE_MODE = "on"
 
 # Nightly auto-weave (WEAVE_SCOPE slice 3). 08:00 UTC ≈ 2-4am US overnight —
 # after the day's memories have settled. Fires the worker `scheduled` handler
