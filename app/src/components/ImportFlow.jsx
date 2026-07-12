@@ -262,6 +262,12 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           })
         }
         const autoAddedStops = matchResult.deviationClusters?.length || 0
+        // W2's in-batch gap hint (see findBiggestSeqGap above) — computed over
+        // EVERY kept item (photos + videos both carry a real device filename),
+        // never the archive, never persisted.
+        const sequenceGapHint = findBiggestSeqGap(
+          kept.map((it) => ({ name: it.file?.name, capturedAt: it.exif?.capturedAt }))
+        )
         const summary = {
           willImport: payload.length,
           matchedToStops,
@@ -275,6 +281,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
           failed: failedVideos.length, // shrink failures — the warm "couldn't add" banner (#2)
           tooLong: tooLongVideos.length, // over the 3:00 cap — the "trim it" banner (#4)
           soundLost, // importing without the sound their source had — the sound-outcome banner
+          sequenceGapHint, // W2 — "up to ~N items between IMG_4021 and IMG_4027" | null
         }
         const data = { payload, out, summary, tooLargeVideos, failedVideos, tooLongVideos }
         if (cancelled) return
@@ -497,6 +504,7 @@ export function ImportFlow({ trip, traveler, files, tripsApi, onCancel, onComple
         videosBytes={analysis?.summary?.videosBytes || 0}
         failed={analysis?.summary?.failed || 0}
         soundLost={analysis?.summary?.soundLost || 0}
+        gapHint={analysis?.summary?.sequenceGapHint || null}
         tooLongVideos={analysis?.tooLongVideos || []}
         retrying={retrying}
         onRetry={retryFailedVideos}
@@ -646,6 +654,52 @@ const IMPORT_ROWS = [
     footnote: true,
   },
 ]
+
+// W2 (BUILD_PLAN_WITNESS_FLEET_2.md) — the filename-sequence GAP HINT, an
+// IN-BATCH, no-archive-dependency computation (this is the whole reason it's
+// inline here rather than a shared module: it's a 20-line parser used in
+// exactly one place). iPhones number photos IMG_0001, IMG_0002… even when
+// the camera clock lies — a missing run inside THIS import's own numbering
+// whispers "there are photos on your device this import didn't pick up."
+// Anchored, whitelisted-extension, 3-6-digit-run match — a non-IMG-style
+// name (Android/WhatsApp/renamed) simply doesn't match and is skipped, never
+// coerced. ALWAYS "up to ~N": the counter counts screenshots/videos/deletions
+// too, not just photos that would matter to this trip.
+const SEQ_RE = /^([A-Za-z_]+)(\d{3,6})\.[A-Za-z0-9]{2,5}$/
+// A gap wider than this is treated as a wrap (IMG_9999→IMG_0001) or an
+// unrelated jump, not a real missing-items span — decided: ignore, not
+// modular math (BUILD_PLAN_WITNESS_FLEET_2.md W2).
+const MAX_PLAUSIBLE_SEQ_GAP = 1000
+function findBiggestSeqGap(items) {
+  const byPrefix = new Map()
+  for (const it of items) {
+    const m = typeof it?.name === 'string' ? SEQ_RE.exec(it.name) : null
+    if (!m) continue
+    const capturedAtMs = Date.parse(it?.capturedAt)
+    if (!Number.isFinite(capturedAtMs)) continue
+    const prefix = m[1]
+    const arr = byPrefix.get(prefix) || []
+    arr.push({ num: parseInt(m[2], 10), name: it.name, capturedAtMs })
+    byPrefix.set(prefix, arr)
+  }
+  let biggest = null
+  for (const arr of byPrefix.values()) {
+    arr.sort((a, b) => a.num - b.num)
+    for (let i = 1; i < arr.length; i++) {
+      const delta = arr[i].num - arr[i - 1].num
+      if (delta <= 1 || delta > MAX_PLAUSIBLE_SEQ_GAP) continue
+      const gap = delta - 1
+      if (!biggest || gap > biggest.gap) {
+        biggest = { gap, fromName: arr[i - 1].name, toName: arr[i].name, capturedAtMs: arr[i - 1].capturedAtMs }
+      }
+    }
+  }
+  if (!biggest) return null
+  const dateLabel = Number.isFinite(biggest.capturedAtMs)
+    ? new Date(biggest.capturedAtMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : null
+  return `Up to ~${biggest.gap} more item${biggest.gap === 1 ? '' : 's'} between ${biggest.fromName} and ${biggest.toName}${dateLabel ? ` (${dateLabel})` : ''} may still be on your device.`
+}
 
 // Map ImportFlow's summary → the row catalogue's keys. `newStops` is a count of
 // NEW STOPS (containers), not items — it's informational; the import count is
@@ -841,6 +895,7 @@ function ConfirmSummary({
   videosBytes = 0,
   failed = 0,
   soundLost = 0,
+  gapHint = null,
   tooLongVideos = [],
   retrying,
   onRetry,
@@ -912,6 +967,16 @@ function ConfirmSummary({
             <ImportRow key={r.key} row={r} first={i === 0} />
           ))}
         </div>
+        {/* W2 (BUILD_PLAN_WITNESS_FLEET_2.md) — the filename-sequence gap hint:
+            an in-batch nudge only, never a claim about the archive. */}
+        {gapHint && (
+          <div
+            data-testid="import-gap-hint"
+            style={{ fontFamily: SANS, fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.4, padding: '10px 0 2px' }}
+          >
+            {gapHint}
+          </div>
+        )}
       </div>
 
       {/* action bar — fixed, clearing the global persona Switcher dock (the proven

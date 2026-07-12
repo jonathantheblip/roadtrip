@@ -45,6 +45,7 @@ import { tzOffsetMinutes } from './tzOffset.js'
 import { sunTimes } from './sunTimes.js'
 import { stayPlaceCoords } from './stayPlaceCoords.js'
 import { weatherConflict } from './weatherBackfill.js'
+import { findSequenceInversions } from './seqName.js'
 
 const HOUR_MS = 3600000
 // Confirmed fixture/test data (CLAUDE.md's explicit TRAP warning) — never
@@ -164,6 +165,13 @@ export async function backfillOffsetInference(env, { tripId, mode, limit } = {})
     // explicit ask) — no persistent storage invented for it, this run's
     // report IS the deliverable for this tier.
     conflicts: [],
+    // W2 (BUILD_PLAN_WITNESS_FLEET_2.md) — the filename-SEQUENCE order-
+    // consistency diagnostic: a same-device-key capturedAt-order vs filename-
+    // order inversion is clock suspicion on that span. REPORT ONLY — never
+    // read by anything that writes; shares this function's existing trip.tz
+    // gate above (same structural-zero honesty as the weather veto: it
+    // evaluates zero refs until a trip has trip.tz).
+    sequenceInversions: [],
   }
   let attempted = 0
   for (const tr of tripRows || []) {
@@ -183,10 +191,14 @@ export async function backfillOffsetInference(env, { tripId, mode, limit } = {})
     if (!coords) continue
     stats.tripsConsidered++
     const { results: memRows } = await env.DB.prepare(
-      'SELECT id, photo_r2_keys_json, updated_at FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
+      'SELECT id, photo_r2_keys_json, updated_at, author_traveler FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
     )
       .bind(tr.id)
       .all()
+    // W2 — collected across EVERY ref this trip carries (not just those still
+    // lacking offsetMinutes below), so the order-consistency diagnostic sees
+    // the whole device-key picture. Report-only: nothing here is written.
+    const seqRefs = []
     for (const r of memRows || []) {
       let refs
       try {
@@ -195,6 +207,11 @@ export async function backfillOffsetInference(env, { tripId, mode, limit } = {})
         continue
       }
       if (!Array.isArray(refs) || !refs.length) continue
+      for (const ref of refs) {
+        if (typeof ref?.srcName === 'string' && ref.srcName) {
+          seqRefs.push({ key: ref.key, srcName: ref.srcName, capturedAt: ref.capturedAt, meta: ref.meta, author: r.author_traveler })
+        }
+      }
       let changed = false
       for (const ref of refs) {
         if (!needsOffset(ref)) continue
@@ -254,6 +271,11 @@ export async function backfillOffsetInference(env, { tripId, mode, limit } = {})
           .run()
         if ((upd?.meta?.changes ?? 0) > 0) stats.memsWritten++
       }
+    }
+    // W2 — report-only; a positive here never demotes/promotes any tier
+    // above, never affects `applyWrites`, never touches the DB.
+    for (const inv of findSequenceInversions(seqRefs)) {
+      stats.sequenceInversions.push({ tripId: tr.id, ...inv })
     }
   }
   return stats

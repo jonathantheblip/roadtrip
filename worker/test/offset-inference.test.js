@@ -230,6 +230,44 @@ describe('backfillOffsetInference', () => {
     expect(s.weatherVetoes).toBe(1)
     expect(s.memsWritten).toBe(0)
   })
+
+  // ── W2 — the filename-sequence order-consistency diagnostic (report-only, BUILD_PLAN_WITNESS_FLEET_2.md) ──
+
+  it('W2: a same-device-key capturedAt-vs-filename-order inversion is reported (never written, never affects any tier)', async () => {
+    await seedTrip('t1', { tz: TZ })
+    // Same author/device (no meta.make/model on either — both default to '',
+    // so they still land in the same device-key group), same prefix, seq
+    // 4021 → 4022 but capturedAt goes BACKWARD.
+    await seedMemory('m1', 't1', [
+      { key: 'k1', srcName: 'IMG_4021.HEIC', capturedAt: DAY, vision: { setting: 'indoor' } },
+      { key: 'k2', srcName: 'IMG_4022.HEIC', capturedAt: new Date(Date.parse(DAY) - 3600000).toISOString(), vision: { setting: 'indoor' } },
+    ])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.sequenceInversions).toHaveLength(1)
+    expect(s.sequenceInversions[0]).toMatchObject({ tripId: 't1', refKeyA: 'k1', refKeyB: 'k2', seqA: 4021, seqB: 4022 })
+    // report-only: neither ref's offsetMinutes/tier accounting is touched by this
+    const { refs } = await memRow('m1')
+    expect(refs[0].offsetMinutes).toBeUndefined()
+    expect(refs[1].offsetMinutes).toBeUndefined()
+  })
+
+  it('W2: no srcName on any ref → sequenceInversions stays empty (abstains, never fabricates)', async () => {
+    await seedTrip('t1', { tz: TZ })
+    await seedMemory('m1', 't1', [{ key: 'k1', capturedAt: DAY, vision: { setting: 'outdoor' } }])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.sequenceInversions).toEqual([])
+  })
+
+  it('W2 shares the SAME structural trip.tz gate as the rest of this engine — no tz means zero evaluation, same honesty as the weather veto', async () => {
+    await seedTrip('t1', {}) // no tz
+    await seedMemory('m1', 't1', [
+      { key: 'k1', srcName: 'IMG_4021.HEIC', capturedAt: DAY },
+      { key: 'k2', srcName: 'IMG_4022.HEIC', capturedAt: new Date(Date.parse(DAY) - 3600000).toISOString() },
+    ])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.tripsNoTz).toBe(1)
+    expect(s.sequenceInversions).toEqual([])
+  })
 })
 
 describe('corroborationTier (pure)', () => {
