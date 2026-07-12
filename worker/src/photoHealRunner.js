@@ -32,6 +32,7 @@ import { backfillSceneSignatures } from './sceneBackfill.js'
 import { backfillVisionLabels } from './visionBackfill.js'
 import { backfillProvenanceTags } from './provenanceBackfill.js'
 import { backfillTripTimezones, photoTzMode } from './tripTzBackfill.js'
+import { backfillWeather } from './weatherBackfill.js'
 import { backfillOffsetInference, photoOffsetMode } from './offsetInference.js'
 import { backfillStopGeocodes, photoStopGeocodeMode } from './stopGeocodeBackfill.js'
 import { nameDiscoveredPlaces, buildPlaceTypeIndex } from './discoveredPlaceNamer.js'
@@ -412,11 +413,27 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   } catch (e) {
     console.error('[trip-tz-backfill] sweep failed', e?.stack || e)
   }
+  // W1 (BUILD_PLAN_WITNESS_FLEET_2.md) — cache each trip's per-day hourly
+  // weather (Open-Meteo, keyless) as `trip.weatherDays` BEFORE offset
+  // inference runs, so its corroborationTier can read the cache as a
+  // veto-only second check alongside daylight. UNLIKE trip.tz/offsetMinutes,
+  // this cache is NOT family-visible (worker-only, stripped by
+  // surprises.js's WORKER_ONLY_TRIP_KEYS same as placeNames/landmarkLookups)
+  // — so, like those, it needs no off/shadow/on gate of its own; it always
+  // runs (best-effort, bounded) whenever the sweep itself is not off.
+  let weatherBackfill = null
+  try {
+    weatherBackfill = await backfillWeather(env)
+  } catch (e) {
+    console.error('[weather-backfill] sweep failed', e?.stack || e)
+  }
   // offsetMinutes is likewise family-visible (drives photoMatch.js's day
   // binning + sessionHeal.js's time reasoning) — same per-lever pattern. W0
   // gives it ITS OWN knob (PHOTO_OFFSET_MODE), defaulting to inherit `mode`
   // (see offsetInference.js's header for the full contract this closes a
-  // real live bug in).
+  // real live bug in). W1 threads the weatherDays cache above into its
+  // corroborationTier call internally (offsetInference.js's own seam) — no
+  // extra wiring needed here.
   let offsetInference = null
   try {
     const offsetMode = photoOffsetMode(env, mode)
@@ -492,6 +509,7 @@ export async function healSweep(env, { now = Date.now() } = {}) {
     visionBackfill,
     provenanceBackfill,
     tripTzBackfill,
+    weatherBackfill,
     offsetInference,
     stopGeocode,
     gpsPropagation,

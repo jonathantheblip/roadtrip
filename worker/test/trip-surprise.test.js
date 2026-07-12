@@ -152,6 +152,29 @@ describe('whole-trip masking (3b) — GET /trips is the boundary', () => {
     expect(JSON.stringify(helenTrip)).not.toContain('A-House')
   })
 
+  // ── W1's weatherDays cache inherits the same rule (BUILD_PLAN_WITNESS_FLEET_2.md
+  // W1, weatherBackfill.js) — added to WORKER_ONLY_TRIP_KEYS in the SAME commit
+  // that introduces the writer, per the ledger-consumer rule this leak fix
+  // established.
+
+  it('the weatherDays cache (W1) never leaves the worker either — for ANY viewer', async () => {
+    const cached = {
+      id: 'tr-weather', title: 'Cape stay', dateRangeStart: '2026-07-01', dateRangeEnd: '2026-07-05',
+      heroResolved: { key: 'x' },
+      days: [{ isoDate: '2026-07-02', stops: [
+        { id: 's-secret', name: 'A-House', surprise: { author: 'jonathan', hideFrom: ['helen'] } },
+      ] }],
+      weatherDays: { '2026-07-02': { '14': { precip: 0, code: 0 } } },
+    }
+    await seedTrip(cached)
+    for (const tok of [TOKENS.jonathan, TOKENS.helen, TOKENS.rafa]) {
+      const all = await tripsAs(tok)
+      const t = all.find((x) => x.id === 'tr-weather')
+      expect(t).toBeTruthy()
+      expect('weatherDays' in t).toBe(false)
+    }
+  })
+
   it("Claude's context never carries the worker caches either", async () => {
     const cached = {
       id: 'tr-cached2', title: 'Cape stay 2', dateRangeStart: '2026-07-01', dateRangeEnd: '2026-07-05',

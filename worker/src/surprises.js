@@ -377,8 +377,11 @@ export function maskTripForViewer(trip, viewer) {
 // applied ALONGSIDE maskTripForViewer at each exit, deliberately NOT inside it
 // (this function mirrors app/src/lib/surprises.js; a server-only strip inside
 // the mirrored body would widen the documented drift). Keep this list in sync
-// with every worker-written trip.data_json cache (future: weatherDays).
-const WORKER_ONLY_TRIP_KEYS = ['placeNames', 'landmarkLookups']
+// with every worker-written trip.data_json cache. `weatherDays`
+// (BUILD_PLAN_WITNESS_FLEET_2.md W1, weatherBackfill.js) added here in the
+// SAME commit that introduces the writer — the ledger-consumer rule this leak
+// fix established, stated at its own execution site so it can't be missed.
+const WORKER_ONLY_TRIP_KEYS = ['placeNames', 'landmarkLookups', 'weatherDays']
 export function stripWorkerCaches(trip) {
   if (!trip || typeof trip !== 'object') return trip
   if (!WORKER_ONLY_TRIP_KEYS.some((k) => k in trip)) return trip // referential stability

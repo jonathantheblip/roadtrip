@@ -44,6 +44,7 @@
 import { tzOffsetMinutes } from './tzOffset.js'
 import { sunTimes } from './sunTimes.js'
 import { stayPlaceCoords } from './stayPlaceCoords.js'
+import { weatherConflict } from './weatherBackfill.js'
 
 const HOUR_MS = 3600000
 // Confirmed fixture/test data (CLAUDE.md's explicit TRAP warning) — never
@@ -86,7 +87,20 @@ export function offsetInferenceLimit(env) {
 // needed for this check at all — only for what gets WRITTEN once a ref clears
 // 'corroborated'. capturedAt is never touched by any of this (ground truth:
 // it's always a real, correct UTC instant already).
-export function corroborationTier(ref, coords) {
+//
+// `weatherCtx` (BUILD_PLAN_WITNESS_FLEET_2.md W1) is the trip's cached
+// `weatherDays` object (weatherBackfill.js) — an ADDITIVE, OPTIONAL third arg:
+// absent/undefined, this function's behavior is byte-identical to before W1.
+// VETO-ONLY, decided (the plan's own "Design rules" bullet, taken as
+// authoritative over its more general "combined conservatively" framing
+// elsewhere): weather may only ever DEMOTE an already-daylight-corroborated
+// tier to 'conflicting' when the ref's own vision-claimed weather (e.g. a
+// "sunny day" label) is contradicted by the cached observed weather at its
+// capture hour. It can never promote 'no-signal' or 'conflicting' toward
+// 'corroborated' on its own — so it needs no new write-promotion knob; a
+// missing claim or missing cached data abstains (weatherConflict returns
+// false), leaving the daylight-only tier untouched.
+export function corroborationTier(ref, coords, weatherCtx) {
   if (!ref || ref.vision?.setting !== 'outdoor') return 'no-signal'
   if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return 'no-signal'
   const capturedAtMs = Date.parse(ref?.capturedAt)
@@ -95,7 +109,9 @@ export function corroborationTier(ref, coords) {
   if (!sunrise || !sunset) return 'no-signal' // polar day/night — no usable window
   const lo = sunrise.getTime() - HOUR_MS
   const hi = sunset.getTime() + HOUR_MS
-  return capturedAtMs >= lo && capturedAtMs <= hi ? 'corroborated' : 'conflicting'
+  const tier = capturedAtMs >= lo && capturedAtMs <= hi ? 'corroborated' : 'conflicting'
+  if (tier === 'corroborated' && weatherConflict(ref, weatherCtx)) return 'conflicting'
+  return tier
 }
 
 // A ref this engine may ever touch: no offsetMinutes yet, a real capturedAt to
@@ -137,6 +153,13 @@ export async function backfillOffsetInference(env, { tripId, mode, limit } = {})
     wrote: 0,
     memsWritten: 0,
     hitLimit: false,
+    // W1: how many of the 'conflicting' refs below were flipped THERE by the
+    // weather veto specifically (i.e. daylight alone said 'corroborated') —
+    // distinct from `conflicting`'s total, so a shadow report can show the
+    // veto's OWN contribution rather than conflating it with daylight
+    // conflicts. Structurally zero until a trip carries both `trip.tz` (R1)
+    // and cached `weatherDays` — see this build's HONEST REACH note.
+    weatherVetoes: 0,
     // Enough detail per conflict for a human to investigate later (the plan's
     // explicit ask) — no persistent storage invented for it, this run's
     // report IS the deliverable for this tier.
@@ -187,7 +210,7 @@ export async function backfillOffsetInference(env, { tripId, mode, limit } = {})
           stats.noSignal++
           continue
         }
-        const tier = corroborationTier(ref, coords)
+        const tier = corroborationTier(ref, coords, trip.weatherDays)
         if (tier === 'corroborated') {
           stats.corroborated++
           stats.wrote++
@@ -198,6 +221,14 @@ export async function backfillOffsetInference(env, { tripId, mode, limit } = {})
           }
         } else if (tier === 'conflicting') {
           stats.conflicting++
+          // Was this SPECIFICALLY the weather veto (daylight alone said
+          // 'corroborated', weather flipped it), vs. a daylight conflict on
+          // its own? Re-derives the daylight-only tier (no weatherCtx — the
+          // exact pre-W1 call shape) rather than threading a side-channel out
+          // of corroborationTier, so its public contract stays a plain tier
+          // string. Cheap: sunTimes is pure math, and this only runs for refs
+          // already inside the bounded `cap`.
+          if (corroborationTier(ref, coords) === 'corroborated') stats.weatherVetoes++
           stats.conflicts.push({
             tripId: tr.id,
             memoryId: r.id,

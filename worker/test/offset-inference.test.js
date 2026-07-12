@@ -167,6 +167,69 @@ describe('backfillOffsetInference', () => {
     expect(s.refsScanned).toBe(1) // only the video
     expect(s.corroborated).toBe(1)
   })
+
+  // ── W1 — the weather veto, threaded from trip.weatherDays (BUILD_PLAN_WITNESS_FLEET_2.md) ──
+
+  async function seedTripWithWeather(id, { tz, weatherDays, coords = PTOWN, updated_at = 100 } = {}) {
+    const trip = { id, ...(tz ? { tz } : {}), lodging: { lat: coords.lat, lng: coords.lng, name: 'Stay' }, ...(weatherDays ? { weatherDays } : {}) }
+    await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?,?,?)').bind(id, JSON.stringify(trip), updated_at).run()
+  }
+
+  it('W1: a "sunny day" vision claim contradicted by cached rain at that hour VETOES an otherwise-daylight-corroborated ref — never writes, counted in weatherVetoes', async () => {
+    await seedTripWithWeather('t1', { tz: TZ, weatherDays: { '2026-07-04': { '16': { precip: 0.6, code: 63 } } } })
+    await seedMemory('m1', 't1', [{ key: 'k1', capturedAt: DAY, vision: { setting: 'outdoor', labels: ['sunny day'] } }])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.corroborated).toBe(0)
+    expect(s.conflicting).toBe(1)
+    expect(s.weatherVetoes).toBe(1)
+    expect(s.wrote).toBe(0)
+    const { refs } = await memRow('m1')
+    expect(refs[0].offsetMinutes).toBeUndefined()
+  })
+
+  it('W1: a "sunny day" claim that MATCHES cached clear weather does NOT veto — still corroborated + written', async () => {
+    await seedTripWithWeather('t1', { tz: TZ, weatherDays: { '2026-07-04': { '16': { precip: 0, code: 0 } } } })
+    await seedMemory('m1', 't1', [{ key: 'k1', capturedAt: DAY, vision: { setting: 'outdoor', labels: ['sunny day'] } }])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.corroborated).toBe(1)
+    expect(s.weatherVetoes).toBe(0)
+    const { refs } = await memRow('m1')
+    expect(refs[0].offsetMinutes).toBe(-240)
+  })
+
+  it('W1: a ref with NO weather-bearing vision label (e.g. just "beach") is never vetoed even against contradicting cached weather', async () => {
+    await seedTripWithWeather('t1', { tz: TZ, weatherDays: { '2026-07-04': { '16': { precip: 5, code: 65 } } } })
+    await seedMemory('m1', 't1', [{ key: 'k1', capturedAt: DAY, vision: { setting: 'outdoor', labels: ['beach'] } }])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.corroborated).toBe(1)
+    expect(s.weatherVetoes).toBe(0)
+  })
+
+  it('W1 HONEST REACH: trip.tz present but trip.weatherDays absent (no cache yet) → EVALUATED, not STRUCTURAL — refsScanned > 0, weatherVetoes stays 0', async () => {
+    await seedTripWithWeather('t1', { tz: TZ }) // no weatherDays key at all
+    await seedMemory('m1', 't1', [{ key: 'k1', capturedAt: DAY, vision: { setting: 'outdoor', labels: ['sunny day'] } }])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.refsScanned).toBe(1)
+    expect(s.corroborated).toBe(1) // no cached data to check against → abstain, daylight tier stands
+    expect(s.weatherVetoes).toBe(0)
+  })
+
+  it('W1 HONEST REACH (the universal case today): trip.tz absent → STRUCTURAL zero — refsScanned stays 0, weather never reached at all', async () => {
+    await seedTripWithWeather('t1', { weatherDays: { '2026-07-04': { '16': { precip: 5, code: 65 } } } }) // no tz
+    await seedMemory('m1', 't1', [{ key: 'k1', capturedAt: DAY, vision: { setting: 'outdoor', labels: ['sunny day'] } }])
+    const s = await backfillOffsetInference(env, { mode: 'on' })
+    expect(s.tripsNoTz).toBe(1)
+    expect(s.refsScanned).toBe(0)
+    expect(s.weatherVetoes).toBe(0)
+  })
+
+  it('W1: mode:"shadow" still computes the veto (reports weatherVetoes) but writes nothing, same shadow contract as the rest of the tier', async () => {
+    await seedTripWithWeather('t1', { tz: TZ, weatherDays: { '2026-07-04': { '16': { precip: 0.6, code: 63 } } } })
+    await seedMemory('m1', 't1', [{ key: 'k1', capturedAt: DAY, vision: { setting: 'outdoor', labels: ['sunny day'] } }])
+    const s = await backfillOffsetInference(env, { mode: 'shadow' })
+    expect(s.weatherVetoes).toBe(1)
+    expect(s.memsWritten).toBe(0)
+  })
 })
 
 describe('corroborationTier (pure)', () => {
@@ -188,6 +251,26 @@ describe('corroborationTier (pure)', () => {
   })
   it('a bad capturedAt → no-signal, never throws', () => {
     expect(corroborationTier({ vision: { setting: 'outdoor' }, capturedAt: 'garbage' }, PTOWN)).toBe('no-signal')
+  })
+
+  // ── W1's additive third arg — absent is byte-identical to before this build ──
+  it('a THIRD arg entirely absent behaves exactly as before W1 (additive, non-breaking)', () => {
+    expect(corroborationTier({ vision: { setting: 'outdoor' }, capturedAt: DAY }, PTOWN)).toBe('corroborated')
+  })
+  it('weatherCtx present but with NO data for the ref\'s hour → no veto, daylight tier stands', () => {
+    expect(corroborationTier({ vision: { setting: 'outdoor', labels: ['sunny day'] }, capturedAt: DAY }, PTOWN, {})).toBe('corroborated')
+  })
+  it('VETO: daylight-corroborated + a contradicted vision weather claim → demoted to conflicting', () => {
+    const weatherCtx = { '2026-07-04': { '16': { precip: 0.6, code: 63 } } }
+    expect(corroborationTier({ vision: { setting: 'outdoor', labels: ['sunny day'] }, capturedAt: DAY }, PTOWN, weatherCtx)).toBe('conflicting')
+  })
+  it('weather can never PROMOTE a nighttime (daylight-conflicting) instant to corroborated', () => {
+    const weatherCtx = { '2026-07-04': { '06': { precip: 0, code: 0 } } } // matches a "sunny" claim exactly
+    expect(corroborationTier({ vision: { setting: 'outdoor', labels: ['sunny day'] }, capturedAt: NIGHT }, PTOWN, weatherCtx)).toBe('conflicting')
+  })
+  it('a matching weather claim (no contradiction) leaves an already-corroborated tier corroborated', () => {
+    const weatherCtx = { '2026-07-04': { '16': { precip: 0, code: 0 } } }
+    expect(corroborationTier({ vision: { setting: 'outdoor', labels: ['sunny day'] }, capturedAt: DAY }, PTOWN, weatherCtx)).toBe('corroborated')
   })
 })
 
