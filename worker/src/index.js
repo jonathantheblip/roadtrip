@@ -26,7 +26,7 @@ import {
   straightLineMinutes,
 } from './leaveWhen.js'
 import { runNightlyWeave, buildBeatsServer, beatSignature, regenerateStoredWeaves, secretWeaveDaySet } from './weaveGen.js'
-import { maskMemoryForViewer, maskTripForViewer, preserveHiddenStops, preserveHiddenParts, isTripMaskedFrom } from './surprises.js'
+import { maskMemoryForViewer, maskTripForViewer, stripWorkerCaches, preserveHiddenStops, preserveHiddenParts, isTripMaskedFrom } from './surprises.js'
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
 import { listProposals, createProposal, voteProposal, decideProposal, isNoTable } from './proposals.js'
@@ -37,6 +37,7 @@ import { renderSharePage, renderShareError, renderShareCard } from './sharePage.
 import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode, recordHealDecisions } from './photoHealRunner.js'
 import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
+import { listHealDecisionsForViewer } from './healDecisionsView.js'
 import { geocodePlace, placesTextSearch } from './placesGeocode.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -204,6 +205,12 @@ export default {
       }
       if (path === '/suggestions/dismiss' && request.method === 'POST') {
         return await dismissSuggestion(env, traveler, request, cors)
+      }
+      // v2 shadow ledger, per-viewer projection (the mask-gate restore — the
+      // confirm surface's precondition). Adults only; serves in shadow AND on
+      // (the ledger is the pre-promotion learning tool), dark only when off.
+      if (path === '/heal-decisions' && request.method === 'GET') {
+        return await getHealDecisions(env, traveler, url, cors)
       }
       const memMatch = path.match(/^\/memories\/([^/]+)$/)
       if (memMatch && request.method === 'DELETE') {
@@ -909,6 +916,24 @@ async function getSuggestions(env, traveler, url, cors) {
     // A suggestion is advisory — never fail the album over it. Log + return [].
     console.error('getSuggestions failed', tripId, e?.stack || e)
     return json({ suggestions: [] }, 200, headers)
+  }
+}
+
+// GET /heal-decisions?trip=<id> — the v2 shadow ledger projected for THIS
+// viewer (healDecisionsView.js — the mask-gate restore). ADULTS ONLY: a kid
+// lens gets [] (a quiet no-op, same posture as /suggestions — never a 403 a
+// stray poll would surface as an error). Serves in shadow AND on; off → [].
+async function getHealDecisions(env, traveler, url, cors) {
+  const headers = { ...cors, 'Cache-Control': 'no-store' }
+  if (!isAdult(traveler)) return json({ decisions: [] }, 200, headers)
+  const tripId = url.searchParams.get('trip') || ''
+  try {
+    const decisions = await listHealDecisionsForViewer(env, tripId, traveler)
+    return json({ decisions }, 200, headers)
+  } catch (e) {
+    // The ledger read is advisory — never fail a surface over it. Log + [].
+    console.error('getHealDecisions failed', tripId, e?.stack || e)
+    return json({ decisions: [] }, 200, headers)
   }
 }
 
@@ -1732,7 +1757,7 @@ async function getTrips(env, traveler, url, cors, ctx) {
   // never reach the recipient. Hero resolution below runs on the REAL trips (it's
   // a server-side enrichment of stored data, not viewer-specific — and the
   // stand-ins are fake, so they must never be sent to Places/R2).
-  const out = realTrips.map((t) => maskTripForViewer(t, traveler))
+  const out = realTrips.map((t) => stripWorkerCaches(maskTripForViewer(t, traveler)))
 
   // §2/§6 — kick off worker-side hero resolution in the BACKGROUND for
   // runtime trips that have no explicit hero and no resolved hero yet.
@@ -4353,7 +4378,7 @@ export async function buildClaudeSystemPrompt(env, { readerUserId, tripId, clien
   let trip = tripId ? await loadTrip(env, tripId) : null
   if (trip) {
     const realTrip = { ...(trip.data || {}), id: trip.id, title: trip.title, dateRangeStart: trip.dateRangeStart, dateRangeEnd: trip.dateRangeEnd, endCity: trip.endCity }
-    const masked = maskTripForViewer(realTrip, readerUserId)
+    const masked = stripWorkerCaches(maskTripForViewer(realTrip, readerUserId))
     if (masked._maskedTrip) {
       trip = { id: masked.id, title: masked.title, dateRangeStart: masked.dateRangeStart, dateRangeEnd: masked.dateRangeEnd, endCity: masked.endCity, data: { ...masked, days: [] } }
     } else if (masked !== realTrip) {
@@ -4837,7 +4862,7 @@ async function loadTripsSummary(env, readerUserId) {
       // Claude's cross-trip summary. The real dates stay (so "what's this summer"
       // still works) and the cover title shows instead.
       const realTrip = { ...(data || {}), id: row.id, title: row.title || data?.title, dateRangeStart: start, dateRangeEnd: end }
-      const t = maskTripForViewer(realTrip, readerUserId)
+      const t = stripWorkerCaches(maskTripForViewer(realTrip, readerUserId))
       const masked = !!t._maskedTrip
       let status = 'planning'
       if (end && today > end) status = 'completed'

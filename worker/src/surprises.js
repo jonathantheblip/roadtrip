@@ -363,6 +363,30 @@ export function maskTripForViewer(trip, viewer) {
   return maskTripParts(maskTripStops(trip, viewer), viewer)
 }
 
+// ── Worker-only cache strip (the Build 4b/4c leak fix, 2026-07-12) ────────────
+// recordHealDecisions caches Build 4b/4c resolution results on trip.data_json
+// (`placeNames`: coord→locality names; `landmarkLookups`: signage-query →
+// resolved venue name + exact pin) — harvested from RAW, unmasked memories and
+// the RAW trip. maskTripForViewer substitutes hidden stops/parts/days but
+// spreads the rest of the trip object through (`{...trip, days}`), so these
+// top-level keys sailed out on the ordinary GET /trips pull to EVERY family
+// member — a resolved secret-venue name/pin could reach the exact person a
+// stop is hidden from (adversarial review, confirmed). Clients have NO reader
+// for these keys (they're worker-side caches, clobber-recomputable by design),
+// so the fix is to strip them from every serve path, all viewers, always —
+// applied ALONGSIDE maskTripForViewer at each exit, deliberately NOT inside it
+// (this function mirrors app/src/lib/surprises.js; a server-only strip inside
+// the mirrored body would widen the documented drift). Keep this list in sync
+// with every worker-written trip.data_json cache (future: weatherDays).
+const WORKER_ONLY_TRIP_KEYS = ['placeNames', 'landmarkLookups']
+export function stripWorkerCaches(trip) {
+  if (!trip || typeof trip !== 'object') return trip
+  if (!WORKER_ONLY_TRIP_KEYS.some((k) => k in trip)) return trip // referential stability
+  const out = { ...trip }
+  for (const k of WORKER_ONLY_TRIP_KEYS) delete out[k]
+  return out
+}
+
 // ── The save-back clobber guard (the NEW per-stop danger) ─────────────────────
 // A whole-trip stand-in carries `masked:true` so postTrip can refuse it. But a
 // PER-STOP-masked trip is otherwise a REAL, editable trip — a recipient can

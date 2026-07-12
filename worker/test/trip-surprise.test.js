@@ -120,6 +120,50 @@ describe('whole-trip masking (3b) — GET /trips is the boundary', () => {
     expect(prompt).toContain('Disney World surprise!')
   })
 
+  // ── Worker-only cache strip (Build 4b/4c leak fix, 2026-07-12) ─────────────
+  // recordHealDecisions caches placeNames + landmarkLookups (signage query →
+  // resolved venue name + exact pin, harvested from RAW unmasked memories)
+  // onto trip.data_json; maskTripForViewer spreads top-level keys through, so
+  // without the strip they shipped to EVERY viewer on the ordinary pull —
+  // including the person a venue's stop is hidden from (confirmed finding).
+
+  it('worker caches (placeNames/landmarkLookups) never leave the worker — for ANY viewer, author included', async () => {
+    const cached = {
+      id: 'tr-cached', title: 'Cape stay', dateRangeStart: '2026-07-01', dateRangeEnd: '2026-07-05',
+      heroResolved: { key: 'x' },
+      days: [{ isoDate: '2026-07-02', stops: [
+        { id: 's-secret', name: 'A-House', surprise: { author: 'jonathan', hideFrom: ['helen'] } },
+      ] }],
+      placeNames: { '42.0500,-70.1888': 'Provincetown, Massachusetts' },
+      landmarkLookups: { 'ATLANTIC HOUSE BAR 1798': { pin: { lat: 42.05, lng: -70.1888, name: 'A-House' } } },
+    }
+    await seedTrip(cached)
+    for (const tok of [TOKENS.jonathan, TOKENS.helen, TOKENS.rafa]) {
+      const all = await tripsAs(tok)
+      const t = all.find((x) => x.id === 'tr-cached')
+      expect(t).toBeTruthy()
+      expect('placeNames' in t).toBe(false)
+      expect('landmarkLookups' in t).toBe(false)
+      expect(JSON.stringify(all)).not.toContain('ATLANTIC HOUSE')
+    }
+    // And the secret stop itself is still masked for helen (the strip composes
+    // with, never replaces, the existing mask).
+    const helenTrip = (await tripsAs(TOKENS.helen)).find((x) => x.id === 'tr-cached')
+    expect(JSON.stringify(helenTrip)).not.toContain('A-House')
+  })
+
+  it("Claude's context never carries the worker caches either", async () => {
+    const cached = {
+      id: 'tr-cached2', title: 'Cape stay 2', dateRangeStart: '2026-07-01', dateRangeEnd: '2026-07-05',
+      heroResolved: { key: 'x' }, days: [],
+      landmarkLookups: { 'SOME SECRET SIGN': { pin: { lat: 1, lng: 2, name: 'Secret Venue LLC' } } },
+    }
+    await seedTrip(cached)
+    const prompt = await buildClaudeSystemPrompt(env, { readerUserId: 'jonathan', tripId: 'tr-cached2' })
+    expect(prompt).not.toContain('Secret Venue LLC')
+    expect(prompt).not.toContain('SOME SECRET SIGN')
+  })
+
   it('runScheduledTripReveals unwraps a date-reveal trip on its day; recipient then sees it real', async () => {
     // A date-reveal secret trip whose date is today.
     const dated = { ...SECRET, id: 'tr-dated', surprise: { author: 'jonathan', hideFrom: ['rafa'], reveal: { type: 'date', at: '2026-08-01' }, conceal: 'cover', cover: { title: 'Visiting Grandma' } } }
