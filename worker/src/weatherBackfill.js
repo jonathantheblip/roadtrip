@@ -237,7 +237,12 @@ export async function backfillWeather(env, { limit, fetchWeatherDay, now = Date.
 // excluded even though neither is a reliable direct claim about CURRENT weather (a
 // rainbow is commonly photographed well after rain has stopped; an umbrella may be
 // closed, decorative, or sun-shade) — never treated as a rain claim.
-const EXCLUDE_RE = /\b(rainbow|umbrella)\b/i
+// `g` flag (adversarial review, 2026-07-12): without it, .replace() only
+// strips the FIRST occurrence — currently inert since no RAIN/SNOW/FOG/SUNNY
+// alternative can match inside "rainbow"/"umbrella" (word-boundary math
+// prevents it), but a future addition to those regexes could silently
+// re-enable a false positive on a SECOND occurrence in the same label string.
+const EXCLUDE_RE = /\b(rainbow|umbrella)\b/gi
 const RAIN_RE = /\b(rain|rainy|raining|drizzle|drizzling|downpour|showers?)\b/i
 const SNOW_RE = /\b(snow|snowy|snowing|blizzard)\b/i
 const FOG_RE = /\b(fog|foggy|mist|misty)\b/i

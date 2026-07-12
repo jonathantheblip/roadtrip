@@ -665,7 +665,14 @@ const IMPORT_ROWS = [
 // name (Android/WhatsApp/renamed) simply doesn't match and is skipped, never
 // coerced. ALWAYS "up to ~N": the counter counts screenshots/videos/deletions
 // too, not just photos that would matter to this trip.
-const SEQ_RE = /^([A-Za-z_]+)(\d{3,6})\.[A-Za-z0-9]{2,5}$/
+const SEQ_RE = /^([A-Za-z_]+)(\d{3,6})\.([A-Za-z0-9]{2,5})$/
+// Mirrors worker/src/seqName.js's EXT_WHITELIST exactly (adversarial review,
+// 2026-07-12: this client parser had no extension check at all, so a
+// same-shaped non-media filename — e.g. a live-photo sidecar, or a stray file
+// reaching here via an OS "all files" picker override — could be parsed here
+// while the worker-side witness would correctly abstain on it; the two
+// independent implementations must agree on what counts as a sequence name).
+const SEQ_EXT_WHITELIST = new Set(['heic', 'heif', 'jpg', 'jpeg', 'png', 'gif', 'mov', 'mp4'])
 // A gap wider than this is treated as a wrap (IMG_9999→IMG_0001) or an
 // unrelated jump, not a real missing-items span — decided: ignore, not
 // modular math (BUILD_PLAN_WITNESS_FLEET_2.md W2).
@@ -674,7 +681,7 @@ function findBiggestSeqGap(items) {
   const byPrefix = new Map()
   for (const it of items) {
     const m = typeof it?.name === 'string' ? SEQ_RE.exec(it.name) : null
-    if (!m) continue
+    if (!m || !SEQ_EXT_WHITELIST.has(m[3].toLowerCase())) continue
     const capturedAtMs = Date.parse(it?.capturedAt)
     if (!Number.isFinite(capturedAtMs)) continue
     const prefix = m[1]
