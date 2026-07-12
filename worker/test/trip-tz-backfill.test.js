@@ -11,7 +11,7 @@
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { applySchema } from './helpers/schema.js'
-import { backfillTripTimezones, timezoneUrl } from '../src/tripTzBackfill.js'
+import { backfillTripTimezones, timezoneUrl, photoTzMode } from '../src/tripTzBackfill.js'
 
 async function seedTrip(id, trip, updated_at = 100) {
   await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?,?,?)')
@@ -137,5 +137,21 @@ describe('backfillTripTimezones', () => {
     expect(url).toContain('timezone=auto')
     expect(url).toContain('latitude=42.0621405')
     expect(url).toContain('longitude=-70.1633884')
+  })
+})
+
+describe('photoTzMode — the W0 per-lever knob (defaults to inheriting the caller-resolved global mode)', () => {
+  it('its OWN var wins when recognized', () => {
+    expect(photoTzMode({ PHOTO_TZ_MODE: 'on' }, 'shadow')).toBe('on')
+  })
+  it('falls back to the caller-supplied global mode when unset', () => {
+    expect(photoTzMode({}, 'shadow')).toBe('shadow')
+  })
+  it('an unrecognized own-var value falls back to the global mode too', () => {
+    expect(photoTzMode({ PHOTO_TZ_MODE: 'bogus' }, 'on')).toBe('on')
+  })
+  it('an unrecognized fallback defaults all the way to off (fail safe)', () => {
+    expect(photoTzMode({}, 'bogus')).toBe('off')
+    expect(photoTzMode({}, undefined)).toBe('off')
   })
 })

@@ -31,12 +31,12 @@ import { buildTripDecisions } from './sessionHeal.js'
 import { backfillSceneSignatures } from './sceneBackfill.js'
 import { backfillVisionLabels } from './visionBackfill.js'
 import { backfillProvenanceTags } from './provenanceBackfill.js'
-import { backfillTripTimezones } from './tripTzBackfill.js'
-import { backfillOffsetInference } from './offsetInference.js'
+import { backfillTripTimezones, photoTzMode } from './tripTzBackfill.js'
+import { backfillOffsetInference, photoOffsetMode } from './offsetInference.js'
 import { backfillStopGeocodes, photoStopGeocodeMode } from './stopGeocodeBackfill.js'
 import { nameDiscoveredPlaces, buildPlaceTypeIndex } from './discoveredPlaceNamer.js'
 import { resolveLandmarkPins, buildSignageIndex } from './landmarkSearch.js'
-import { propagateMomentGps } from './momentGpsPropagation.js'
+import { propagateMomentGps, photoGpsPropagationMode } from './momentGpsPropagation.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -400,21 +400,27 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   // reads it directly to decide which DAY a photo's album section falls under
   // and what its time-band label reads — a real, TODAY, family-visible
   // consequence, independent of the offset-inference engine below. So this
-  // backfill gets the exact same off/shadow/on write discipline: 'mode' is
-  // threaded through, real writes only when mode==='on'.
+  // backfill gets the exact same off/shadow/on write discipline. W0
+  // (BUILD_PLAN_WITNESS_FLEET_2.md) gives it ITS OWN knob (PHOTO_TZ_MODE),
+  // defaulting to inherit `mode` — the per-lever promotion rule (flipping
+  // this on at R1 must never also arm the offset engine or GPS propagation
+  // below). Real writes only when its resolved mode is 'on'.
   let tripTzBackfill = null
   try {
-    tripTzBackfill = await backfillTripTimezones(env, { mode })
+    const tzMode = photoTzMode(env, mode)
+    tripTzBackfill = await backfillTripTimezones(env, { mode: tzMode })
   } catch (e) {
     console.error('[trip-tz-backfill] sweep failed', e?.stack || e)
   }
   // offsetMinutes is likewise family-visible (drives photoMatch.js's day
-  // binning + sessionHeal.js's time reasoning) — same 'mode' threading, real
-  // writes only on 'on' (see offsetInference.js's header for the full
-  // contract this closes a real live bug in).
+  // binning + sessionHeal.js's time reasoning) — same per-lever pattern. W0
+  // gives it ITS OWN knob (PHOTO_OFFSET_MODE), defaulting to inherit `mode`
+  // (see offsetInference.js's header for the full contract this closes a
+  // real live bug in).
   let offsetInference = null
   try {
-    offsetInference = await backfillOffsetInference(env, { mode })
+    const offsetMode = photoOffsetMode(env, mode)
+    offsetInference = await backfillOffsetInference(env, { mode: offsetMode })
   } catch (e) {
     console.error('[offset-inference] sweep failed', e?.stack || e)
   }
@@ -432,14 +438,16 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   } catch (e) {
     console.error('[stop-geocode] sweep failed', e?.stack || e)
   }
-  // Build 5 (BUILD_PLAN_SIGNAL_FLEET.md) — moment-scoped GPS propagation.
-  // Rides the SAME `mode` as the offset engine above (no independent
-  // pre-authorization to promote separately, per plan) — real writes only
-  // when mode==='on'. Measured reach on today's archive is ZERO (a pure
-  // standing-forward mechanism); best-effort, never stops the sweep.
+  // Build 5 (BUILD_PLAN_SIGNAL_FLEET.md) — moment-scoped GPS propagation. W0
+  // gives it ITS OWN knob (PHOTO_GPS_PROPAGATION_MODE), defaulting to
+  // inherit `mode` — the per-lever promotion rule (R3 promotes this
+  // independently of R1/R2). Real writes only when its resolved mode is
+  // 'on'. Measured reach on today's archive is ZERO (a pure standing-forward
+  // mechanism); best-effort, never stops the sweep.
   let gpsPropagation = null
   try {
-    gpsPropagation = await propagateMomentGps(env, { mode })
+    const gpsMode = photoGpsPropagationMode(env, mode)
+    gpsPropagation = await propagateMomentGps(env, { mode: gpsMode })
   } catch (e) {
     console.error('[gps-propagation] sweep failed', e?.stack || e)
   }

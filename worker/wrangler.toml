@@ -52,6 +52,17 @@ PHOTO_VISION_BACKFILL_LIMIT = "90"
 # case verified live). ITS OWN knob, independent of PHOTO_HEAL_MODE — flipping
 # this on does NOT arm v1's photo-moving or the offset-inference engine.
 PHOTO_STOP_GEOCODE_MODE = "on"
+# W0 per-lever knobs (BUILD_PLAN_WITNESS_FLEET_2.md) — one for each of the
+# three remaining healSweep write classes formerly armed only by the master
+# PHOTO_HEAL_MODE. Each defaults to INHERITING the caller-resolved global
+# mode when unset (photoTzMode/photoOffsetMode/photoGpsPropagationMode's
+# fallback behavior — see their headers), so leaving all three unset here is
+# a byte-identical no-op vs. today. Promoted one at a time per §R (R1/R2/R3),
+# each with its own shadow report and Jonathan's one-line confirm — not set
+# here yet.
+# PHOTO_TZ_MODE = "shadow"                  # R1 — trip.tz backfill (tripTzBackfill.js)
+# PHOTO_OFFSET_MODE = "shadow"              # R2 — offset-inference engine (offsetInference.js)
+# PHOTO_GPS_PROPAGATION_MODE = "shadow"     # R3 — moment-scoped GPS propagation (momentGpsPropagation.js)
 
 # Nightly auto-weave (WEAVE_SCOPE slice 3). 08:00 UTC ≈ 2-4am US overnight —
 # after the day's memories have settled. Fires the worker `scheduled` handler

@@ -318,3 +318,144 @@ describe('healSweep — the offset-inference engine obeys shadow (Build 2 regres
     expect(refs[0].prov).toEqual({ off: 'inferred-place' })
   })
 })
+
+// ── W0 (BUILD_PLAN_WITNESS_FLEET_2.md) — per-lever knobs for the three
+// remaining healSweep write classes formerly armed only by the master
+// PHOTO_HEAL_MODE ────────────────────────────────────────────────────────
+// THE BUILD'S MAIN INVARIANT: with every new var (PHOTO_TZ_MODE,
+// PHOTO_OFFSET_MODE, PHOTO_GPS_PROPAGATION_MODE) unset, each lever resolves
+// to exactly the caller-resolved global mode — byte-identical to healSweep's
+// behavior before this build. Proven two ways below: (1) the resolved `mode`
+// field each backfill reports matches the global mode when its own var is
+// unset, under both 'shadow' and 'on'; (2) each lever, once explicitly set,
+// can be promoted or held back INDEPENDENTLY of the global mode and of the
+// other two levers — real D1 writes, not just the reported stat.
+describe('W0 — per-lever knobs (PHOTO_TZ_MODE / PHOTO_OFFSET_MODE / PHOTO_GPS_PROPAGATION_MODE)', () => {
+  const W0_TZ = 'America/New_York'
+  const W0_PTOWN = { lat: 42.0621405, lng: -70.1633884 }
+  const W0_DAY = '2026-07-04T16:00:00.000Z' // real midday EDT at Provincetown
+
+  async function seedOffsetReadyTrip(id, stamp = 300) {
+    const trip = { id, tz: W0_TZ, lodging: { lat: W0_PTOWN.lat, lng: W0_PTOWN.lng, name: 'Stay' }, days: [] }
+    await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?,?,?)')
+      .bind(id, JSON.stringify(trip), stamp)
+      .run()
+  }
+  async function seedOffsetCandidateMemory(id, tripId, stamp = 60) {
+    const refs = JSON.stringify([{ key: 'k1', capturedAt: W0_DAY, vision: { setting: 'outdoor' } }])
+    await env.DB.prepare(
+      `INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).bind(id, tripId, 'jonathan', 'shared', 'photo', refs, 1, stamp).run()
+  }
+
+  const GPS_T0 = Date.parse('2026-07-04T16:00:00.000Z')
+  const gpsAt = (minOffset) => new Date(GPS_T0 + minOffset * 60000).toISOString()
+  async function seedGpsTrip(id, stamp = 300) {
+    await env.DB.prepare('INSERT INTO trips (id, data_json, updated_at) VALUES (?,?,?)')
+      .bind(id, JSON.stringify({ id }), stamp)
+      .run()
+  }
+  async function seedGpsMomentMemory(id, tripId, stamp = 60) {
+    const refs = JSON.stringify([
+      { key: 'src', capturedAt: gpsAt(0), lat: 42.05, lng: -70.18, prov: { gps: 'exif' } },
+      { key: 'target', capturedAt: gpsAt(5) }, // same moment, no coords at all
+    ])
+    await env.DB.prepare(
+      `INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).bind(id, tripId, 'jonathan', 'shared', 'photo', refs, 1, stamp).run()
+  }
+  async function refsOf(memId) {
+    const r = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id=?').bind(memId).first()
+    return JSON.parse(r.photo_r2_keys_json)
+  }
+
+  it('MAIN INVARIANT — all three vars unset, global "shadow": every lever\'s resolved mode equals the global mode', async () => {
+    await seedTrip('t1', tripJson(), 200) // no lodging/tz → tz noCoords, offset tripsNoTz, both safe (no fetch)
+    await seedMemory({ id: 'm1', tripId: 't1' })
+    const r = await healSweep({ ...env, PHOTO_HEAL_MODE: 'shadow' }, { now: NOW })
+    expect(r.tripTzBackfill.mode).toBe('shadow')
+    expect(r.offsetInference.mode).toBe('shadow')
+    expect(r.gpsPropagation.mode).toBe('shadow')
+  })
+
+  it('MAIN INVARIANT — all three vars unset, global "on": every lever\'s resolved mode equals the global mode', async () => {
+    await seedTrip('t1', tripJson(), 200)
+    await seedMemory({ id: 'm1', tripId: 't1' })
+    const r = await healSweep({ ...env, PHOTO_HEAL_MODE: 'on' }, { now: NOW })
+    expect(r.tripTzBackfill.mode).toBe('on')
+    expect(r.offsetInference.mode).toBe('on')
+    expect(r.gpsPropagation.mode).toBe('on')
+  })
+
+  it('PHOTO_TZ_MODE overrides the global mode for the tz lever only (mode threading, no network touched)', async () => {
+    await seedTrip('t1', tripJson(), 200) // stops carry no kind:"lodging" → noCoords, never calls fetchTz
+    await seedMemory({ id: 'm1', tripId: 't1' })
+    const r = await healSweep({ ...env, PHOTO_HEAL_MODE: 'shadow', PHOTO_TZ_MODE: 'on' }, { now: NOW })
+    expect(r.tripTzBackfill.mode).toBe('on')
+    expect(r.offsetInference.mode).toBe('shadow') // untouched by the tz override
+    expect(r.gpsPropagation.mode).toBe('shadow') // untouched by the tz override
+  })
+
+  it('PHOTO_OFFSET_MODE="on" promotes REAL offset writes even while the global mode stays "shadow"', async () => {
+    await seedOffsetReadyTrip('t-w0-offset-on')
+    await seedOffsetCandidateMemory('m-w0-offset-on', 't-w0-offset-on')
+    const r = await healSweep(
+      { ...env, PHOTO_HEAL_MODE: 'shadow', PHOTO_OFFSET_MODE: 'on', PHOTO_SCENE_BACKFILL_LIMIT: 0 },
+      { now: NOW }
+    )
+    expect(r.mode).toBe('shadow') // the GLOBAL knob genuinely stayed shadow
+    expect(r.offsetInference.mode).toBe('on')
+    expect(r.offsetInference.corroborated).toBe(1)
+    expect(r.offsetInference.memsWritten).toBe(1) // real write, independent of the global knob
+    const refs = await refsOf('m-w0-offset-on')
+    expect(refs[0].offsetMinutes).toBe(-240)
+  })
+
+  it('PHOTO_OFFSET_MODE="off" suppresses offset writes even while the global mode is "on"', async () => {
+    await seedOffsetReadyTrip('t-w0-offset-off')
+    await seedOffsetCandidateMemory('m-w0-offset-off', 't-w0-offset-off')
+    const r = await healSweep(
+      { ...env, PHOTO_HEAL_MODE: 'on', PHOTO_OFFSET_MODE: 'off', PHOTO_SCENE_BACKFILL_LIMIT: 0 },
+      { now: NOW }
+    )
+    expect(r.mode).toBe('on') // the GLOBAL knob genuinely stayed on
+    expect(r.offsetInference.mode).toBe('off')
+    expect(r.offsetInference.corroborated).toBe(1) // still computed for the report
+    expect(r.offsetInference.memsWritten).toBe(0) // but never written, independent of the global knob
+    const refs = await refsOf('m-w0-offset-off')
+    expect(refs[0].offsetMinutes).toBeUndefined()
+  })
+
+  it('PHOTO_GPS_PROPAGATION_MODE="on" promotes REAL propagation writes even while the global mode stays "shadow"', async () => {
+    await seedGpsTrip('t-w0-gps-on')
+    await seedGpsMomentMemory('m-w0-gps-on', 't-w0-gps-on')
+    const r = await healSweep(
+      { ...env, PHOTO_HEAL_MODE: 'shadow', PHOTO_GPS_PROPAGATION_MODE: 'on', PHOTO_SCENE_BACKFILL_LIMIT: 0 },
+      { now: NOW }
+    )
+    expect(r.mode).toBe('shadow')
+    expect(r.gpsPropagation.mode).toBe('on')
+    expect(r.gpsPropagation.wouldPropagate).toBe(1)
+    expect(r.gpsPropagation.memsWritten).toBe(1)
+    const target = (await refsOf('m-w0-gps-on')).find((x) => x.key === 'target')
+    expect(target.lat).toBe(42.05)
+    expect(target.prov).toEqual({ gps: 'propagated' })
+  })
+
+  it('PHOTO_GPS_PROPAGATION_MODE="off" suppresses propagation writes even while the global mode is "on"', async () => {
+    await seedGpsTrip('t-w0-gps-off')
+    await seedGpsMomentMemory('m-w0-gps-off', 't-w0-gps-off')
+    const r = await healSweep(
+      { ...env, PHOTO_HEAL_MODE: 'on', PHOTO_GPS_PROPAGATION_MODE: 'off', PHOTO_SCENE_BACKFILL_LIMIT: 0 },
+      { now: NOW }
+    )
+    expect(r.mode).toBe('on')
+    expect(r.gpsPropagation.mode).toBe('off')
+    expect(r.gpsPropagation.wouldPropagate).toBe(1) // still computed for the report
+    expect(r.gpsPropagation.memsWritten).toBe(0)
+    const target = (await refsOf('m-w0-gps-off')).find((x) => x.key === 'target')
+    expect(target.lat).toBeUndefined()
+  })
+})

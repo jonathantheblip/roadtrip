@@ -10,7 +10,7 @@
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { applySchema } from './helpers/schema.js'
-import { backfillOffsetInference, corroborationTier } from '../src/offsetInference.js'
+import { backfillOffsetInference, corroborationTier, photoOffsetMode } from '../src/offsetInference.js'
 
 const PTOWN = { lat: 42.0621405, lng: -70.1633884 }
 const TZ = 'America/New_York'
@@ -188,5 +188,21 @@ describe('corroborationTier (pure)', () => {
   })
   it('a bad capturedAt → no-signal, never throws', () => {
     expect(corroborationTier({ vision: { setting: 'outdoor' }, capturedAt: 'garbage' }, PTOWN)).toBe('no-signal')
+  })
+})
+
+describe('photoOffsetMode — the W0 per-lever knob (defaults to inheriting the caller-resolved global mode)', () => {
+  it('its OWN var wins when recognized', () => {
+    expect(photoOffsetMode({ PHOTO_OFFSET_MODE: 'on' }, 'shadow')).toBe('on')
+  })
+  it('falls back to the caller-supplied global mode when unset', () => {
+    expect(photoOffsetMode({}, 'shadow')).toBe('shadow')
+  })
+  it('an unrecognized own-var value falls back to the global mode too', () => {
+    expect(photoOffsetMode({ PHOTO_OFFSET_MODE: 'bogus' }, 'on')).toBe('on')
+  })
+  it('an unrecognized fallback defaults all the way to off (fail safe)', () => {
+    expect(photoOffsetMode({}, 'bogus')).toBe('off')
+    expect(photoOffsetMode({}, undefined)).toBe('off')
   })
 })

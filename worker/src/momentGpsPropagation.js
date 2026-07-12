@@ -45,6 +45,23 @@ const SKIP_TRIP_IDS = new Set(['volleyball-2026'])
 const INHERIT_RADIUS_M = 250 // mirrors sessions.js's SESSION_DEFAULTS/MOMENT_DEFAULTS.inheritRadiusMeters
 const REFERENCE_GPS_PROV = new Set(['exif', 'scan'])
 
+const MODES = new Set(['off', 'shadow', 'on'])
+
+// THE PER-LEVER KNOB (BUILD_PLAN_WITNESS_FLEET_2.md W0) — copies 4a's proven
+// photoStopGeocodeMode shape verbatim (stopGeocodeBackfill.js). Read this
+// module's OWN var, defaulting to the caller-supplied fallback (the already-
+// resolved global mode) when unset/unrecognized, so an unconfigured install
+// behaves exactly like every other backfill; Jonathan promotes R3
+// independently by setting PHOTO_GPS_PROPAGATION_MODE specifically. Never
+// imports photoHealMode itself (photoHealRunner.js imports THIS module; a
+// back-import would cycle) — the caller (healSweep) passes its own already-
+// computed mode down instead.
+export function photoGpsPropagationMode(env, fallback) {
+  const raw = typeof env?.PHOTO_GPS_PROPAGATION_MODE === 'string' ? env.PHOTO_GPS_PROPAGATION_MODE.trim() : ''
+  if (MODES.has(raw)) return raw
+  return MODES.has(fallback) ? fallback : 'off'
+}
+
 function haversineMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000
   const toRad = (d) => (d * Math.PI) / 180

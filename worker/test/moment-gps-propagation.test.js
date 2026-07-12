@@ -8,7 +8,7 @@
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { applySchema } from './helpers/schema.js'
-import { propagateMomentGps } from '../src/momentGpsPropagation.js'
+import { propagateMomentGps, photoGpsPropagationMode } from '../src/momentGpsPropagation.js'
 
 const T0 = Date.parse('2026-07-04T16:00:00.000Z')
 const at = (minOffset) => new Date(T0 + minOffset * 60000).toISOString()
@@ -248,5 +248,21 @@ describe('propagateMomentGps', () => {
     const s = await propagateMomentGps(env, { mode: 'on', limit: 2 })
     expect(s.wouldPropagate).toBe(2)
     expect(s.hitLimit).toBe(true)
+  })
+})
+
+describe('photoGpsPropagationMode — the W0 per-lever knob (defaults to inheriting the caller-resolved global mode)', () => {
+  it('its OWN var wins when recognized', () => {
+    expect(photoGpsPropagationMode({ PHOTO_GPS_PROPAGATION_MODE: 'on' }, 'shadow')).toBe('on')
+  })
+  it('falls back to the caller-supplied global mode when unset', () => {
+    expect(photoGpsPropagationMode({}, 'shadow')).toBe('shadow')
+  })
+  it('an unrecognized own-var value falls back to the global mode too', () => {
+    expect(photoGpsPropagationMode({ PHOTO_GPS_PROPAGATION_MODE: 'bogus' }, 'on')).toBe('on')
+  })
+  it('an unrecognized fallback defaults all the way to off (fail safe)', () => {
+    expect(photoGpsPropagationMode({}, 'bogus')).toBe('off')
+    expect(photoGpsPropagationMode({}, undefined)).toBe('off')
   })
 })
