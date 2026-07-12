@@ -421,12 +421,35 @@ whitelists). The rule applies to **every** intake path, including the picker too
    fragmented town wander partially healed, the July 4th parade's 13+2 split into one 15-photo moment,
    July 3rd's beach 6+3 split healed — with every should-stay-separate boundary (including the wander's
    own adjacent beach burst) correctly staying separate. Still shadow: nothing family-visible moved.
-4. ⏳ **Landmark pinning** (find-places on vision's names) — not yet built.
-5. ⏳ **Sparse-GPS spreading** (one located photo places its whole scene-cluster) — not yet built.
+4. ✅ **Landmark pinning + place resolution both directions** (Builds 4/4a/4b/4c, shipped 2026-07-11) —
+   `find-places` on vision's names AND signage-driven landmark search (a storefront read in-frame resolves
+   to real coordinates via Places). The stop-geocode lever (4a) was shadow-proven on real data then
+   **promoted to `on`** (2026-07-12, Jonathan's go-ahead) — 12 stops geocoded overnight, 5 real landmark
+   pins in the ledger (A-House, Angel Foods, the July 4th parade fire truck among them).
+5. ✅ **Sparse-GPS spreading** (Build 5, moment-scoped GPS propagation, shipped 2026-07-11) — one located
+   photo places its whole scene-cluster. Shadow-proven; not yet promoted (measured reach on today's archive
+   is zero — a pure standing-forward mechanism, waiting for new archive growth to exercise it).
+6. ✅ **The mask-gate restore** (shipped 2026-07-12) — the per-viewer surprise/mask projection this section
+   flagged as a hard precondition (item 2 above, "restore the surprise/mask gate before any family-visible
+   reader of the ledger") is now live: `GET /heal-decisions` serves `memory_heal_decisions` through
+   `healDecisionsView.js`'s fail-closed projection, adults-only. Its own review caught and closed two real
+   leaks (a landmark pin/vision-name naming a hidden venue; worker-only trip caches — `placeNames`/
+   `landmarkLookups` — shipping unfiltered to every family member for about a day).
 
-Faces remains the parallel device-lever, still fully unbuilt. Full build-by-build detail, the process
-lessons (including the one caught by a second opinion, not this project's own review apparatus), and the
-real before/after numbers: `memory/self-healing-agenda-free.md`.
+**The full witness-fleet plan** (`BUILD_PLAN_WITNESS_FLEET_2.md`, root scratch) sequences everything still
+open toward one deliverable: `PHOTO_HEAL_MODE` promoted for real, family-tested. It adds a formal **Evidence
+Constitution** (named dimensions, an AUTO bar, a CONFIRM bar, no signal corroborating itself) so the
+end state never rests on one or two witnesses alone, per-lever promotion knobs (mirroring 4a's pattern) so
+each write class ships and proves independently, and named witnesses beyond the five above: weather,
+filename-sequence order, a time-witness pack, a human-words pack, faces (consented: anonymous cross-device
+sync), presence breadcrumbs (consented: adults-only, engine-only, trip+14-day retention), and picker
+polish. Live build state: `memory/self-healing-agenda-free.md`; don't trust this file's own build list as
+current — it ages the moment either doc is written.
+
+Faces and presence breadcrumbs are the two remaining device-native levers — both now consented (Jonathan,
+2026-07-12) and scoped in the plan above, not yet built. Full build-by-build detail, the process lessons
+(including the one caught by a second opinion, not this project's own review apparatus), and the real
+before/after numbers: `memory/self-healing-agenda-free.md`.
 
 ---
 
