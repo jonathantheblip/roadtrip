@@ -182,6 +182,25 @@ describe('resolveLandmarkPins', () => {
     expect(days[0].decisions[0].signals.pin).toMatchObject({ name: 'Spiritus Pizza' })
   })
 
+  it('W0b (adversarial review, 2026-07-12): an OLD-SHAPE cached HIT whose re-resolve attempt FAILS keeps the old pin — never overwritten with a miss marker', async () => {
+    const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { pin: { lat: 1, lng: 2, name: 'Spiritus Pizza' } } } }
+    const days = [{ decisions: [decision(['p1'])] }]
+    // A failed re-resolve (network error, quota, or a genuine miss) must not
+    // be treated as a fresh MISS for an already-confirmed legacy pin — that
+    // would silently drop a pin the family already sees, and violate the
+    // "a cached HIT never expires" invariant this same file documents above.
+    const search = async () => ({ results: [] })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search })
+    expect(r.legacyTypelessCacheEntries).toBe(1)
+    expect(r.misses).toBe(0) // NOT counted as a miss
+    expect(r.pinned).toBe(1) // the old pin passed through, ungated
+    expect(days[0].decisions[0].signals.pin).toMatchObject({ lat: 1, lng: 2, name: 'Spiritus Pizza' })
+    // The cache entry itself must be untouched — no missAt marker written
+    // over the previously-confirmed pin.
+    expect(r.landmarkLookups).toBe(null)
+    expect(trip.landmarkLookups['Spiritus Pizza']).toEqual({ pin: { lat: 1, lng: 2, name: 'Spiritus Pizza' } })
+  })
+
   it('a fresh MISS is cached with a timestamp, not re-tried within the cooldown', async () => {
     const trip = { lodging: STAY }
     const days = [{ decisions: [decision(['p1'])] }]

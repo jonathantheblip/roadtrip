@@ -219,6 +219,7 @@ export async function resolveLandmarkPins(
       // call's budget is already spent, pass it through UNGATED (counted
       // here, never silently dropped) rather than discarding a previously-
       // confirmed pin.
+      let legacyFallbackPin = null
       if (cached?.pin) {
         stats.legacyTypelessCacheEntries++
         if (attempted >= limit) {
@@ -229,7 +230,12 @@ export async function resolveLandmarkPins(
         }
         // else: fall through to the fresh-resolution block below, which
         // re-attempts this exact query and — on a hit — REPLACES the cache
-        // entry with the new, typed shape.
+        // entry with the new, typed shape. Remembered so a FAILED re-resolve
+        // (adversarial review, 2026-07-12: network error/quota/gate miss on
+        // a coordinate that drifted) falls back to this pin instead of being
+        // written over as a fresh miss — a cached HIT never expires, and a
+        // failed re-resolve attempt must not silently defeat that invariant.
+        legacyFallbackPin = cached.pin
       } else if (cached && Number.isFinite(cached.missAt) && now - cached.missAt < MISS_COOLDOWN_MS) {
         // A cached MISS — retry only after the cooldown (resolveTripHero's
         // 7-day precedent).
@@ -241,12 +247,12 @@ export async function resolveLandmarkPins(
 
       attempted++
       const pin = await resolveLandmarkPin(env, query, coords, { search })
-      cacheDirty = true
       if (pin) {
         // Fresh hits STORE the returned types in the cache entry (review-
         // confirmed correction) — cache hits gate per-moment thereafter.
         const cachedPin = { lat: pin.lat, lng: pin.lng, name: pin.name, types: pin.types || [] }
         cache[query] = { pin: cachedPin }
+        cacheDirty = true
         if (typeGateAgrees(dominantType, cachedPin.types)) {
           stats.pinned++
           // Same shape as the cache-hit branch above (adversarial review,
@@ -259,9 +265,19 @@ export async function resolveLandmarkPins(
         } else {
           stats.typeVetoed++
         }
+      } else if (legacyFallbackPin) {
+        // The legacy entry's re-resolve attempt failed — the OLD cache
+        // entry is still the best evidence we have, so leave `cache[query]`
+        // untouched (do NOT overwrite it with a miss marker) and pass the
+        // previously-confirmed pin through ungated, same as the
+        // budget-exhausted branch above.
+        stats.cacheHits++
+        stats.pinned++
+        dec.signals = { ...dec.signals, pin: { lat: legacyFallbackPin.lat, lng: legacyFallbackPin.lng, name: legacyFallbackPin.name, source: 'landmark', query } }
       } else {
         stats.misses++
         cache[query] = { missAt: now }
+        cacheDirty = true
       }
     }
   }
