@@ -548,8 +548,13 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
   // sibling backfill in this same batch (stopGeocodeBackfill.js,
   // momentGpsPropagation.js, offsetInference.js, tripTzBackfill.js).
   if (tripId !== 'volleyball-2026') {
+    // W0b (BUILD_PLAN_WITNESS_FLEET_2.md) — hoisted out of the naming try
+    // block below so it's in scope for resolveLandmarkPins' type-gate too.
+    // Pure + self-guarded per-row (never throws), so computing it once,
+    // ahead of both try blocks, is safe and is the SAME index both
+    // consumers share — never a second one built for the landmark path.
+    const placeTypeByRef = buildPlaceTypeIndex(rows)
     try {
-      const placeTypeByRef = buildPlaceTypeIndex(rows)
       discoveredNaming = await nameDiscoveredPlaces(trip, days, placeTypeByRef)
       if (discoveredNaming?.placeNames) cachePatch.placeNames = discoveredNaming.placeNames
     } catch (e) {
@@ -557,7 +562,7 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
     }
     try {
       const signageByRef = buildSignageIndex(rows)
-      landmarkPins = await resolveLandmarkPins(env, trip, days, signageByRef)
+      landmarkPins = await resolveLandmarkPins(env, trip, days, signageByRef, placeTypeByRef)
       if (landmarkPins?.landmarkLookups) cachePatch.landmarkLookups = landmarkPins.landmarkLookups
     } catch (e) {
       console.error('[landmark-search] failed', tripId, e?.stack || e)

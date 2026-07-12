@@ -8,6 +8,7 @@ import {
   dominantSignage,
   buildSignageIndex,
   resolveLandmarkPins,
+  typeGateAgrees,
 } from '../src/landmarkSearch.js'
 
 const STAY = { lat: 42.0621, lng: -70.1634 } // Provincetown
@@ -24,7 +25,15 @@ describe('resolveLandmarkPin', () => {
   it('a nearby hit resolves to a pin', async () => {
     const search = async () => ({ results: [{ lat: 42.063, lng: -70.164, name: 'Spiritus Pizza' }] })
     const pin = await resolveLandmarkPin({}, 'Spiritus Pizza', STAY, { search })
-    expect(pin).toEqual({ lat: 42.063, lng: -70.164, name: 'Spiritus Pizza' })
+    // W0b: `types` rides along ([] when Places didn't return any) — this
+    // function stays a pure proximity resolver, no gating decision here.
+    expect(pin).toEqual({ lat: 42.063, lng: -70.164, name: 'Spiritus Pizza', types: [] })
+  })
+
+  it('W0b: a hit carrying venue types passes them through untouched', async () => {
+    const search = async () => ({ results: [{ lat: 42.063, lng: -70.164, name: 'Spiritus Pizza', types: ['restaurant', 'point_of_interest'] }] })
+    const pin = await resolveLandmarkPin({}, 'Spiritus Pizza', STAY, { search })
+    expect(pin.types).toEqual(['restaurant', 'point_of_interest'])
   })
 
   it('a hit beyond the HARD distance gate is rejected even though the soft bias "matched" it', async () => {
@@ -111,44 +120,73 @@ describe('resolveLandmarkPins', () => {
     return { photoIds, signals: {} }
   }
   const signageByRef = new Map([['p1', 'Spiritus Pizza']])
+  // No placeTypeByRef entries → dominantPlaceType is always null → the W0b
+  // gate always abstains — these tests exercise the CACHE/PROXIMITY behavior
+  // untouched by the type gate (its own describe block below covers that).
+  const noPlaceTypes = new Map()
 
   it('no resolvable stay coords → skipped entirely (honest abstention)', async () => {
     const trip = {}
     const days = [{ decisions: [decision(['p1'])] }]
-    const r = await resolveLandmarkPins({}, trip, days, signageByRef)
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes)
     expect(r.pinned).toBe(0)
     expect(r.landmarkLookups).toBe(null)
   })
 
-  it('a fresh hit pins the decision at the RESOLVED venue coords (not the stay/bias coords) and caches the exact same shape', async () => {
+  it('a fresh hit pins the decision at the RESOLVED venue coords (not the stay/bias coords), caches types too, but never leaks types onto the ledger-facing pin', async () => {
     const trip = { lodging: STAY }
     const days = [{ decisions: [decision(['p1'])] }]
-    const search = async () => ({ results: [{ lat: STAY.lat + 0.001, lng: STAY.lng, name: 'Spiritus Pizza' }] })
-    const r = await resolveLandmarkPins({}, trip, days, signageByRef, { search })
+    const search = async () => ({ results: [{ lat: STAY.lat + 0.001, lng: STAY.lng, name: 'Spiritus Pizza', types: ['restaurant'] }] })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search })
     expect(r.pinned).toBe(1)
     // Exact-value, not toMatchObject: a bug that wrote the stay/bias coords
-    // instead of the resolved hit's coords must fail this.
+    // instead of the resolved hit's coords must fail this. No `types` key —
+    // rule 4: the type-gate's input never rides the ledger-facing pin.
     expect(days[0].decisions[0].signals.pin).toEqual({
       lat: STAY.lat + 0.001, lng: STAY.lng, name: 'Spiritus Pizza', source: 'landmark', query: 'Spiritus Pizza',
     })
-    expect(r.landmarkLookups['Spiritus Pizza'].pin).toEqual({ lat: STAY.lat + 0.001, lng: STAY.lng, name: 'Spiritus Pizza' })
+    // The CACHE entry, unlike the ledger pin, DOES carry types (W0b) — so a
+    // future decision with a different dominant placeType can gate on it.
+    expect(r.landmarkLookups['Spiritus Pizza'].pin).toEqual({ lat: STAY.lat + 0.001, lng: STAY.lng, name: 'Spiritus Pizza', types: ['restaurant'] })
   })
 
-  it('a cached HIT reapplies the pin without calling search again — never expires', async () => {
-    const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { pin: { lat: 1, lng: 2, name: 'Spiritus Pizza' } } } }
+  it('a NEW-SHAPE cached HIT (carries types) reapplies the pin without calling search again — never expires', async () => {
+    const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { pin: { lat: 1, lng: 2, name: 'Spiritus Pizza', types: [] } } } }
     const days = [{ decisions: [decision(['p1'])] }]
     const search = async () => { throw new Error('should never be called — cache hit') }
-    const r = await resolveLandmarkPins({}, trip, days, signageByRef, { search })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search })
     expect(r.pinned).toBe(1)
     expect(r.cacheHits).toBe(1)
     expect(r.landmarkLookups).toBe(null) // nothing NEW to persist
+  })
+
+  it('W0b: an OLD-SHAPE cached HIT (pre-W0b, no stored types) re-resolves ONCE to backfill the type, upgrading the cache', async () => {
+    const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { pin: { lat: 1, lng: 2, name: 'Spiritus Pizza' } } } }
+    const days = [{ decisions: [decision(['p1'])] }]
+    let calls = 0
+    const search = async () => { calls++; return { results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Spiritus Pizza', types: ['restaurant'] }] } }
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search })
+    expect(calls).toBe(1) // the legacy entry was actually re-queried, not blindly trusted
+    expect(r.legacyTypelessCacheEntries).toBe(1)
+    expect(r.pinned).toBe(1)
+    expect(r.landmarkLookups['Spiritus Pizza'].pin.types).toEqual(['restaurant']) // cache upgraded to new shape
+  })
+
+  it('W0b: an OLD-SHAPE cached HIT with the fresh-resolve budget already spent passes through UNGATED (counted, never dropped)', async () => {
+    const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { pin: { lat: 1, lng: 2, name: 'Spiritus Pizza' } } } }
+    const days = [{ decisions: [decision(['p1'])] }]
+    const search = async () => { throw new Error('should never be called — limit already spent') }
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search, limit: 0 })
+    expect(r.legacyTypelessCacheEntries).toBe(1)
+    expect(r.pinned).toBe(1) // passed through, not silently dropped
+    expect(days[0].decisions[0].signals.pin).toMatchObject({ name: 'Spiritus Pizza' })
   })
 
   it('a fresh MISS is cached with a timestamp, not re-tried within the cooldown', async () => {
     const trip = { lodging: STAY }
     const days = [{ decisions: [decision(['p1'])] }]
     const now = 1000000
-    const r1 = await resolveLandmarkPins({}, trip, days, signageByRef, { search: async () => ({ results: [] }), now })
+    const r1 = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search: async () => ({ results: [] }), now })
     expect(r1.misses).toBe(1)
     expect(r1.landmarkLookups['Spiritus Pizza'].missAt).toBe(now)
 
@@ -156,7 +194,7 @@ describe('resolveLandmarkPins', () => {
     // cache — must NOT re-call search.
     const trip2 = { lodging: STAY, landmarkLookups: r1.landmarkLookups }
     const search2 = async () => { throw new Error('should never be called — cooldown') }
-    const r2 = await resolveLandmarkPins({}, trip2, [{ decisions: [decision(['p1'])] }], signageByRef, { search: search2, now: now + DAY_MS })
+    const r2 = await resolveLandmarkPins({}, trip2, [{ decisions: [decision(['p1'])] }], signageByRef, noPlaceTypes, { search: search2, now: now + DAY_MS })
     expect(r2.misses).toBe(0)
     expect(r2.pinned).toBe(0)
   })
@@ -167,7 +205,7 @@ describe('resolveLandmarkPins', () => {
     const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { missAt: now } } }
     const days = [{ decisions: [decision(['p1'])] }]
     const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Spiritus Pizza' }] })
-    const r = await resolveLandmarkPins({}, trip, days, signageByRef, { search, now: now + SEVEN_DAYS_MS })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search, now: now + SEVEN_DAYS_MS })
     expect(r.pinned).toBe(1)
   })
 
@@ -177,7 +215,7 @@ describe('resolveLandmarkPins', () => {
     const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { missAt: now } } }
     const days = [{ decisions: [decision(['p1'])] }]
     const search = async () => { throw new Error('should never be called — still within cooldown') }
-    const r = await resolveLandmarkPins({}, trip, days, signageByRef, { search, now: now + SEVEN_DAYS_MS - 1 })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search, now: now + SEVEN_DAYS_MS - 1 })
     expect(r.pinned).toBe(0)
     expect(r.misses).toBe(0)
   })
@@ -187,7 +225,7 @@ describe('resolveLandmarkPins', () => {
     const trip = { lodging: STAY, landmarkLookups: { 'Spiritus Pizza': { missAt: now } } }
     const days = [{ decisions: [decision(['p1'])] }]
     const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Spiritus Pizza' }] })
-    const r = await resolveLandmarkPins({}, trip, days, signageByRef, { search, now: now + 8 * DAY_MS })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search, now: now + 8 * DAY_MS })
     expect(r.pinned).toBe(1)
   })
 
@@ -195,7 +233,7 @@ describe('resolveLandmarkPins', () => {
     const trip = { lodging: STAY }
     const days = [{ decisions: [decision(['zzz'])] }]
     const search = async () => { throw new Error('should never be called') }
-    const r = await resolveLandmarkPins({}, trip, days, signageByRef, { search })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, noPlaceTypes, { search })
     expect(r.pinned).toBe(0)
     expect(r.misses).toBe(0)
   })
@@ -206,8 +244,169 @@ describe('resolveLandmarkPins', () => {
     const days = [{ decisions: [decision(['p1']), decision(['p2'])] }]
     let calls = 0
     const search = async () => { calls++; return { results: [] } }
-    const r = await resolveLandmarkPins({}, trip, days, idx, { search, limit: 1 })
+    const r = await resolveLandmarkPins({}, trip, days, idx, noPlaceTypes, { search, limit: 1 })
     expect(calls).toBe(1)
     expect(r.misses).toBe(1)
+  })
+})
+
+// ── W0b — the landmark type-gate, exercised end-to-end through
+// resolveLandmarkPins (BUILD_PLAN_WITNESS_FLEET_2.md) ─────────────────────
+describe('resolveLandmarkPins — W0b type gate', () => {
+  function decision(photoIds) {
+    return { photoIds, signals: {} }
+  }
+  const signageByRef = new Map([['p1', 'Spirits Ice Cream']]) // the plan's own misread-sign example
+
+  it("THE PLAN'S OWN EXAMPLE: a restaurant-typed moment does NOT pin a liquor store from a misread sign", async () => {
+    const trip = { lodging: STAY }
+    const placeTypeByRef = new Map([['p1', 'restaurant']])
+    const days = [{ decisions: [decision(['p1'])] }]
+    const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Spirits Liquor', types: ['liquor_store'] }] })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, placeTypeByRef, { search })
+    expect(r.typeVetoed).toBe(1)
+    expect(r.pinned).toBe(0)
+    expect(days[0].decisions[0].signals.pin).toBeUndefined()
+  })
+
+  it('a restaurant-typed moment DOES pin an actual restaurant/cafe/bar/bakery hit', async () => {
+    const trip = { lodging: STAY }
+    const placeTypeByRef = new Map([['p1', 'restaurant']])
+    const days = [{ decisions: [decision(['p1'])] }]
+    const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Spiritus Pizza', types: ['restaurant', 'point_of_interest'] }] })
+    const r = await resolveLandmarkPins({}, trip, days, signageByRef, placeTypeByRef, { search })
+    expect(r.pinned).toBe(1)
+    expect(r.typeVetoed).toBe(0)
+  })
+
+  it('a shop-typed moment pins a store-family venue, vetoes a restaurant venue', async () => {
+    const trip = { lodging: STAY }
+    const placeTypeByRef = new Map([['p1', 'shop']])
+    const days = [{ decisions: [decision(['p1'])] }]
+    const shopHit = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'The Shop', types: ['clothing_store'] }] })
+    const r1 = await resolveLandmarkPins({}, trip, days, signageByRef, placeTypeByRef, { search: shopHit })
+    expect(r1.pinned).toBe(1)
+
+    const restaurantHit = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Not A Shop', types: ['restaurant'] }] })
+    const days2 = [{ decisions: [decision(['p1'])] }]
+    const r2 = await resolveLandmarkPins({}, { lodging: STAY }, days2, signageByRef, placeTypeByRef, { search: restaurantHit })
+    expect(r2.typeVetoed).toBe(1)
+    expect(r2.pinned).toBe(0)
+  })
+
+  it('a beach/park/museum-typed moment requires the DIRECT same type (near-miss category vetoes)', async () => {
+    const beachType = new Map([['p1', 'beach']])
+    const parkHit = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'A Park', types: ['park'] }] })
+    const r1 = await resolveLandmarkPins({}, { lodging: STAY }, [{ decisions: [decision(['p1'])] }], signageByRef, beachType, { search: parkHit })
+    expect(r1.typeVetoed).toBe(1) // beach moment, park venue — near-miss, vetoed
+
+    const beachHit = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'The Beach', types: ['beach'] }] })
+    const r2 = await resolveLandmarkPins({}, { lodging: STAY }, [{ decisions: [decision(['p1'])] }], signageByRef, beachType, { search: beachHit })
+    expect(r2.pinned).toBe(1) // direct match
+  })
+
+  it('event/street/residential moments NEVER veto — no Places category maps cleanly onto them', async () => {
+    for (const placeType of ['event', 'street', 'residential']) {
+      const placeTypeByRef = new Map([['p1', placeType]])
+      const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Anything', types: ['liquor_store'] }] })
+      const r = await resolveLandmarkPins({}, { lodging: STAY }, [{ decisions: [decision(['p1'])] }], signageByRef, placeTypeByRef, { search })
+      expect(r.pinned).toBe(1)
+      expect(r.typeVetoed).toBe(0)
+    }
+  })
+
+  it('no dominant placeType at all (no vision data) → abstain, always pins', async () => {
+    const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Anything', types: ['liquor_store'] }] })
+    const r = await resolveLandmarkPins({}, { lodging: STAY }, [{ decisions: [decision(['p1'])] }], signageByRef, new Map(), { search })
+    expect(r.pinned).toBe(1)
+  })
+
+  it('an unmapped placeType (indoor-other/outdoor-other, the vision catch-alls) → abstain, always pins', async () => {
+    for (const placeType of ['indoor-other', 'outdoor-other']) {
+      const placeTypeByRef = new Map([['p1', placeType]])
+      const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'Anything', types: ['liquor_store'] }] })
+      const r = await resolveLandmarkPins({}, { lodging: STAY }, [{ decisions: [decision(['p1'])] }], signageByRef, placeTypeByRef, { search })
+      expect(r.pinned).toBe(1)
+    }
+  })
+
+  it('ABSENT venue types on the hit itself → abstain, never blocks (the pin already needed signage + proximity)', async () => {
+    const placeTypeByRef = new Map([['p1', 'restaurant']])
+    const search = async () => ({ results: [{ lat: STAY.lat, lng: STAY.lng, name: 'No Types Returned' }] }) // no `types` at all
+    const r = await resolveLandmarkPins({}, { lodging: STAY }, [{ decisions: [decision(['p1'])] }], signageByRef, placeTypeByRef, { search })
+    expect(r.pinned).toBe(1)
+  })
+
+  it('a NEW-SHAPE cached pin gates PER-MOMENT: the SAME cached venue agrees for one decision, vetoes for another', async () => {
+    const trip = {
+      lodging: STAY,
+      landmarkLookups: { 'Spirits Ice Cream': { pin: { lat: STAY.lat, lng: STAY.lng, name: 'Spirits Liquor', types: ['liquor_store'] } } },
+    }
+    const placeTypeByRef = new Map([['p1', 'shop'], ['p2', 'restaurant']])
+    const days = [{ decisions: [decision(['p1']), decision(['p2'])] }]
+    const twoRefSignage = new Map([['p1', 'Spirits Ice Cream'], ['p2', 'Spirits Ice Cream']])
+    const search = async () => { throw new Error('should never be called — cache hit, gate evaluated locally') }
+    const r = await resolveLandmarkPins({}, trip, days, twoRefSignage, placeTypeByRef, { search })
+    expect(r.pinned).toBe(1) // the 'shop' decision — liquor_store matches shop's store-family rule
+    expect(r.typeVetoed).toBe(1) // the 'restaurant' decision — liquor_store contradicts restaurant
+  })
+})
+
+describe('typeGateAgrees (pure — mutation-tested boundary/near-miss)', () => {
+  it('restaurant: agrees with each of restaurant/cafe/bar/bakery', () => {
+    for (const t of ['restaurant', 'cafe', 'bar', 'bakery']) {
+      expect(typeGateAgrees('restaurant', [t])).toBe(true)
+    }
+  })
+  it('restaurant: a near-miss (liquor_store) is REJECTED — the exact misread-sign example', () => {
+    expect(typeGateAgrees('restaurant', ['liquor_store'])).toBe(false)
+  })
+  it('restaurant: a mixed list agrees if ANY type matches', () => {
+    expect(typeGateAgrees('restaurant', ['point_of_interest', 'cafe'])).toBe(true)
+  })
+  it('shop: agrees with "store" exactly and any "*_store" suffix', () => {
+    expect(typeGateAgrees('shop', ['store'])).toBe(true)
+    expect(typeGateAgrees('shop', ['clothing_store'])).toBe(true)
+    expect(typeGateAgrees('shop', ['shopping_mall'])).toBe(true)
+    expect(typeGateAgrees('shop', ['market'])).toBe(true)
+    expect(typeGateAgrees('shop', ['supermarket'])).toBe(true)
+  })
+  it('shop: a near-miss that merely CONTAINS "store" as a substring (not the "*_store" suffix) is REJECTED — not a loose match', () => {
+    expect(typeGateAgrees('shop', ['storefront'])).toBe(false)
+  })
+  it('shop: a restaurant type is REJECTED', () => {
+    expect(typeGateAgrees('shop', ['restaurant'])).toBe(false)
+  })
+  it('beach/park/museum: DIRECT match only — the exact same token', () => {
+    expect(typeGateAgrees('beach', ['beach'])).toBe(true)
+    expect(typeGateAgrees('park', ['park'])).toBe(true)
+    expect(typeGateAgrees('museum', ['museum'])).toBe(true)
+  })
+  it('beach/park/museum: a near-miss (a DIFFERENT direct-mapped type) is REJECTED', () => {
+    expect(typeGateAgrees('beach', ['park'])).toBe(false)
+    expect(typeGateAgrees('museum', ['art_gallery'])).toBe(false)
+  })
+  it('event/street/residential: NEVER veto, regardless of venue types', () => {
+    expect(typeGateAgrees('event', ['liquor_store'])).toBe(true)
+    expect(typeGateAgrees('street', ['museum'])).toBe(true)
+    expect(typeGateAgrees('residential', [])).toBe(true)
+  })
+  it('an absent/null/unmapped placeType always agrees (abstain)', () => {
+    expect(typeGateAgrees(null, ['liquor_store'])).toBe(true)
+    expect(typeGateAgrees(undefined, ['liquor_store'])).toBe(true)
+    expect(typeGateAgrees('indoor-other', ['liquor_store'])).toBe(true)
+    expect(typeGateAgrees('outdoor-other', ['liquor_store'])).toBe(true)
+    expect(typeGateAgrees('some-future-type', ['liquor_store'])).toBe(true)
+  })
+  it('absent/empty venue types always agrees (abstain, never blocks)', () => {
+    expect(typeGateAgrees('restaurant', [])).toBe(true)
+    expect(typeGateAgrees('restaurant', undefined)).toBe(true)
+    expect(typeGateAgrees('restaurant', null)).toBe(true)
+  })
+  it('never throws on malformed input', () => {
+    expect(() => typeGateAgrees('restaurant', 'not-an-array')).not.toThrow()
+    expect(typeGateAgrees('restaurant', 'not-an-array')).toBe(true) // filters to [] → abstain
+    expect(() => typeGateAgrees('restaurant', [null, 123, 'restaurant'])).not.toThrow()
+    expect(typeGateAgrees('restaurant', [null, 123, 'restaurant'])).toBe(true) // non-strings filtered, real match survives
   })
 })

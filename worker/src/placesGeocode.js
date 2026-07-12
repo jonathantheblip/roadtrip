@@ -25,6 +25,19 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
   return R * c
 }
 
+// W0b — merge primaryType + types into one deduped list, primaryType first
+// when present. Pure, defensive (never throws on a malformed Places reply).
+function dedupeVenueTypes(primaryType, types) {
+  const out = []
+  if (typeof primaryType === 'string' && primaryType) out.push(primaryType)
+  if (Array.isArray(types)) {
+    for (const t of types) {
+      if (typeof t === 'string' && t && !out.includes(t)) out.push(t)
+    }
+  }
+  return out
+}
+
 // Resolve free text (a place name, address, or city) to coordinates via
 // Places (New) text search — the seam that lets the chat tools accept the
 // names the model has instead of the lat/lng it never sees. Returns null
@@ -98,8 +111,20 @@ export async function placesTextSearch(env, { query, lat, lng, radius, limit, la
     headers: {
       'content-type': 'application/json',
       'x-goog-api-key': env.GOOGLE_PLACES_API_KEY,
+      // places.types,places.primaryType (W0b, BUILD_PLAN_WITNESS_FLEET_2.md):
+      // a free corroboration — the landmark type-gate's non-conflict check
+      // (landmarkSearch.js) reads these; every other caller (the
+      // /places/nearby tray, the find_places chat tool) just gets an
+      // additive `types` field on each result, byte-identical otherwise.
+      // BILLING VERIFIED (Places API (New) data-fields + usage-and-billing
+      // docs, 2026-07-12): types/primaryType are Pro-tier fields, but this
+      // request already carries nationalPhoneNumber + opening-hours fields,
+      // which are Enterprise-tier — Google bills the HIGHEST SKU any
+      // requested field triggers, so this request was already Enterprise
+      // before this change. Adding two Pro-tier fields to an
+      // already-Enterprise request changes nothing about the bill.
       'x-goog-fieldmask':
-        'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber,places.photos.name',
+        'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.regularOpeningHours.openNow,places.currentOpeningHours.openNow,places.nationalPhoneNumber,places.photos.name,places.types,places.primaryType',
     },
     body: JSON.stringify(reqBody),
   })
@@ -135,6 +160,10 @@ export async function placesTextSearch(env, { query, lat, lng, radius, limit, la
         // The first photo's resource name ("places/X/photos/Y"); the HTTP
         // handler turns it into a key-safe proxied URL. null when none.
         photoName: (Array.isArray(p.photos) && p.photos[0]?.name) || null,
+        // W0b — venue types, primaryType first (deduped against `types`),
+        // [] when Places returns neither. Additive on every caller; only
+        // landmarkSearch.js's type-gate reads it today.
+        types: dedupeVenueTypes(p.primaryType, p.types),
       }
     })
     .filter(Boolean)

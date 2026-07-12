@@ -20,6 +20,7 @@
 
 import { placesTextSearch } from './placesGeocode.js'
 import { stayPlaceCoords } from './stayPlaceCoords.js'
+import { dominantPlaceType } from './discoveredPlaceNamer.js'
 
 // Soft bias radius — the scale of "somewhere in this town/region", not a
 // pinpoint (Places ranks by distance within this but can still return
@@ -30,6 +31,54 @@ const SEARCH_RADIUS_M = 30000
 // another state (the plan's explicit "candy store in two towns" concern).
 const HARD_DISTANCE_GATE_M = 5000
 const MISS_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
+
+// ── W0b — the landmark type-gate (BUILD_PLAN_WITNESS_FLEET_2.md) ──────────
+// A free corroboration the Places response already carries in the same paid
+// call: venue TYPES (placesGeocode.js's field mask now requests them). The
+// moment's own dominant vision placeType — already computed for 4b's
+// discovered-place naming, threaded in here via `placeTypeByRef` (see
+// resolveLandmarkPins) — must not CONTRADICT the returned venue's type: a
+// `restaurant`-typed moment must not pin a liquor store from a misread
+// "Spirits" sign. This is the constitution's non-conflict clause applied to
+// pins: the pin already needed signage + proximity; a type contradiction
+// now vetoes. Per rule 4, the type-gate does NOT make the pin count as an
+// extra evidence dimension — placeType is the pin's vetting input, and
+// venue `types` never rides the ledger-facing signals.pin object, only the
+// internal cache entry.
+// Deliberately SMALL and explicit — never a positive identity check (a type
+// MATCH never adds confidence, only a CONTRADICTION removes it). Mapping,
+// per the plan: restaurant↔restaurant/cafe/bar/bakery; shop↔store types;
+// beach/park/museum direct (venue types must include the same token);
+// event/street/residential → no Places category maps cleanly, so always
+// abstain. Absent venue types, or an absent/unmapped placeType (including
+// the vision enum's own indoor-other/outdoor-other catch-alls) → abstain,
+// never block.
+const RESTAURANT_VENUE_TYPES = new Set(['restaurant', 'cafe', 'bar', 'bakery'])
+function isShopVenueType(t) {
+  return (
+    t === 'store' ||
+    t === 'shopping_mall' ||
+    t === 'market' ||
+    t === 'supermarket' ||
+    (typeof t === 'string' && t.endsWith('_store'))
+  )
+}
+const DIRECT_PLACE_TYPES = new Set(['beach', 'park', 'museum'])
+const NO_CONSTRAINT_PLACE_TYPES = new Set(['event', 'street', 'residential'])
+
+// Pure, mutation-testable: does `venueTypes` NOT contradict `placeType`?
+// Returns true for "no veto" (agreement OR abstention) — false is the
+// gate's only assertive answer, and it means REJECT this pin for this
+// moment. Never throws on malformed input.
+export function typeGateAgrees(placeType, venueTypes) {
+  if (!placeType || NO_CONSTRAINT_PLACE_TYPES.has(placeType)) return true
+  const types = Array.isArray(venueTypes) ? venueTypes.filter((t) => typeof t === 'string' && t) : []
+  if (!types.length) return true // absent venue types → abstain, don't block
+  if (placeType === 'restaurant') return types.some((t) => RESTAURANT_VENUE_TYPES.has(t))
+  if (placeType === 'shop') return types.some(isShopVenueType)
+  if (DIRECT_PLACE_TYPES.has(placeType)) return types.includes(placeType)
+  return true // an unmapped placeType (indoor-other/outdoor-other/future) → abstain
+}
 
 // mirror-safe copy (see placesGeocode.js/discoveredPlaceNamer.js — every
 // pure/adapter module in this arc keeps its own rather than importing
@@ -66,7 +115,9 @@ export async function resolveLandmarkPin(env, query, coords, { search = placesTe
   if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) return null
   const d = haversineMeters(coords.lat, coords.lng, hit.lat, hit.lng)
   if (d > HARD_DISTANCE_GATE_M) return null
-  return { lat: hit.lat, lng: hit.lng, name: hit.name }
+  // W0b — carry the venue's types along so the caller can gate + cache them;
+  // this function itself stays a pure proximity resolver, no gating here.
+  return { lat: hit.lat, lng: hit.lng, name: hit.name, types: Array.isArray(hit.types) ? hit.types : [] }
 }
 
 // The dominant signage text across a decision's photos — mode-across-photos,
@@ -115,13 +166,25 @@ export function buildSignageIndex(rows) {
 // signage, mutating each matched decision's signals.pin in place. Best-
 // effort, bounded (`limit` fresh Places calls per invocation — cache hits
 // are free and unbounded), negative+positive cached on trip.landmarkLookups.
-// Returns { pinned, misses, cacheHits, landmarkLookups } — landmarkLookups
-// is the merged cache to persist (OCC-guarded, no-bump), or null when
-// nothing changed. A trip with no resolvable stay coords is skipped
-// entirely (an honest abstention — the bias/gate both need an anchor).
-export async function resolveLandmarkPins(env, trip, days, signageByRef, { limit = 10, search = placesTextSearch, now = Date.now() } = {}) {
+// `placeTypeByRef` is the SAME photoId→vision.placeType index
+// recordHealDecisions already builds for 4b's discovered-place naming
+// (photoHealRunner.js) — passed in here, never recomputed, so the W0b
+// type-gate (above) has the moment's dominant placeType to vet against.
+// Returns { pinned, misses, cacheHits, typeVetoed, legacyTypelessCacheEntries,
+// landmarkLookups } — landmarkLookups is the merged cache to persist
+// (OCC-guarded, no-bump), or null when nothing changed. A trip with no
+// resolvable stay coords is skipped entirely (an honest abstention — the
+// bias/gate both need an anchor).
+export async function resolveLandmarkPins(
+  env,
+  trip,
+  days,
+  signageByRef,
+  placeTypeByRef,
+  { limit = 10, search = placesTextSearch, now = Date.now() } = {}
+) {
   const coords = stayPlaceCoords(trip)
-  const stats = { pinned: 0, misses: 0, cacheHits: 0, landmarkLookups: null }
+  const stats = { pinned: 0, misses: 0, cacheHits: 0, typeVetoed: 0, legacyTypelessCacheEntries: 0, landmarkLookups: null }
   if (!coords) return stats
   const cache = { ...(trip?.landmarkLookups && typeof trip.landmarkLookups === 'object' ? trip.landmarkLookups : {}) }
   let cacheDirty = false
@@ -130,33 +193,72 @@ export async function resolveLandmarkPins(env, trip, days, signageByRef, { limit
     for (const dec of day.decisions || []) {
       const query = dominantSignage(dec.photoIds, signageByRef)
       if (!query) continue
+      const dominantType = dominantPlaceType(dec.photoIds, placeTypeByRef)
       const cached = cache[query]
-      if (cached) {
-        if (cached.pin) {
+
+      // NEW-SHAPE cache HIT (carries `types`, W0b+) — gate using the stored
+      // types, no network cost. Cache hits gate PER-MOMENT (review-confirmed
+      // correction): the same signage text could in principle attach to
+      // decisions with different dominant placeTypes.
+      if (cached?.pin && Array.isArray(cached.pin.types)) {
+        stats.cacheHits++
+        if (typeGateAgrees(dominantType, cached.pin.types)) {
+          stats.pinned++
+          dec.signals = { ...dec.signals, pin: { lat: cached.pin.lat, lng: cached.pin.lng, name: cached.pin.name, source: 'landmark', query } }
+        } else {
+          stats.typeVetoed++
+        }
+        continue
+      }
+
+      // OLD-SHAPE cache HIT (pre-W0b — no stored types, so the gate cannot
+      // be evaluated from the cache alone; this is the exact
+      // "cached hits bypass the gate forever" gap the review caught) — a
+      // cached HIT itself never expires, but its TYPE-lessness forces a
+      // bounded re-resolve so the cache upgrades to the new shape. If this
+      // call's budget is already spent, pass it through UNGATED (counted
+      // here, never silently dropped) rather than discarding a previously-
+      // confirmed pin.
+      if (cached?.pin) {
+        stats.legacyTypelessCacheEntries++
+        if (attempted >= limit) {
           stats.cacheHits++
           stats.pinned++
-          dec.signals = { ...dec.signals, pin: { ...cached.pin, source: 'landmark', query } }
+          dec.signals = { ...dec.signals, pin: { lat: cached.pin.lat, lng: cached.pin.lng, name: cached.pin.name, source: 'landmark', query } }
           continue
         }
+        // else: fall through to the fresh-resolution block below, which
+        // re-attempts this exact query and — on a hit — REPLACES the cache
+        // entry with the new, typed shape.
+      } else if (cached && Number.isFinite(cached.missAt) && now - cached.missAt < MISS_COOLDOWN_MS) {
         // A cached MISS — retry only after the cooldown (resolveTripHero's
-        // 7-day precedent); a cached HIT above never expires.
-        if (Number.isFinite(cached.missAt) && now - cached.missAt < MISS_COOLDOWN_MS) {
-          stats.cacheHits++
-          continue
-        }
+        // 7-day precedent).
+        stats.cacheHits++
+        continue
+      } else if (attempted >= limit) {
+        continue
       }
-      if (attempted >= limit) continue
+
       attempted++
       const pin = await resolveLandmarkPin(env, query, coords, { search })
       cacheDirty = true
       if (pin) {
-        stats.pinned++
-        const cachedPin = { lat: pin.lat, lng: pin.lng, name: pin.name }
+        // Fresh hits STORE the returned types in the cache entry (review-
+        // confirmed correction) — cache hits gate per-moment thereafter.
+        const cachedPin = { lat: pin.lat, lng: pin.lng, name: pin.name, types: pin.types || [] }
         cache[query] = { pin: cachedPin }
-        // Same shape as the cache-hit branch above (adversarial review,
-        // 2026-07-11: a fresh hit was dropping `name` while a cache-replayed
-        // hit carried it — the record's shape must not depend on cache state).
-        dec.signals = { ...dec.signals, pin: { ...cachedPin, source: 'landmark', query } }
+        if (typeGateAgrees(dominantType, cachedPin.types)) {
+          stats.pinned++
+          // Same shape as the cache-hit branch above (adversarial review,
+          // 2026-07-11: a fresh hit was dropping `name` while a cache-
+          // replayed hit carried it — the record's shape must not depend
+          // on cache state). `types` stays cache-internal — never rides the
+          // ledger-facing pin object (rule 4: it's the vetting input, not a
+          // dimension of its own).
+          dec.signals = { ...dec.signals, pin: { lat: cachedPin.lat, lng: cachedPin.lng, name: cachedPin.name, source: 'landmark', query } }
+        } else {
+          stats.typeVetoed++
+        }
       } else {
         stats.misses++
         cache[query] = { missAt: now }
