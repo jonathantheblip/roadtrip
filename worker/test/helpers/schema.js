@@ -35,6 +35,11 @@ import healDecisionsMigration from '../../migrations/019_memory_heal_decisions.s
 // against prod from this file, and PHOTO_PRESENCE_MODE ships OFF regardless —
 // this only lets shadow/on-mode tests exercise the real table shape locally.
 import presenceTrailMigration from '../../migrations/020_presence_trail.sql?raw'
+// 021 (memory_heal_feedback, S1 confirm surface) — WRITTEN but NOT YET APPLIED to
+// prod D1 (its own header). Test infrastructure only, same as 020: no wrangler
+// command runs against prod here, PHOTO_CONFIRM_MODE ships OFF regardless — this
+// only lets the write-path tests exercise the real table shape locally.
+import healFeedbackMigration from '../../migrations/021_memory_heal_feedback.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -107,6 +112,8 @@ const STATEMENTS = [
   ...splitStatements(healDecisionsMigration),
   // 020 (presence_trail, Build W5) — CREATE TABLE/INDEX IF NOT EXISTS, idempotent.
   ...splitStatements(presenceTrailMigration),
+  // 021 (memory_heal_feedback, S1) — CREATE TABLE/INDEX IF NOT EXISTS, idempotent.
+  ...splitStatements(healFeedbackMigration),
 ]
 
 export async function applySchema(db) {

@@ -38,6 +38,7 @@ import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode, recordHealDecisions } from './photoHealRunner.js'
 import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
 import { listHealDecisionsForViewer } from './healDecisionsView.js'
+import { photoConfirmMode, writeHealFeedback } from './confirmFeedback.js'
 import { runEvidenceAudit } from './evidenceAudit.js'
 import { geocodePlace, placesTextSearch } from './placesGeocode.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
@@ -239,6 +240,11 @@ export default {
       // (the ledger is the pre-promotion learning tool), dark only when off.
       if (path === '/heal-decisions' && request.method === 'GET') {
         return await getHealDecisions(env, traveler, url, cors)
+      }
+      // The confirm surface's terminal action (confirm / correct / leave-as-guess)
+      // — the ONE write into the live trip S1 owns. Adults only; mode-gated.
+      if (path === '/heal-confirm' && request.method === 'POST') {
+        return await postHealConfirm(env, traveler, request, cors, ctx)
       }
       const memMatch = path.match(/^\/memories\/([^/]+)$/)
       if (memMatch && request.method === 'DELETE') {
@@ -973,6 +979,52 @@ async function getHealDecisions(env, traveler, url, cors) {
     console.error('getHealDecisions failed', tripId, e?.stack || e)
     return json({ decisions: [] }, 200, headers)
   }
+}
+
+// POST /heal-confirm — the S1 confirm card's terminal action: a confirm (D13,
+// the strongest evidence the system holds), a correction (picked place / retyped
+// name / free-text words → D15 + a normal-weight negative signal), or a permanent
+// leave-as-guess ('aside' — durable card suppression, no negative signal). ADULTS
+// ONLY (the ledger it answers is adults-only). The actor (by_traveler) is the
+// SESSION identity, never the body. Mode 'off' → inert (no write, no re-heal).
+// A confirm/correction fires runHealForTrip in the BACKGROUND (waitUntil) so the
+// trip re-settles now; this response never blocks on it (the card settles
+// optimistically client-side — no spinner). 'aside' fires nothing.
+async function postHealConfirm(env, traveler, request, cors, ctx) {
+  const headers = { ...cors, 'Cache-Control': 'no-store' }
+  if (!isAdult(traveler)) return json({ ok: false, error: 'forbidden' }, 403, headers)
+  if (photoConfirmMode(env) === 'off') return json({ ok: false, disabled: true }, 200, headers)
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ ok: false, error: 'bad-json' }, 400, headers)
+  }
+  const tripId = body?.trip || body?.tripId || ''
+  const res = await writeHealFeedback(env, tripId, traveler, body)
+  if (!res.ok) {
+    // 'no-table' = migration 021 not applied yet → inert (200); anything else is
+    // a bad request (400). Never leak which by status alone beyond that.
+    return json({ ok: false, error: res.error }, res.error === 'no-table' ? 200 : 400, headers)
+  }
+  // Re-settle the trip for a confirm/correction (never for a pure 'aside').
+  // Gated on the engine knob exactly like the import path — if the engine is off
+  // the card never rendered, so this is belt-and-suspenders.
+  if (ctx && (res.action === 'confirmed' || res.action === 'corrected') && photoHealMode(env) !== 'off') {
+    ctx.waitUntil(
+      runHealForTrip(env, tripId, {}).then(
+        (r) => console.log('[heal-confirm]', JSON.stringify(r)),
+        (e) => console.error('[heal-confirm] re-heal failed', tripId, e?.stack || e)
+      )
+    )
+    ctx.waitUntil(
+      recordHealDecisions(env, tripId, {}).then(
+        (r) => console.log('[heal-confirm-ledger]', JSON.stringify(r)),
+        (e) => console.error('[heal-confirm-ledger] failed', tripId, e?.stack || e)
+      )
+    )
+  }
+  return json({ ok: true, id: res.id }, 200, headers)
 }
 
 // THE KNOB for Build W4 (faces, BUILD_PLAN_WITNESS_FLEET_2.md) — deliberately
