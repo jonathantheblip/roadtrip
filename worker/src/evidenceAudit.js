@@ -199,7 +199,20 @@ export function auditDecisionRow(row) {
   // a defense-in-depth check, not a re-read of `tier`. If this disagrees with
   // `tier === 'auto'`, that IS the enforcement-wall finding W7 exists to
   // catch (a live engine bug), reported as `barMismatch`.
-  const computedMeetsBar = barReferenceOk && !timeAnchorSuspect && !handFiledConflict && !dismissedConflict
+  //
+  // Rule 1(A)(ii) is BOTH halves of "time-fit at non-suggestion tier": the
+  // TRUST half (!timeAnchorSuspect — the anchor isn't file-mtime/created-at
+  // grade) AND the PROXIMITY half (a Pass-2 auto's timeFitMin must land within
+  // autoNearMin). A Pass-1 GPS auto carries NO timeFitMin (time was the
+  // clustering spine, never checked against the place), so `!timeFit.present`
+  // exempts it — its time trust is covered by !timeAnchorSuspect + the
+  // reference GPS anchor. Omitting the proximity half (review, 2026-07-13)
+  // would let a record/base auto whose time-fit blew past autoNearMin pass the
+  // wall silently — no wrong number on today's healthy data (the scorer's
+  // canAuto already gates best.d <= autoNearMin), but exactly the future
+  // scorer-drift W7 exists to backstop.
+  const computedMeetsBar =
+    barReferenceOk && !timeAnchorSuspect && (!timeFit.present || timeFit.agreed) && !handFiledConflict && !dismissedConflict
 
   return {
     tripId: row.trip_id,

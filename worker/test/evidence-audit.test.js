@@ -92,10 +92,29 @@ describe('auditDecisionRow — the v2 pure mapping', () => {
     expect(r.meetsThreeDimTarget).toBe(false)
   })
 
-  it('D1 time-fit beyond autoNearMin does NOT count as agreed', () => {
+  it('D1 time-fit beyond autoNearMin does NOT count as agreed, and (review 2026-07-13) FAILS the bar for a Pass-2 auto — rule 1(A)(ii) proximity half', () => {
     const r = auditDecisionRow(row({ evidence: 'record', signals: { evidence: 'record', timeFitMin: 80 } }))
     expect(r.dims.map((d) => d.dim)).toEqual(['D8'])
     expect(r.timeFit).toEqual({ present: true, agreed: false, timeFitMin: 80, autoNearMin: 45 })
+    // The proximity half of rule 1(A)(ii): a record/base AUTO whose time-fit
+    // blew past autoNearMin must NOT silently pass the enforcement wall.
+    expect(r.computedMeetsBar).toBe(false)
+    expect(r.barMismatch).toBe(true) // default tier is 'auto' → this is exactly the drift W7 must catch
+  })
+
+  it('a Pass-2 record auto WITHIN autoNearMin passes the bar (the proximity check does not over-fire)', () => {
+    const r = auditDecisionRow(row({ evidence: 'record', signals: { evidence: 'record', timeFitMin: 20 } }))
+    expect(r.timeFit).toEqual({ present: true, agreed: true, timeFitMin: 20, autoNearMin: 45 })
+    expect(r.computedMeetsBar).toBe(true)
+    expect(r.barMismatch).toBe(false)
+  })
+
+  it('a Pass-1 GPS auto with NO timeFitMin is EXEMPT from the proximity half (time was the spine, never checked against the place)', () => {
+    // reference-anchored GPS, no timeFitMin, not time-suspect → still meets the bar.
+    const r = auditDecisionRow(row({ evidence: 'gps', signals: { evidence: 'gps', referenceLocatedCount: 1 } }))
+    expect(r.timeFit.present).toBe(false)
+    expect(r.computedMeetsBar).toBe(true)
+    expect(r.barMismatch).toBe(false)
   })
 
   it('vision-family fields (landmark pin) stack as ONE extra witness alongside gps/record/base, never three', () => {
