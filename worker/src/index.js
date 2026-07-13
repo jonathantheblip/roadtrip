@@ -38,6 +38,7 @@ import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode, recordHealDecisions } from './photoHealRunner.js'
 import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
 import { listHealDecisionsForViewer } from './healDecisionsView.js'
+import { runEvidenceAudit } from './evidenceAudit.js'
 import { geocodePlace, placesTextSearch } from './placesGeocode.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
 // which initializes synchronously against the bundled .wasm module,
@@ -173,6 +174,33 @@ export default {
         return json({ count: trips.length, trips }, 200, cors)
       } catch (err) {
         console.error('diag trips error', err?.stack || err)
+        return json({ error: 'diag failed' }, 500, cors)
+      }
+    }
+
+    // Diagnostic (admin) — W7, the evidence-constitution audit
+    // (BUILD_PLAN_WITNESS_FLEET_2.md §R W7). READ-ONLY: audits the v2 shadow
+    // ledger (memory_heal_decisions) and RECOMPUTES the v1 would-moves
+    // (memory_stop_moves dropped its match evidence at write time) against
+    // the live trip/memories state, then cross-checks the two ledgers for
+    // conflicts. Never writes, never changes a tier, never promotes anything
+    // — see evidenceAudit.js's header. Gated EXACTLY like /diag/trips above
+    // (same env.ADMIN_DIAGNOSTIC_KEY, same invisible-when-unconfigured
+    // posture) — a reviewer/dev holding the key can pull the report without
+    // enrolling a device. Optional `?trip=<id>` scopes to one trip; omitted,
+    // every non-deleted, non-fixture trip is audited.
+    if (path === '/diag/evidence-audit' && request.method === 'GET') {
+      const want = env.ADMIN_DIAGNOSTIC_KEY
+      const got = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+      if (!want || !timingSafeEqualStr(got, want)) {
+        return json({ error: 'not found' }, 404, cors)
+      }
+      try {
+        const tripId = url.searchParams.get('trip') || undefined
+        const report = await runEvidenceAudit(env, { tripId })
+        return json(report, 200, cors)
+      } catch (err) {
+        console.error('diag evidence-audit error', err?.stack || err)
         return json({ error: 'diag failed' }, 500, cors)
       }
     }
