@@ -28,12 +28,21 @@ async function seedTrip() {
     .run()
 }
 
-// a memory with one photo ref (capturedAt + optional GPS + offset)
-async function seedMemory({ id, refs }) {
+// a memory with one photo ref (capturedAt + optional GPS + offset), optionally
+// carrying a CURRENT stop filing (stopId/stopProv, W9 item 2).
+async function seedMemory({ id, refs, stopId, stopProv }) {
   await env.DB.prepare(
-    'INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+    'INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, stop_id, stop_prov_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
   )
-    .bind(id, 't1', 'jonathan', 'shared', 'photo', JSON.stringify(refs), 1, 1)
+    .bind(id, 't1', 'jonathan', 'shared', 'photo', JSON.stringify(refs), stopId || null, stopProv ? JSON.stringify(stopProv) : null, 1, 1)
+    .run()
+}
+
+async function seedDismissal(memoryId, toStop) {
+  await env.DB.prepare(
+    'INSERT INTO memory_suggestion_dismissals (memory_id, to_stop, at) VALUES (?, ?, ?)'
+  )
+    .bind(memoryId, toStop, 1)
     .run()
 }
 
@@ -49,7 +58,7 @@ async function decisions() {
 beforeEach(async () => {
   await applySchema(env.DB)
   // miniflare storage persists across tests; start each one clean.
-  for (const t of ['memory_heal_decisions', 'memories', 'trips']) {
+  for (const t of ['memory_heal_decisions', 'memories', 'trips', 'memory_suggestion_dismissals']) {
     await env.DB.prepare(`DELETE FROM ${t}`).run()
   }
 })
@@ -263,6 +272,68 @@ describe('recordHealDecisions — v2 shadow learning ledger', () => {
       expect(rows[0].place_id).toBe('s-a') // the museum — k1's own location, NOT k2's
       // exactly one reference-located member (k1) — k2's GPS never counted.
       expect(JSON.parse(rows[0].signals_json).referenceLocatedCount).toBe(1)
+    })
+  })
+
+  // ── W9 (BUILD_PLAN_WITNESS_FLEET_2.md) ──────────────────────────────────────
+  describe('W9 — the human-words pack', () => {
+    it('item 2 (D16): a hand-filed (manual) stop shows up as a signals-only anchor, never changes tier', async () => {
+      await seedTrip()
+      // No GPS at all, no agenda time-fit within range — would otherwise LEAVE —
+      // but a HUMAN manually filed this memory to 's-a' already.
+      await seedMemory({
+        id: 'm1',
+        refs: [{ key: 'k1', capturedAt: '2026-07-01T20:00:00.000Z', offsetMinutes: 0 }], // 8pm, hours from 10am
+        stopId: 's-a',
+        stopProv: { source: 'manual', by: 'jonathan' },
+      })
+      await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      const rows = await decisions()
+      expect(rows.length).toBe(1)
+      expect(rows[0].tier).toBe('leave') // signals-only: does NOT resolve/auto-file the moment
+      const signals = JSON.parse(rows[0].signals_json)
+      expect(signals.handFiledStop).toBe('s-a')
+      expect(signals.handFiledBy).toBe('jonathan')
+    })
+
+    it('item 2 (D16): an AUTO stop filing is never mistaken for a human anchor', async () => {
+      await seedTrip()
+      await seedMemory({
+        id: 'm1',
+        refs: [{ key: 'k1', capturedAt: '2026-07-01T20:00:00.000Z', offsetMinutes: 0 }],
+        stopId: 's-a',
+        stopProv: { source: 'auto', by: 'matcher' },
+      })
+      await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      const rows = await decisions()
+      expect(JSON.parse(rows[0].signals_json).handFiledStop).toBeUndefined()
+    })
+
+    it('item 3: a decision matching an existing "Not now" dismissal is echoed in the shadow report and its signals', async () => {
+      await seedTrip()
+      await seedMemory({
+        id: 'm1',
+        refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0 }], // no GPS, time-fits s-a → confirm
+      })
+      await seedDismissal('m1', 's-a')
+      const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      expect(r.dismissalEchoes).toBe(1)
+      const rows = await decisions()
+      expect(rows[0].place_id).toBe('s-a')
+      expect(JSON.parse(rows[0].signals_json).dismissedBefore).toBe(true)
+    })
+
+    it('item 3: a dismissal for a place the decision does NOT resolve to never echoes (report-only, no false positives)', async () => {
+      await seedTrip()
+      await seedMemory({
+        id: 'm1',
+        refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0 }],
+      })
+      await seedDismissal('m1', '__somewhere_else__')
+      const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      expect(r.dismissalEchoes).toBe(0)
+      const rows = await decisions()
+      expect(JSON.parse(rows[0].signals_json).dismissedBefore).toBeUndefined()
     })
   })
 })

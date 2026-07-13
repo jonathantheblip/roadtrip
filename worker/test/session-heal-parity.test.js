@@ -109,4 +109,23 @@ describe('buildTripDecisions parity (worker mirror ≡ client)', () => {
     expect(a[0].decisions[0].place.id).toBe('s-a')
     expect(a[0].decisions[0].signals.referenceLocatedCount).toBe(1)
   })
+
+  it('W9 item 2 (D16): a hand-filed (manual) stop is identically signals-only on both sides', () => {
+    const memories = [
+      {
+        id: 'm1',
+        author: 'jonathan',
+        created_at: 1,
+        stopId: 's-a',
+        stopProv: { source: 'manual', by: 'helen' },
+        photos: [{ key: 'k1', capturedAt: '2026-07-01T20:00:00.000Z', offsetMinutes: 0 }], // hours from s-a's declared time
+      },
+    ]
+    const a = workerBuild(trip(), memories)
+    const b = clientBuild(trip(), memories)
+    expect(b).toEqual(a)
+    expect(a[0].decisions[0].tier).toBe('leave') // signals-only — never resolves/auto-files
+    expect(a[0].decisions[0].signals.handFiledStop).toBe('s-a')
+    expect(a[0].decisions[0].signals.handFiledBy).toBe('helen')
+  })
 })

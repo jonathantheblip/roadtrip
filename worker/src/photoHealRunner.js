@@ -38,6 +38,7 @@ import { backfillStopGeocodes, photoStopGeocodeMode } from './stopGeocodeBackfil
 import { nameDiscoveredPlaces, buildPlaceTypeIndex } from './discoveredPlaceNamer.js'
 import { resolveLandmarkPins, buildSignageIndex } from './landmarkSearch.js'
 import { propagateMomentGps, photoGpsPropagationMode } from './momentGpsPropagation.js'
+import { countDismissalEchoes } from './humanWords.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -545,8 +546,15 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
   // this is the only production caller of buildTripDecisions. momentGpsPropagation
   // .js's sibling SELECT (momentGpsPropagation.js) is deliberately left alone —
   // it never consumes D14.
+  // W9 (BUILD_PLAN_WITNESS_FLEET_2.md) additive widening: stop_id/stop_prov_json
+  // — D16 (a hand-filed stop) needs the memory's CURRENT filing to read whether
+  // a human put it there. caption/text (the SELECT widening the plan's own text
+  // names for item 1, captions/text matching) is deliberately NOT added here:
+  // item 1 is PARKED (see the build report — 9 caption-bearing memories
+  // archive-wide, under the plan's own <10 threshold), so those columns would
+  // have zero consumer; adding them now would be dead-weight on every request.
   const { results: rows } = await env.DB.prepare(
-    'SELECT id, photo_r2_keys_json, author_traveler, created_at FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
+    'SELECT id, photo_r2_keys_json, author_traveler, created_at, stop_id, stop_prov_json FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
   ).bind(tripId).all()
 
   let days
@@ -608,6 +616,23 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
     }
   }
 
+  // W9 item 3 — dismissals as NEGATIVE labels (mig 018). Whole-table read
+  // (same posture as loadRecentMoveTimes above: memory_suggestion_dismissals
+  // carries no trip_id — filtering happens implicitly in countDismissalEchoes,
+  // since a dismissal row only ever matches a decision whose OWN memoryIds
+  // include it, and every decision here is already trip-scoped). REPORT-ONLY:
+  // annotates dec.signals in place, never changes tier/place/confidence.
+  let dismissalEchoes = 0
+  try {
+    const { results: dismissalRows } = await env.DB.prepare(
+      'SELECT memory_id, to_stop FROM memory_suggestion_dismissals'
+    ).all()
+    const allDecisions = days.flatMap((d) => d.decisions)
+    dismissalEchoes = countDismissalEchoes(allDecisions, dismissalRows)
+  } catch (e) {
+    console.error('[human-words] dismissal-echo lookup failed', tripId, e?.stack || e)
+  }
+
   const del = env.DB.prepare('DELETE FROM memory_heal_decisions WHERE trip_id = ?').bind(tripId)
   const ins = env.DB.prepare(
     `INSERT INTO memory_heal_decisions
@@ -647,5 +672,7 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
     discoveredExternal: discoveredNaming?.external || 0,
     landmarkPinned: landmarkPins?.pinned || 0,
     landmarkMisses: landmarkPins?.misses || 0,
+    // W9 item 3 — decisions that echo a previously-dismissed suggestion.
+    dismissalEchoes,
   }
 }

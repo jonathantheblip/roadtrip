@@ -18,6 +18,7 @@ import { scoreDay } from './sessionScorer.js'
 import { buildDayIndex, matchPhotoToStop, isImplicitBaseId, isRecordTargetId } from './photoMatch.js'
 import { parseStopTime } from './photoBackfill.js'
 import { isSuggestionGradeAtSrc, importLagClass, isPassengerRef } from './timeWitness.js'
+import { manualStopEvidence } from './humanWords.js'
 
 const numOrU = (x) => (Number.isFinite(x) ? x : undefined)
 
@@ -130,6 +131,10 @@ export function buildTripDecisions(trip, memories, opts = {}) {
   const meta = new Map() // pointId -> { capturedAt, offsetMinutes }  (for the GPS synthetic)
   for (const m of memories || []) {
     const memCreatedAtMs = createdAtMsOf(m)
+    // W9 item 2 (D16): the memory's CURRENT stop filing, only when a HUMAN put
+    // it there — a memory-level fact, attached to every ref/point it owns
+    // below (same "memory-level, point-repeated" shape as `author`).
+    const manualEv = manualStopEvidence(m)
     for (const ref of refsOf(m)) {
       if (!ref) continue
       let capturedAtIso = ref.capturedAt
@@ -208,6 +213,10 @@ export function buildTripDecisions(trip, memories, opts = {}) {
               atSrc: ref.atSrc,
             }),
         passenger,
+        // W9 item 2 (D16) — carried per-point so the moment-aggregation step
+        // below can look it up the same way as every other per-ref signal.
+        manualStopId: manualEv?.stopId,
+        manualStopBy: manualEv?.by,
       })
     }
   }
@@ -284,6 +293,24 @@ export function buildTripDecisions(trip, memories, opts = {}) {
         if (REFERENCE_GPS_PROV.has(mm.provGps)) referenceLocatedCount++
       }
       const { medianAt, timeAnchorSuspect } = anchoringMedian(s.photoIds, meta)
+      // W9 item 2 (D16): a moment "gains reference-tier place evidence for
+      // that stop" — recorded here as a SIGNAL for W7's future evidence audit
+      // (never a tier/canAuto change in this build; the constitution's rule
+      // 1(A) doesn't name D16 in its closed reference-tier enumeration, so
+      // whether/how it raises the AUTO bar is W7/S1's call, not silently made
+      // here). Only when every hand-filed member among this moment's photos
+      // agrees on ONE stop — a conflicting pair (two different memories,
+      // different manual filings, sharing a moment) abstains, per the
+      // project's standing "ambiguity refuses" rule.
+      const manualStopIds = new Set()
+      let handFiledBy = null
+      for (const pid of s.photoIds) {
+        const mm = meta.get(pid)
+        if (!mm?.manualStopId) continue
+        manualStopIds.add(mm.manualStopId)
+        if (mm.manualStopBy) handFiledBy = mm.manualStopBy
+      }
+      const handFiledStop = manualStopIds.size === 1 ? [...manualStopIds][0] : null
       return {
         ...s,
         medianMin: medianAt != null ? localMin(medianAt) : localMin(s.medianMs),
@@ -291,6 +318,8 @@ export function buildTripDecisions(trip, memories, opts = {}) {
         referenceLocatedCount,
         gpsProv: [...gpsProvSet],
         timeAnchorSuspect,
+        handFiledStop,
+        handFiledBy,
       }
     })
 
@@ -316,6 +345,9 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           referenceLocatedCount: m.referenceLocatedCount ?? 0,
           ...(m.gpsProv && m.gpsProv.length ? { gpsProv: m.gpsProv } : {}),
           ...(m.timeAnchorSuspect ? { timeAnchorSuspect: true } : {}),
+          // W9 item 2 (D16) — a hand-filed stop found on a member memory of
+          // this moment (signals-only; see the note where this is computed).
+          ...(m.handFiledStop ? { handFiledStop: m.handFiledStop, handFiledBy: m.handFiledBy || null } : {}),
         }
       }
       // A moment with no located/agenda place would LEAVE — but if vision can NAME it,
