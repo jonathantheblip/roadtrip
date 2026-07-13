@@ -327,9 +327,10 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           // BUILD 3 (§16): surfaced ONLY when true, so every pre-Build-3 ledger row
           // (and every moment the vision bridge never touched) stays byte-identical.
           ...(m.visionBridged ? { visionBridged: true } : {}),
-          // W8 — reference-tier GPS provenance + time-anchor trust (W7's future
-          // evidence audit reads this; never surface-projected by this build —
-          // S1 owns SAFE_SIGNAL_KEYS's per-key leak review).
+          // W8 — reference-tier GPS provenance + time-anchor trust (W7's
+          // evidence audit reads this RAW; never surface-projected — S1's leak
+          // review (2026-07-13) CONSCIOUSLY EXCLUDED these from SAFE_SIGNAL_KEYS;
+          // see the review note in healDecisionsView.js).
           referenceLocatedCount: m.referenceLocatedCount ?? 0,
           ...(m.gpsProv && m.gpsProv.length ? { gpsProv: m.gpsProv } : {}),
           ...(m.timeAnchorSuspect ? { timeAnchorSuspect: true } : {}),

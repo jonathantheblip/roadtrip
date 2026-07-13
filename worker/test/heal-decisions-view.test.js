@@ -358,3 +358,55 @@ describe('the signals projection (pin / visionName / reason leaks)', () => {
     })
   })
 })
+
+// ── THE W8/W9 PROVENANCE-KEY LEAK REVIEW (S1, 2026-07-13). sessionHeal folds
+// six engine-internal provenance keys into a decision's signals (for the W7
+// audit, which reads them RAW). None has a family-facing phrasebook translation,
+// and two carry an id / a person — so ALL SIX are consciously excluded from
+// SAFE_SIGNAL_KEYS and must drop for EVERY viewer, INCLUDING the author (unlike
+// pin/visionName, which are the author's own data and survive for them).
+// Whitelisting any of the six turns one of these red.
+describe('W8/W9 provenance keys never reach the per-viewer projection', () => {
+  const SIX = ['referenceLocatedCount', 'timeAnchorSuspect', 'gpsProv', 'handFiledStop', 'handFiledBy', 'dismissedBefore']
+  const W89 = {
+    evidence: 'gps',                          // a SAFE key — must survive (proves it's not a blackout)
+    referenceLocatedCount: 3,
+    timeAnchorSuspect: true,
+    gpsProv: ['reference', 'inferred-presence'],
+    handFiledStop: 's-secret',                // ⚠ a STOP ID
+    handFiledBy: 'helen',                     // ⚠ a TRAVELER
+    dismissedBefore: true,
+  }
+
+  it('all six are stripped for the AUTHOR too; the safe key survives', async () => {
+    await seedTrip('t1', { days: [{ isoDate: '2026-07-01', stops: [{ id: 's1', name: 'The museum' }] }] })
+    await seedMemory('m1', 't1')
+    await seedDecision('t1', { memoryIds: ['m1'], placeId: 's1', placeName: 'The museum', signals: W89 })
+    const jon = await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')
+    expect(jon).toHaveLength(1)
+    for (const k of SIX) expect(jon[0].signals[k]).toBeUndefined()
+    expect(jon[0].signals.evidence).toBe('gps')
+  })
+
+  it('handFiledStop / handFiledBy never ride along even when they name a REAL hidden stop / person', async () => {
+    // s-secret is a surprise stop hidden from helen; the decision's OWN place is
+    // plain, so the row survives for both viewers — the only place the secret
+    // appears is signals.handFiledStop, which the fail-closed whitelist drops.
+    await seedTrip('t1', {
+      days: [{ isoDate: '2026-07-01', stops: [
+        { id: 's-secret', name: 'Whale watch', surprise: { author: 'jonathan', hideFrom: ['helen'] } },
+        { id: 's-plain', name: 'Breakfast' },
+      ] }],
+    })
+    await seedMemory('m1', 't1')
+    await seedDecision('t1', { memoryIds: ['m1'], placeId: 's-plain', placeName: 'Breakfast',
+      signals: { evidence: 'gps', handFiledStop: 's-secret', handFiledBy: 'jonathan' } })
+    for (const viewer of ['helen', 'jonathan']) {
+      const out = await listHealDecisionsForViewer(envShadow(), 't1', viewer)
+      expect(out).toHaveLength(1)
+      expect(out[0].signals.handFiledStop).toBeUndefined()
+      expect(out[0].signals.handFiledBy).toBeUndefined()
+      expect(out[0].signals.evidence).toBe('gps')
+    }
+  })
+})

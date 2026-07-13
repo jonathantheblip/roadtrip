@@ -153,6 +153,22 @@ export function buildHiddenIndex(trip, viewer) {
 // safe scalar keys pass; the name-bearing fields pass only after the hidden-
 // name/coords checks; any UNKNOWN future signal key is DROPPED (fail closed —
 // a new writer must consciously add its field here with its own leak review).
+//
+// S1 LEAK REVIEW (2026-07-13) — the six provenance keys sessionHeal folds in
+// (W8/W9) were reviewed for THIS surface and CONSCIOUSLY EXCLUDED. Each is
+// engine-internal with no §3-phrasebook translation (the confirm card's
+// evidence line reads only evidence/inheritedGps/pin/visionName/cohesion/dims),
+// and the W7 evidence audit reads them from RAW signals_json (admin-gated), so
+// the per-viewer projection loses nothing by dropping them:
+//   • referenceLocatedCount (int)   — GPS-anchor count; card knows GPS via `evidence`
+//   • timeAnchorSuspect     (bool)  — clock-doubt flag; variant-C copy is already humble
+//   • gpsProv               (str[]) — GPS provenance-source labels
+//   • dismissedBefore       (bool)  — prior-dismissal echo (a negative label)
+//   • handFiledStop         (str)   — ⚠ a STOP ID: could be a surprise stop → NEVER project
+//   • handFiledBy           (str)   — ⚠ a TRAVELER: names who was where → NEVER project
+// The last two are outright leak vectors — do NOT whitelist them. All six drop
+// for EVERY viewer incl. the author (heal-decisions-view.test.js locks this:
+// whitelisting any of the six turns a test red).
 const SAFE_SIGNAL_KEYS = [
   'evidence', 'inheritedGps', 'placeKind', 'naming', 'dims', 'cohesion',
   'visionBridged', 'timeFitMin', 'runnerUpMin', 'inferredTime', 'nearestMin',
