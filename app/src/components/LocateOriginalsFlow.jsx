@@ -75,16 +75,23 @@ const COPY = {
     jonathan: 'That pass didn’t finish. Nothing was lost — run it again.',
   },
   // W6 — replaces the decorative trip chip with COMPUTED truth: exactly which of
-  // THIS traveler's photos, in THIS trip, are still missing GPS/time, and which
-  // days those are from. Only shown when there is something of theirs to name
-  // (selfAsk.n > 0); the old chip is the honest fallback otherwise (see render).
+  // THIS traveler's photos, in THIS trip, still missing GPS AND/OR the capture
+  // time. Only shown when there is something of theirs to fill (selfAsk.n > 0);
+  // the old chip is the honest fallback otherwise (see render).
+  // ⚠ HONESTY (review 2026-07-13): these refs are by definition offset-missing,
+  // so their TRUE local calendar day (the day the OS Photos app files them
+  // under) is genuinely unknowable — the instant we hold is UTC, off by up to a
+  // day for evening shots. So the head claims NO specific day (just the exact
+  // count), and the picker hint is a widened, hedged "around {range}", never a
+  // precise "scroll to {day}" the family would find a day off. And the count
+  // includes time-only-missing photos, so it's "place or time", not "place".
   grantAskHead: {
-    helen: '{n} of your photos from {days} still need their place.',
-    jonathan: '{n} of your photos from {days} still need their place.',
+    helen: '{n} of your photos from this trip still need their place or time.',
+    jonathan: '{n} of your photos from this trip still need their place or time.',
   },
   grantAskHint: {
-    helen: 'In the picker, scroll to {range}.',
-    jonathan: 'In the picker: scroll to {range}.',
+    helen: 'In your picker, look around {range}.',
+    jonathan: 'In your picker, look around {range}.',
   },
   scanReading: { helen: 'Reading your originals…', jonathan: 'Reading originals…' },
   scanMatching: { helen: 'Matching them to your trips…', jonathan: 'Matching by capture time…' },
@@ -388,22 +395,24 @@ function dayLabel(day) {
   return new Date(`${day}T12:00:00`)
 }
 
-// The EXACT day-set, gaps and all — never simplified into a contiguous range (a
-// range would claim every day between the first and last has photos too, which
-// the gaps disprove). Capped so a badly scattered archive still reads as one
-// sentence rather than a wall of dates.
-function formatDaySet(days) {
+// 'YYYY-MM-DD' + delta days → 'YYYY-MM-DD'. UTC-noon math so it never flips at a
+// tz boundary; the string in, the string out, are both plain calendar days.
+function shiftDay(day, delta) {
+  const d = new Date(`${day}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + delta)
+  return d.toISOString().slice(0, 10)
+}
+
+// The picker-scroll target, WIDENED one day on each side (review 2026-07-13):
+// these refs are offset-missing, so the day we hold is the UTC instant, and the
+// day the OS Photos app actually files them under is within ±1 of it. Padding
+// the outer span by a day on each side keeps "look around here" honestly
+// inclusive of where they really sit in the picker — never a precise claim the
+// family would find a day off. The outer span only (never the gaps): a picker
+// is scrolled TO a place, never told to skip the days between.
+function pickerRange(days) {
   if (!days.length) return ''
-  if (days.length > 6) return `across ${days.length} days (${formatDayRange(days)})`
-  const labels = days.map((d, i) => {
-    const dt = dayLabel(d)
-    const month = dt.toLocaleDateString('en-US', MONTH_ONLY)
-    const prevMonth = i > 0 ? dayLabel(days[i - 1]).toLocaleDateString('en-US', MONTH_ONLY) : null
-    return month === prevMonth ? `${dt.getDate()}` : `${month} ${dt.getDate()}`
-  })
-  if (labels.length === 1) return labels[0]
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`
-  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`
+  return formatDayRange([shiftDay(days[0], -1), shiftDay(days[days.length - 1], 1)])
 }
 
 // The picker-scroll target — the outer span only (first day to last), since a
@@ -742,10 +751,12 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
       <div {...dialogProps(COPY.grantTitle[voice].replace('\n', ' '))} data-testid="locate-grant">
         <FlowHeader kicker={COPY.grantKicker[voice]} onBack={() => setStep('intro')} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 20px' }}>
-          {/* W6 — computed truth, not decoration: THIS traveler's own count and
-              exact day-set for THIS trip when there's something to name; the
-              original trip-identity chip is the honest fallback when there
-              isn't (e.g. Settings fell back to a trip that isn't the one their
+          {/* W6 — computed truth, not decoration: THIS traveler's own EXACT
+              count for THIS trip, plus an honestly-widened "look around here"
+              picker hint (the precise day is unknowable for offset-missing
+              refs — see grantAskHead/pickerRange). The original trip-identity
+              chip is the honest fallback when there's nothing of theirs waiting
+              (e.g. Settings fell back to a trip that isn't the one their
               waiting photos are actually in — real, see selfPendingDays). */}
           {selfAsk.n > 0 ? (
             <div
@@ -755,11 +766,17 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 <Clock size={13} color="var(--accent-text)" style={{ marginTop: 2, flexShrink: 0 }} />
                 <span className="f-dm" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
-                  {fill(COPY.grantAskHead[voice], { n: selfAsk.n, days: formatDaySet(selfAsk.days) })}
+                  {fill(COPY.grantAskHead[voice], { n: selfAsk.n })}
                 </span>
               </div>
-              <div className="f-mono" style={{ fontSize: 9, letterSpacing: 0.4, color: 'var(--muted)', marginTop: 6, paddingLeft: 21 }}>
-                {fill(COPY.grantAskHint[voice], { range: formatDayRange(selfAsk.days) })}
+              {/* --text, not --muted (a11y, review 2026-07-13): --muted's alpha
+                  is tuned to clear AA on the PAGE bg (--bg), but this hint sits
+                  on the card's darker --bg2 where it composited to 4.36:1 (below
+                  the 4.5 floor) — the original W6 shipped that violation, caught
+                  by the e2e axe gate. --text clears it on --bg2 (the head above
+                  proves it); the hint stays subordinate by size/mono/indent. */}
+              <div className="f-mono" style={{ fontSize: 9, letterSpacing: 0.4, color: 'var(--text)', marginTop: 6, paddingLeft: 21 }}>
+                {fill(COPY.grantAskHint[voice], { range: pickerRange(selfAsk.days) })}
               </div>
             </div>
           ) : (

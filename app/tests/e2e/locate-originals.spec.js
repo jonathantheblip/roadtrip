@@ -94,10 +94,14 @@ test('an adult recovers GPS + offset from a device original — honest result, f
   await expect(page.getByTestId('locate-grant')).toBeVisible()
 
   // W6 — the grant step's computed truth (replaces the old decorative trip
-  // chip): her own count + exact day-set, and where to scroll in the picker.
-  // The fixture's true instant is 2026-05-25 (see CAPTURED_AT/module header).
-  await expect(page.getByTestId('locate-grant-ask')).toContainText('1 of your photos from May 25')
-  await expect(page.getByTestId('locate-grant-ask')).toContainText('scroll to May 25')
+  // chip): her own EXACT count, and an honestly-WIDENED picker hint. The photo's
+  // instant is 2026-05-25T02:49Z, but its TRUE wall clock is the evening of
+  // May 24 (-04:00) — and because a needy ref is offset-missing, its exact local
+  // day is genuinely unknowable, so the copy claims no precise day: it names the
+  // count only, and points the picker at "around" a ±1-day window (May 24–26)
+  // that honestly brackets where the photo really sits (review 2026-07-13).
+  await expect(page.getByTestId('locate-grant-ask')).toContainText('1 of your photos from this trip still need their place or time')
+  await expect(page.getByTestId('locate-grant-ask')).toContainText('look around May 24–26')
   // W6 — the per-person breakdown now also lands BEFORE the pick.
   await expect(page.getByTestId('locate-coordinate')).toBeVisible()
 
