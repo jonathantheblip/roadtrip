@@ -6,7 +6,7 @@
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { applySchema } from './helpers/schema.js'
-import { listHealDecisionsForViewer, filterDecisionsForViewer, buildHiddenIndex, projectSignalsForViewer } from '../src/healDecisionsView.js'
+import { listHealDecisionsForViewer, filterDecisionsForViewer, buildHiddenIndex, projectSignalsForViewer, buildAnsweredMatcher } from '../src/healDecisionsView.js'
 
 const NOW = 1_700_000_000_000
 
@@ -32,12 +32,17 @@ async function seedDecision(tripId, { isoDate = '2026-07-01', memoryIds = [], ph
     .bind(tripId, isoDate, JSON.stringify(memoryIds), photoCount, placeId, placeName, tier, 0.5, 'gps', JSON.stringify(signals), 'r', 'shadow', NOW)
     .run()
 }
+async function seedFeedback(tripId, { memoryIds = [], action = 'confirmed', at = NOW } = {}) {
+  await env.DB.prepare(
+    `INSERT INTO memory_heal_feedback (trip_id, memory_ids, action, at) VALUES (?,?,?,?)`
+  ).bind(tripId, JSON.stringify(memoryIds), action, at).run()
+}
 
 const envShadow = () => ({ DB: env.DB, PHOTO_HEAL_MODE: 'shadow' })
 
 beforeEach(async () => {
   await applySchema(env.DB)
-  for (const t of ['memory_heal_decisions', 'memories', 'trips']) await env.DB.prepare(`DELETE FROM ${t}`).run()
+  for (const t of ['memory_heal_decisions', 'memory_heal_feedback', 'memories', 'trips']) await env.DB.prepare(`DELETE FROM ${t}`).run()
 })
 
 describe('listHealDecisionsForViewer', () => {
@@ -408,5 +413,65 @@ describe('W8/W9 provenance keys never reach the per-viewer projection', () => {
       expect(out[0].signals.handFiledBy).toBeUndefined()
       expect(out[0].signals.evidence).toBe('gps')
     }
+  })
+})
+
+// ── THE ANSWERED-MOMENT FILTER (S1 Stage 2b-i): a moment the family already
+// answered (confirm / correct / aside — migration 021) is DECIDED and never
+// re-surfaced as a question. Match by majority memory-set overlap (drift-safe),
+// family-wide, applied AFTER the mask gates so it never widens exposure.
+describe('buildAnsweredMatcher (pure)', () => {
+  it('closes on a majority overlap, not on a minority stray', () => {
+    const answered = buildAnsweredMatcher([{ memoryIds: ['a', 'b', 'c'] }])
+    expect(answered(['a', 'b', 'c'])).toBe(true)          // exact
+    expect(answered(['a', 'b', 'x'])).toBe(true)          // 2 of 3 — drift
+    expect(answered(['a', 'x', 'y'])).toBe(false)         // 1 of 3 — different moment
+    expect(answered(['a'])).toBe(true)                    // 1 of 1 — fully covered
+  })
+  it('empty feedback / empty decision closes nothing', () => {
+    expect(buildAnsweredMatcher([])(['a'])).toBe(false)
+    expect(buildAnsweredMatcher([{ memoryIds: ['a'] }])([])).toBe(false)
+  })
+  it('reads raw memory_ids JSON too (the DB row shape)', () => {
+    const answered = buildAnsweredMatcher([{ memory_ids: '["a","b"]' }])
+    expect(answered(['a', 'b'])).toBe(true)
+  })
+})
+
+describe('the answered-moment filter, end to end', () => {
+  it('a confirmed/corrected/aside moment is dropped; an unanswered one still serves', async () => {
+    for (const action of ['confirmed', 'corrected', 'aside']) {
+      for (const t of ['memory_heal_feedback', 'memory_heal_decisions', 'memories', 'trips']) await env.DB.prepare(`DELETE FROM ${t}`).run()
+      await seedTrip('t1', { days: [{ isoDate: '2026-07-01', stops: [{ id: 's1', name: 'The museum' }] }] })
+      await seedMemory('m1', 't1'); await seedMemory('m2', 't1')
+      await seedDecision('t1', { memoryIds: ['m1'], placeId: 's1', placeName: 'The museum' })      // answered
+      await seedDecision('t1', { memoryIds: ['m2'], placeId: 's1', placeName: 'The museum' })      // untouched
+      await seedFeedback('t1', { memoryIds: ['m1'], action })
+      const out = await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')
+      expect(out.map((d) => d.memoryIds[0])).toEqual(['m2']) // only the unanswered one
+    }
+  })
+
+  it('drift-safe: feedback covering a majority of a re-clustered moment still closes it', async () => {
+    await seedTrip('t1', { days: [] })
+    for (const m of ['m1', 'm2', 'm3']) await seedMemory(m, 't1')
+    await seedDecision('t1', { memoryIds: ['m1', 'm2', 'm3'] })     // moment gained m3 since the answer
+    await seedFeedback('t1', { memoryIds: ['m1', 'm2'] })           // answered when it was m1+m2
+    expect(await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')).toEqual([])
+  })
+
+  it('a single stray shared photo does NOT close a genuinely different moment', async () => {
+    await seedTrip('t1', { days: [] })
+    for (const m of ['m1', 'm2', 'm3', 'm4', 'm5']) await seedMemory(m, 't1')
+    await seedDecision('t1', { memoryIds: ['m2', 'm3', 'm4', 'm5'] }) // shares only m2 with the answer
+    await seedFeedback('t1', { memoryIds: ['m1', 'm2'] })
+    expect(await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')).toHaveLength(1)
+  })
+
+  it('no feedback rows → every decision still serves (baseline / pre-answer)', async () => {
+    await seedTrip('t1', { days: [] })
+    await seedMemory('m1', 't1')
+    await seedDecision('t1', { memoryIds: ['m1'] })
+    expect(await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')).toHaveLength(1)
   })
 })

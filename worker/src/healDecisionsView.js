@@ -42,6 +42,7 @@ import {
   partDayOwner,
 } from './surprises.js'
 import { isRecordTargetId, parseRecordTargetId, isImplicitBaseId, IMPLICIT_BASE_PREFIX } from './dayStopIds.js'
+import { listHealFeedbackForTrip } from './confirmFeedback.js'
 
 // Per-viewer hidden-place index over one raw trip. Same three id-spaces
 // photoSuggest.buildStopHiddenFromViewer covers (planned stop / record moment
@@ -191,16 +192,52 @@ export function projectSignalsForViewer(signals, { nameHidden, coordsHidden }) {
   return out
 }
 
+// A moment the family already gave a TERMINAL answer to (a confirm, a
+// correction, or a leave-as-guess — migration 021) is DECIDED and must never be
+// re-surfaced as a question. Matching is by memory-set OVERLAP, not equality:
+// cluster membership can drift by a photo between sweeps, so a feedback row that
+// covers a MAJORITY of a decision's memories still closes it (a stray single
+// shared photo — one of nine — does NOT, so a genuinely different moment stays
+// open). Family-wide: any adult's answer settles it for everyone (a confirm
+// files the moment for the whole family). Returns a predicate over a decision's
+// memoryIds; [] feedback (or a pre-migration-021 empty read) closes nothing.
+export function buildAnsweredMatcher(feedbackRows) {
+  const sets = []
+  for (const f of feedbackRows || []) {
+    let ids = Array.isArray(f?.memoryIds) ? f.memoryIds : null
+    if (!ids) {
+      try {
+        ids = JSON.parse(f?.memory_ids || '[]')
+      } catch {
+        ids = null
+      }
+    }
+    if (Array.isArray(ids) && ids.length) sets.push(new Set(ids.filter((x) => typeof x === 'string' && x)))
+  }
+  return (memoryIds) => {
+    const dec = Array.isArray(memoryIds) ? memoryIds : []
+    if (!dec.length || !sets.length) return false
+    for (const s of sets) {
+      let overlap = 0
+      for (const id of dec) if (s.has(id)) overlap++
+      if (overlap > 0 && overlap * 2 >= dec.length) return true // majority of THIS decision covered
+    }
+    return false
+  }
+}
+
 // PURE per-viewer filter over raw ledger rows. `memoryRows` are raw D1 memory
 // rows (id, visibility, author_traveler, hide_from_json, revealed_at) for the
 // same trip; a memory id in a decision that is MISSING from them (deleted
 // since the ledger run — rows are only replaced on the next sweep) is treated
-// as invisible: stale rows must fail CLOSED, never leak a ghost.
-export function filterDecisionsForViewer(trip, decisionRows, memoryRows, viewer) {
+// as invisible: stale rows must fail CLOSED, never leak a ghost. `feedbackRows`
+// (migration 021, optional) close moments the family already answered.
+export function filterDecisionsForViewer(trip, decisionRows, memoryRows, viewer, feedbackRows = []) {
   if (isTripMaskedFrom(trip, viewer)) return []
   const hidden = buildHiddenIndex(trip, viewer)
   const { dayHidden, stopHidden, nameHidden } = hidden
   const memById = new Map((memoryRows || []).map((r) => [r.id, r]))
+  const isAnswered = buildAnsweredMatcher(feedbackRows)
 
   const out = []
   for (const row of decisionRows || []) {
@@ -225,6 +262,9 @@ export function filterDecisionsForViewer(trip, decisionRows, memoryRows, viewer)
     // case-insensitive + containment (the review's case-variant point) — a
     // discovered/vision place_name echoing a hidden stop's name drops the row.
     if (row.place_name && nameHidden(row.place_name)) continue
+    // Already answered by the family (confirm/correct/aside) → decided, not a
+    // question anymore. Checked after the mask gates so it never widens exposure.
+    if (isAnswered(memoryIds)) continue
     let signals = null
     try {
       signals = row.signals_json ? JSON.parse(row.signals_json) : null
@@ -274,5 +314,8 @@ export async function listHealDecisionsForViewer(env, tripId, viewer) {
   const { results: memoryRows } = await env.DB.prepare(
     'SELECT id, visibility, author_traveler, hide_from_json, revealed_at FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
   ).bind(tripId).all()
-  return filterDecisionsForViewer(trip, decisionRows, memoryRows || [], viewer)
+  // Migration 021 (S1 feedback) — [] when the table is unapplied, so a
+  // pre-migration worker closes nothing (inert). Trip-wide (family-wide).
+  const feedbackRows = await listHealFeedbackForTrip(env, tripId)
+  return filterDecisionsForViewer(trip, decisionRows, memoryRows || [], viewer, feedbackRows)
 }
