@@ -82,6 +82,19 @@ PHOTO_STOP_GEOCODE_MODE = "on"
 # carryover's W4 entry.
 # PHOTO_FACES_MODE = "off"                  # R6 — LOCKED pending the cross-device design decision
 
+# PHOTO_PRESENCE_MODE (Build W5, BUILD_PLAN_WITNESS_FLEET_2.md) — presence
+# breadcrumbs: a family member's phone becomes a witness for where an
+# unlocated photo belongs. CONSENTED (Jonathan, 2026-07-12, for both adults)
+# but NOT YET PROMOTABLE — migration 020 (presence_trail) is written but NOT
+# APPLIED to prod D1 (needs the D1-Edit token + Jonathan's explicit
+# apply-before-push step, same gate as every prior migration). Leaving this
+# UNSET (equivalent to "off") is the load-bearing inertness property: off is
+# the ONLY value that guarantees the worker issues ZERO queries against a
+# table that doesn't exist yet — see presence.js's photoPresenceMode. Own
+# knob, INDEPENDENT (no fallback-inherit from PHOTO_HEAL_MODE, unlike the W0
+# levers above). DO NOT set past "off" until migration 020 is applied.
+# PHOTO_PRESENCE_MODE = "off"
+
 # Nightly auto-weave (WEAVE_SCOPE slice 3). 08:00 UTC ≈ 2-4am US overnight —
 # after the day's memories have settled. Fires the worker `scheduled` handler
 # → runNightlyWeave, which pre-assembles the active trip's freshest day into a

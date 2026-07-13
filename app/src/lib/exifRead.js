@@ -269,7 +269,13 @@ export const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modif
 // memoryStore.js's GPS_REFERENCE_PROV: it stays INFERRED-tier (a guess,
 // upgradeable by a later real EXIF/scan read), never itself a propagation
 // source (the cascade-hazard guard, BUILD_PLAN_SIGNAL_FLEET.md BUILD 5).
-export const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated'])
+// 'inferred-presence' (Build W5, BUILD_PLAN_WITNESS_FLEET_2.md) — a match
+// against the ref's OWN AUTHOR's recorded presence-trail crumb
+// (worker/src/presenceWitness.js). Same INFERRED-tier posture as
+// 'propagated': deliberately NOT in GPS_REFERENCE_PROV/REFERENCE_GPS_PROV
+// anywhere in this codebase — a guess, never itself a propagation/witness
+// SOURCE (the same cascade-hazard guard).
+export const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated', 'inferred-presence'])
 export const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
 
 export function sanitizeProv(input) {

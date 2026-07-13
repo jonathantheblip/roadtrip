@@ -39,6 +39,8 @@ import { nameDiscoveredPlaces, buildPlaceTypeIndex } from './discoveredPlaceName
 import { resolveLandmarkPins, buildSignageIndex } from './landmarkSearch.js'
 import { propagateMomentGps, photoGpsPropagationMode } from './momentGpsPropagation.js'
 import { countDismissalEchoes } from './humanWords.js'
+import { photoPresenceMode } from './presence.js'
+import { witnessPresence } from './presenceWitness.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
 
@@ -475,6 +477,23 @@ export async function healSweep(env, { now = Date.now() } = {}) {
   } catch (e) {
     console.error('[gps-propagation] sweep failed', e?.stack || e)
   }
+  // W5 (BUILD_PLAN_WITNESS_FLEET_2.md) — the presence-breadcrumb witness:
+  // matches a still-unlocated ref against its OWN AUTHOR's recorded
+  // presence-trail crumbs (migration 020's presence_trail — WRITTEN but NOT
+  // YET APPLIED to prod D1 as of this build). ITS OWN knob
+  // (PHOTO_PRESENCE_MODE), INDEPENDENT — unlike the levers above, it does
+  // NOT fall back to inheriting `mode` (see presence.js's photoPresenceMode
+  // header): off is the ONE value that guarantees this never issues a
+  // single query against a table that may not exist yet. Real memory writes
+  // (prov.gps='inferred-presence') fire only when its resolved mode is 'on';
+  // shadow still reads + reports would-match stats. Best-effort, never stops
+  // the sweep.
+  let presenceWitness = null
+  try {
+    presenceWitness = await witnessPresence(env, { mode: photoPresenceMode(env) })
+  } catch (e) {
+    console.error('[presence-witness] sweep failed', e?.stack || e)
+  }
   const { results: trips } = await env.DB.prepare(
     'SELECT id FROM trips WHERE deleted_at IS NULL'
   ).all()
@@ -520,6 +539,7 @@ export async function healSweep(env, { now = Date.now() } = {}) {
     offsetInference,
     stopGeocode,
     gpsPropagation,
+    presenceWitness,
   }
 }
 

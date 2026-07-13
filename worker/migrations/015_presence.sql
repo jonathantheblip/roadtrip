@@ -5,6 +5,16 @@
 -- the coarse bucket. Identity is the SESSION traveler, never a body-supplied id.
 -- Idempotent (IF NOT EXISTS) like 013/014; the worker degrades (GET -> [],
 -- writes -> 503) if this table is absent, so deploying before it's applied never 500s.
+--
+-- ★ AMENDED 2026-07-12 (Build W5, BUILD_PLAN_WITNESS_FLEET_2.md) — THIS
+-- TABLE's own promise is UNCHANGED (still latest-position-only, overwritten
+-- every heartbeat, purged at trip-end/staleness — nothing above this line is
+-- stale). What changed is a SEPARATE, new table: migration 020's
+-- presence_trail, an append-only HISTORY of the same adults-only fixes this
+-- table already receives. Read 020's header for the full consented design
+-- (Jonathan, 2026-07-12, for both adults) — this note exists here only so
+-- nobody reads THIS file in isolation and assumes it's still the whole
+-- story.
 
 CREATE TABLE IF NOT EXISTS presence (
   trip_id      TEXT NOT NULL,                 -- the trip this presence is for

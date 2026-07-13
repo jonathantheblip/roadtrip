@@ -30,7 +30,7 @@ import { maskMemoryForViewer, maskTripForViewer, stripWorkerCaches, preserveHidd
 import { isShareable, newShareToken, shareViewFromMemory, findStopName } from './share.js'
 import { createAuthLink, redeemAuthLink, lookupSession, revokeSession, adminSweepSessions, pruneExpiredLinks, isTraveler, isAdult } from './auth.js'
 import { listProposals, createProposal, voteProposal, decideProposal, isNoTable } from './proposals.js'
-import { listPresence, upsertPresence, runPresencePurge } from './presence.js'
+import { listPresence, upsertPresence, runPresencePurge, photoPresenceMode } from './presence.js'
 import { forecastUrl, marineUrl, buildConditions } from './conditions.js'
 import { createWave, listUnseenWaves, markWavesSeen, runWavePurge } from './waves.js'
 import { renderSharePage, renderShareError, renderShareCard } from './sharePage.js'
@@ -469,7 +469,11 @@ export default {
     // Who's around (015): purge presence for ended trips + any stale rows, so a
     // family member's location never lingers past the trip (settled privacy).
     ctx.waitUntil(
-      runPresencePurge(env.DB, { todayIso: todayIsoUTC(Date.now()), now: Date.now() }).then(
+      runPresencePurge(env.DB, {
+        todayIso: todayIsoUTC(Date.now()),
+        now: Date.now(),
+        mode: photoPresenceMode(env), // W5 — arms the presence_trail sweep only when set
+      }).then(
         (r) => console.log('[presence-purge]', JSON.stringify(r)),
         (e) => console.error('[presence-purge] failed', e?.stack || e)
       )
@@ -831,6 +835,12 @@ async function postPresence(env, traveler, request, cors) {
       tripId: body?.tripId,
       body,
       now: Date.now(),
+      // W5 (BUILD_PLAN_WITNESS_FLEET_2.md) — resolved HERE (env lives here,
+      // not in presence.js's db-only signature) and threaded down so
+      // upsertPresence can also append a presence_trail crumb when armed.
+      // Ships OFF: photoPresenceMode(env) defaults 'off', so this is a
+      // byte-identical no-op today.
+      mode: photoPresenceMode(env),
     })
     if (res.error) return json(res, 400, cors)
     return json(res, 200, cors)

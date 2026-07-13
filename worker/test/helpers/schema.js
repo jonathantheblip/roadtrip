@@ -29,6 +29,12 @@ import wavesMigration from '../../migrations/016_waves.sql?raw'
 import stopProvMigration from '../../migrations/017_memory_stop_provenance.sql?raw'
 import suggestionDismissalsMigration from '../../migrations/018_memory_suggestion_dismissals.sql?raw'
 import healDecisionsMigration from '../../migrations/019_memory_heal_decisions.sql?raw'
+// 020 (presence_trail, Build W5) — WRITTEN but NOT YET APPLIED to prod D1 (see
+// its own header). Included here purely as TEST infrastructure, same as
+// 017/018/019 were before their own prod-apply step: no wrangler command runs
+// against prod from this file, and PHOTO_PRESENCE_MODE ships OFF regardless —
+// this only lets shadow/on-mode tests exercise the real table shape locally.
+import presenceTrailMigration from '../../migrations/020_presence_trail.sql?raw'
 
 // Split a .sql file into individually-executable statements. D1's
 // prepare() runs one statement at a time, so we can't hand it a whole
@@ -99,6 +105,8 @@ const STATEMENTS = [
   ...splitStatements(suggestionDismissalsMigration),
   // 019 (v2 heal-decisions learning ledger) — CREATE TABLE/INDEX IF NOT EXISTS, idempotent.
   ...splitStatements(healDecisionsMigration),
+  // 020 (presence_trail, Build W5) — CREATE TABLE/INDEX IF NOT EXISTS, idempotent.
+  ...splitStatements(presenceTrailMigration),
 ]
 
 export async function applySchema(db) {

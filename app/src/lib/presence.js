@@ -9,6 +9,27 @@
 //   drops them — belt + braces). Location is shared ONLY while the app is open
 //   (foreground); the UI says so and never implies background tracking. Location
 //   never goes to Claude / the weave / surprises (nothing here threads into them).
+//
+// ★ UPDATED 2026-07-12 (Build W5, BUILD_PLAN_WITNESS_FLEET_2.md) — THE PROMISE
+//   THIS RETIRES: this layer used to be able to say an adult's fix was NEVER
+//   kept beyond the single latest-position row (overwritten on every
+//   heartbeat, gone the moment the trip ends or goes stale). That is no
+//   longer true. Jonathan's explicit consent (2026-07-12, for both adults:
+//   "we are both comfortable retiring the promise about storing locations,
+//   given that this is an app for our family only that is being overseen by
+//   me personally"): the SAME heartbeat this file already posts may ALSO be
+//   appended, worker-side, to an append-only history (migration 020's
+//   presence_trail) so a future trip's photos can file themselves by clock
+//   alone. Gated behind its own env.PHOTO_PRESENCE_MODE knob (ships OFF —
+//   no code change is needed on THIS side to arm it later), engine-only (no
+//   GET route ever serves a crumb — no screen, no other device, not even
+//   Claude, ever reads it back), retained trip + 14 days then purged,
+//   manual per-adult wipe. What stays true, unchanged by this: still
+//   adults-only (a kid's coordinates are refused before they ever reach the
+//   wire — sanitizePresence/buildPresenceBody's double gate, untouched);
+//   still foreground-only cadence (nothing new is SENT while backgrounded —
+//   the change is what the WORKER may now KEEP, never what or when this
+//   layer sends).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { workerFetch, isWorkerConfigured } from './workerSync'
