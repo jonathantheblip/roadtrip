@@ -17,8 +17,51 @@ import { buildMoments } from './sessions.js'
 import { scoreDay } from './sessionScorer.js'
 import { buildDayIndex, matchPhotoToStop, isImplicitBaseId, isRecordTargetId } from './photoMatch.js'
 import { parseStopTime } from './photoBackfill.js'
+import { isSuggestionGradeAtSrc, importLagClass, isPassengerRef } from './timeWitness.js'
 
 const numOrU = (x) => (Number.isFinite(x) ? x : undefined)
+
+// W8 (BUILD_PLAN_WITNESS_FLEET_2.md), D14: memory.created_at, dual-naming
+// tolerant — worker rows are snake_case epoch-ms; a client-shaped memory object
+// (or v1's rowToHealMemory output) may carry camelCase createdAt as either an
+// epoch-ms number or an ISO string. Same tolerant-read posture as `author`
+// above. undefined when nothing usable is present.
+function createdAtMsOf(m) {
+  if (Number.isFinite(m?.created_at)) return m.created_at
+  if (Number.isFinite(m?.createdAt)) return m.createdAt
+  if (typeof m?.createdAt === 'string' && m.createdAt) {
+    const t = Date.parse(m.createdAt)
+    if (Number.isFinite(t)) return t
+  }
+  return undefined
+}
+
+// W8 item 4 (constitution rule 1's enforcement gap): a REFERENCE-tier GPS
+// provenance set — real exif/scan reads only, never a propagated/inferred
+// coordinate. (+'confirmed' once S1 lands, D13 — not yet, so not here today.)
+const REFERENCE_GPS_PROV = new Set(['exif', 'scan'])
+
+// W8 item 2 (D1 qualifier): the moment's TIME ANCHOR excludes suggestion-grade
+// members (file-mtime atSrc), item 1(a)'s synthetic created-at-upper-bound
+// members, and any member a LONG import lag (item 1b) marks suspect — from the
+// median computation, falling back to the full membership only when EVERY
+// member is suspect, and flagging that fallback as `timeAnchorSuspect` so the
+// scorer's canAuto (Pass 2) refuses to silently trust it.
+function anchoringMedian(photoIds, meta) {
+  const withAt = []
+  for (const id of photoIds || []) {
+    const mm = meta.get(id)
+    if (mm && Number.isFinite(mm.at)) withAt.push({ id, at: mm.at, mm })
+  }
+  const suspectMember = (mm) =>
+    !!mm.createdAtUpperBound || isSuggestionGradeAtSrc(mm.atSrc) || mm.lagClass === 'long-demote'
+  const trustworthy = withAt.filter((x) => !suspectMember(x.mm))
+  const pool = trustworthy.length ? trustworthy : withAt
+  const timeAnchorSuspect = trustworthy.length === 0 && withAt.length > 0
+  pool.sort((a, b) => a.at - b.at || String(a.id).localeCompare(String(b.id)))
+  const medianAt = pool.length ? pool[Math.floor((pool.length - 1) / 2)].at : null
+  return { medianAt, timeAnchorSuspect }
+}
 
 // Accept a memory in D1-row shape (photo_r2_keys_json string) OR normalized
 // (`photos`/`refs` array). Returns the photo refs.
@@ -86,28 +129,55 @@ export function buildTripDecisions(trip, memories, opts = {}) {
   const pointsByDay = new Map()
   const meta = new Map() // pointId -> { capturedAt, offsetMinutes }  (for the GPS synthetic)
   for (const m of memories || []) {
+    const memCreatedAtMs = createdAtMsOf(m)
     for (const ref of refsOf(m)) {
-      if (!ref || !ref.capturedAt) continue
+      if (!ref) continue
+      let capturedAtIso = ref.capturedAt
+      // W8 item 1(a), D14: a ref with NO capturedAt at all used to be silently
+      // dropped here — invisible to healing. memory.created_at (the upload/save
+      // time) is an UPPER BOUND on when the photo was actually taken: never a
+      // real capture time, so a point built from it is tagged
+      // `createdAtUpperBound` (folded into `timeAnchorSuspect` below, which
+      // keeps every such moment at leave/confirm-grade, never auto), and ONLY
+      // used when it falls inside the trip's own day window — outside that
+      // window there is nothing trustworthy to place it by, so this abstains
+      // exactly as the old skip did.
+      let createdAtUpperBound = false
+      if (!capturedAtIso) {
+        if (!Number.isFinite(memCreatedAtMs)) continue
+        capturedAtIso = new Date(memCreatedAtMs).toISOString()
+        createdAtUpperBound = true
+      }
       const off = Number.isFinite(ref.offsetMinutes) ? ref.offsetMinutes : defaultOffset
-      const localMs = Date.parse(ref.capturedAt) + off * 60000
+      const localMs = Date.parse(capturedAtIso) + off * 60000
       if (!Number.isFinite(localMs)) continue
       const iso = new Date(localMs).toISOString().slice(0, 10)
+      if (createdAtUpperBound && !dayIndex.has(iso)) continue
       const id = ref.key || ref.id
       if (!id) continue
+      // W8 item 3, D1 hygiene: a PASSENGER ref (screenshot/graphic, not a
+      // camera photo) has its lat/lng and faces WITHHELD from the point — it
+      // can't anchor GPS inheritance or vote faces — while it still rides the
+      // moment (via photoIds/memoryIds, untouched below) and inherits the
+      // moment's eventual filing like any other member. Forward-only (see
+      // timeWitness.js's header).
+      const passenger = isPassengerRef(ref)
+      const lat = passenger ? undefined : numOrU(ref.lat)
+      const lng = passenger ? undefined : numOrU(ref.lng)
       if (!pointsByDay.has(iso)) pointsByDay.set(iso, [])
       pointsByDay.get(iso).push({
         id,
         memoryId: m.id,
         at: localMs,
-        lat: numOrU(ref.lat),
-        lng: numOrU(ref.lng),
+        lat,
+        lng,
         author: m.author || m.authorTraveler || m.author_traveler,
         // the COMPOSITION dimension (sceneHash.js) — a sidecar like lat/lng, absent
         // until the import/backfill computes it from the surviving pixels.
         scene: typeof ref.scene === 'string' && ref.scene ? ref.scene : undefined,
         // the PEOPLE dimension — face ids on the ref (wired from the face model in a
         // later brick); absent → the dimension simply abstains from the clustering.
-        faces: Array.isArray(ref.faces) && ref.faces.length ? ref.faces : undefined,
+        faces: passenger ? undefined : (Array.isArray(ref.faces) && ref.faces.length ? ref.faces : undefined),
         // the PLACE-TYPE dimension (BUILD 3, §16) — a constrained vision enum, absent
         // until the vision backfill computes it. Consumed ONLY by the bridge-only path
         // in sessions.js (never nonTimeAffinity's blend); a missing/catch-all value
@@ -116,7 +186,29 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           ? ref.vision.placeType
           : undefined,
       })
-      meta.set(id, { capturedAt: ref.capturedAt, offsetMinutes: off, vision: ref.vision })
+      meta.set(id, {
+        capturedAt: capturedAtIso,
+        offsetMinutes: off,
+        vision: ref.vision,
+        at: localMs,
+        lat,
+        lng,
+        // W8 signals — reference-tier GPS provenance (item 4), atSrc + import-lag
+        // tiering (items 1b/2), and the time-anchor-suspect member markers
+        // (item 1(a)'s synthetic point, item 2's suggestion-grade atSrc, item
+        // 1(b)'s long-lag demotion) that fold into `timeAnchorSuspect` above.
+        provGps: typeof ref.prov?.gps === 'string' ? ref.prov.gps : undefined,
+        atSrc: typeof ref.atSrc === 'string' ? ref.atSrc : undefined,
+        createdAtUpperBound,
+        lagClass: createdAtUpperBound
+          ? undefined
+          : importLagClass({
+              capturedAtMs: Date.parse(capturedAtIso),
+              createdAtMs: memCreatedAtMs,
+              atSrc: ref.atSrc,
+            }),
+        passenger,
+      })
     }
   }
 
@@ -178,7 +270,28 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           gpsPlaceId = id
         }
       }
-      return { ...s, medianMin: localMin(s.medianMs), gpsPlaceId }
+      // W8 item 4 (constitution rule 1's enforcement gap): reference-tier GPS
+      // provenance among the moment's OWN members — exif/scan reads only
+      // (never a propagated/inferred coordinate; item 3's withheld passenger
+      // points never contribute here either, since they carry no lat/lng on
+      // the point/meta in the first place).
+      let referenceLocatedCount = 0
+      const gpsProvSet = new Set()
+      for (const pid of s.photoIds) {
+        const mm = meta.get(pid)
+        if (!mm || !Number.isFinite(mm.lat) || !Number.isFinite(mm.lng) || !mm.provGps) continue
+        gpsProvSet.add(mm.provGps)
+        if (REFERENCE_GPS_PROV.has(mm.provGps)) referenceLocatedCount++
+      }
+      const { medianAt, timeAnchorSuspect } = anchoringMedian(s.photoIds, meta)
+      return {
+        ...s,
+        medianMin: medianAt != null ? localMin(medianAt) : localMin(s.medianMs),
+        gpsPlaceId,
+        referenceLocatedCount,
+        gpsProv: [...gpsProvSet],
+        timeAnchorSuspect,
+      }
     })
 
     const decisions = scoreDay(scored, places, opts)
@@ -197,6 +310,12 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           // BUILD 3 (§16): surfaced ONLY when true, so every pre-Build-3 ledger row
           // (and every moment the vision bridge never touched) stays byte-identical.
           ...(m.visionBridged ? { visionBridged: true } : {}),
+          // W8 — reference-tier GPS provenance + time-anchor trust (W7's future
+          // evidence audit reads this; never surface-projected by this build —
+          // S1 owns SAFE_SIGNAL_KEYS's per-key leak review).
+          referenceLocatedCount: m.referenceLocatedCount ?? 0,
+          ...(m.gpsProv && m.gpsProv.length ? { gpsProv: m.gpsProv } : {}),
+          ...(m.timeAnchorSuspect ? { timeAnchorSuspect: true } : {}),
         }
       }
       // A moment with no located/agenda place would LEAVE — but if vision can NAME it,

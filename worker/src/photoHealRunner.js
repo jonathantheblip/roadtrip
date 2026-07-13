@@ -87,6 +87,12 @@ export function rowToHealMemory(r) {
     ...(Array.isArray(hideFrom) && hideFrom.length ? { hideFrom } : {}),
     revealed: r.revealed_at || undefined,
     storedUpdatedAt: r.updated_at,
+    // W8 (BUILD_PLAN_WITNESS_FLEET_2.md), THE PLUMBING FIX: exposes D14 on the
+    // v1 shape too (epoch ms, `loadAndDecide`'s SELECT * already carries the raw
+    // column). Presently inert for v1 — photoHeal.js itself is untouched by W8 —
+    // but any current/future consumer of this shape (a parity test, a later
+    // build) now has it without another SELECT-widening pass.
+    createdAt: Number.isFinite(r.created_at) ? r.created_at : undefined,
   }
 }
 
@@ -534,8 +540,13 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
   if (!tripRow) return { mode: activeMode, recorded: 0, noTrip: true }
   let trip
   try { trip = JSON.parse(tripRow.data_json) } catch { return { mode: activeMode, recorded: 0, badTrip: true } }
+  // W8 (BUILD_PLAN_WITNESS_FLEET_2.md), THE PLUMBING FIX: widened to include
+  // created_at — without it, D14 (the created_at witness) votes NOWHERE, since
+  // this is the only production caller of buildTripDecisions. momentGpsPropagation
+  // .js's sibling SELECT (momentGpsPropagation.js) is deliberately left alone —
+  // it never consumes D14.
   const { results: rows } = await env.DB.prepare(
-    'SELECT id, photo_r2_keys_json, author_traveler FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
+    'SELECT id, photo_r2_keys_json, author_traveler, created_at FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
   ).bind(tripId).all()
 
   let days

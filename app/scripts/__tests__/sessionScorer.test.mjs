@@ -6,7 +6,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { scoreDay } from '../../src/lib/sessionScorer.js'
 
-const sess = (o) => ({ photoIds: ['p'], memoryIds: ['m'], count: 1, gpsPlaceId: null, ...o })
+// W8 (BUILD_PLAN_WITNESS_FLEET_2.md) item 4: `referenceLocatedCount` gates the
+// GPS pass's auto tier — a real exif/scan-tagged coordinate on at least one
+// member. Every existing fixture below is testing something ELSE (time-fit,
+// naming, inference), so the default here represents the common case (a real
+// GPS read) — the demotion itself gets its own dedicated tests further down.
+const sess = (o) => ({ photoIds: ['p'], memoryIds: ['m'], count: 1, gpsPlaceId: null, referenceLocatedCount: 1, ...o })
 const place = (o) => ({ lat: null, lng: null, timeMin: null, kind: 'stop', ...o })
 
 test('GPS-resolved session → AUTO to the located place (inheritance flagged)', () => {
@@ -130,4 +135,37 @@ test('naming state surfaces the "give this moment a name" work: discovered → n
   assert.equal(d2.naming, 'named') // a real place already has words
   assert.equal(d3.tier, 'leave')
   assert.equal(d3.naming, null) // nothing filed → nothing to name
+})
+
+// ── W8 (BUILD_PLAN_WITNESS_FLEET_2.md) ────────────────────────────────────────
+
+test('W8 item 4: a GPS-resolved session with ZERO reference-tier provenance never silently auto-files (rule 1 gap)', () => {
+  const s = sess({ id: 's', gpsPlaceId: 'trucks', medianMin: 900, count: 4, locatedCount: 1, referenceLocatedCount: 0 })
+  const p = place({ id: 'trucks', name: 'Monster Trucks', lat: 0, lng: 0, timeMin: 870, kind: 'stop' })
+  const [d] = scoreDay([s], [p])
+  assert.equal(d.tier, 'confirm') // resolves to the place, just never a silent auto
+  assert.equal(d.place.id, 'trucks')
+  assert.equal(d.signals.evidence, 'gps')
+  assert.equal(d.signals.referenceLocatedCount, 0)
+})
+
+test('W8 item 4: a non-reference GPS anchor does not evidence the place for a LATER time-only session either', () => {
+  // s1 anchors 'trucks' with referenceLocatedCount:0 (inferred-tier only); s2
+  // is a separate, no-GPS session that time-fits 'trucks' closely. Under the
+  // pre-W8 rule this would read evidence:'gps' (borrowed from s1) and could
+  // auto-file; the fix must leave 'trucks' un-evidenced for s2 too.
+  const s1 = sess({ id: 's1', photoIds: ['a'], gpsPlaceId: 'trucks', medianMin: 900, referenceLocatedCount: 0 })
+  const s2 = sess({ id: 's2', photoIds: ['b'], medianMin: 905 })
+  const p = place({ id: 'trucks', name: 'Monster Trucks', lat: 0, lng: 0, timeMin: 870, kind: 'stop' })
+  const out = scoreDay([s1, s2], [p])
+  const d2 = out.find((d) => d.photoIds[0] === 'b')
+  assert.notEqual(d2.signals.evidence, 'gps')
+})
+
+test('W8 item 2: a time-anchor-suspect moment never silently auto-files on a time match', () => {
+  const s = sess({ id: 's', medianMin: 660, timeAnchorSuspect: true })
+  const p = place({ id: 'parade', name: 'Parade', lat: 1, lng: 1, timeMin: 660, kind: 'stop' })
+  const [d] = scoreDay([s], [p])
+  assert.equal(d.tier, 'confirm')
+  assert.equal(d.signals.timeAnchorSuspect, true)
 })

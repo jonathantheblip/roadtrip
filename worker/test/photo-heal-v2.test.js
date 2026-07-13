@@ -57,10 +57,14 @@ beforeEach(async () => {
 describe('recordHealDecisions — v2 shadow learning ledger', () => {
   it('a GPS session on a stop records an AUTO decision with signals', async () => {
     await seedTrip()
-    // a burst at the museum: one geotagged photo → the whole session is located
+    // a burst at the museum: one geotagged photo → the whole session is located.
+    // W8 item 4: `prov: {gps:'exif'}` is what real production data carries
+    // (either a genuine EXIF read, or provenanceBackfill's retroactive tag) —
+    // without it this GPS would be inferred-tier and the moment would only
+    // reach 'confirm', never a silent 'auto' (see the dedicated W8 test below).
     await seedMemory({
       id: 'm1',
-      refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30.0, lng: -90.0 }],
+      refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30.0, lng: -90.0, prov: { gps: 'exif' } }],
     })
     const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
     expect(r.recorded).toBe(1)
@@ -119,7 +123,7 @@ describe('recordHealDecisions — v2 shadow learning ledger', () => {
       .run()
     await seedMemory({
       id: 'm1',
-      refs: [{ key: 'k1', capturedAt: '2026-07-01T15:00:00.000Z', offsetMinutes: 0, lat: 30.0006, lng: -90.0006 }],
+      refs: [{ key: 'k1', capturedAt: '2026-07-01T15:00:00.000Z', offsetMinutes: 0, lat: 30.0006, lng: -90.0006, prov: { gps: 'exif' } }],
     })
     const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
     expect(r.recorded).toBe(1)
@@ -165,5 +169,100 @@ describe('recordHealDecisions — v2 shadow learning ledger', () => {
     const r = await recordHealDecisions(env, 't1', { mode: 'off', now: NOW })
     expect(r.skipped).toBe('off')
     expect((await decisions()).length).toBe(0)
+  })
+
+  // ── W8 (BUILD_PLAN_WITNESS_FLEET_2.md) ──────────────────────────────────────
+  describe('W8 — the time-witness pack', () => {
+    it('item 4: a located GPS session with NO reference-tier provenance never silently auto-files (rule 1 gap closed)', async () => {
+      await seedTrip()
+      // same fixture as the very first test in this file, MINUS `prov` — the
+      // exact gap the constitution names: a coordinate with no exif/scan tag.
+      await seedMemory({
+        id: 'm1',
+        refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30.0, lng: -90.0 }],
+      })
+      await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      const rows = await decisions()
+      expect(rows.length).toBe(1)
+      expect(rows[0].tier).toBe('confirm') // located at the place, but not a silent auto
+      expect(rows[0].place_id).toBe('s-a')
+      expect(JSON.parse(rows[0].signals_json).referenceLocatedCount).toBe(0)
+    })
+
+    it('item 4: a SEPARATE session no longer inherits a non-reference GPS anchor\'s evidence (used to silently auto-file)', async () => {
+      await seedTrip()
+      // m1 GPS-anchors 's-a' with NO prov (inferred-tier). m2 is a SEPARATE
+      // moment (45m gap — past buildMoments' 40m time bond, no shared non-time
+      // dimension to bridge it) with NO GPS at all, sitting 40m from 's-a's
+      // OWN declared time (10:00 AM) — close + unambiguous (the only place on
+      // this trip). Under the PRE-W8 rule, m1's bare coordinate match would
+      // have unconditionally flipped 's-a'.gpsEvidenced=true, and m2 would then
+      // have silently AUTO-FILED to 's-a' purely by riding m1's ungrounded
+      // anchor — zero evidence of its own. That's the rule-1 leak, closed here.
+      await seedMemory({
+        id: 'm1',
+        refs: [{ key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30.0, lng: -90.0 }],
+      })
+      await seedMemory({
+        id: 'm2',
+        refs: [{ key: 'k2', capturedAt: '2026-07-01T09:20:00.000Z', offsetMinutes: 0 }], // no GPS
+      })
+      await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      const rows = await decisions()
+      expect(rows.length).toBe(2)
+      const m2Row = rows.find((r) => JSON.parse(r.memory_ids).includes('m2'))
+      expect(m2Row.tier).toBe('confirm') // NEVER a silent auto on borrowed, ungrounded evidence
+      expect(m2Row.evidence).not.toBe('gps')
+    })
+
+    it('item 1(a): a ref with NO capturedAt at all is no longer invisible — memory.created_at is an upper bound, inside the trip window', async () => {
+      await seedTrip() // day 2026-07-01
+      // no capturedAt whatsoever; created_at falls ON the trip's own day.
+      await env.DB.prepare(
+        'INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+      )
+        .bind('m1', 't1', 'jonathan', 'shared', 'photo', JSON.stringify([{ key: 'k1' }]), Date.parse('2026-07-01T12:00:00.000Z'), 1)
+        .run()
+      const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      expect(r.recorded).toBe(1) // previously 0 — the ref was silently skipped
+      const rows = await decisions()
+      expect(rows.length).toBe(1)
+      expect(rows[0].tier).not.toBe('auto') // leave/confirm-grade only, never a silent auto
+      expect(JSON.parse(rows[0].signals_json).timeAnchorSuspect).toBe(true)
+    })
+
+    it('item 1(a): a created-at-only ref OUTSIDE the trip window is still skipped (abstain, not a guess)', async () => {
+      await seedTrip() // day 2026-07-01
+      await env.DB.prepare(
+        'INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+      )
+        .bind('m1', 't1', 'jonathan', 'shared', 'photo', JSON.stringify([{ key: 'k1' }]), Date.parse('2026-09-15T12:00:00.000Z'), 1)
+        .run()
+      const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      expect(r.recorded).toBe(0) // outside the trip's day window — abstains exactly like the old skip
+    })
+
+    it('item 3: a passenger (screenshot-like) ref rides the moment but withholds its GPS from anchoring', async () => {
+      await seedTrip()
+      await seedMemory({
+        id: 'm1',
+        refs: [
+          // a real camera photo, reference-tier GPS — anchors the moment.
+          { key: 'k1', capturedAt: '2026-07-01T10:05:00.000Z', offsetMinutes: 0, lat: 30.0, lng: -90.0, prov: { gps: 'exif' }, srcName: 'IMG_0001.HEIC', meta: { make: 'Apple' } },
+          // a screenshot re-encoded to jpeg: srcName survives as .PNG, no meta at
+          // all (the sidecar ran, found nothing) — a passenger, 4 minutes later
+          // (same burst), carrying its OWN (bogus) GPS that must NOT anchor.
+          { key: 'k2', capturedAt: '2026-07-01T10:09:00.000Z', offsetMinutes: 0, lat: 41.0, lng: -71.0, prov: { gps: 'exif' }, srcName: 'IMG_0002.PNG' },
+        ],
+      })
+      await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      const rows = await decisions()
+      expect(rows.length).toBe(1) // one moment — the passenger still RIDES it
+      expect(JSON.parse(rows[0].memory_ids)).toEqual(['m1'])
+      expect(rows[0].tier).toBe('auto') // k1 alone reference-anchors the moment
+      expect(rows[0].place_id).toBe('s-a') // the museum — k1's own location, NOT k2's
+      // exactly one reference-located member (k1) — k2's GPS never counted.
+      expect(JSON.parse(rows[0].signals_json).referenceLocatedCount).toBe(1)
+    })
   })
 })

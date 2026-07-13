@@ -83,7 +83,13 @@ export function scoreDay(sessions, places, opts = {}) {
     const p = s.gpsPlaceId ? placeById.get(s.gpsPlaceId) : null
     if (!p) continue
     gpsMatch.set(s, p)
-    p.gpsEvidenced = true
+    // W8 item 4 (constitution rule 1's enforcement gap): only a REFERENCE-tier
+    // anchor (real exif/scan GPS on at least one member of THIS session — never
+    // a propagated/inferred coordinate) may mark the PLACE itself evidenced. An
+    // inferred-only anchor must not silently evidence the place for a LATER
+    // (pass 2, time-only) session either — that was the leak: `gpsEvidenced`
+    // used to flip true here unconditionally, for any gpsPlaceId match at all.
+    if ((s.referenceLocatedCount ?? 0) > 0) p.gpsEvidenced = true
     // agenda-time inference: a vague STOP learns its time from the session on it
     // (the "Afternoon" fix). NEVER the base — it's all-day, not a moment, so
     // inferring a base time would make other sessions spuriously "time-fit" it.
@@ -93,25 +99,37 @@ export function scoreDay(sessions, places, opts = {}) {
     }
   }
 
-  // Emit GPS decisions (confident). A specific place → auto; the base → "at base".
+  // Emit GPS decisions. A specific place with a reference-tier anchor → auto;
+  // the base → "at base" (base is itself intrinsic evidence, W8 doesn't touch
+  // that). A located moment with ZERO reference-tier coordinates on it still
+  // resolves to the place (the centroid IS where the burst was) but never
+  // silently auto-files — one-tap confirm instead (W8 item 4).
   for (const s of order) {
     const p = gpsMatch.get(s)
     if (!p) continue
     const inherited = (s.locatedCount ?? 0) < s.count
     const naming = namingOf(p)
+    const referenceAnchored = (s.referenceLocatedCount ?? 0) > 0
     decisions.set(s, {
       photoIds: s.photoIds,
       memoryIds: s.memoryIds,
       count: s.count,
       place: { id: p.id, name: p.name },
-      tier: 'auto',
-      confidence: 0.9,
+      tier: referenceAnchored ? 'auto' : 'confirm',
+      confidence: referenceAnchored ? 0.9 : 0.6,
       naming,
-      signals: { evidence: 'gps', inheritedGps: inherited, placeKind: p.kind, naming },
-      reason:
-        p.kind === 'base'
+      signals: {
+        evidence: 'gps',
+        inheritedGps: inherited,
+        placeKind: p.kind,
+        naming,
+        referenceLocatedCount: s.referenceLocatedCount ?? 0,
+      },
+      reason: referenceAnchored
+        ? p.kind === 'base'
           ? 'located at the base'
-          : `located at ${p.name}${inherited ? ' (GPS inherited across the burst)' : ''}`,
+          : `located at ${p.name}${inherited ? ' (GPS inherited across the burst)' : ''}`
+        : `located at ${p.name} — no reference-tier GPS on this burst yet, confirm it`,
     })
   }
 
@@ -145,8 +163,13 @@ export function scoreDay(sessions, places, opts = {}) {
     // DISCOVERED spot is GPS-proven, but a burst reaching it by TIME ONLY (its own
     // GPS absent) still gets a one-tap — evidence-over-plan holds for the agenda-
     // free spine too, so only the GPS-anchoring burst auto-files a discovered spot.
+    // W8 item 2 (D1 qualifier): a moment whose time anchor is itself suspect
+    // (every member suggestion-grade/file-mtime, a synthetic created-at-upper-
+    // bound point, or a long import lag) never silently auto-files on a TIME
+    // match — the clock it would be matched against isn't trustworthy enough.
     const canAuto =
-      !!ev && best.d <= o.autoNearMin && clear && !best.p.inferred && best.p.kind !== 'discovered'
+      !!ev && best.d <= o.autoNearMin && clear && !best.p.inferred && best.p.kind !== 'discovered' &&
+      !s.timeAnchorSuspect
     const naming = namingOf(best.p)
     decisions.set(s, {
       photoIds: s.photoIds,
@@ -163,6 +186,7 @@ export function scoreDay(sessions, places, opts = {}) {
         inferredTime: best.p.inferred,
         placeKind: best.p.kind,
         naming,
+        ...(s.timeAnchorSuspect ? { timeAnchorSuspect: true } : {}),
       },
       reason: ev
         ? `${best.d}m from ${best.p.name}${clear ? ', clear' : ', close call'}`
