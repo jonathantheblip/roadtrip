@@ -104,19 +104,29 @@ export function scoreDay(sessions, places, opts = {}) {
   // that). A located moment with ZERO reference-tier coordinates on it still
   // resolves to the place (the centroid IS where the burst was) but never
   // silently auto-files — one-tap confirm instead (W8 item 4).
+  //
+  // W8 item 1(a) — the time anchor must be trustworthy for an AUTO too, not
+  // just Pass 2's time match: GPS fixes WHERE the burst was, but the DAY it
+  // files under still rests on the clock. A moment whose only timing evidence
+  // is a created_at upper bound (or whose every member is suggestion-grade),
+  // i.e. `timeAnchorSuspect`, must never silently auto-file even with a
+  // reference-tier GPS fix — otherwise it lands on the UPLOAD day at 0.9,
+  // violating item 1(a)'s "leave/confirm-grade, never auto" invariant (see
+  // sessionHeal.js). This mirrors Pass 2's `!timeAnchorSuspect` canAuto gate.
   for (const s of order) {
     const p = gpsMatch.get(s)
     if (!p) continue
     const inherited = (s.locatedCount ?? 0) < s.count
     const naming = namingOf(p)
     const referenceAnchored = (s.referenceLocatedCount ?? 0) > 0
+    const canGpsAuto = referenceAnchored && !s.timeAnchorSuspect
     decisions.set(s, {
       photoIds: s.photoIds,
       memoryIds: s.memoryIds,
       count: s.count,
       place: { id: p.id, name: p.name },
-      tier: referenceAnchored ? 'auto' : 'confirm',
-      confidence: referenceAnchored ? 0.9 : 0.6,
+      tier: canGpsAuto ? 'auto' : 'confirm',
+      confidence: canGpsAuto ? 0.9 : 0.6,
       naming,
       signals: {
         evidence: 'gps',
@@ -124,12 +134,15 @@ export function scoreDay(sessions, places, opts = {}) {
         placeKind: p.kind,
         naming,
         referenceLocatedCount: s.referenceLocatedCount ?? 0,
+        ...(s.timeAnchorSuspect ? { timeAnchorSuspect: true } : {}),
       },
-      reason: referenceAnchored
+      reason: canGpsAuto
         ? p.kind === 'base'
           ? 'located at the base'
           : `located at ${p.name}${inherited ? ' (GPS inherited across the burst)' : ''}`
-        : `located at ${p.name} — no reference-tier GPS on this burst yet, confirm it`,
+        : !referenceAnchored
+          ? `located at ${p.name} — no reference-tier GPS on this burst yet, confirm it`
+          : `located at ${p.name} — capture time is uncertain (upload-time only), confirm the day`,
     })
   }
 

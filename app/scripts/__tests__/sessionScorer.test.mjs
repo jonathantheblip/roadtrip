@@ -169,3 +169,20 @@ test('W8 item 2: a time-anchor-suspect moment never silently auto-files on a tim
   assert.equal(d.tier, 'confirm')
   assert.equal(d.signals.timeAnchorSuspect, true)
 })
+
+test('W8 item 1(a): a reference-GPS session whose TIME anchor is suspect confirms, never autos (Pass-1 gate, adversarial review 2026-07-12)', () => {
+  // The gap two review lenses independently caught: Pass 1 (GPS) used to emit
+  // auto@0.9 for ANY reference-anchored moment, ignoring timeAnchorSuspect —
+  // so a dateless clip with a real exif GPS fix (referenceLocatedCount:1) whose
+  // only timing evidence is a created_at upper bound (timeAnchorSuspect:true)
+  // silently auto-filed on the UPLOAD day, breaking item 1(a)'s own "never
+  // auto" invariant. The place is still resolved (GPS says WHERE); only the
+  // silent auto is withheld (the clock can't be trusted for WHICH day).
+  const s = sess({ id: 's', gpsPlaceId: 'beach', medianMin: 780, count: 1, locatedCount: 1, referenceLocatedCount: 1, timeAnchorSuspect: true })
+  const p = place({ id: 'beach', name: 'Herring Cove', lat: 2, lng: 2, timeMin: 780, kind: 'stop' })
+  const [d] = scoreDay([s], [p])
+  assert.equal(d.tier, 'confirm') // NOT auto — the fix
+  assert.equal(d.place.id, 'beach') // still resolves to the place
+  assert.equal(d.signals.evidence, 'gps')
+  assert.equal(d.signals.timeAnchorSuspect, true)
+})

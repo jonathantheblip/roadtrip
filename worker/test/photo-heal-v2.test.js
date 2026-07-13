@@ -251,6 +251,35 @@ describe('recordHealDecisions — v2 shadow learning ledger', () => {
       expect(r.recorded).toBe(0) // outside the trip's day window — abstains exactly like the old skip
     })
 
+    it('item 1(a): a ref with reference-tier GPS but NO capturedAt confirms, never autos (Pass-1 gate — adversarial review 2026-07-12)', async () => {
+      // The gap two review lenses independently caught end-to-end: a dateless
+      // clip with a genuine exif GPS fix (referenceLocatedCount:1) used to
+      // auto-file at 0.9 on its UPLOAD day, because Pass 1 (GPS) never checked
+      // timeAnchorSuspect the way Pass 2 (time) does. GPS says WHERE (so the
+      // place still resolves); the created_at-only clock can't say WHICH day,
+      // so it must be one-tap confirm, per item 1(a)'s "never auto" invariant.
+      await seedTrip() // day 2026-07-01
+      await env.DB.prepare(
+        'INSERT INTO memories (id, trip_id, author_traveler, visibility, kind, photo_r2_keys_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+      )
+        .bind(
+          'm1', 't1', 'jonathan', 'shared', 'photo',
+          JSON.stringify([{ key: 'k1', lat: 30.0, lng: -90.0, prov: { gps: 'exif' } }]), // no capturedAt; s-a's own coords
+          Date.parse('2026-07-01T12:00:00.000Z'), 1
+        )
+        .run()
+      const r = await recordHealDecisions(env, 't1', { mode: 'shadow', now: NOW })
+      expect(r.recorded).toBe(1)
+      const rows = await decisions()
+      expect(rows.length).toBe(1)
+      expect(rows[0].tier).toBe('confirm') // reference GPS resolves the place, but never a silent auto on upload-time
+      expect(rows[0].place_id).toBe('s-a')
+      const signals = JSON.parse(rows[0].signals_json)
+      expect(signals.evidence).toBe('gps')
+      expect(signals.referenceLocatedCount).toBe(1)
+      expect(signals.timeAnchorSuspect).toBe(true)
+    })
+
     it('item 3: a passenger (screenshot-like) ref rides the moment but withholds its GPS from anchoring', async () => {
       await seedTrip()
       await seedMemory({
