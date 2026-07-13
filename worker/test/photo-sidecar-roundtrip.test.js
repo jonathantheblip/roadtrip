@@ -15,11 +15,11 @@ import { applySchema } from './helpers/schema.js'
 import { seedSession } from './helpers/auth.js'
 
 const TOKENS = { jonathan: 'tok-jonathan' }
-function authEnv() {
-  return { ...env, DB: env.DB, FAMILY_TOKEN_JONATHAN: TOKENS.jonathan }
+function authEnv(envOverrides = {}) {
+  return { ...env, DB: env.DB, FAMILY_TOKEN_JONATHAN: TOKENS.jonathan, ...envOverrides }
 }
 
-async function call(path, { method = 'GET', token, body, origin = 'http://localhost:5173' } = {}) {
+async function call(path, { method = 'GET', token, body, origin = 'http://localhost:5173', envOverrides } = {}) {
   const headers = { Origin: origin }
   if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['content-type'] = 'application/json'
@@ -29,7 +29,7 @@ async function call(path, { method = 'GET', token, body, origin = 'http://localh
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   const ctx = createExecutionContext()
-  const res = await worker.fetch(req, authEnv(), ctx)
+  const res = await worker.fetch(req, authEnv(envOverrides), ctx)
   await waitOnExecutionContext(ctx)
   return res
 }
@@ -261,5 +261,164 @@ describe('the never-discard sidecar — meta/srcName/srcMod/atSrc survive postMe
     expect('srcName' in mem.photoRefs[0]).toBe(false)
     const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-sc-legacy').first()
     expect(row.photo_r2_keys_json).toBe(JSON.stringify([{ key: 'jonathan/m-sc-legacy/p0', mime: 'image/jpeg' }]))
+  })
+})
+
+// Build W4 (faces) — pseudonymous fc_N cluster ids are the ONE sidecar field
+// with a SECOND gate beyond the shape whitelist: the PHOTO_FACES_MODE knob,
+// enforced entirely server-side (photoFacesMode in worker/src/index.js). The
+// knob ships OFF — this proves that even a perfectly-shaped, consented
+// client payload writes ZERO bytes for `faces` until the family is promoted,
+// and that once promoted the pseudonymous ids (and ONLY those) round-trip
+// exactly like every other sidecar field.
+describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independently of shape validity', () => {
+  beforeEach(async () => {
+    await applySchema(env.DB)
+    await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
+    await env.DB.prepare('DELETE FROM memories').run()
+  })
+
+  it('PHOTO_FACES_MODE unset (default OFF): a valid fc_N array is dropped entirely — zero bytes in D1', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      body: {
+        id: 'm-faces-off',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-off/p0', mime: 'image/jpeg', faces: ['fc_1', 'fc_2'] }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect('faces' in mem.photoRefs[0]).toBe(false)
+    const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-faces-off').first()
+    expect('faces' in JSON.parse(row.photo_r2_keys_json)[0]).toBe(false)
+  })
+
+  it("PHOTO_FACES_MODE='shadow': same zero-bytes discipline as off", async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      envOverrides: { PHOTO_FACES_MODE: 'shadow' },
+      body: {
+        id: 'm-faces-shadow',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-shadow/p0', mime: 'image/jpeg', faces: ['fc_1'] }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect('faces' in mem.photoRefs[0]).toBe(false)
+  })
+
+  it("PHOTO_FACES_MODE='on': a valid fc_N array round-trips through postMemory → rowToMemory on a SECOND device", async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      envOverrides: { PHOTO_FACES_MODE: 'on' },
+      body: {
+        id: 'm-faces-on',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-on/p0', mime: 'image/jpeg', faces: ['fc_2', 'fc_1'] }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs[0].faces).toEqual(['fc_2', 'fc_1'])
+
+    // A second device's pull sees it too — and note the pull path applies
+    // NO mode gate of its own (the gate is write-time only); the bytes are
+    // already honestly in D1, so they round-trip.
+    const pull = await call('/memories', { token: TOKENS.jonathan, envOverrides: { PHOTO_FACES_MODE: 'off' } })
+    const pulled = (await pull.json()).find((m) => m.id === 'm-faces-on')
+    expect(pulled.photoRefs[0].faces).toEqual(['fc_2', 'fc_1'])
+  })
+
+  it("PHOTO_FACES_MODE='on' still enforces the shape whitelist — a raw embedding / person name / malformed id never reaches D1 even though the gate is open", async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      envOverrides: { PHOTO_FACES_MODE: 'on' },
+      body: {
+        id: 'm-faces-on-hostile',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [
+          {
+            storage: 'r2', key: 'jonathan/m-faces-on-hostile/p0', mime: 'image/jpeg',
+            faces: ['fc_1', 'jonathan', 'fc_1000', 0.5123, 'DROP TABLE memories', 'fc_2'],
+          },
+        ],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs[0].faces).toEqual(['fc_1', 'fc_2'])
+    const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-faces-on-hostile').first()
+    expect(JSON.parse(row.photo_r2_keys_json)[0].faces).toEqual(['fc_1', 'fc_2'])
+  })
+
+  it("PHOTO_FACES_MODE='on' enforces the 10-cap end-to-end", async () => {
+    const many = Array.from({ length: 14 }, (_, i) => `fc_${i + 1}`)
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      envOverrides: { PHOTO_FACES_MODE: 'on' },
+      body: {
+        id: 'm-faces-cap',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-cap/p0', mime: 'image/jpeg', faces: many }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect(mem.photoRefs[0].faces).toHaveLength(10)
+  })
+
+  it('an invalid PHOTO_FACES_MODE value (typo) fails safe to OFF, same as unset', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      envOverrides: { PHOTO_FACES_MODE: 'ON' }, // wrong case — not in the enum
+      body: {
+        id: 'm-faces-typo',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-typo/p0', mime: 'image/jpeg', faces: ['fc_1'] }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect('faces' in mem.photoRefs[0]).toBe(false)
+  })
+
+  it('a sidecar-less / faces-less ref stays byte-identical (no null pollution from the new field)', async () => {
+    const res = await call('/memories', {
+      method: 'POST',
+      token: TOKENS.jonathan,
+      envOverrides: { PHOTO_FACES_MODE: 'on' },
+      body: {
+        id: 'm-faces-legacy',
+        tripId: 't1',
+        kind: 'photo',
+        visibility: 'shared',
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-legacy/p0', mime: 'image/jpeg' }],
+      },
+    })
+    expect(res.status).toBe(200)
+    const mem = await res.json()
+    expect('faces' in mem.photoRefs[0]).toBe(false)
+    const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-faces-legacy').first()
+    expect(row.photo_r2_keys_json).toBe(JSON.stringify([{ key: 'jonathan/m-faces-legacy/p0', mime: 'image/jpeg' }]))
   })
 })

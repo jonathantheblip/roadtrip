@@ -2,10 +2,8 @@
 // half of the recognizer; faceMatch.js is the pure-math half. Lazy-loads
 // two ONNX models through ONE onnxruntime-web runtime — SCRFD (face
 // detector, finds faces across scales) + MobileFaceNet (embedding) —
-// ENTIRELY ON THE DEVICE: photos and the resulting fingerprints never
-// leave the iPad (the load-bearing kids'-privacy promise). The model
-// files are generic math downloaded like any web asset; they carry
-// nothing about the family.
+// ENTIRELY ON THE DEVICE. The model files are generic math downloaded like
+// any web asset; they carry nothing about the family.
 //
 // Per photo: detect faces (SCRFD @1024, the device-confirmed sweet spot)
 // → drop too-small detections → align each face to a 112×112 crop from
@@ -14,6 +12,24 @@
 //
 // Isolated behind this one module the same way the EXIF library lives
 // behind exifRead.js: a future model swap touches only here.
+//
+// THE PRIVACY CONTRACT — revised 2026-07-12 (Jonathan's explicit, recorded
+// consent; see BUILD_PLAN_WITNESS_FLEET_2.md's W4 section). The load-bearing
+// promise, stated precisely because the code now does more than the old
+// one-line version said:
+//   • The PHOTOS and the raw 512-d FINGERPRINTS this file computes NEVER
+//     leave the device — that half of the old promise is unchanged.
+//   • The id→PERSON MAPPING (which enrolled family member a fingerprint
+//     belongs to) also NEVER leaves the device — it lives only in the local
+//     `rt-faces` IndexedDB store (faceIndex.js).
+//   • What DOES now sync, once the family is promoted past the shipped-OFF
+//     `PHOTO_FACES_MODE` knob (worker/src/index.js enforces the gate — see
+//     photoFacesMode there): a PSEUDONYMOUS cluster id per photo (`fc_1`,
+//     `fc_2`, …), so every device can agree "the same person is in these
+//     photos" without any device ever learning WHO that person is. The
+//     mapping from `fc_N` back to an actual name stays per-device, forever.
+// That is the whole contract: anonymous cluster tags sync; fingerprints and
+// who-is-who never do.
 //
 // MODEL (blessed): immich-app/buffalo_s detection + recognition (SCRFD +
 // MobileFaceNet, InsightFace lineage). Chosen as the model for this

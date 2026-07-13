@@ -9,7 +9,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { l2normalize, enrollPerson } from '../../src/lib/faceMatch.js'
-import { selectPhotosWith, personCounts } from '../../src/lib/faceIndex.js'
+import { selectPhotosWith, personCounts, nextClusterId, clusterIdsFor, FACES_SYNC_MAX } from '../../src/lib/faceIndex.js'
 
 function mulberry32(seed) {
   let a = seed
@@ -116,4 +116,42 @@ test('selectPhotosWith: a stricter threshold drops weak matches', () => {
   const { centroids, entries, facesByKey } = scene()
   // 0.999 is unreachable for jittered samples → nobody qualifies
   assert.equal(selectPhotosWith(entries, facesByKey, centroids, 'rafa', 0.999).length, 0)
+})
+
+// ── pseudonymous cluster ids (Build W4 — faces) — the IndexedDB-backed
+// getClusterMap/ensureClusterIds are browser-only (exercised via e2e, same
+// as the rest of this file's persistence); these are the PURE halves: how
+// the next id is picked, and how personId tags become the fc_N list a ref
+// is allowed to carry.
+
+test('nextClusterId: picks max+1 across whatever ids already exist, ignoring gaps', () => {
+  assert.equal(nextClusterId([]), 'fc_1')
+  assert.equal(nextClusterId(['fc_1']), 'fc_2')
+  assert.equal(nextClusterId(['fc_1', 'fc_3', 'fc_2']), 'fc_4') // max, not count
+  assert.equal(nextClusterId(['fc_1', 'fc_1']), 'fc_2') // duplicates don't inflate it
+})
+
+test('nextClusterId: ignores anything not fc_N-shaped when computing max (defense in depth)', () => {
+  assert.equal(nextClusterId(['fc_5', 'jonathan', 'fc_1000', null, undefined]), 'fc_6')
+})
+
+test('clusterIdsFor: maps personIds through the cluster map, dropping anyone unassigned', () => {
+  const map = { jonathan: 'fc_1', helen: 'fc_2' }
+  assert.deepEqual(clusterIdsFor(['jonathan', 'helen'], map), ['fc_1', 'fc_2'])
+  assert.deepEqual(clusterIdsFor(['jonathan', 'grandma'], map), ['fc_1']) // grandma has no cluster id yet
+  assert.deepEqual(clusterIdsFor([], map), [])
+  assert.deepEqual(clusterIdsFor(['nobody'], {}), [])
+})
+
+test('clusterIdsFor: dedups and sorts by cluster-id NUMBER, not personId/enrollment order', () => {
+  const map = { rafa: 'fc_9', aurelia: 'fc_2', jonathan: 'fc_10' }
+  assert.deepEqual(clusterIdsFor(['rafa', 'aurelia', 'jonathan', 'rafa'], map), ['fc_2', 'fc_9', 'fc_10'])
+})
+
+test('clusterIdsFor: caps at FACES_SYNC_MAX', () => {
+  const personIds = Array.from({ length: 15 }, (_, i) => `p${i}`)
+  const map = Object.fromEntries(personIds.map((p, i) => [p, `fc_${i + 1}`]))
+  const out = clusterIdsFor(personIds, map)
+  assert.equal(out.length, FACES_SYNC_MAX)
+  assert.deepEqual(out, personIds.slice(0, 10).map((p) => map[p]))
 })

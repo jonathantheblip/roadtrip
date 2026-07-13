@@ -83,9 +83,37 @@ export function sanitizeProvServer(input) {
   return Object.keys(out).length ? out : undefined
 }
 
-// Whitelist + bound `{ meta, srcName, srcMod, atSrc, prov }` off an arbitrary
-// (client-supplied, or D1-stored-then-reparsed) object. Returns only the
-// keys that passed; never throws on hostile input.
+// `faces` (Build W4 — faces, BUILD_PLAN_WITNESS_FLEET_2.md) — mirrors
+// app/src/lib/exifRead.js's FACE_ID_RE/sanitizeFaces exactly (independent
+// copy, never imported — separate deployable, same house rule as every
+// other sidecar field: the client's own bounds-check is never trusted).
+// THE load-bearing safety property: ONLY pseudonymous cluster ids of this
+// EXACT shape may ever reach D1 — a raw embedding, a real person's id/name,
+// or anything else is dropped, never passed through. No `g` flag on
+// FACE_ID_RE — sanitizeFacesServer calls `.test()` in a loop, and a
+// global-flagged regex's `.test()` is stateful across calls (the exact bug
+// class weatherBackfill.js's EXCLUDE_RE hit in review, 2026-07-12); anchored
+// `^…$` on a non-global regex has no such state.
+const FACE_ID_RE = /^fc_[0-9]{1,3}$/
+const FACES_MAX = 10
+
+export function sanitizeFacesServer(input) {
+  if (!Array.isArray(input)) return undefined
+  const out = []
+  const seen = new Set()
+  for (const v of input) {
+    if (typeof v !== 'string' || !FACE_ID_RE.test(v)) continue
+    if (seen.has(v)) continue
+    seen.add(v)
+    out.push(v)
+    if (out.length >= FACES_MAX) break
+  }
+  return out.length ? out : undefined
+}
+
+// Whitelist + bound `{ meta, srcName, srcMod, atSrc, prov, faces }` off an
+// arbitrary (client-supplied, or D1-stored-then-reparsed) object. Returns
+// only the keys that passed; never throws on hostile input.
 export function sanitizeSidecarServer(input) {
   const out = {}
   if (!input || typeof input !== 'object') return out
@@ -98,5 +126,7 @@ export function sanitizeSidecarServer(input) {
   if (typeof input.atSrc === 'string' && ATSRC_VALUES.has(input.atSrc)) out.atSrc = input.atSrc
   const prov = sanitizeProvServer(input.prov)
   if (prov) out.prov = prov
+  const faces = sanitizeFacesServer(input.faces)
+  if (faces) out.faces = faces
   return out
 }

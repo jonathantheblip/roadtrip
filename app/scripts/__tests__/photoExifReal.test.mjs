@@ -23,6 +23,7 @@ import {
   exifReaderToMeta,
   sanitizeMeta,
   sanitizeSidecar,
+  sanitizeFaces,
   loadExifTags,
 } from '../../src/lib/exifRead.js'
 
@@ -325,4 +326,60 @@ test('sanitizeSidecar bounds srcName/srcMod/atSrc independently of meta', () => 
   // Garbage input never throws.
   assert.deepEqual(sanitizeSidecar(null), {})
   assert.deepEqual(sanitizeSidecar('garbage'), {})
+})
+
+// ─── sanitizeFaces (Build W4 — faces) — THE load-bearing safety property:
+// ONLY pseudonymous fc_N cluster ids may ever ride a ref. Fail CLOSED
+// (whitelist, not blocklist); mirrored independently server-side in
+// worker/src/photoSidecar.js (see worker/test/photo-sidecar-parity.test.js
+// for the parity proof between the two copies).
+
+test('sanitizeFaces keeps a valid fc_N array, deduped, in order', () => {
+  assert.deepEqual(sanitizeFaces(['fc_1', 'fc_2', 'fc_1', 'fc_42']), ['fc_1', 'fc_2', 'fc_42'])
+  assert.deepEqual(sanitizeFaces(['fc_999']), ['fc_999'])
+})
+
+test('sanitizeFaces caps at 10, keeping the first 10 valid ids', () => {
+  const many = Array.from({ length: 15 }, (_, i) => `fc_${i + 1}`)
+  const out = sanitizeFaces(many)
+  assert.equal(out.length, 10)
+  assert.deepEqual(out, many.slice(0, 10))
+})
+
+test('sanitizeFaces: mutation battery — a raw embedding, a person name, an oversized id, a non-fc string all dropped; only fc_1..fc_999 survive', () => {
+  assert.equal(sanitizeFaces([0.123, -0.456, 0.789]), undefined, 'raw embedding numbers dropped')
+  assert.equal(sanitizeFaces(['jonathan', 'helen', 'aurelia', 'rafa']), undefined, "a real person's id/name dropped")
+  assert.equal(sanitizeFaces(['fc_1000']), undefined, '4 digits — one over the {1,3} bound')
+  assert.equal(sanitizeFaces(['fc_']), undefined, 'no digits at all')
+  assert.equal(sanitizeFaces(['FC_1']), undefined, 'wrong case')
+  assert.equal(sanitizeFaces([' fc_1']), undefined, 'leading whitespace never trimmed-and-accepted')
+  assert.equal(sanitizeFaces(['fc_1 ']), undefined, 'trailing whitespace never trimmed-and-accepted')
+  assert.equal(sanitizeFaces(['fc_01x']), undefined, 'trailing garbage after digits')
+  assert.equal(sanitizeFaces(['hello world']), undefined, 'arbitrary non-fc string')
+  assert.equal(sanitizeFaces([{ fc: 1 }, null, undefined, true]), undefined, 'non-string junk')
+
+  // Mixed batch — never all-or-nothing: only the genuinely fc_N-shaped
+  // entries survive, everything else in the SAME array is dropped.
+  assert.deepEqual(
+    sanitizeFaces(['fc_1', 'jonathan', 'fc_42', 0.5, 'fc_1000', 'fc_7']),
+    ['fc_1', 'fc_42', 'fc_7']
+  )
+})
+
+test('sanitizeFaces rejects non-array input entirely, never throws', () => {
+  assert.equal(sanitizeFaces(null), undefined)
+  assert.equal(sanitizeFaces(undefined), undefined)
+  assert.equal(sanitizeFaces('fc_1'), undefined) // a bare string is not an array of ids
+  assert.equal(sanitizeFaces(42), undefined)
+  assert.equal(sanitizeFaces({ 0: 'fc_1' }), undefined) // array-like object, not a real array
+  assert.equal(sanitizeFaces([]), undefined) // empty → undefined, not []
+})
+
+test('sanitizeSidecar carries faces alongside the rest of the sidecar, applying the same whitelist', () => {
+  assert.deepEqual(
+    sanitizeSidecar({ srcName: 'IMG_1.HEIC', atSrc: 'exif-original', faces: ['fc_1', 'fc_2', 'jonathan'] }),
+    { srcName: 'IMG_1.HEIC', atSrc: 'exif-original', faces: ['fc_1', 'fc_2'] }
+  )
+  // Absent → omitted entirely (never a null/empty-array field on the ref).
+  assert.equal('faces' in sanitizeSidecar({ srcName: 'IMG_1.HEIC' }), false)
 })

@@ -280,10 +280,45 @@ export function sanitizeProv(input) {
   return Object.keys(out).length ? out : undefined
 }
 
-// Whitelist + bound the full sidecar `{ meta, srcName, srcMod, atSrc, prov }` in
-// one call — the single seam every ref-build site (and the gap-fill seam in
-// memoryStore.js) spreads onto a ref, so the bounds live in exactly one place
-// client-side. Returns only the keys that passed; never throws.
+// `faces` (Build W4 — faces, BUILD_PLAN_WITNESS_FLEET_2.md) — THE load-bearing
+// safety property of that whole build: ONLY pseudonymous cluster ids of this
+// EXACT shape may ever ride a ref toward D1. A raw 512-d embedding, a real
+// person's id/name, or anything else must be dropped, never passed through —
+// fail CLOSED (whitelist, not blocklist), same discipline as every other
+// sidecar field here. Mirrored independently server-side in
+// worker/src/photoSidecar.js (never imported — separate deployable, the
+// house rule the whole sidecar already follows: the worker never trusts the
+// client's own bounds-check). The id→person MAPPING never reaches this
+// function at all — it lives only in app/src/lib/faceIndex.js's on-device
+// `rt-faces` store; only the pseudonymous fc_N side of it is ever handed in.
+//
+// No `g` flag on FACE_ID_RE, deliberately: sanitizeFaces calls `.test()` in a
+// loop over an array, and a global-flagged regex's `.test()` advances
+// `lastIndex` across calls — exactly the statefulness bug class that bit this
+// project once already (weatherBackfill.js's EXCLUDE_RE, 2026-07-12 review).
+// Anchored `^…$` on a non-global regex is stateless and safe to reuse.
+export const FACE_ID_RE = /^fc_[0-9]{1,3}$/
+export const FACES_MAX = 10 // per-ref cap (a photo realistically has ≤4 faces; belt + suspenders)
+
+export function sanitizeFaces(input) {
+  if (!Array.isArray(input)) return undefined
+  const out = []
+  const seen = new Set()
+  for (const v of input) {
+    if (typeof v !== 'string' || !FACE_ID_RE.test(v)) continue
+    if (seen.has(v)) continue
+    seen.add(v)
+    out.push(v)
+    if (out.length >= FACES_MAX) break
+  }
+  return out.length ? out : undefined
+}
+
+// Whitelist + bound the full sidecar `{ meta, srcName, srcMod, atSrc, prov,
+// faces }` in one call — the single seam every ref-build site (and the
+// gap-fill seam in memoryStore.js) spreads onto a ref, so the bounds live in
+// exactly one place client-side. Returns only the keys that passed; never
+// throws.
 export function sanitizeSidecar(input) {
   const out = {}
   if (!input || typeof input !== 'object') return out
@@ -296,5 +331,7 @@ export function sanitizeSidecar(input) {
   if (typeof input.atSrc === 'string' && ATSRC_VALUES.has(input.atSrc)) out.atSrc = input.atSrc
   const prov = sanitizeProv(input.prov)
   if (prov) out.prov = prov
+  const faces = sanitizeFaces(input.faces)
+  if (faces) out.faces = faces
   return out
 }

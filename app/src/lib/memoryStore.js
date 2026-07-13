@@ -1533,6 +1533,11 @@ function patchSidecarOntoRecord(record, refKey, clean) {
     if (clean.srcName && !r.srcName) add.srcName = clean.srcName
     if (Number.isFinite(clean.srcMod) && !Number.isFinite(r.srcMod)) add.srcMod = clean.srcMod
     if (clean.atSrc && !r.atSrc) add.atSrc = clean.atSrc
+    // Pseudonymous face-cluster ids (Build W4, faces) — same additive,
+    // gap-fill-only discipline as every other sidecar field: never overwrite
+    // an existing tag set. This is the seam useFaceTags.js's incremental
+    // recognition pass writes through (via applyRefSidecar below).
+    if (clean.faces && (!Array.isArray(r.faces) || !r.faces.length)) add.faces = clean.faces
     return add
   }
   let patched = false
@@ -1570,8 +1575,12 @@ export function applyRefSidecarReapply(refKey, sidecar) {
 // Sibling of applyRefGps/applyRefOffset for the never-discard sidecar (Build 1):
 // write the recovered `meta`/`srcName`/`srcMod`/`atSrc` onto a photo ref AFTER
 // the fact — the re-source scan (resourceScan.js) recovers these from a
-// re-granted original the same way it recovers GPS/offset. Identified by the
-// ref's stable R2 `key`. Idempotent PER FIELD (not all-or-nothing): a ref that
+// re-granted original the same way it recovers GPS/offset. A SECOND caller as
+// of Build W4 (faces): useFaceTags.js's incremental recognition pass gap-fills
+// `faces` (pseudonymous fc_N cluster ids) here the same way, once a photo's
+// matched faces are known — an entirely different recovery path (on-device
+// model inference, not a re-granted original), same additive seam. Identified
+// by the ref's stable R2 `key`. Idempotent PER FIELD (not all-or-nothing): a ref that
 // already carries `meta` keeps its stored meta even if `srcName` is still
 // missing, so a partial prior write (or a field another device already filled)
 // is never re-clobbered — matching applyRefGps/applyRefOffset's "only fill

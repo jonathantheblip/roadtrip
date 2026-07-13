@@ -937,6 +937,26 @@ async function getHealDecisions(env, traveler, url, cors) {
   }
 }
 
+// THE KNOB for Build W4 (faces, BUILD_PLAN_WITNESS_FLEET_2.md) — deliberately
+// its OWN independent knob, NOT threaded through W0's fallback-to-the-master
+// pattern (photoStopGeocodeMode et al inherit env's already-resolved
+// PHOTO_HEAL_MODE because THOSE levers split apart writers that were already
+// live under the master switch, so inheriting preserved today's behavior).
+// Face-sync has never existed under any switch, so it defaults OFF
+// UNCONDITIONALLY — "ship it OFF" per the plan, regardless of whatever
+// PHOTO_HEAL_MODE happens to be set to in production. Same shape + same
+// fail-safe-to-off default as photoHealMode (photoHealRunner.js).
+//   • off | shadow → photoEntry below writes ZERO bytes for `faces` — the
+//     sync gate is enforced HERE, not client-side (the worker is the
+//     secret-keeper, same posture as the Surprises masking layer).
+//   • on            → faces (already fail-closed-whitelisted to fc_N shapes,
+//     capped at 10, by sanitizeSidecarServer/sanitizeFaces above) persist.
+const PHOTO_FACES_MODES = new Set(['off', 'shadow', 'on'])
+function photoFacesMode(env) {
+  const raw = typeof env?.PHOTO_FACES_MODE === 'string' ? env.PHOTO_FACES_MODE.trim() : ''
+  return PHOTO_FACES_MODES.has(raw) ? raw : 'off'
+}
+
 // POST /suggestions/dismiss { memoryId, toStop } — a synced, FAMILY-WIDE "Not
 // now" (migration 018). Adults only (a decline is a write). Idempotent.
 async function dismissSuggestion(env, traveler, request, cors) {
@@ -1089,6 +1109,15 @@ async function postMemory(env, traveler, request, url, cors, ctx) {
     // whitelist as the rest of the sidecar; a ref carrying none stays byte-
     // identical to before this build.
     if (sidecar.prov) e.prov = sidecar.prov
+    // Pseudonymous face-cluster ids (Build W4, faces) — sanitizeSidecarServer
+    // already fail-closed-whitelisted `sidecar.faces` down to fc_N-shaped
+    // strings capped at 10; this is the SECOND, independent gate: even a
+    // perfectly-shaped array is dropped entirely below the family's own
+    // PHOTO_FACES_MODE promotion (shipped OFF, photoFacesMode above). Faces
+    // are non-recomputable worker-side (unlike scene/vision), so this is the
+    // ONLY place that can ever stop them syncing — a ref carrying none stays
+    // byte-identical to before this build.
+    if (sidecar.faces && photoFacesMode(env) === 'on') e.faces = sidecar.faces
     return e
   }
   const refHasExif = (r) =>
@@ -1597,6 +1626,12 @@ function rowToMemory(r, origin) {
         // write side (photoEntry): both directions must pass it or the tags
         // die on the first round-trip. Omit when absent.
         if (sidecar.prov) ref.prov = sidecar.prov
+        // Pseudonymous face-cluster ids (Build W4) — same independent
+        // server-side whitelist as the write side. The PHOTO_FACES_MODE gate
+        // lives ONLY at write time (photoEntry): once fc_N bytes are
+        // honestly stored in D1, they round-trip like any other sidecar
+        // field — there is nothing further to gate on read.
+        if (sidecar.faces) ref.faces = sidecar.faces
         refs.push(ref)
         ordered.push({ kind: ref.posterUrl ? 'video' : 'photo', ...ref })
       }

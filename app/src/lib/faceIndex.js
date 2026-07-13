@@ -3,11 +3,16 @@
 // ("Show me, me") asks: photosWith(personId).
 //
 // Stored in IndexedDB, LOCAL-ONLY — nothing here ever leaves the iPad
-// (the load-bearing kids'-privacy promise). Two stores:
+// (the load-bearing kids'-privacy promise — see faceModel.js for the full,
+// precise contract). Three stores:
 //   • ENROLLMENT  — each family member's reference face embeddings, from
 //     the "teach the app your family" step.
 //   • FACES       — per photo (keyed by the flattened-entry key), the
 //     face embeddings + boxes the recognition pass found.
+//   • CLUSTERS    — personId → pseudonymous `fc_N` id (Build W4, faces).
+//     The mapping itself never leaves this store; only the fc_N SIDE of it
+//     is ever handed to a sync-facing sanitizer (exifRead.js's
+//     sanitizeFaces), from useFaceTags.js.
 //
 // Matching embeddings → people happens at READ time against the CURRENT
 // enrollment (selectPhotosWith below), so adding a reference face
@@ -17,12 +22,14 @@
 import { enrollPerson, matchToEnrolled } from './faceMatch.js'
 
 const DB_NAME = 'rt-faces'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORE_ENROLL = 'enrollment'
 const STORE_FACES = 'faces'
 // corrections — "this photo is NOT person X" overrides (keyed
 // `${entryKey}::${personId}`), so a wrong match can be removed.
 const STORE_CORRECT = 'corrections'
+// personId → { personId, fcId } (Build W4) — see the header CLUSTERS entry.
+const STORE_CLUSTER = 'clusters'
 
 let dbPromise = null
 function openDb() {
@@ -38,6 +45,7 @@ function openDb() {
       if (!db.objectStoreNames.contains(STORE_ENROLL)) db.createObjectStore(STORE_ENROLL)
       if (!db.objectStoreNames.contains(STORE_FACES)) db.createObjectStore(STORE_FACES)
       if (!db.objectStoreNames.contains(STORE_CORRECT)) db.createObjectStore(STORE_CORRECT)
+      if (!db.objectStoreNames.contains(STORE_CLUSTER)) db.createObjectStore(STORE_CLUSTER)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -151,6 +159,68 @@ export async function removeRejection(entryKey, personId) {
 // All rejections as a Set of `${entryKey}::${personId}`.
 export async function getRejections() {
   return new Set(await idbGetAllKeys(STORE_CORRECT))
+}
+
+// ─── pseudonymous cluster ids (Build W4 — faces) ───────────────────
+//
+// personId → `fc_N`, assigned once (first-seen order) and never reused or
+// reassigned. LOCAL-ONLY, same store discipline as everything else in this
+// file — see the header. Only the fc_N SIDE of this map is ever handed to
+// a sync-facing sanitizer (exifRead.js's sanitizeFaces); the map itself —
+// and therefore which fc_N belongs to which family member — never leaves
+// this device.
+
+export const FACE_ID_RE = /^fc_[0-9]{1,3}$/
+
+// { [personId]: 'fc_N' } for every person assigned a cluster id so far.
+export async function getClusterMap() {
+  const rows = await idbGetAll(STORE_CLUSTER)
+  const map = {}
+  for (const r of rows) if (r?.personId && typeof r.fcId === 'string') map[r.personId] = r.fcId
+  return map
+}
+
+// PURE — the next unused fc_N given the ids already assigned (max + 1, so an
+// id is never reused even if a mapping were ever removed). Exported for a
+// direct unit test without touching IndexedDB.
+export function nextClusterId(existingIds) {
+  let max = 0
+  for (const id of existingIds || []) {
+    if (typeof id === 'string' && FACE_ID_RE.test(id)) max = Math.max(max, parseInt(id.slice(3), 10))
+  }
+  return `fc_${max + 1}`
+}
+
+// Ensure every personId in the list has an assigned cluster id, assigning
+// new ones (next free fc_N) for any that don't yet. Returns the FULL updated
+// map — existing assignments are never touched, only added to.
+export async function ensureClusterIds(personIds) {
+  const map = await getClusterMap()
+  const missing = [...new Set(personIds || [])].filter((p) => p && !map[p])
+  for (const personId of missing) {
+    const fcId = nextClusterId(Object.values(map))
+    map[personId] = fcId
+    await idbPut(STORE_CLUSTER, personId, { personId, fcId })
+  }
+  return map
+}
+
+// PURE — personId tags → the pseudonymous ids allowed to ride a ref: drop
+// anyone with no assigned cluster id yet, dedup, cap (mirrors the sync
+// sanitizer's own cap — belt + suspenders, not the enforcement point, which
+// is worker/src/index.js's photoFacesMode gate). Sorted by cluster-id number
+// for a deterministic ref — never person/enrollment order, which would leak
+// which family member enrolled first for no reason. Exported for a direct
+// unit test without touching IndexedDB.
+export const FACES_SYNC_MAX = 10
+export function clusterIdsFor(personIds, clusterMap) {
+  const ids = [...new Set(
+    (personIds || [])
+      .map((p) => clusterMap?.[p])
+      .filter((id) => typeof id === 'string' && FACE_ID_RE.test(id))
+  )]
+  ids.sort((a, b) => parseInt(a.slice(3), 10) - parseInt(b.slice(3), 10))
+  return ids.slice(0, FACES_SYNC_MAX)
 }
 
 // ─── the query ────────────────────────────────────────────────────
