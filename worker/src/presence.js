@@ -53,11 +53,20 @@ export const NOTE_MAX = 80
 // live row is re-posted constantly; a stale one is no longer "now").
 export const PRESENCE_STALE_MS = 48 * 60 * 60 * 1000 // 48h
 
-// presence_trail (migration 020) retention: trip + this many days, then
-// purged by the extended runPresencePurge below. A tunable Jonathan can
-// revisit later; this is the shipped default (BUILD_PLAN_WITNESS_FLEET_2.md
-// W5's consented design).
+// presence_trail (migration 020) retention: an ENDED trip's crumbs are purged
+// `date_range_end + this many days` on; the consented "trip + 14 days"
+// default (BUILD_PLAN_WITNESS_FLEET_2.md W5). A tunable Jonathan can revisit.
 export const PRESENCE_TRAIL_RETENTION_DAYS = 14
+// ABSOLUTE hard ceiling (review 2026-07-13) — the trip+14d sweep above keys on
+// date_range_end, so an OPEN-ENDED trip (null end date — "a lazy stay with
+// nothing planned", a first-class trip shape) would otherwise keep its crumbs
+// FOREVER, and hard-deleting a trip orphans its crumbs (no FK, by design).
+// This backstop bounds retention in ALL cases: no crumb ever outlives this
+// many days regardless of trip shape. Set generously above the longest
+// plausible family trip + the 14-day tail so it NEVER purges a still-in-trip
+// crumb — it only catches the never-ended / orphaned pathological case, the
+// same role the live `presence` table's 48h stale sweep plays.
+export const PRESENCE_TRAIL_MAX_AGE_DAYS = 60
 
 export function isNoTable(err) {
   return /no such table/i.test(String(err?.message || err))
@@ -246,8 +255,9 @@ export async function runPresencePurge(db, { todayIso, now, staleMs = PRESENCE_S
     let purgedTrail = 0
     if (mode === 'shadow' || mode === 'on') {
       try {
+        // Sweep 3a — ENDED trips: drop crumbs `date_range_end + 14 days` on.
         const cutoff = isoDateMinusDays(todayIso, PRESENCE_TRAIL_RETENTION_DAYS)
-        const trail = await db
+        const trailEnded = await db
           .prepare(
             `DELETE FROM presence_trail WHERE trip_id IN (
                SELECT id FROM trips WHERE date_range_end IS NOT NULL AND date_range_end < ?
@@ -255,7 +265,18 @@ export async function runPresencePurge(db, { todayIso, now, staleMs = PRESENCE_S
           )
           .bind(cutoff)
           .run()
-        purgedTrail = trail?.meta?.changes ?? 0
+        // Sweep 3b (review 2026-07-13) — the ABSOLUTE backstop: any crumb older
+        // than PRESENCE_TRAIL_MAX_AGE_DAYS, regardless of trip shape. Closes the
+        // open-ended-trip (null date_range_end) hole 3a can't reach and mops up
+        // orphaned crumbs (a hard-deleted trip leaves no row for 3a to match).
+        // `at` is epoch ms (server clock); the ceiling is set well above any
+        // real trip length so this never touches a still-in-trip crumb.
+        const maxAgeCutoff = now - PRESENCE_TRAIL_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+        const trailAged = await db
+          .prepare(`DELETE FROM presence_trail WHERE at < ?`)
+          .bind(maxAgeCutoff)
+          .run()
+        purgedTrail = (trailEnded?.meta?.changes ?? 0) + (trailAged?.meta?.changes ?? 0)
       } catch (err) {
         if (!isNoTable(err)) throw err
       }

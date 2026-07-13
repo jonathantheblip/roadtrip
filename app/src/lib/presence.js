@@ -23,8 +23,10 @@
 //   alone. Gated behind its own env.PHOTO_PRESENCE_MODE knob (ships OFF —
 //   no code change is needed on THIS side to arm it later), engine-only (no
 //   GET route ever serves a crumb — no screen, no other device, not even
-//   Claude, ever reads it back), retained trip + 14 days then purged,
-//   manual per-adult wipe. What stays true, unchanged by this: still
+//   Claude, ever reads it back), retained an ENDED trip + 14 days then
+//   purged — and NEVER longer than a hard 60-day ceiling for any crumb, so
+//   an open-ended trip can't keep them indefinitely (presence.js's two purge
+//   sweeps) — manual per-adult wipe. What stays true, unchanged by this: still
 //   adults-only (a kid's coordinates are refused before they ever reach the
 //   wire — sanitizePresence/buildPresenceBody's double gate, untouched);
 //   still foreground-only cadence (nothing new is SENT while backgrounded —

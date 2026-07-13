@@ -25,9 +25,11 @@
 --     presenceWitness.js, matching a still-unlocated photo against its own
 --     author's crumbs and writing `prov.gps='inferred-presence'` back onto
 --     the memory it belongs to — never re-exposing a raw crumb anywhere.
---   • RETENTION = trip + 14 days, then purged (worker/src/presence.js's
---     runPresencePurge, extended in the same build that adds this table) —
---     a tunable Jonathan can revisit later; trip+14d is the shipped default.
+--   • RETENTION = an ENDED trip + 14 days, then purged (worker/src/presence.js's
+--     runPresencePurge, extended in the same build that adds this table), with
+--     an ABSOLUTE 60-day ceiling on ANY crumb (review 2026-07-13) so an
+--     open-ended trip (null date_range_end) or an orphaned crumb can never be
+--     kept indefinitely — both sweeps mode-gated. A tunable Jonathan can revisit.
 --   • MANUAL PER-ADULT WIPE — a future operational lever; not built as a
 --     route in the build that adds this table (outside its file allowlist);
 --     Jonathan can DELETE rows directly via D1 in the meantime.

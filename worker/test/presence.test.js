@@ -409,4 +409,40 @@ describe('presence — W5 presence_trail: retention = trip + 14 days', () => {
     const old = await env.DB.prepare('SELECT * FROM presence_trail WHERE trip_id=?').bind('trip-old').all()
     expect(old.results).toHaveLength(1) // untouched
   })
+
+  // Review 2026-07-13: the ended-trip sweep keys on date_range_end, so an
+  // OPEN-ENDED trip (null end date — "a lazy stay with nothing planned") would
+  // otherwise keep its crumbs forever. The absolute 60-day backstop closes it.
+  async function seedCrumbAt(tripId, atMs, traveler = 'jonathan') {
+    await env.DB.prepare(
+      'INSERT INTO presence_trail (trip_id, traveler, lat, lng, accuracy, at) VALUES (?,?,?,?,?,?)'
+    ).bind(tripId, traveler, 41, -72, 10, atMs).run()
+  }
+
+  it('the 60-day backstop purges an OPEN-ENDED trip\'s stale crumbs, keeps its recent ones (the ended-trip sweep can\'t reach a null end date)', async () => {
+    const now = Date.UTC(2026, 5, 22) // fixed reference
+    const DAY = 24 * 60 * 60 * 1000
+    await env.DB.prepare(
+      'INSERT OR REPLACE INTO trips (id, date_range_end, data_json, updated_at) VALUES (?, NULL, ?, ?)'
+    ).bind('trip-open', '{}', now).run() // NO end date
+    await seedCrumbAt('trip-open', now - 70 * DAY) // 70 days old → past the 60-day ceiling
+    await seedCrumbAt('trip-open', now - 20 * DAY) // 20 days old → still within a plausible ongoing trip
+
+    const r = await runPresencePurge(env.DB, { todayIso: '2026-06-22', now, mode: 'on' })
+    expect(r.purgedTrail).toBe(1) // only the 70-day crumb
+
+    const rows = await env.DB.prepare('SELECT at FROM presence_trail WHERE trip_id=?').bind('trip-open').all()
+    expect(rows.results).toHaveLength(1)
+    expect(rows.results[0].at).toBe(now - 20 * DAY) // the recent one survives
+  })
+
+  it('the 60-day backstop mops up an ORPHANED crumb (its trip row was hard-deleted, so the ended-trip sweep can never match it)', async () => {
+    const now = Date.UTC(2026, 5, 22)
+    const DAY = 24 * 60 * 60 * 1000
+    await seedCrumbAt('trip-deleted-long-ago', now - 90 * DAY) // no trips row exists for this id
+    const r = await runPresencePurge(env.DB, { todayIso: '2026-06-22', now, mode: 'on' })
+    expect(r.purgedTrail).toBe(1)
+    const rows = await env.DB.prepare('SELECT * FROM presence_trail').all()
+    expect(rows.results).toHaveLength(0)
+  })
 })

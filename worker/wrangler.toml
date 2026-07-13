@@ -93,6 +93,13 @@ PHOTO_STOP_GEOCODE_MODE = "on"
 # table that doesn't exist yet — see presence.js's photoPresenceMode. Own
 # knob, INDEPENDENT (no fallback-inherit from PHOTO_HEAL_MODE, unlike the W0
 # levers above). DO NOT set past "off" until migration 020 is applied.
+# BEFORE PROMOTING (review 2026-07-13): revisit the family-visible caption
+# WhoAround.jsx:163 "Shared only while the app is open." — arguably still
+# literally true (the crumb history is engine-only, never re-exposed, and the
+# foreground-only SEND cadence is unchanged), but a lay reader may take it to
+# mean nothing is kept, which is less clear once a trip+14d server-side history
+# can exist. NOT changed here (family-visible copy is a Jonathan/loop-Design
+# call, not an autonomous overnight edit); track it as a promotion-gate item.
 # PHOTO_PRESENCE_MODE = "off"
 
 # Nightly auto-weave (WEAVE_SCOPE slice 3). 08:00 UTC ≈ 2-4am US overnight —
