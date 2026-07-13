@@ -74,6 +74,18 @@ const COPY = {
     helen: 'That didn’t finish — nothing was lost. Just try again.',
     jonathan: 'That pass didn’t finish. Nothing was lost — run it again.',
   },
+  // W6 — replaces the decorative trip chip with COMPUTED truth: exactly which of
+  // THIS traveler's photos, in THIS trip, are still missing GPS/time, and which
+  // days those are from. Only shown when there is something of theirs to name
+  // (selfAsk.n > 0); the old chip is the honest fallback otherwise (see render).
+  grantAskHead: {
+    helen: '{n} of your photos from {days} still need their place.',
+    jonathan: '{n} of your photos from {days} still need their place.',
+  },
+  grantAskHint: {
+    helen: 'In the picker, scroll to {range}.',
+    jonathan: 'In the picker: scroll to {range}.',
+  },
   scanReading: { helen: 'Reading your originals…', jonathan: 'Reading originals…' },
   scanMatching: { helen: 'Matching them to your trips…', jonathan: 'Matching by capture time…' },
   scanFilling: { helen: 'Filling in the map…', jonathan: 'Writing GPS + offset…' },
@@ -347,6 +359,108 @@ function pendingByAuthor(refIndex, tripId) {
   return by
 }
 
+// W6 (BUILD_PLAN_WITNESS_FLEET_2.md) — the self-scoped mirror of pendingByAuthor
+// above, plus WHICH DAYS those photos are from. Every input already lives in
+// refIndex: the Map's own key IS the capture-instant string buildRefIndex
+// indexes by, so reading its first 10 chars is a pure re-read, zero new data.
+function selfPendingDays(refIndex, tripId, traveler) {
+  const days = new Set()
+  let n = 0
+  for (const [key, cands] of refIndex) {
+    for (const c of cands) {
+      if (c.complete) continue
+      if (tripId && c.tripId !== tripId) continue
+      if (c.author !== traveler) continue
+      days.add(key.slice(0, 10))
+      n += 1
+    }
+  }
+  return { n, days: Array.from(days).sort() }
+}
+
+const MONTH_DAY = { month: 'short', day: 'numeric' }
+const MONTH_ONLY = { month: 'short' }
+
+// A day string ('YYYY-MM-DD') → a Date anchored at LOCAL noon, so formatting
+// never flips a calendar day at a timezone boundary — the string itself IS the
+// calendar day; a Date is only constructed to borrow Intl's month/day names.
+function dayLabel(day) {
+  return new Date(`${day}T12:00:00`)
+}
+
+// The EXACT day-set, gaps and all — never simplified into a contiguous range (a
+// range would claim every day between the first and last has photos too, which
+// the gaps disprove). Capped so a badly scattered archive still reads as one
+// sentence rather than a wall of dates.
+function formatDaySet(days) {
+  if (!days.length) return ''
+  if (days.length > 6) return `across ${days.length} days (${formatDayRange(days)})`
+  const labels = days.map((d, i) => {
+    const dt = dayLabel(d)
+    const month = dt.toLocaleDateString('en-US', MONTH_ONLY)
+    const prevMonth = i > 0 ? dayLabel(days[i - 1]).toLocaleDateString('en-US', MONTH_ONLY) : null
+    return month === prevMonth ? `${dt.getDate()}` : `${month} ${dt.getDate()}`
+  })
+  if (labels.length === 1) return labels[0]
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`
+  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`
+}
+
+// The picker-scroll target — the outer span only (first day to last), since a
+// picker can be scrolled TO a place, never told to skip the days in between.
+function formatDayRange(days) {
+  if (!days.length) return ''
+  const first = dayLabel(days[0])
+  const last = dayLabel(days[days.length - 1])
+  if (days[0] === days[days.length - 1]) return first.toLocaleDateString('en-US', MONTH_DAY)
+  const firstMonth = first.toLocaleDateString('en-US', MONTH_ONLY)
+  const lastMonth = last.toLocaleDateString('en-US', MONTH_ONLY)
+  if (firstMonth === lastMonth) return `${firstMonth} ${first.getDate()}–${last.getDate()}`
+  return `${firstMonth} ${first.getDate()} – ${lastMonth} ${last.getDate()}`
+}
+
+// W6, the promised LocateOriginalsFlow variant of W2's filename-sequence gap
+// hint ("the LocateOriginalsFlow variant waits for W6" — W2 section). A LOCAL
+// copy, not a shared import — ImportFlow.jsx's own header comment explains why
+// its version stays inline (a 20-line parser used in exactly one place); this
+// is that same one-place-per-copy pattern, one place further. Mirrors
+// ImportFlow's SEQ_RE / SEQ_EXT_WHITELIST / MAX_PLAUSIBLE_SEQ_GAP exactly. No
+// EXIF read has happened yet when this runs (the scan hasn't started), so
+// unlike ImportFlow's variant this keys the date label off `file.lastModified`
+// — the same file-mtime proxy photoBackfill.js's own capturedAt fallback uses
+// — never a fetch, never an extra decode.
+const SEQ_RE = /^([A-Za-z_]+)(\d{3,6})\.([A-Za-z0-9]{2,5})$/
+const SEQ_EXT_WHITELIST = new Set(['heic', 'heif', 'jpg', 'jpeg', 'png', 'gif', 'mov', 'mp4'])
+const MAX_PLAUSIBLE_SEQ_GAP = 1000
+function findPickedSeqGap(files) {
+  const byPrefix = new Map()
+  for (const f of Array.isArray(files) ? files : []) {
+    const m = typeof f?.name === 'string' ? SEQ_RE.exec(f.name) : null
+    if (!m || !SEQ_EXT_WHITELIST.has(m[3].toLowerCase())) continue
+    const prefix = m[1]
+    const arr = byPrefix.get(prefix) || []
+    arr.push({ num: parseInt(m[2], 10), name: f.name, mtimeMs: Number.isFinite(f.lastModified) ? f.lastModified : null })
+    byPrefix.set(prefix, arr)
+  }
+  let biggest = null
+  for (const arr of byPrefix.values()) {
+    arr.sort((a, b) => a.num - b.num)
+    for (let i = 1; i < arr.length; i++) {
+      const delta = arr[i].num - arr[i - 1].num
+      if (delta <= 1 || delta > MAX_PLAUSIBLE_SEQ_GAP) continue
+      const gap = delta - 1
+      if (!biggest || gap > biggest.gap) {
+        biggest = { gap, fromName: arr[i - 1].name, toName: arr[i].name, mtimeMs: arr[i - 1].mtimeMs }
+      }
+    }
+  }
+  if (!biggest) return null
+  const dateLabel = Number.isFinite(biggest.mtimeMs)
+    ? new Date(biggest.mtimeMs).toLocaleDateString('en-US', MONTH_DAY)
+    : null
+  return `Up to ~${biggest.gap} more item${biggest.gap === 1 ? '' : 's'} between ${biggest.fromName} and ${biggest.toName}${dateLabel ? ` (${dateLabel})` : ''} may still be on your device.`
+}
+
 function CoordinateCard({ traveler, voice, pending }) {
   const selfPending = pending[traveler] || 0
   const otherAdults = ['helen', 'jonathan']
@@ -428,6 +542,10 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
   const [progress, setProgress] = useState({ done: 0, total: 0, matched: 0 })
   const [stats, setStats] = useState(null)
   const [scanError, setScanError] = useState(false)
+  // W6 — the filename-sequence gap hint, computed once at pick time from the
+  // picked Files themselves (name + lastModified only — no EXIF read, the scan
+  // hasn't run yet). Surfaced on the result screen alongside this pass's outcome.
+  const [gapHint, setGapHint] = useState(null)
   const abortRef = useRef(null)
   const dialogRef = useRef(null)
 
@@ -445,6 +563,10 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
     [readMemories, stats]
   )
   const needy = useMemo(() => countNeedyRefs(refIndex), [refIndex])
+  // W6 — computed once, read by both the grant step (the ask, before the pick)
+  // and the result step (the honest "what's still waiting" card, unchanged).
+  const pending = useMemo(() => pendingByAuthor(refIndex, trip?.id), [refIndex, trip?.id])
+  const selfAsk = useMemo(() => selfPendingDays(refIndex, trip?.id, traveler), [refIndex, trip?.id, traveler])
 
   // Open on 'allset' only when there is genuinely nothing on this device to fill.
   useEffect(() => {
@@ -490,6 +612,7 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
     e.target.value = '' // picking the same batch twice must still fire (house rule)
     if (!files.length) return
     setScanError(false)
+    setGapHint(findPickedSeqGap(files))
     setStep('scan')
     setProgress({ done: 0, total: files.length, matched: 0 })
     const controller = new AbortController()
@@ -619,13 +742,35 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
       <div {...dialogProps(COPY.grantTitle[voice].replace('\n', ' '))} data-testid="locate-grant">
         <FlowHeader kicker={COPY.grantKicker[voice]} onBack={() => setStep('intro')} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 20px' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 999, padding: '5px 11px 5px 8px', marginBottom: 16 }}>
-            <Clock size={12} color="var(--accent-text)" />
-            <span className="f-mono" style={{ fontSize: 9, letterSpacing: 0.5 }}>
-              {trip?.title || 'This trip'}
-              {trip?.dateRange ? ` · ${trip.dateRange}` : ''}
-            </span>
-          </div>
+          {/* W6 — computed truth, not decoration: THIS traveler's own count and
+              exact day-set for THIS trip when there's something to name; the
+              original trip-identity chip is the honest fallback when there
+              isn't (e.g. Settings fell back to a trip that isn't the one their
+              waiting photos are actually in — real, see selfPendingDays). */}
+          {selfAsk.n > 0 ? (
+            <div
+              data-testid="locate-grant-ask"
+              style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '11px 13px', marginBottom: 16 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <Clock size={13} color="var(--accent-text)" style={{ marginTop: 2, flexShrink: 0 }} />
+                <span className="f-dm" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+                  {fill(COPY.grantAskHead[voice], { n: selfAsk.n, days: formatDaySet(selfAsk.days) })}
+                </span>
+              </div>
+              <div className="f-mono" style={{ fontSize: 9, letterSpacing: 0.4, color: 'var(--muted)', marginTop: 6, paddingLeft: 21 }}>
+                {fill(COPY.grantAskHint[voice], { range: formatDayRange(selfAsk.days) })}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 999, padding: '5px 11px 5px 8px', marginBottom: 16 }}>
+              <Clock size={12} color="var(--accent-text)" />
+              <span className="f-mono" style={{ fontSize: 9, letterSpacing: 0.5 }}>
+                {trip?.title || 'This trip'}
+                {trip?.dateRange ? ` · ${trip.dateRange}` : ''}
+              </span>
+            </div>
+          )}
           <h1 className="f-news" style={{ fontSize: 25, fontWeight: 600, letterSpacing: -0.5, lineHeight: 1.12, margin: 0 }}>
             <Lines text={COPY.grantTitle[voice]} />
           </h1>
@@ -636,6 +781,18 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
             <p className="f-dm" data-testid="locate-grant-error" role="alert" style={{ fontSize: 12.5, margin: '14px 0 0', lineHeight: 1.5, color: 'var(--accent-text)' }}>
               {COPY.grantError[voice]}
             </p>
+          )}
+          {/* W6 (2) — the per-person breakdown moves in FRONT of the pick too, so
+              the ask reads "pick ~N photos from these days," not "hand over your
+              library." Kept on the result step as well (unchanged) — an existing,
+              deliberate e2e safety assertion (a kid's photo "stay exactly as they
+              are") reads it there; see the build report for why this is an ADD,
+              not a strict move. */}
+          {Object.values(pending).some((n) => n > 0) && (
+            <>
+              <div style={{ height: 1, background: 'var(--border)', margin: '16px 0' }} />
+              <CoordinateCard traveler={traveler} voice={voice} pending={pending} />
+            </>
           )}
         </div>
         <div
@@ -773,7 +930,9 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
         : s.failed > 0
           ? COPY.resultHeadFailed[voice] // never "nothing to fill in" over a failed save
           : COPY.resultHeadNothing[voice]
-  const pending = pendingByAuthor(refIndex, trip?.id)
+  // `pending` is computed once at the top of the component (W6) — this step's
+  // own use is whether the still-waiting card has anything to say, PLUS
+  // whatever this very pass just matched.
   const showCard = Object.values(pending).some((n) => n > 0) || s.matched > 0
   // "That's everything on this phone" is a claim about the DEVICE, so it may only
   // be made when nothing anywhere on it — any trip, any author — is still waiting.
@@ -835,6 +994,18 @@ export function LocateOriginalsFlow({ trip, traveler, onClose }) {
             <div className="f-dm" style={{ fontSize: 11.5, color: 'var(--faint)', lineHeight: 1.45, marginTop: 6 }}>
               {COPY.resultUnmatchedWhy[voice]}
             </div>
+          </div>
+        )}
+        {/* W6 (3) — the LocateOriginalsFlow variant of W2's filename-sequence gap
+            hint: an in-pick nudge only, never a claim about the archive (same
+            framing ImportFlow's version uses). */}
+        {gapHint && (
+          <div
+            data-testid="locate-gap-hint"
+            className="f-dm"
+            style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.4, marginTop: 15 }}
+          >
+            {gapHint}
           </div>
         )}
         {/* The divider belongs to the card; without it, an empty card strands a

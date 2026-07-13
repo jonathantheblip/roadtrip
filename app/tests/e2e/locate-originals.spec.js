@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import path from 'node:path'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { seedTripIntoCache, seedMemoriesIntoCache, FIXTURE_TRIP, TINY_RED_PNG_DATA_URL } from './_fixtures/withTrip.js'
 import { openTopMenuItem } from './_fixtures/topNav.js'
@@ -92,6 +93,14 @@ test('an adult recovers GPS + offset from a device original — honest result, f
   await page.getByTestId('locate-intro-cta').click()
   await expect(page.getByTestId('locate-grant')).toBeVisible()
 
+  // W6 — the grant step's computed truth (replaces the old decorative trip
+  // chip): her own count + exact day-set, and where to scroll in the picker.
+  // The fixture's true instant is 2026-05-25 (see CAPTURED_AT/module header).
+  await expect(page.getByTestId('locate-grant-ask')).toContainText('1 of your photos from May 25')
+  await expect(page.getByTestId('locate-grant-ask')).toContainText('scroll to May 25')
+  // W6 — the per-person breakdown now also lands BEFORE the pick.
+  await expect(page.getByTestId('locate-coordinate')).toBeVisible()
+
   // The direct-tap contract: the pick control is a REAL, PRESENT input —
   // sr-only, never display:none (iOS only opens a picker from a direct tap).
   const input = page.getByTestId('locate-grant-input')
@@ -127,6 +136,30 @@ test('an adult recovers GPS + offset from a device original — honest result, f
   await page.getByTestId('locate-result-done').click()
   await expect(page.getByTestId('locate-result')).toHaveCount(0)
   await expect(page.getByTestId('settings-your-photos')).toBeVisible()
+})
+
+test('W6 — a gap in the picked filenames\' own numbering surfaces a device-wide hint', async ({ page }) => {
+  await seedTripIntoCache(page, FIXTURE_TRIP)
+  await seedMemoriesIntoCache(page, [seedMemory({ id: 'loc-needy', ref: needyRef('e2e-orig-1') })])
+  await openSettings(page, 'helen')
+  await page.getByTestId('settings-locate-photos').click()
+  await page.getByTestId('locate-intro-cta').click()
+
+  // Two copies of the same real fixture bytes, handed over renamed into an
+  // IMG_#### run with a gap — the LocateOriginalsFlow variant of W2's
+  // filename-sequence witness (BUILD_PLAN_WITNESS_FLEET_2.md: "the
+  // LocateOriginalsFlow variant waits for W6"), applied to what was just
+  // picked rather than to an import batch. In-memory buffers, no new fixture
+  // files on disk.
+  const bytes = fs.readFileSync(FIXTURE_JPEG)
+  await page.getByTestId('locate-grant-input').setInputFiles([
+    { name: 'IMG_0001.jpg', mimeType: 'image/jpeg', buffer: bytes },
+    { name: 'IMG_0009.jpg', mimeType: 'image/jpeg', buffer: bytes },
+  ])
+
+  await expect(page.getByTestId('locate-result')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByTestId('locate-gap-hint')).toContainText('Up to ~7 more item')
+  await expect(page.getByTestId('locate-gap-hint')).toContainText('between IMG_0001.jpg and IMG_0009.jpg')
 })
 
 test('re-picking an already-recovered original says "nothing new" — never "couldn\'t be placed"', async ({ page }) => {
