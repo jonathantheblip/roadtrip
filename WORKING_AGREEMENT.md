@@ -213,8 +213,25 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-11. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-13. Update as these resolve.
 
+- **[OPEN 2026-07-13] Rendered a11y (color-contrast, focus, tap-targets) is INVISIBLE to a unit-only local
+  gate AND to a code-reading adversarial review — only the e2e axe gate catches it.** W6 (picker polish)
+  shipped a real WCAG-AA contrast violation (a `--muted` hint composited to 4.36:1 on a `--bg2` card, below
+  4.5) from the Sonnet executor; its own gate (node --test + build, no e2e, correctly scoped) couldn't see
+  a rendered color, and the fresh code-review agent wasn't running axe either. The full both-engine e2e
+  (which includes the per-surface axe checks) caught it. **Watch for recurrence:** for any FAMILY-VISIBLE
+  build, the full both-engine e2e is NON-skippable — "it's just copy/CSS" is exactly when a contrast/focus
+  regression slips a unit gate. (The chrome-devtools-mcp a11y-debugging skill is now available if a targeted
+  a11y pass is ever wanted mid-build, before the e2e.)
+- **[OPEN 2026-07-13] The grep-invisible-binary bug (a raw control byte — NUL, U+0001 — used as a string
+  separator) has now recurred FIVE times** (photoSuggest.js's NUL, seqName.js's U+0001 in W2, humanWords.js's
+  NUL in W9, once in this project's own carryover doc, and the W2 review hardened ImportFlow against the
+  class). Each makes a file binary to git + invisible to grep, silently defeating audits. The standing
+  mitigation is a manual `file <path>` ("data" not "text") + control-char grep before every commit — it has
+  caught each one, but it depends on remembering. **Worth a real guard: a pre-commit hook rejecting any
+  tracked text file containing a NUL/control byte (Jonathan's call — a rule/config change, not mine to add;
+  the newly-available `hookify` plugin is a natural fit).** Until then, the manual check stays mandatory.
 - **[OPEN 2026-07-11] Adversarial review checks CODE, not the PLAN a build gets written from — and a real
   design flaw slipped through until a second, differently-modeled opinion caught it.** Build 3's
   (vision place-sameness) first-draft spec gated a new feature on a condition ("GPS AND scene both

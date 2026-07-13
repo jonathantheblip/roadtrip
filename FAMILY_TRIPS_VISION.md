@@ -446,10 +446,15 @@ sync), presence breadcrumbs (consented: adults-only, engine-only, trip+14-day re
 polish. Live build state: `memory/self-healing-agenda-free.md`; don't trust this file's own build list as
 current — it ages the moment either doc is written.
 
-Faces and presence breadcrumbs are the two remaining device-native levers — both now consented (Jonathan,
-2026-07-12) and scoped in the plan above, not yet built. Full build-by-build detail, the process lessons
-(including the one caught by a second opinion, not this project's own review apparatus), and the real
-before/after numbers: `memory/self-healing-agenda-free.md`.
+**UPDATE 2026-07-13 — the entire witness-fleet-2 build tranche (W0–W9) is SHIPPED + deployed** (HEAD
+`4136e25`): the per-lever knobs, weather, filename-sequence, time-witness + human-words packs, faces
+(fc_N sync, OFF), the evidence-constitution audit, presence breadcrumbs (to the migration boundary, OFF),
+and picker polish. Faces and presence are now BUILT (both ship OFF behind their own knobs, both gated on
+Jonathan before any promotion — faces on a cross-device fc_N design decision, presence on migration 020's
+apply). **The one remaining W-build is S1 — the family-visible confirm surface** (the design bundle is
+produced, `DESIGN_BUNDLE_SESSION_CONFIRM.md`); after it, only the §R promotion ladder to a real
+family test of `PHOTO_HEAL_MODE`. Full build-by-build detail, every finding the trust-but-verify net
+caught, and the process lessons: `memory/self-healing-agenda-free.md` and `CARRYOVER_DOCUMENT_THE_TRIP.md`.
 
 ---
 
