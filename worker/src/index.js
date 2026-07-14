@@ -969,15 +969,22 @@ async function getSuggestions(env, traveler, url, cors) {
 // stray poll would surface as an error). Serves in shadow AND on; off → [].
 async function getHealDecisions(env, traveler, url, cors) {
   const headers = { ...cors, 'Cache-Control': 'no-store' }
-  if (!isAdult(traveler)) return json({ decisions: [] }, 200, headers)
+  // `confirm` — is the family-visible confirm SURFACE live? The ledger serves in
+  // shadow AND on (a pre-promotion learning read), but the interactive card (which
+  // writes + LOCKS a filing) must only render when PHOTO_CONFIRM_MODE is fully on.
+  // The client has no other signal; without this a tap in the shadow window would
+  // move + lock real photos (the confirm-surface's own knob gates the WRITE route,
+  // but updateMemoryStop is a separate ungated sync path — the card must self-gate).
+  const confirm = isAdult(traveler) && photoConfirmMode(env) === 'on'
+  if (!isAdult(traveler)) return json({ decisions: [], confirm: false }, 200, headers)
   const tripId = url.searchParams.get('trip') || ''
   try {
     const decisions = await listHealDecisionsForViewer(env, tripId, traveler)
-    return json({ decisions }, 200, headers)
+    return json({ decisions, confirm }, 200, headers)
   } catch (e) {
     // The ledger read is advisory — never fail a surface over it. Log + [].
     console.error('getHealDecisions failed', tripId, e?.stack || e)
-    return json({ decisions: [] }, 200, headers)
+    return json({ decisions: [], confirm: false }, 200, headers)
   }
 }
 

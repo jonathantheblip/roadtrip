@@ -175,3 +175,27 @@ describe('POST /heal-confirm', () => {
     expect(await rowsFor('t1')).toHaveLength(0)
   })
 })
+
+// The interactive card writes + LOCKS real filings (updateMemoryStop → postMemory,
+// an always-live sync seam NOT gated on any heal knob), so the client renders it
+// ONLY when GET /heal-decisions says confirm:true. The ledger itself serves in
+// shadow for review — but the card must self-gate on PHOTO_CONFIRM_MODE === on,
+// or a tap in the pre-flip window moves real photos (adversarial-review finding).
+describe('GET /heal-decisions confirm gate', () => {
+  async function confirmFlag(token, PHOTO_CONFIRM_MODE) {
+    const req = new Request('https://worker.test/heal-decisions?trip=t1', {
+      headers: { Origin: 'http://localhost:5173', Authorization: `Bearer ${token}` },
+    })
+    const ctx = createExecutionContext()
+    // Ledger serves (PHOTO_HEAL_MODE shadow) — proving the card still self-gates.
+    const res = await worker.fetch(req, { ...env, PHOTO_HEAL_MODE: 'shadow', PHOTO_CONFIRM_MODE }, ctx)
+    await waitOnExecutionContext(ctx)
+    return (await res.json()).confirm
+  }
+  it('confirm:true ONLY when the knob is on AND the viewer is an adult', async () => {
+    expect(await confirmFlag(TOK.jonathan, 'on')).toBe(true)
+    expect(await confirmFlag(TOK.jonathan, 'off')).toBe(false)
+    expect(await confirmFlag(TOK.jonathan, 'shadow')).toBe(false) // shadow serves the ledger, not the card
+    expect(await confirmFlag(TOK.rafa, 'on')).toBe(false)         // a kid never gets the surface
+  })
+})

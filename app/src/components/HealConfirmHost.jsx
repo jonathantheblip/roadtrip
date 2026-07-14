@@ -5,18 +5,21 @@
 // records it + fires the re-heal). Renders NOTHING (zero reserved space) when
 // there's no askable moment or today's budget is spent — the silent-empty rule.
 //
-// The card is family-visible only once PHOTO_CONFIRM_MODE is on (Stage 4); until
-// then /heal-decisions serves in shadow to adults and POST /heal-confirm is inert
-// (200 {disabled:true}), so wiring it now is safe. A guarded `demo` prop renders
-// a fixture moment for the dev browser-walk (a URL ?confirmDemo=1), never in
-// normal use.
+// The card is family-visible ONLY once PHOTO_CONFIRM_MODE is on (Stage 4): the
+// real-data path renders nothing unless /heal-decisions returns `confirm:true`
+// (server-gated on the knob). This is load-bearing — the confirm FILING
+// (updateMemoryStop → postMemory → resolveStopProvenance) writes + LOCKS real
+// photos through the always-live sync seam, so the card must NOT be interactive
+// in the pre-flip shadow window (where the ledger still serves for review). A
+// guarded `demo` prop (?confirmDemo=1) bypasses the fetch to render a fixture for
+// the dev browser-walk, never in normal use.
 import React from 'react'
 import { workerFetch, isWorkerConfigured } from '../lib/workerSync'
-import { listMemoriesForTrip } from '../lib/memoryStore'
+import { listMemoriesForTrip, updateMemoryStop } from '../lib/memoryStore'
 import { flattenPhotoEntries } from '../lib/photoEntries'
 import { thumbUrl } from '../lib/thumbUrl'
 import {
-  pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision,
+  pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision, confirmFilings,
 } from '../lib/confirmSurface'
 import { ConfirmMomentCard, ConfirmPlaceSheet, useConfirmMoment } from './ConfirmMomentCard'
 
@@ -103,6 +106,11 @@ export function HealConfirmHost({ trips, traveler = 'helen', onOpenAlbum, demo =
       try {
         const res = await workerFetch(`/heal-decisions?trip=${encodeURIComponent(trip.id)}`)
         const data = await res.json()
+        // The card writes + LOCKS real filings, so it renders ONLY when the server
+        // says the confirm surface is live (PHOTO_CONFIRM_MODE on). The ledger
+        // serves in shadow for review, but the interactive card must not — else a
+        // tap would move real photos before the flip. (Demo path bypasses this.)
+        if (!data?.confirm) return
         const pick = pickConfirmOfDay(data?.decisions, today)
         if (!pick || cancelled) return
         const moment = momentFromDecision(pick, {
@@ -123,6 +131,13 @@ export function HealConfirmHost({ trips, traveler = 'helen', onOpenAlbum, demo =
       spendConfirmBudget(today) // every terminal action spends today's shared budget
       if (outcome === 'album') { onOpenAlbum?.(moment); return }
       if (outcome === 'skipped') return // deferral — nothing written
+      if (demo) return // dev fixture (?confirmDemo=1) — never write real memories / POST
+      // File the moment optimistically (the local settle): a place-confirm / pick
+      // moves the member photos to the stop with source:'confirmed' — updateMemoryStop
+      // mirrors it and the worker LOCKS it against any later sweep. "On the record."
+      for (const f of confirmFilings(moment, outcome, payload, traveler)) {
+        try { updateMemoryStop(f.memoryId, f.stopId, f.prov) } catch { /* sync-honesty path owns retries */ }
+      }
       postHealConfirm(pending?.tripId, moment, outcome, payload)
     },
   })

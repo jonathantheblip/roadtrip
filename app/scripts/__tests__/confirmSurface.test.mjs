@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickConfirmOfDay, confirmKindOf, confirmBudgetSpentToday, spendConfirmBudget, CONFIRM_BUDGET_KEY,
-  momentFromDecision,
+  momentFromDecision, confirmFilings, isFilablePlace,
 } from '../../src/lib/confirmSurface.js'
 
 const dec = (over = {}) => ({ tier: 'confirm', isoDate: '2026-07-02', memoryIds: ['m1'], placeId: 's1', ...over })
@@ -124,4 +124,36 @@ test('momentFromDecision: the engine momentDescriptor drives {moment} (the 2026-
   assert.equal(m.moment, 'the walk into town') // engine label wins over vision name / fallback
   const noLabel = momentFromDecision({ placeName: 'Angel Foods', signals: { inheritedGps: true } })
   assert.equal(noLabel.moment, 'this one') // vision labeled nothing → neutral fallback
+})
+
+test('isFilablePlace: a real stop is filable; synthetic vision/discovered ids are not', () => {
+  assert.equal(isFilablePlace('s-angel'), true)
+  assert.equal(isFilablePlace('__record__:2026-07-02:e1'), true) // record entries + base ARE real filing targets
+  assert.equal(isFilablePlace('__vision__:2026-07-02:0'), false) // a name, not a stop
+  assert.equal(isFilablePlace('__discovered__:2026-07-02:0'), false)
+  assert.equal(isFilablePlace(null), false)
+  assert.equal(isFilablePlace(''), false)
+})
+
+test('confirmFilings: a place-confirm files every member at the confirmed stop, source:confirmed', () => {
+  const moment = { memoryIds: ['m1', 'm2'], placeId: 's-angel' }
+  const fs = confirmFilings(moment, 'confirmed', null, 'jonathan')
+  assert.equal(fs.length, 2)
+  assert.deepEqual(fs[0], { memoryId: 'm1', stopId: 's-angel', prov: { source: 'confirmed', by: 'jonathan' } })
+  assert.equal(fs[1].stopId, 's-angel')
+})
+
+test('confirmFilings: a picked alternate files at the alt stop; a base pick (null id) files nothing', () => {
+  const moment = { memoryIds: ['m1'], placeId: 's-angel' }
+  assert.equal(confirmFilings(moment, 'picked', { id: 's-herring', label: 'Herring Cove' }, 'helen')[0].stopId, 's-herring')
+  assert.deepEqual(confirmFilings(moment, 'picked', { id: null, label: 'the beach house' }, 'helen'), []) // no stop id → re-heal handles it
+})
+
+test('confirmFilings: name / free-text / grouping / aside / skip file NO stop here', () => {
+  const moment = { memoryIds: ['m1'], placeId: 's-angel' }
+  for (const o of ['named', 'freetextPlace', 'freetextTime', 'aside', 'skipped']) {
+    assert.deepEqual(confirmFilings(moment, o, 'the Canteen', 'jonathan'), [], `outcome ${o} should file nothing`)
+  }
+  // a vision-name moment (synthetic placeId) confirmed → no stop filing (it promotes a name)
+  assert.deepEqual(confirmFilings({ memoryIds: ['m1'], placeId: '__vision__:x:0' }, 'confirmed', null, 'jonathan'), [])
 })

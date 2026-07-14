@@ -136,3 +136,26 @@ export function momentFromDecision(decision, extra = {}) {
     placeId: decision.placeId || null,
   }
 }
+
+// A stop id we can actually FILE at — a real stop / record / base id, not a
+// synthetic vision/discovered MOMENT id (those confirm a NAME, not a filing).
+export function isFilablePlace(placeId) {
+  return typeof placeId === 'string' && !!placeId &&
+    !placeId.startsWith('__vision__') && !placeId.startsWith('__discovered__')
+}
+
+// The concrete stop filings a terminal card action implies — what makes "on the
+// record" TRUE. Pure: returns [{ memoryId, stopId, prov }]; the host applies each
+// via updateMemoryStop (which mirrors + the worker LOCKS it against any later
+// sweep, source:'confirmed' = D13). Only a place-CONFIRM or an alternate-PICK
+// files a real stop; a name / time / free-text / grouping answer records feedback
+// + re-heals but files no stop here (handled by the re-heal / matcher).
+export function confirmFilings(moment, outcome, payload, by) {
+  if (!moment || !Array.isArray(moment.memoryIds) || !moment.memoryIds.length) return []
+  let stopId = null
+  if (outcome === 'confirmed') stopId = moment.placeId
+  else if (outcome === 'picked') stopId = payload && payload.id
+  if (!isFilablePlace(stopId)) return []
+  const prov = { source: 'confirmed', by: by || null }
+  return moment.memoryIds.map((memoryId) => ({ memoryId, stopId, prov }))
+}
