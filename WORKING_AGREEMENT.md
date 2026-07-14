@@ -215,6 +215,18 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 Verified 2026-06-02; last updated 2026-07-13. Update as these resolve.
 
+- **[OPEN 2026-07-13] The in-app browser PREVIEW starts at a 0×0 viewport — a correct component looks
+  BROKEN until you resize.** Building S1's card, I chased a phantom "card renders but is 32px wide / a thin
+  vertical strip" bug through several diagnostic steps; the whole app (up to `<body>`) had width 0 — the
+  preview tab simply had no size (read_page even reported "Viewport: 0x0"). **Mitigation: `resize_window`
+  to a real size (mobile 375×812) BEFORE any read_page/screenshot of a preview, and treat "Viewport: 0x0"
+  or an inexplicably-collapsed layout as that tell, not a CSS bug in your code.**
+- **[OPEN 2026-07-13] A filename an external spec tells you to create may already be TAKEN by unrelated,
+  in-use code.** The S1 design bundle said build `app/src/components/ConfirmCard.jsx` — but that was already
+  a 1740-line tracked component (the Claude-in-App add/move/cancel/multi card). Only the Write tool's
+  "read the file first" guard prevented clobbering it; the S1 component became `ConfirmMomentCard.jsx`.
+  **Mitigation: `ls`/grep a suggested path before creating a file from any handoff/bundle — its assumed
+  names are guesses about your tree, not facts.**
 - **[OPEN 2026-07-13] Rendered a11y (color-contrast, focus, tap-targets) is INVISIBLE to a unit-only local
   gate AND to a code-reading adversarial review — only the e2e axe gate catches it.** W6 (picker polish)
   shipped a real WCAG-AA contrast violation (a `--muted` hint composited to 4.36:1 on a `--bg2` card, below

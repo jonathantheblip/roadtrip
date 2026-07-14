@@ -451,9 +451,12 @@ current — it ages the moment either doc is written.
 (fc_N sync, OFF), the evidence-constitution audit, presence breadcrumbs (to the migration boundary, OFF),
 and picker polish. Faces and presence are now BUILT (both ship OFF behind their own knobs, both gated on
 Jonathan before any promotion — faces on a cross-device fc_N design decision, presence on migration 020's
-apply). **The one remaining W-build is S1 — the family-visible confirm surface** (the design bundle is
-produced, `DESIGN_BUNDLE_SESSION_CONFIRM.md`); after it, only the §R promotion ladder to a real
-family test of `PHOTO_HEAL_MODE`. Full build-by-build detail, every finding the trust-but-verify net
+apply). **S1 — the family-visible confirm surface — is now MID-BUILD (2026-07-13): the card is built, wired,
+and browser-verified working across all three lenses** (from Jonathan's own Claude Design bundle,
+`design_bundle_s1_confirm/`), all committed LOCAL on `feat/self-healing-photos` (unpushed, knob off,
+nothing family-visible). Two pieces remain — the truth-critical confirm *filing* + `'confirmed'`
+prov-chain, and the settle-door rider — then a shadow deploy + proof + e2e, then the flip. After S1,
+only the §R promotion ladder to a real family test of `PHOTO_HEAL_MODE`. Full build-by-build detail, every finding the trust-but-verify net
 caught, and the process lessons: `memory/self-healing-agenda-free.md` and `CARRYOVER_DOCUMENT_THE_TRIP.md`.
 
 ---
