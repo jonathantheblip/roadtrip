@@ -16,6 +16,8 @@
 // Pure: no fetch, no React — node-testable. Storage is injectable (defaults to
 // globalThis.localStorage) so it degrades to a no-op off-browser.
 
+import { evidenceKeyOf } from './confirmCopy.js'
+
 export const CONFIRM_BUDGET_KEY = 'heal.confirm.lastHandled'
 
 // Same deterministic rotation resurface.js uses ("Looking back"), so the confirm
@@ -85,5 +87,42 @@ export function spendConfirmBudget(localDateIso, storage) {
     s.setItem(CONFIRM_BUDGET_KEY, localDateIso || todayIso())
   } catch {
     /* private-mode / quota — the gate just doesn't persist; harmless */
+  }
+}
+
+// Map a projected /heal-decisions row → the card's `moment` view-model (the DISPLAY
+// fields). The host supplies `thumbs` (real photo urls from the row's masked refs)
+// and `alts` (the day's plan alternates, MoveSheet's targets) since those need the
+// photo store + trip plan. `signal` drives the §3 evidence line; null → no line
+// (fail-closed). Pure + node-testable.
+//
+// ⚠ NEEDS-YOUR-EYE — the {moment} descriptor. The question reads "These {n} photos
+// look like {moment} — at {place}" but the engine produces no human cluster label
+// ("the walk into town") for a place/GPS moment; only the vision path yields a name
+// (kind B). Until that's decided, the fallback here is the vision name when present,
+// else a neutral 'this one' — honest but plain. A real descriptor is a copy/design
+// call (see the S1 checkpoint).
+export function momentFromDecision(decision, extra = {}) {
+  if (!decision) return null
+  const { thumbs = [], alts = [], descriptor = '', dayPart = '', time = '', day = '', base = '' } = extra
+  const place = decision.placeName || ''
+  const kind = confirmKindOf(decision)
+  const visionName = decision.signals && typeof decision.signals.visionName === 'string' ? decision.signals.visionName : ''
+  return {
+    kind,
+    n: decision.photoCount || (Array.isArray(decision.memoryIds) ? decision.memoryIds.length : 0),
+    place,
+    name: kind === 'B' ? place || visionName : place, // kind B: the vision name IS the label
+    moment: descriptor || visionName || 'this one',   // {moment} fallback — see NEEDS-YOUR-EYE above
+    part: dayPart || 'day',
+    time,
+    day,
+    base,
+    signal: evidenceKeyOf(decision.signals),
+    thumbs,
+    alts,
+    memoryIds: Array.isArray(decision.memoryIds) ? decision.memoryIds : [],
+    isoDate: decision.isoDate || '',
+    placeId: decision.placeId || null,
   }
 }

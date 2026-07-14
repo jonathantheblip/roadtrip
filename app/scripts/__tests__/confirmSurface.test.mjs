@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickConfirmOfDay, confirmKindOf, confirmBudgetSpentToday, spendConfirmBudget, CONFIRM_BUDGET_KEY,
+  momentFromDecision,
 } from '../../src/lib/confirmSurface.js'
 
 const dec = (over = {}) => ({ tier: 'confirm', isoDate: '2026-07-02', memoryIds: ['m1'], placeId: 's1', ...over })
@@ -68,4 +69,34 @@ test('budget: a new day resets (yesterday spent does not count today)', () => {
 test('budget: no storage → never blocks, never throws', () => {
   assert.equal(confirmBudgetSpentToday('2026-07-02', null), false)
   assert.doesNotThrow(() => spendConfirmBudget('2026-07-02', null))
+})
+
+test('momentFromDecision: a place decision → kind A, place, signal, moment fallback', () => {
+  const m = momentFromDecision(
+    { placeId: 's-angel', placeName: 'Angel Foods', photoCount: 9, memoryIds: ['m1'], isoDate: '2026-07-02', signals: { inheritedGps: true } },
+    { thumbs: ['#111', '#222'], alts: [{ label: 'Herring Cove', why: 'PLAN' }] }
+  )
+  assert.equal(m.kind, 'A')
+  assert.equal(m.place, 'Angel Foods')
+  assert.equal(m.n, 9)
+  assert.equal(m.signal, 'gps')
+  assert.equal(m.moment, 'this one') // fallback (no descriptor, no vision name)
+  assert.deepEqual(m.thumbs, ['#111', '#222'])
+  assert.equal(m.alts[0].label, 'Herring Cove')
+})
+
+test('momentFromDecision: a vision decision → kind B, name + moment from visionName', () => {
+  const m = momentFromDecision({
+    placeId: '__vision__:2026-07-02:0', placeName: 'Sand dune adventure', photoCount: 7, memoryIds: ['m1'],
+    signals: { evidence: 'vision', visionName: 'Sand dune adventure' },
+  })
+  assert.equal(m.kind, 'B')
+  assert.equal(m.name, 'Sand dune adventure')
+  assert.equal(m.moment, 'Sand dune adventure')
+  assert.equal(m.signal, 'vision')
+})
+
+test('momentFromDecision: multi-signal → "multi"; null decision → null', () => {
+  assert.equal(momentFromDecision({ placeName: 'X', signals: { dims: ['time', 'gps'] } }).signal, 'multi')
+  assert.equal(momentFromDecision(null), null)
 })
