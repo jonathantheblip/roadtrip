@@ -19,6 +19,21 @@ test('renderConfirm: fills slots, lowercases only for Aurelia, blank for a non-a
   assert.equal(renderConfirm('rafa', CONFIRM_DECK.question.A, f), '') // no Rafa column → fail-closed blank
 })
 
+test('sentence-initial {Moment} capitalizes the descriptor lead; mid-sentence stays lowercase; Aurelia lowercases both', () => {
+  const f = { moment: 'the walk into town', place: 'Angel Foods', n: 9 }
+  // settled fact starts a sentence → capital lead
+  assert.equal(renderConfirm('jonathan', CONFIRM_DECK.settledPlace, f), 'The walk into town, at Angel Foods.')
+  // "Saved. {Moment} …" starts a new sentence after the period → capital
+  assert.equal(
+    renderConfirm('jonathan', CONFIRM_DECK.savedPlace.A, f),
+    'Saved. The walk into town is on the record — and the rest of the day settles around it.'
+  )
+  // mid-sentence (the question) stays warm-lowercase
+  assert.match(renderConfirm('jonathan', CONFIRM_DECK.question.A, f), /look like the walk into town — at Angel Foods/)
+  // Aurelia's whole-string lc() lowercases the sentence-initial slot too
+  assert.equal(renderConfirm('aurelia', CONFIRM_DECK.settledPlace, f), 'the walk into town, at angel foods.')
+})
+
 test('the saved promise is warm + true — object is the TRIP, never "we\'ll remember"', () => {
   const helen = renderConfirm('helen', CONFIRM_DECK.savedPlace.A, { moment: 'the walk into town' })
   assert.equal(helen, 'Saved — the walk into town is part of the trip now, and it helps the rest of the day fall into place.')

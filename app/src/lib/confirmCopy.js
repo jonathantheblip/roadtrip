@@ -98,10 +98,10 @@ export const CONFIRM_DECK = {
 
   // §6 · saved promises — object is always the TRIP, never the person
   savedPlace: {
-    A: { jonathan: 'Saved. {moment} is on the record — and the rest of the day settles around it.',
+    A: { jonathan: 'Saved. {Moment} is on the record — and the rest of the day settles around it.',
          helen: 'Saved — {moment} is part of the trip now, and it helps the rest of the day fall into place.',
          aurelia: 'saved — {moment}’s part of the trip now, and the rest of the day sorts itself around it.' },
-    B: { jonathan: 'That’s the one. {moment} is settled, at {place}.',
+    B: { jonathan: 'That’s the one. {Moment} is settled, at {place}.',
          helen: 'That’s it — {moment} is settled now, at {place}.',
          aurelia: 'that’s the one — {moment}’s settled now, at {place}.' },
     C: { jonathan: 'Saved. That’s part of the trip now.',
@@ -128,7 +128,7 @@ export const CONFIRM_DECK = {
                aurelia: 'a couple nearby moments settled in with it.' },
 
   // §7 · the collapsed settled line — the guess restated as FACT
-  settledPlace: { jonathan: '{moment}, at {place}.', helen: '{moment}, at {place}.', aurelia: '{moment}, at {place}.' },
+  settledPlace: { jonathan: '{Moment}, at {place}.', helen: '{Moment}, at {place}.', aurelia: '{Moment}, at {place}.' },
   settledName: { jonathan: '‘{name}.’', helen: '‘{name}.’', aurelia: '‘{name}.’' },
   settledTime: { jonathan: 'Around {time}, {day}.', helen: 'Around {time}, {day}.', aurelia: 'around {time}, {day}.' },
   settledGroup: { jonathan: 'Kept together — one stretch of the {part}.', helen: 'Kept together — one {part}.', aurelia: 'kept together — one whole {part}.' },
@@ -147,14 +147,26 @@ export function confirmFill(str, fills) {
   return out
 }
 
+const capFirst = (s) => (typeof s === 'string' && s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
+
 // Render one deck entry for a lens: pick the lens column (or the raw string),
 // fill, then apply Aurelia's whole-string lowercase (the lc() transform). A lens
 // that falls outside the three adults renders '' (fail-closed — never a bare key).
+//
+// Sentence-initial {Moment}: the descriptor is lowercase-lead for a warm
+// mid-sentence read ("look like the walk into town"), but a few slots put it at a
+// sentence START (the settled fact "{Moment}, at {place}."; a "Saved. {Moment} …"
+// promise) where it wants a capital. `{Moment}` is auto-derived from `{moment}`
+// here, so no fills-builder has to know; Aurelia's whole-string lc() still
+// lowercases it back for her lens.
 export function renderConfirm(lens, entry, fills) {
   if (entry == null) return ''
   const s = typeof entry === 'string' ? entry : entry[lens]
   if (s == null) return ''
-  const filled = confirmFill(s, fills)
+  const f = fills && fills.moment != null && fills.Moment == null
+    ? { ...fills, Moment: capFirst(fills.moment) }
+    : fills
+  const filled = confirmFill(s, f)
   return lens === 'aurelia' ? filled.toLowerCase() : filled
 }
 

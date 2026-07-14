@@ -44,7 +44,9 @@ export function manualStopEvidence(m) {
       }
     }
   }
-  if (!stopId || !prov || prov.source !== 'manual') return null
+  // A human put it there — a hand move ('manual') OR a confirm-card "yes, here"
+  // ('confirmed', S1/D13). Both are positive human anchors (D16 evidence).
+  if (!stopId || !prov || (prov.source !== 'manual' && prov.source !== 'confirmed')) return null
   return { stopId, by: typeof prov.by === 'string' ? prov.by : null }
 }
 
