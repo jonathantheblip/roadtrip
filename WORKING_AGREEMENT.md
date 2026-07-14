@@ -215,6 +215,15 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 Verified 2026-06-02; last updated 2026-07-13. Update as these resolve.
 
+- **[OPEN 2026-07-13] A build/compile break can hide behind a green-looking e2e summary — assert build
+  EXIT=0 after any component/JSX edit, don't trust the test count alone.** During the S1 overnight run I
+  put a `{/* comment */}` inside a `{cond && ( … )}` (two siblings, no fragment) — a JSX syntax error. I
+  read the e2e output as "N failed" and chased a stale-server theory; the real cause was the broken module
+  failing to compile, so the whole card never rendered and ALL 18 e2e failed with no inline compile error
+  in the list-reporter summary. The `vite build` in the same command had printed `EXIT=1` but its output
+  was truncated and I didn't check it. **Mitigation: after editing a component, run the build and read its
+  EXIT code (not just `| tail` of a piped run); a mass-failure e2e with no per-test error is a compile
+  break until proven otherwise.**
 - **[OPEN 2026-07-13] The in-app browser PREVIEW starts at a 0×0 viewport — a correct component looks
   BROKEN until you resize.** Building S1's card, I chased a phantom "card renders but is 32px wide / a thin
   vertical strip" bug through several diagnostic steps; the whole app (up to `<body>`) had width 0 — the
