@@ -111,8 +111,11 @@ function Ribbon({ m, condensed }) {
           <Cell key={i} src={src} style={{ marginLeft: i ? -10 : 0, transform: `rotate(${(i - (thumbs.length - 1) / 2) * 4}deg)` }} />
         ))}
       </div>
+      {/* +more chip uses --text, not --muted: at 8.5px on --bg2 (Helen's warm
+          paper) --muted composites to 4.36:1 — below WCAG-AA 4.5 (the W6 lesson;
+          only the e2e axe gate catches rendered contrast). --text clears it. */}
       {more > 0 && (
-        <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.4, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 999, padding: '3px 8px' }}>+{more} more</span>
+        <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.4, color: 'var(--text)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 999, padding: '3px 8px' }}>+{more} more</span>
       )}
     </div>
   )
