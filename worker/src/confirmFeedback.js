@@ -45,7 +45,10 @@ export function validateFeedback(body) {
   if (!memoryIds.length) return { ok: false, error: 'no-memories' }
   if (body.kind != null && !QUESTION_KINDS.has(body.kind)) return { ok: false, error: 'bad-kind' }
   if (action === 'corrected') {
-    const hasPlace = !!cleanStr(body.correctedPlaceId)
+    // A picked alternate carries a name and MAY carry a stop id (the base has a
+    // name but no id) — either counts, as do free-text words. Only genuinely
+    // empty corrections (nothing to teach) are rejected.
+    const hasPlace = !!cleanStr(body.correctedPlaceId) || !!cleanStr(body.correctedPlaceName)
     const hasWords = !!cleanStr(body.words)
     if (!hasPlace && !hasWords) return { ok: false, error: 'empty-correction' }
   }

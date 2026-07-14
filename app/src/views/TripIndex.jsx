@@ -5,6 +5,7 @@ import { isTripPublishable } from '../lib/tripComplete'
 import { effectiveStatus } from '../data/trips'
 import { listMemoriesForTrip } from '../lib/memoryStore'
 import { thumbUrl } from '../lib/thumbUrl'
+import { HealConfirmHost } from '../components/HealConfirmHost'
 import { pickResurface } from '../lib/resurface'
 import { hasExplicitHero } from '../lib/tripHero'
 import { stayLabel } from '../lib/tripShape'
@@ -412,6 +413,16 @@ export function TripIndex({ traveler = 'helen', trips = [], drafts = [], onOpenT
           </div>
         </div>
       )}
+
+      {/* S1 confirm card — the one write-authoritative surface here, so it earns
+          the slot directly above the (pure-replay) resurface card. Renders only
+          when there's an askable moment + today's budget is unspent; else nothing. */}
+      <HealConfirmHost
+        trips={trips}
+        traveler={traveler}
+        demo={typeof window !== 'undefined' && (() => { try { return !!new URLSearchParams(window.location.search).get('confirmDemo') } catch { return false } })()}
+        onOpenAlbum={() => { const t = (trips || [])[0]; if (t?.id) onOpenTrip?.(t.id) }}
+      />
 
       {resurface && (
         <button
