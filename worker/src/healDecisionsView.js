@@ -155,25 +155,27 @@ export function buildHiddenIndex(trip, viewer) {
 // name/coords checks; any UNKNOWN future signal key is DROPPED (fail closed —
 // a new writer must consciously add its field here with its own leak review).
 //
-// S1 LEAK REVIEW (2026-07-13) — the six provenance keys sessionHeal folds in
-// (W8/W9) were reviewed for THIS surface and CONSCIOUSLY EXCLUDED. Each is
-// engine-internal with no §3-phrasebook translation (the confirm card's
-// evidence line reads only evidence/inheritedGps/pin/visionName/cohesion/dims),
-// and the W7 evidence audit reads them from RAW signals_json (admin-gated), so
-// the per-viewer projection loses nothing by dropping them:
-//   • referenceLocatedCount (int)   — GPS-anchor count; card knows GPS via `evidence`
-//   • timeAnchorSuspect     (bool)  — clock-doubt flag; variant-C copy is already humble
-//   • gpsProv               (str[]) — GPS provenance-source labels
-//   • dismissedBefore       (bool)  — prior-dismissal echo (a negative label)
-//   • handFiledStop         (str)   — ⚠ a STOP ID: could be a surprise stop → NEVER project
-//   • handFiledBy           (str)   — ⚠ a TRAVELER: names who was where → NEVER project
-// The last two are outright leak vectors — do NOT whitelist them. All six drop
-// for EVERY viewer incl. the author (heal-decisions-view.test.js locks this:
-// whitelisting any of the six turns a test red).
+// S1 LEAK REVIEW (2026-07-13) — of the six provenance keys sessionHeal folds in
+// (W8/W9), FIVE stay CONSCIOUSLY EXCLUDED and one — `timeAnchorSuspect` — is now
+// INCLUDED (added to SAFE_SIGNAL_KEYS below). Each is a safe bool/int/string with
+// no name/coord content; the include/exclude call is purely "does the surface
+// need it":
+//   • timeAnchorSuspect     (bool)  — INCLUDED: it drives the variant-C question
+//     (the day is upload-time-only → "was this around {time}, {day}?"). A bare
+//     boolean, no leak surface. (Stage-1 first excluded it as "no family value";
+//     Jonathan's 2026-07-13 all-four call gave it one.)
+//   • referenceLocatedCount (int)   — excluded: GPS-anchor count; card knows GPS via `evidence`
+//   • gpsProv               (str[]) — excluded: GPS provenance-source labels, engine-internal
+//   • dismissedBefore       (bool)  — excluded: prior-dismissal echo (a negative label)
+//   • handFiledStop         (str)   — excluded ⚠ a STOP ID: could be a surprise stop → NEVER project
+//   • handFiledBy           (str)   — excluded ⚠ a TRAVELER: names who was where → NEVER project
+// The last two are outright leak vectors — do NOT whitelist them. The five
+// excluded keys drop for EVERY viewer incl. the author (heal-decisions-view.test.js
+// locks this: whitelisting any of the five turns a test red).
 const SAFE_SIGNAL_KEYS = [
   'evidence', 'inheritedGps', 'placeKind', 'naming', 'dims', 'cohesion',
   'visionBridged', 'timeFitMin', 'runnerUpMin', 'inferredTime', 'nearestMin',
-  'discoveredNameSource',
+  'discoveredNameSource', 'timeAnchorSuspect',
 ]
 export function projectSignalsForViewer(signals, { nameHidden, coordsHidden }) {
   if (!signals || typeof signals !== 'object') return null

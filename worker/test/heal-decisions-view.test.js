@@ -378,25 +378,27 @@ describe('the signals projection (pin / visionName / reason leaks)', () => {
 // pin/visionName, which are the author's own data and survive for them).
 // Whitelisting any of the six turns one of these red.
 describe('W8/W9 provenance keys never reach the per-viewer projection', () => {
-  const SIX = ['referenceLocatedCount', 'timeAnchorSuspect', 'gpsProv', 'handFiledStop', 'handFiledBy', 'dismissedBefore']
+  // FIVE stay excluded; timeAnchorSuspect is now INCLUDED (it drives variant C).
+  const EXCLUDED = ['referenceLocatedCount', 'gpsProv', 'handFiledStop', 'handFiledBy', 'dismissedBefore']
   const W89 = {
     evidence: 'gps',                          // a SAFE key — must survive (proves it's not a blackout)
     referenceLocatedCount: 3,
-    timeAnchorSuspect: true,
+    timeAnchorSuspect: true,                   // NOW projected (kind-C driver) — asserted kept below
     gpsProv: ['reference', 'inferred-presence'],
     handFiledStop: 's-secret',                // ⚠ a STOP ID
     handFiledBy: 'helen',                     // ⚠ a TRAVELER
     dismissedBefore: true,
   }
 
-  it('all six are stripped for the AUTHOR too; the safe key survives', async () => {
+  it('the five excluded keys drop for the AUTHOR too; timeAnchorSuspect + the safe key survive', async () => {
     await seedTrip('t1', { days: [{ isoDate: '2026-07-01', stops: [{ id: 's1', name: 'The museum' }] }] })
     await seedMemory('m1', 't1')
     await seedDecision('t1', { memoryIds: ['m1'], placeId: 's1', placeName: 'The museum', signals: W89 })
     const jon = await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')
     expect(jon).toHaveLength(1)
-    for (const k of SIX) expect(jon[0].signals[k]).toBeUndefined()
+    for (const k of EXCLUDED) expect(jon[0].signals[k]).toBeUndefined()
     expect(jon[0].signals.evidence).toBe('gps')
+    expect(jon[0].signals.timeAnchorSuspect).toBe(true) // included for kind C
   })
 
   it('handFiledStop / handFiledBy never ride along even when they name a REAL hidden stop / person', async () => {

@@ -30,15 +30,24 @@ function dayOfYear(iso) {
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
-// Which question variant a decision asks. The engine currently emits PLACE
-// confirms and, via the vision-naming path, NAME confirms; time (C) and grouping
-// (D) are written to full fidelity in the card but not yet produced as distinct
-// confirm rows by the engine, so they are never derived here (honest: the card
-// supports four, the engine feeds two today).
+// Which question variant a decision asks (ONE per moment — never compound; the
+// other dimension waits for its own day). Priority:
+//   B — a vision-read NAME with no real place ("we're calling this …").
+//   C — the place is known but the DAY is upload-time-only (timeAnchorSuspect) →
+//       "was this around {time}, {day}?". Gated on a reference-anchored place
+//       (evidence gps/record) so we only ask "when" once we're sure "where".
+//   D — the burst's cohesion is borderline → a grouping question.
+//   A — the default place confirm.
+// Thresholds are TUNABLE and validated against the real A/B/C/D distribution in
+// the shadow review (Jonathan's 2026-07-13 all-four call).
+export const LOW_COHESION = 0.5
 export function confirmKindOf(decision) {
   const pid = String(decision?.placeId || '')
-  if (pid.startsWith('__vision__')) return 'B' // a vision-read name to confirm ("we're calling this …")
-  return 'A' // a place to confirm
+  const sig = decision?.signals || {}
+  if (pid.startsWith('__vision__')) return 'B'
+  if (sig.timeAnchorSuspect && (sig.evidence === 'gps' || sig.evidence === 'record')) return 'C'
+  if (typeof sig.cohesion === 'number' && sig.cohesion < LOW_COHESION) return 'D'
+  return 'A'
 }
 
 // Deterministic within the local day, stable regardless of the server's row

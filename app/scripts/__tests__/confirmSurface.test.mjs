@@ -47,10 +47,28 @@ test('pickConfirmOfDay: the pick rotates across days', () => {
   assert.equal(picks.size, 2) // consecutive days land on different moments
 })
 
-test('confirmKindOf: vision id → B (name), else A (place)', () => {
+test('confirmKindOf: classifies all four variants (one per moment)', () => {
+  // B — a vision name with no real place
   assert.equal(confirmKindOf({ placeId: '__vision__:2026-07-02:0' }), 'B')
-  assert.equal(confirmKindOf({ placeId: 's-angel' }), 'A')
+  // C — place known (gps/record) but the DAY is upload-time-only
+  assert.equal(confirmKindOf({ placeId: 's1', signals: { evidence: 'gps', timeAnchorSuspect: true } }), 'C')
+  assert.equal(confirmKindOf({ placeId: 's1', signals: { evidence: 'record', timeAnchorSuspect: true } }), 'C')
+  // D — borderline cohesion
+  assert.equal(confirmKindOf({ placeId: 's1', signals: { evidence: 'gps', cohesion: 0.3 } }), 'D')
+  // A — the default place confirm
+  assert.equal(confirmKindOf({ placeId: 's-angel', signals: { evidence: 'gps', cohesion: 0.9 } }), 'A')
   assert.equal(confirmKindOf({}), 'A')
+})
+
+test('confirmKindOf: time-suspect but place NOT reference-anchored stays a place confirm (A)', () => {
+  // "when" is only asked once we're sure "where" — a time-only match with a
+  // suspect clock is still a place question, not a time one.
+  assert.equal(confirmKindOf({ placeId: 's1', signals: { evidence: 'time-only', timeAnchorSuspect: true } }), 'A')
+})
+
+test('confirmKindOf: B outranks C outranks D (one question per moment)', () => {
+  assert.equal(confirmKindOf({ placeId: '__vision__:x', signals: { evidence: 'gps', timeAnchorSuspect: true, cohesion: 0.1 } }), 'B')
+  assert.equal(confirmKindOf({ placeId: 's1', signals: { evidence: 'gps', timeAnchorSuspect: true, cohesion: 0.1 } }), 'C')
 })
 
 test('budget: unspent by default, spent after spendConfirmBudget for that day', () => {
