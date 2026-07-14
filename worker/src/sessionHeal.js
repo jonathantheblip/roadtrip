@@ -111,18 +111,32 @@ function momentVisionName(photoIds, meta) {
   return best
 }
 
+// Common activity lead-words that read WARMER lowercased mid-sentence ("look like
+// walking around town", not "…Walking around town"). A safelist, never a guess:
+// a capitalized word NOT in here — a proper noun like "July" — is left untouched.
+const WARM_LEAD = new Set([
+  'walking', 'wandering', 'strolling', 'exploring', 'playing', 'hanging', 'relaxing',
+  'shopping', 'browsing', 'poking', 'swimming', 'hiking', 'biking', 'riding',
+  'visiting', 'watching', 'having', 'eating', 'grabbing', 'getting', 'making',
+  'dinner', 'lunch', 'breakfast', 'brunch', 'coffee', 'drinks', 'dessert',
+])
+
 // The {moment} DESCRIPTOR for the S1 confirm surface's question ("These {n}
 // photos look like {moment} — at {place}. Right?"). The moment's dominant vision
 // NAME (visionLabel.js already asks Claude for a 2-5-word album name — "At the
-// beach", "Walking around town", "July 4th parade") normalized into a
-// noun-phrase slot form: a leading "At the "/"At " is rewritten so "At the
-// beach" reads "the beach" (not "look like at the beach"). CASE is PRESERVED —
-// proper nouns ("July 4th parade") stay capitalized for Jonathan/Helen; the
-// lens render applies Aurelia's whole-string lowercase. Empty in → '' (no
-// descriptor; the card falls back). Pure → unit-testable + mirror-parity.
+// beach", "Walking around town", "July 4th parade") warmed into a noun-phrase
+// slot: (1) a leading "At the "/"At " → "the beach" (not "look like at the
+// beach"); (2) a COMMON activity lead is lowercased for a warm mid-sentence read
+// ("Walking" → "walking"), while a proper noun ("July 4th parade") keeps its
+// caps for Jonathan/Helen. The lens render applies Aurelia's whole-string
+// lowercase. Empty in → '' (card falls back). Pure → unit-testable + mirror-parity.
+// (Deeper warmth — activity-forward phrasing, the rare embedded-place clash — is
+// tuned against the real label distribution in the shadow review.)
 export function momentDescriptorForm(visionName) {
   if (typeof visionName !== 'string') return ''
-  const s = visionName.trim().replace(/^at\s+the\s+/i, 'the ').replace(/^at\s+/i, '')
+  let s = visionName.trim().replace(/^at\s+the\s+/i, 'the ').replace(/^at\s+/i, '')
+  const lead = s.split(/\s+/)[0] || ''
+  if (WARM_LEAD.has(lead.toLowerCase())) s = lead.toLowerCase() + s.slice(lead.length)
   return s.trim()
 }
 

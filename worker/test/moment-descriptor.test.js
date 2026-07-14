@@ -9,10 +9,12 @@ describe('momentDescriptorForm', () => {
     expect(momentDescriptorForm('At the museum')).toBe('the museum')
     expect(momentDescriptorForm('At A-House')).toBe('A-House')
   })
-  it('leaves an already-noun / gerund phrase alone, PRESERVING case', () => {
-    expect(momentDescriptorForm('Walking around town')).toBe('Walking around town')
-    expect(momentDescriptorForm('July 4th parade')).toBe('July 4th parade') // proper-noun caps survive
-    expect(momentDescriptorForm('Dinner out')).toBe('Dinner out')
+  it('warms a common activity lead to lowercase; leaves a proper noun capitalized', () => {
+    expect(momentDescriptorForm('Walking around town')).toBe('walking around town') // warmer mid-sentence
+    expect(momentDescriptorForm('Playing at the park')).toBe('playing at the park')
+    expect(momentDescriptorForm('Dinner out')).toBe('dinner out')
+    expect(momentDescriptorForm('July 4th parade')).toBe('July 4th parade') // proper noun untouched (safelist)
+    expect(momentDescriptorForm('Farmers market')).toBe('Farmers market')   // not in the safelist → left as-is
   })
   it('does not fire on an "at" that is not a leading preposition', () => {
     expect(momentDescriptorForm('Batting practice')).toBe('Batting practice') // "at" mid-word untouched
