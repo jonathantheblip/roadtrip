@@ -96,24 +96,25 @@ export function spendConfirmBudget(localDateIso, storage) {
 // photo store + trip plan. `signal` drives the §3 evidence line; null → no line
 // (fail-closed). Pure + node-testable.
 //
-// ⚠ NEEDS-YOUR-EYE — the {moment} descriptor. The question reads "These {n} photos
-// look like {moment} — at {place}" but the engine produces no human cluster label
-// ("the walk into town") for a place/GPS moment; only the vision path yields a name
-// (kind B). Until that's decided, the fallback here is the vision name when present,
-// else a neutral 'this one' — honest but plain. A real descriptor is a copy/design
-// call (see the S1 checkpoint).
+// The {moment} descriptor (Jonathan's 2026-07-13 call: "generate a REAL label").
+// The engine now computes it — `signals.momentDescriptor`, the moment's dominant
+// vision name normalized to the noun-phrase slot (sessionHeal.momentDescriptorForm),
+// projected through the nameHidden gate. Preference: engine descriptor → the
+// vision name → a neutral 'this one' (only when vision labeled nothing).
 export function momentFromDecision(decision, extra = {}) {
   if (!decision) return null
   const { thumbs = [], alts = [], descriptor = '', dayPart = '', time = '', day = '', base = '' } = extra
   const place = decision.placeName || ''
   const kind = confirmKindOf(decision)
-  const visionName = decision.signals && typeof decision.signals.visionName === 'string' ? decision.signals.visionName : ''
+  const sig = decision.signals || {}
+  const visionName = typeof sig.visionName === 'string' ? sig.visionName : ''
+  const md = typeof sig.momentDescriptor === 'string' ? sig.momentDescriptor : '' // the engine's real label (2026-07-13 call)
   return {
     kind,
     n: decision.photoCount || (Array.isArray(decision.memoryIds) ? decision.memoryIds.length : 0),
     place,
     name: kind === 'B' ? place || visionName : place, // kind B: the vision name IS the label
-    moment: descriptor || visionName || 'this one',   // {moment} fallback — see NEEDS-YOUR-EYE above
+    moment: descriptor || md || visionName || 'this one', // the engine descriptor, then vision name, then fallback
     part: dayPart || 'day',
     time,
     day,

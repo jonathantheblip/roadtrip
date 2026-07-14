@@ -262,6 +262,12 @@ describe('the signals projection (pin / visionName / reason leaks)', () => {
     expect((await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan'))[0].signals.visionName).toBe('Dinner at A-House')
   })
 
+  it('momentDescriptor (the {moment} label) echoing the hidden venue is stripped for the hidden viewer only', async () => {
+    await seedSecretScenario({ evidence: 'gps', momentDescriptor: 'A-House' }) // name-bearing → the nameHidden gate, not a plain scalar
+    expect((await listHealDecisionsForViewer(envShadow(), 't1', 'helen'))[0].signals.momentDescriptor).toBeUndefined()
+    expect((await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan'))[0].signals.momentDescriptor).toBe('A-House')
+  })
+
   it('a reason string containing the hidden name is nulled for the hidden viewer only', async () => {
     await seedSecretScenario({ evidence: 'gps' }, { reason: 'looks like A-House — confirm it' })
     expect((await listHealDecisionsForViewer(envShadow(), 't1', 'helen'))[0].reason).toBe(null)

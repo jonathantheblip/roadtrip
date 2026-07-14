@@ -100,3 +100,10 @@ test('momentFromDecision: multi-signal → "multi"; null decision → null', () 
   assert.equal(momentFromDecision({ placeName: 'X', signals: { dims: ['time', 'gps'] } }).signal, 'multi')
   assert.equal(momentFromDecision(null), null)
 })
+
+test('momentFromDecision: the engine momentDescriptor drives {moment} (the 2026-07-13 call)', () => {
+  const m = momentFromDecision({ placeName: 'Angel Foods', photoCount: 9, memoryIds: ['m1'], signals: { inheritedGps: true, momentDescriptor: 'the walk into town' } })
+  assert.equal(m.moment, 'the walk into town') // engine label wins over vision name / fallback
+  const noLabel = momentFromDecision({ placeName: 'Angel Foods', signals: { inheritedGps: true } })
+  assert.equal(noLabel.moment, 'this one') // vision labeled nothing → neutral fallback
+})

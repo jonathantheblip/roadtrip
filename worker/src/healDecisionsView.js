@@ -183,6 +183,11 @@ export function projectSignalsForViewer(signals, { nameHidden, coordsHidden }) {
   }
   const vn = signals.visionName
   if (typeof vn === 'string' && vn && !nameHidden(vn)) out.visionName = vn
+  // S1 momentDescriptor — the {moment} label. Name-bearing (a vision name can
+  // echo a hidden place), so it passes the SAME nameHidden gate as visionName,
+  // never a plain SAFE_SIGNAL_KEYS scalar.
+  const md = signals.momentDescriptor
+  if (typeof md === 'string' && md && !nameHidden(md)) out.momentDescriptor = md
   const pin = signals.pin
   if (pin && typeof pin === 'object') {
     const leaks =

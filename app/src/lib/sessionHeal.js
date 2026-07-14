@@ -120,6 +120,21 @@ function momentVisionName(photoIds, meta) {
   return best
 }
 
+// The {moment} DESCRIPTOR for the S1 confirm surface's question ("These {n}
+// photos look like {moment} — at {place}. Right?"). The moment's dominant vision
+// NAME (visionLabel.js already asks Claude for a 2-5-word album name — "At the
+// beach", "Walking around town", "July 4th parade") normalized into a
+// noun-phrase slot form: a leading "At the "/"At " is rewritten so "At the
+// beach" reads "the beach" (not "look like at the beach"). CASE is PRESERVED —
+// proper nouns ("July 4th parade") stay capitalized for Jonathan/Helen; the
+// lens render applies Aurelia's whole-string lowercase. Empty in → '' (no
+// descriptor; the card falls back). Pure → unit-testable + mirror-parity.
+export function momentDescriptorForm(visionName) {
+  if (typeof visionName !== 'string') return ''
+  const s = visionName.trim().replace(/^at\s+the\s+/i, 'the ').replace(/^at\s+/i, '')
+  return s.trim()
+}
+
 // trip + its memories → [{ isoDate, decisions: [...] }]. `defaultOffset` (min)
 // is used only when a ref carries no offsetMinutes (legacy) — 0 = prior UTC behavior.
 export function buildTripDecisions(trip, memories, opts = {}) {
@@ -350,11 +365,20 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           ...(m.handFiledStop ? { handFiledStop: m.handFiledStop, handFiledBy: m.handFiledBy || null } : {}),
         }
       }
+      // S1 — the {moment} DESCRIPTOR: the moment's dominant vision name,
+      // normalized to the confirm question's noun-phrase slot ("look like {moment}
+      // — at {place}"). Computed for EVERY moment (not just the unplaced ones the
+      // leave→name path below promotes), since a GPS/time PLACE confirm still wants
+      // a human label. Name-bearing (a vision name can echo a hidden place), so it
+      // is projected ONLY through healDecisionsView's nameHidden gate, like
+      // visionName — never a plain whitelisted scalar.
+      const vn = momentVisionName(d.photoIds, meta)
+      const descriptor = momentDescriptorForm(vn)
+      if (descriptor) d.signals = { ...d.signals, momentDescriptor: descriptor }
       // A moment with no located/agenda place would LEAVE — but if vision can NAME it,
       // surface it as a named moment to CONFIRM (content-inferred, never a silent auto).
       // This is what turns the no-GPS beach afternoons into "At the beach".
       if (d.tier === 'leave') {
-        const vn = momentVisionName(d.photoIds, meta)
         if (vn) {
           d.place = { id: `__vision__:${iso}:${visSeq++}`, name: vn }
           d.tier = 'confirm'
