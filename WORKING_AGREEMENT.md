@@ -213,8 +213,21 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-13. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-17. Update as these resolve.
 
+- **[OPEN 2026-07-17] A strict `script-src` silently blocking an INLINE `<script>` is INVISIBLE to
+  `read_console_messages` and to a post-load `securitypolicyviolation` listener — actively probe inline
+  execution instead.** Adding the faces CSP (`script-src 'self' 'wasm-unsafe-eval'`, no `'unsafe-inline'`)
+  I verified the app "rendered with zero console errors" and called it clean — but that check MISSED that
+  the CSP was blocking the app's own pre-React person/theme bootstrap (a first-paint-flash regression that
+  would have shipped). The browser's CSP-violation report for a blocked inline script does NOT arrive as a
+  `console.*` event the read tool captures, and a `securitypolicyviolation` listener added via
+  `javascript_tool` AFTER load misses the load-time violation. A fresh adversarial reviewer caught it by
+  actively testing execution. **Mitigation: when a strict `script-src` (no `'unsafe-inline'`) ships, VERIFY
+  each inline script still runs — inject a `<script>` with the same content (must execute) and one with
+  different content (must be refused), and/or assert each inline block's `sha256` is present in the served
+  `script-src`. "App renders + no console errors" is NOT sufficient for CSP.** (Fixed by auto-hashing every
+  inline script in the build plugin.)
 - **[OPEN 2026-07-13] A build/compile break can hide behind a green-looking e2e summary — assert build
   EXIT=0 after any component/JSX edit, don't trust the test count alone.** During the S1 overnight run I
   put a `{/* comment */}` inside a `{cond && ( … )}` (two siblings, no fragment) — a JSX syntax error. I

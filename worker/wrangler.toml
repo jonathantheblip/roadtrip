@@ -70,15 +70,16 @@ PHOTO_STOP_GEOCODE_MODE = "on"
 # devices) is REPLACED by a deterministic `fc2-<hash(personId)>` tag: every
 # device computes the SAME tag from the shared family-member id — no key, no
 # setup, nothing to reconcile. Sync still ships correct + fail-closed (only
-# fc2-shaped tags reach D1, never embeddings/names). Two things still gate a
-# flip past "off", so DO NOT promote yet: (1) the pre-promotion HYGIENE slice —
-# self-host the ONNX runtime + models (faceModel.js loads them from CDN/HF
-# today) + a strict CSP, since external code on a page that decodes family
-# PHOTOS is the residual exposure; (2) a promotion review of coverage +
-# false-positive retraction. There is still no faces "shadow" dry-run (shadow
-# == off here), so both must be settled before "on" — nothing catches it live.
+# fc2-shaped tags reach D1, never embeddings/names). The pre-promotion HYGIENE
+# slice is now DONE (slice 4, 2026-07-17): a strict CSP forbids all external
+# origins AND the ONNX runtime + models are self-hosted same-origin, so no third
+# party can serve code/weights to the page that decodes family PHOTOS. ONE gate
+# remains before a flip past "off", so DO NOT promote yet: a promotion review of
+# coverage (tags only exist where an enrolled device scanned) + a false-positive
+# retraction path. There is still no faces "shadow" dry-run (shadow == off here),
+# so that must be settled before "on" — nothing catches it live.
 # See BUILD_PLAN_FACES_KEYLESS.md + the carryover's faces entry.
-# PHOTO_FACES_MODE = "off"                  # R6 — LOCKED pending CSP/self-host hygiene + promotion review
+# PHOTO_FACES_MODE = "off"                  # R6 — LOCKED pending the coverage/retraction promotion review
 
 # PHOTO_PRESENCE_MODE (Build W5, BUILD_PLAN_WITNESS_FLEET_2.md) — presence
 # breadcrumbs: a family member's phone becomes a witness for where an

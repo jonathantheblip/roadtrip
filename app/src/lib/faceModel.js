@@ -43,8 +43,12 @@
 // MobileFaceNet, InsightFace lineage). Chosen as the model for this
 // private family app — its non-commercial license fits personal,
 // non-commercial use, and it's proven in production face recognition.
-// Runtime WASM + models load from CDN/HF; could be self-hosted later for
-// full offline use (no privacy change — they are generic, data-free).
+// Runtime WASM + models are now SELF-HOSTED same-origin (slice 4b, 2026-07-17):
+// the .wasm is build-copied from node_modules and the models live in
+// public/models/ — nothing loads from an external CDN, which is what lets the
+// strict CSP forbid all external origins (they are generic, data-free math, so
+// no privacy change — the win is that no third party can serve code/weights to
+// the page that decodes family photos).
 
 import { l2normalize } from './faceMatch.js'
 import { detectFacesScrfd } from './scrfd.js'

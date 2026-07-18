@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { copyFileSync, mkdirSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
 
 // Relative base so the same build works at the repo root and under /roadtrip
 // on GitHub Pages without needing to hard-code a path.
@@ -47,9 +48,14 @@ export default defineConfig(({ mode }) => {
   // closes the "external code executes on the photo page" gap: 4a's CSP alone
   // still allowed jsdelivr WASM via connect-src ('wasm-unsafe-eval' instantiates
   // fetched bytes regardless of origin).
-  const csp = [
+  // script-src forbids ALL external + injected JS. The app's OWN inline scripts
+  // (the pre-React person/theme bootstrap in index.html — it MUST stay inline +
+  // zero-latency to set the theme before first paint, else an installed PWA
+  // flashes the wrong person/tint for a frame) are admitted by their sha256
+  // hash, computed from the FINAL built HTML at inject time so it never drifts.
+  const cspFor = (scriptSrc) => [
     "default-src 'self'",
-    "script-src 'self' 'wasm-unsafe-eval'",
+    scriptSrc,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     `img-src 'self' data: blob: https://*.basemaps.cartocdn.com ${infra}`.trim(),
@@ -65,12 +71,21 @@ export default defineConfig(({ mode }) => {
   const cspPlugin = {
     name: 'inject-csp-meta',
     apply: 'build',
-    transformIndexHtml() {
-      return [{
-        tag: 'meta',
-        attrs: { 'http-equiv': 'Content-Security-Policy', content: csp },
-        injectTo: 'head-prepend',
-      }]
+    transformIndexHtml: {
+      order: 'post', // run last so we hash the inline scripts as actually served
+      handler(html) {
+        const inline = [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
+        const hashes = inline.map((s) => `'sha256-${createHash('sha256').update(s, 'utf8').digest('base64')}'`)
+        const scriptSrc = ["script-src 'self' 'wasm-unsafe-eval'", ...hashes].join(' ')
+        return {
+          html,
+          tags: [{
+            tag: 'meta',
+            attrs: { 'http-equiv': 'Content-Security-Policy', content: cspFor(scriptSrc) },
+            injectTo: 'head-prepend',
+          }],
+        }
+      },
     },
   }
 
