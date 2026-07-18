@@ -20,7 +20,7 @@ import { flattenPhotoEntries } from '../lib/photoEntries'
 import { implicitBaseIdForDay } from '../lib/photoMatch'
 import { thumbUrl } from '../lib/thumbUrl'
 import {
-  pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision, confirmFilings,
+  pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision, confirmFilings, dayAlternates,
 } from '../lib/confirmSurface'
 import { ConfirmMomentCard, ConfirmPlaceSheet, useConfirmMoment } from './ConfirmMomentCard'
 
@@ -49,26 +49,7 @@ function thumbsForMoment(trip, traveler, memoryIds) {
     return flattenPhotoEntries(mems).slice(0, 5).map((p) => thumbUrl(p.url, 256)).filter(Boolean)
   } catch { return [] }
 }
-// The 2-3 place alternates for the PLACE sheet: the moment's day's plan stops +
-// the base, excluding the rejected guess (MoveSheet's family-authored targets —
-// never ledger signals). Basic v1; a richer resolver can follow.
-function dayAlternates(trip, isoDate, guessedPlaceId) {
-  const out = []
-  const day = (trip?.days || []).find((d) => d.isoDate === isoDate)
-  for (const s of day?.stops || []) {
-    const label = s?.name || s?.title
-    if (!s?.id || s.id === guessedPlaceId || !label) continue
-    out.push({ id: s.id, label, why: 'PLAN' })
-    if (out.length >= 2) break
-  }
-  // The base gets the day's FILABLE implicit-base id (flip-blocker #5): picking
-  // "the beach house" then actually files the photos there (a real, album-rendered
-  // stop — implicitBaseIdForDay), so savedPicked's "part of the trip now" is true,
-  // not a promise over an id:null that moved nothing.
-  const base = trip?.homeBase?.name || trip?.base?.name
-  if (base && out.length < 3) out.push({ id: implicitBaseIdForDay(isoDate), label: base, why: 'BASE' })
-  return out.slice(0, 3)
-}
+// dayAlternates moved to lib/confirmSurface.js (pure + node-testable).
 
 const DEMO_MOMENT = {
   kind: 'A', n: 9, moment: 'the walk into town', place: 'Angel Foods', signal: 'timeFit',

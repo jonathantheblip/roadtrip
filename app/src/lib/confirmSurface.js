@@ -17,6 +17,7 @@
 // globalThis.localStorage) so it degrades to a no-op off-browser.
 
 import { evidenceKeyOf } from './confirmCopy.js'
+import { implicitBaseIdForDay, tripImplicitBase, isHomeDay } from './photoMatch.js'
 
 export const CONFIRM_BUDGET_KEY = 'heal.confirm.lastHandled'
 
@@ -150,6 +151,31 @@ export function isFilablePlace(placeId) {
 // sweep, source:'confirmed' = D13). Only a place-CONFIRM or an alternate-PICK
 // files a real stop; a name / time / free-text / grouping answer records feedback
 // + re-heals but files no stop here (handled by the re-heal / matcher).
+// The 2-3 place alternates for the "Not quite" PLACE sheet: the moment's day's
+// plan stops + the base, excluding the rejected guess. The BASE alt is offered
+// ONLY when the album can actually RENDER a base filing for this day — the SAME
+// gate groupByStop/buildMoveTargets use (photoEntries.js): a real implicit base
+// (tripImplicitBase — a geocoded stay, no planned base stop) AND not a home day.
+// Offering it more loosely would file the photo to a __trip_base__ id the album
+// never registers → orphaned to "Unfiled", strictly worse than not offering it
+// (flip-blocker #5). Uses tripImplicitBase's own label so the name matches the
+// album section. Pure; exported for a direct unit test.
+export function dayAlternates(trip, isoDate, guessedPlaceId) {
+  const out = []
+  const day = (trip?.days || []).find((d) => d.isoDate === isoDate)
+  for (const s of day?.stops || []) {
+    const label = s?.name || s?.title
+    if (!s?.id || s.id === guessedPlaceId || !label) continue
+    out.push({ id: s.id, label, why: 'PLAN' })
+    if (out.length >= 2) break
+  }
+  const baseTpl = tripImplicitBase(trip)
+  if (baseTpl && day && !isHomeDay(day) && out.length < 3) {
+    out.push({ id: implicitBaseIdForDay(isoDate), label: baseTpl.name, why: 'BASE' })
+  }
+  return out.slice(0, 3)
+}
+
 export function confirmFilings(moment, outcome, payload, by) {
   if (!moment || !Array.isArray(moment.memoryIds) || !moment.memoryIds.length) return []
   let stopId = null

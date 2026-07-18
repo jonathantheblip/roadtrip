@@ -5,8 +5,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickConfirmOfDay, confirmKindOf, confirmBudgetSpentToday, spendConfirmBudget, CONFIRM_BUDGET_KEY,
-  momentFromDecision, confirmFilings, isFilablePlace,
+  momentFromDecision, confirmFilings, isFilablePlace, dayAlternates,
 } from '../../src/lib/confirmSurface.js'
+import { tripImplicitBase } from '../../src/lib/photoMatch.js'
 
 const dec = (over = {}) => ({ tier: 'confirm', isoDate: '2026-07-02', memoryIds: ['m1'], placeId: 's1', ...over })
 
@@ -162,4 +163,34 @@ test('confirmFilings: name / free-text / grouping / aside / skip file NO stop he
   }
   // a vision-name moment (synthetic placeId) confirmed → no stop filing (it promotes a name)
   assert.deepEqual(confirmFilings({ memoryIds: ['m1'], placeId: '__vision__:x:0' }, 'confirmed', null, 'jonathan'), [])
+})
+
+// dayAlternates — the base alt is offered ONLY when the album can render a base
+// filing (flip-blocker #5 orphan-guard): the SAME gate groupByStop uses, or a
+// base pick files to a __trip_base__ id the album never registers → "Unfiled".
+test('dayAlternates: offers the base only on a day the album can render it, with the filable day-scoped id', () => {
+  const stay = {
+    id: 'stay', dateRangeStart: '2026-07-03', dateRangeEnd: '2026-07-05',
+    homeBase: { lat: 42.5, lng: -73.0, label: 'Lake House' },
+    days: [
+      { isoDate: '2026-07-03', stops: [{ id: 's1', name: 'Dinner out' }] },
+      { isoDate: '2026-07-04', stops: [{ id: 's2', name: 'Museum' }] },
+    ],
+  }
+  const base = tripImplicitBase(stay)
+  assert.ok(base, 'fixture sanity: a multi-day geocoded stay has an implicit base')
+  const alts = dayAlternates(stay, '2026-07-04', 's-guess')
+  const baseAlt = alts.find((a) => a.why === 'BASE')
+  assert.ok(baseAlt, 'base offered on a renderable stay day')
+  assert.equal(baseAlt.id, '__trip_base__:2026-07-04') // FILABLE + day-scoped (matches the album section)
+  assert.equal(baseAlt.label, base.name)
+
+  // no implicit base (a bare single-day trip) → base NOT offered (would orphan)
+  const bare = { id: 't', days: [{ isoDate: '2026-07-04', stops: [{ id: 's2', name: 'Museum' }] }] }
+  assert.equal(tripImplicitBase(bare), null, 'fixture sanity: no implicit base')
+  assert.ok(!dayAlternates(bare, '2026-07-04', 's-guess').some((a) => a.why === 'BASE'))
+
+  // a HOME day → base NOT offered even on a stay trip (groupByStop excludes it)
+  const withHome = { ...stay, days: [...stay.days, { isoDate: '2026-07-05', lodging: 'home', stops: [{ id: 's3', name: 'Pack up' }] }] }
+  assert.ok(!dayAlternates(withHome, '2026-07-05', 's-guess').some((a) => a.why === 'BASE'))
 })
