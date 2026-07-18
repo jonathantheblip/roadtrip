@@ -49,19 +49,27 @@
 import { l2normalize } from './faceMatch.js'
 import { detectFacesScrfd } from './scrfd.js'
 
-// All external asset URLs in one place, overridable via
-// globalThis.__RT_FACE_CONFIG (test seam / self-host switch).
+// SELF-HOSTED same-origin (Build W4 slice 4b — faces pre-promotion hygiene).
+// The runtime WASM + both models are served from our OWN origin (the ONNX
+// runtime .wasm is copied from node_modules into <outDir>/ort/ by vite's
+// self-host-ort-wasm plugin; the models live in public/models/). NOTHING loads
+// from an external CDN anymore, so the strict CSP (connect-src 'self') holds
+// and no third party can serve code onto the page that decodes family photos.
+// BASE_URL keeps the paths correct under GitHub Pages' repo-subpath base;
+// guarded so the node unit tests (no import.meta.env) don't throw — they never
+// load a model, only exercise the pure alignment math.
+const BASE =
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || './'
+// All asset URLs in one place, overridable via globalThis.__RT_FACE_CONFIG
+// (test seam / alternate-host switch).
 const FACE_CONFIG = {
-  // onnxruntime-web WASM/glue files — runs BOTH the SCRFD detector and
-  // the embedder (one runtime).
-  ortWasmBase: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/',
-  // SCRFD face detector (InsightFace, ~2.5 MB) — finds faces across
+  // onnxruntime-web WASM — runs BOTH the SCRFD detector and the embedder.
+  ortWasmBase: `${BASE}ort/`,
+  // SCRFD face detector (InsightFace buffalo_s, ~2.5 MB) — finds faces across
   // scales incl. small/distant ones. The default detector.
-  scrfdModel:
-    'https://huggingface.co/immich-app/buffalo_s/resolve/main/detection/model.onnx',
+  scrfdModel: `${BASE}models/detection.onnx`,
   // ONNX face-embedding model (~13.6 MB, 112×112 → 512-d)
-  embedderModel:
-    'https://huggingface.co/immich-app/buffalo_s/resolve/main/recognition/model.onnx',
+  embedderModel: `${BASE}models/recognition.onnx`,
   detectorInputSize: 1024, // device-confirmed sweet spot (1280 over-detects)
   detectorScoreThresh: 0.5,
   // Skip detections whose smaller side is under this many original-image

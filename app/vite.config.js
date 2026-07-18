@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { copyFileSync, mkdirSync, existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 // Relative base so the same build works at the repo root and under /roadtrip
 // on GitHub Pages without needing to hard-code a path.
@@ -38,9 +40,13 @@ export default defineConfig(({ mode }) => {
   const worker = originOf(env.VITE_WORKER_URL)
   const whisper = originOf(env.VITE_WHISPER_PROXY)
   const infra = [worker, whisper].filter(Boolean).join(' ')
-  // Face-engine CDNs — allowed here so faces would work if flipped on; slice
-  // 4b self-hosts the runtime + models and DROPS these from connect-src.
-  const faceEngine = 'https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co'
+  // Slice 4b: the ONNX runtime WASM + the face models are now SELF-HOSTED
+  // same-origin (see ortWasmPlugin below + public/models/), so NO external
+  // face-engine origin (jsdelivr / huggingface) remains in connect-src — the
+  // page can fetch code + model data ONLY from 'self'. This is what actually
+  // closes the "external code executes on the photo page" gap: 4a's CSP alone
+  // still allowed jsdelivr WASM via connect-src ('wasm-unsafe-eval' instantiates
+  // fetched bytes regardless of origin).
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval'",
@@ -48,7 +54,7 @@ export default defineConfig(({ mode }) => {
     "font-src 'self' https://fonts.gstatic.com data:",
     `img-src 'self' data: blob: https://*.basemaps.cartocdn.com ${infra}`.trim(),
     `media-src 'self' blob: data: ${infra}`.trim(),
-    `connect-src 'self' https://nominatim.openstreetmap.org ${faceEngine} ${infra}`.trim(),
+    `connect-src 'self' https://nominatim.openstreetmap.org ${infra}`.trim(),
     "worker-src 'self' blob:",
     "child-src 'self' blob:",
     "object-src 'none'",
@@ -68,8 +74,35 @@ export default defineConfig(({ mode }) => {
     },
   }
 
+  // ── Self-host the onnxruntime-web WASM (Build W4 slice 4b). The face engine
+  // uses the "external wasm" build variant (see resolve.conditions below): the
+  // multi-MB .wasm is fetched at RUNTIME from env.wasm.wasmPaths rather than
+  // bundled. We copy it from node_modules into <outDir>/ort/ at build so it is
+  // served SAME-ORIGIN (stays in lockstep with the installed package version —
+  // never committed, never a stale CDN copy). faceModel.js points wasmPaths at
+  // BASE_URL+'ort/'. The `webgpu` entry uses the jsep variant (webgpu + wasm
+  // fallback both); it degrades to single-thread when SharedArrayBuffer is
+  // absent (GitHub Pages can't set COOP/COEP), exactly as the CDN copy did.
+  let resolvedOutDir = ''
+  const ortWasmPlugin = {
+    name: 'self-host-ort-wasm',
+    apply: 'build',
+    configResolved(cfg) { resolvedOutDir = cfg.build.outDir },
+    closeBundle() {
+      const dist = resolve(process.cwd(), 'node_modules/onnxruntime-web/dist')
+      const outOrt = resolve(resolvedOutDir, 'ort')
+      mkdirSync(outOrt, { recursive: true })
+      const files = ['ort-wasm-simd-threaded.jsep.wasm', 'ort-wasm-simd-threaded.jsep.mjs']
+      for (const f of files) {
+        const src = resolve(dist, f)
+        if (existsSync(src)) copyFileSync(src, resolve(outOrt, f))
+        else this.warn(`self-host-ort-wasm: ${f} missing in node_modules — faces engine would 404`)
+      }
+    },
+  }
+
   return {
-    plugins: [react(), cspPlugin],
+    plugins: [react(), cspPlugin, ortWasmPlugin],
     base: './',
     define: clientDefine,
     resolve: {
