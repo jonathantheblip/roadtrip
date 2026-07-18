@@ -40,7 +40,7 @@ const cleanStr = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
 // that record feedback but move NO photo. The client files nothing for them, and
 // the server MUST not either — else a name-confirm (kind B, placeId '__vision__…')
 // would UPDATE stop_id to a bogus non-stop and lock the photos there forever.
-const isFilableStop = (id) =>
+export const isFilableStop = (id) =>
   typeof id === 'string' && !!id && !id.startsWith('__vision__') && !id.startsWith('__discovered__')
 
 // PURE validator (no DB) — the route rejects a bad body with this before any

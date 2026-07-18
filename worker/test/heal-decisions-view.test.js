@@ -6,7 +6,7 @@
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { applySchema } from './helpers/schema.js'
-import { listHealDecisionsForViewer, filterDecisionsForViewer, buildHiddenIndex, projectSignalsForViewer, buildAnsweredMatcher } from '../src/healDecisionsView.js'
+import { listHealDecisionsForViewer, filterDecisionsForViewer, buildHiddenIndex, projectSignalsForViewer, buildAnsweredMatcher, buildFiledElsewhere } from '../src/healDecisionsView.js'
 
 const NOW = 1_700_000_000_000
 
@@ -481,5 +481,56 @@ describe('the answered-moment filter, end to end', () => {
     await seedMemory('m1', 't1')
     await seedDecision('t1', { memoryIds: ['m1'] })
     expect(await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')).toHaveLength(1)
+  })
+})
+
+// ── #2 the projection-side no-clobber (S1 flip-blocker) ───────────────────────
+describe('buildFiledElsewhere — never offer a confirm for a moment hand-filed elsewhere', () => {
+  const prov = (source, by = 'helen') => JSON.stringify({ source, by, at: 1 })
+  const mem = (id, stopId, stopProvJson) => ({ id, stop_id: stopId, stop_prov_json: stopProvJson })
+
+  it('DROPS a decision when a memory is human-filed (manual/confirmed) to a DIFFERENT real stop', () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopHand', prov('manual'))])
+    expect(f(['m1'], 'stopGuess')).toBe(true)
+    const g = buildFiledElsewhere([mem('m2', 'stopHand', prov('confirmed'))])
+    expect(g(['m2'], 'stopGuess')).toBe(true)
+  })
+
+  it('ALLOWS when human-filed to the SAME stop as the guess (no conflict)', () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopSame', prov('manual'))])
+    expect(f(['m1'], 'stopSame')).toBe(false)
+  })
+
+  it("ALLOWS when the memory is only AUTO-filed elsewhere (a machine file isn't a person's decision)", () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopAuto', prov('auto'))])
+    expect(f(['m1'], 'stopGuess')).toBe(false)
+  })
+
+  it('ALLOWS an unfiled memory, and one filed to a SYNTHETIC id (not a real stop)', () => {
+    expect(buildFiledElsewhere([mem('m1', null, null)])(['m1'], 'stopGuess')).toBe(false)
+    expect(buildFiledElsewhere([mem('m1', '__vision__x', prov('manual'))])(['m1'], 'stopGuess')).toBe(false)
+  })
+
+  it('ALLOWS a name/vision GUESS (moves no photo → can never clobber, still ask)', () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopHand', prov('manual'))])
+    expect(f(['m1'], '__vision__name')).toBe(false)
+  })
+
+  it('reads the dual-named (client-shaped) stopProv too', () => {
+    const f = buildFiledElsewhere([{ id: 'm1', stopId: 'stopHand', stopProv: { source: 'manual' } }])
+    expect(f(['m1'], 'stopGuess')).toBe(true)
+  })
+
+  it('filterDecisionsForViewer drops a decision whose moment is hand-filed elsewhere', () => {
+    const trip = { days: [] }
+    const memRow = { id: 'm1', visibility: 'shared', author_traveler: 'jonathan', hide_from_json: null, revealed_at: null,
+      stop_id: 'stopHand', stop_prov_json: prov('manual', 'jonathan') }
+    const decision = { memory_ids: '["m1"]', iso_date: '2026-07-01', photo_count: 1, place_id: 'stopGuess',
+      place_name: 'Guessed Place', tier: 'confirm', signals_json: null, mode: 'shadow', run_at: 1 }
+    // hand-filed to stopHand, guessed stopGuess → not offered
+    expect(filterDecisionsForViewer(trip, [decision], [memRow], 'jonathan')).toHaveLength(0)
+    // same moment, guessed at where it's actually filed → offered (no conflict)
+    const okDecision = { ...decision, place_id: 'stopHand' }
+    expect(filterDecisionsForViewer(trip, [okDecision], [memRow], 'jonathan')).toHaveLength(1)
   })
 })
