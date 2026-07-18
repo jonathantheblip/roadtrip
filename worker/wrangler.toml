@@ -64,23 +64,21 @@ PHOTO_STOP_GEOCODE_MODE = "on"
 # PHOTO_OFFSET_MODE = "shadow"              # R2 — offset-inference engine (offsetInference.js)
 # PHOTO_GPS_PROPAGATION_MODE = "shadow"     # R3 — moment-scoped GPS propagation (momentGpsPropagation.js)
 
-# ⛔ PHOTO_FACES_MODE (Build W4) — DO NOT SET past "off" without resolving a
-# HARD DESIGN DECISION first. The faces sync ships correct + fail-closed (only
-# pseudonymous fc_N ids reach D1, never embeddings/names — security-reviewed
-# clean 2026-07-13) and fully OFF, so it is inert today. BUT the fc_N cluster
-# ids are numbered PER-DEVICE by local first-seen order with NO cross-device
-# reconciliation, so promoting this to shadow/on would make the engine's
-# jaccard face dimension FALSE-BRIDGE moments (different people sharing an
-# fc_N across devices) AND FALSE-SPLIT genuine same-person bursts (one person
-# with different fc_N across devices) — regressing BELOW the time-only
-# baseline. Achieving both cross-device consistency AND pseudonymity needs a
-# synced family secret (a keyed hash of the stable traveler id): a genuine
-# product/privacy decision for Jonathan, NOT a routine per-rung flip and NOT a
-# code fix within W4. There is also no faces "shadow" dry-run (shadow == off
-# here), so this design decision MUST be settled before "on" — nothing catches
-# it live. Confirmed by a 4-lens adversarial review, 2026-07-13. See the
-# carryover's W4 entry.
-# PHOTO_FACES_MODE = "off"                  # R6 — LOCKED pending the cross-device design decision
+# ⛔ PHOTO_FACES_MODE (Build W4) — still ships OFF, but the cross-device design
+# is now RESOLVED (KEYLESS, 2026-07-14 — BUILD_PLAN_FACES_KEYLESS.md). The old
+# per-device `fc_N` numbering (which false-bridged / false-split people across
+# devices) is REPLACED by a deterministic `fc2-<hash(personId)>` tag: every
+# device computes the SAME tag from the shared family-member id — no key, no
+# setup, nothing to reconcile. Sync still ships correct + fail-closed (only
+# fc2-shaped tags reach D1, never embeddings/names). Two things still gate a
+# flip past "off", so DO NOT promote yet: (1) the pre-promotion HYGIENE slice —
+# self-host the ONNX runtime + models (faceModel.js loads them from CDN/HF
+# today) + a strict CSP, since external code on a page that decodes family
+# PHOTOS is the residual exposure; (2) a promotion review of coverage +
+# false-positive retraction. There is still no faces "shadow" dry-run (shadow
+# == off here), so both must be settled before "on" — nothing catches it live.
+# See BUILD_PLAN_FACES_KEYLESS.md + the carryover's faces entry.
+# PHOTO_FACES_MODE = "off"                  # R6 — LOCKED pending CSP/self-host hygiene + promotion review
 
 # PHOTO_PRESENCE_MODE (Build W5, BUILD_PLAN_WITNESS_FLEET_2.md) — presence
 # breadcrumbs: a family member's phone becomes a witness for where an

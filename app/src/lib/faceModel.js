@@ -13,23 +13,31 @@
 // Isolated behind this one module the same way the EXIF library lives
 // behind exifRead.js: a future model swap touches only here.
 //
-// THE PRIVACY CONTRACT — revised 2026-07-12 (Jonathan's explicit, recorded
-// consent; see BUILD_PLAN_WITNESS_FLEET_2.md's W4 section). The load-bearing
-// promise, stated precisely because the code now does more than the old
-// one-line version said:
-//   • The PHOTOS and the raw 512-d FINGERPRINTS this file computes NEVER
-//     leave the device — that half of the old promise is unchanged.
-//   • The id→PERSON MAPPING (which enrolled family member a fingerprint
-//     belongs to) also NEVER leaves the device — it lives only in the local
-//     `rt-faces` IndexedDB store (faceIndex.js).
-//   • What DOES now sync, once the family is promoted past the shipped-OFF
+// THE PRIVACY CONTRACT — revised 2026-07-14 (KEYLESS faces; Jonathan's "no
+// door" call — see BUILD_PLAN_FACES_KEYLESS.md; original consent 2026-07-12).
+// Stated precisely and WITHOUT overclaiming:
+//   • The raw 512-d FINGERPRINTS this file computes NEVER leave the device.
+//     (The PHOTOS themselves DO — they sync to R2, honestly noted below; it is
+//     the fingerprints, not the photos, that are the local-only artifact.)
+//   • The ENROLLMENT (each person's reference faces) NEVER leaves the device.
+//   • The id→PERSON MAPPING (which family member a fingerprint belongs to) is
+//     NEVER stored server-side as data — it lives only in the local `rt-faces`
+//     IndexedDB store (faceIndex.js).
+//   • There is NO SECRET anywhere: nothing to provision, screenshot, steal,
+//     rotate, or recover. Cross-device agreement comes from a deterministic
+//     tag, not a key.
+//   • What DOES sync, once the family is promoted past the shipped-OFF
 //     `PHOTO_FACES_MODE` knob (worker/src/index.js enforces the gate — see
-//     photoFacesMode there): a PSEUDONYMOUS cluster id per photo (`fc_1`,
-//     `fc_2`, …), so every device can agree "the same person is in these
-//     photos" without any device ever learning WHO that person is. The
-//     mapping from `fc_N` back to an actual name stays per-device, forever.
-// That is the whole contract: anonymous cluster tags sync; fingerprints and
-// who-is-who never do.
+//     photoFacesMode there): a per-photo tag `fc2-<hash of the shared
+//     family-member id>` (faceIndex.js's faceTagOf), so every device agrees
+//     "the same person is in these photos" with no key and no coordination.
+// HONEST LIMIT (do not overclaim): with only four known family ids, this tag
+// is a four-entry dictionary — the server we run COULD compute which id maps
+// to which tag. That was ALWAYS true (it holds the photos, times, and
+// photographer); the tag adds no exposure a key was ever protecting against.
+// The tag's job is cross-device SAMENESS for the engine's jaccard face
+// dimension, NOT secrecy from our own server. What genuinely never leaves the
+// device is the list above: the fingerprints, the enrollment, the name map.
 //
 // MODEL (blessed): immich-app/buffalo_s detection + recognition (SCRFD +
 // MobileFaceNet, InsightFace lineage). Chosen as the model for this

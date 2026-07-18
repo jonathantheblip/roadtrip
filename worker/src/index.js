@@ -1046,7 +1046,7 @@ async function postHealConfirm(env, traveler, request, cors, ctx) {
 //   • off | shadow → photoEntry below writes ZERO bytes for `faces` — the
 //     sync gate is enforced HERE, not client-side (the worker is the
 //     secret-keeper, same posture as the Surprises masking layer).
-//   • on            → faces (already fail-closed-whitelisted to fc_N shapes,
+//   • on            → faces (already fail-closed-whitelisted to fc2 tag shapes,
 //     capped at 10, by sanitizeSidecarServer/sanitizeFaces above) persist.
 const PHOTO_FACES_MODES = new Set(['off', 'shadow', 'on'])
 function photoFacesMode(env) {
@@ -1206,8 +1206,8 @@ async function postMemory(env, traveler, request, url, cors, ctx) {
     // whitelist as the rest of the sidecar; a ref carrying none stays byte-
     // identical to before this build.
     if (sidecar.prov) e.prov = sidecar.prov
-    // Pseudonymous face-cluster ids (Build W4, faces) — sanitizeSidecarServer
-    // already fail-closed-whitelisted `sidecar.faces` down to fc_N-shaped
+    // Pseudonymous cross-device face tags (Build W4, faces) — sanitizeSidecarServer
+    // already fail-closed-whitelisted `sidecar.faces` down to fc2-shaped
     // strings capped at 10; this is the SECOND, independent gate: even a
     // perfectly-shaped array is dropped entirely below the family's own
     // PHOTO_FACES_MODE promotion (shipped OFF, photoFacesMode above). Faces
@@ -1723,9 +1723,9 @@ function rowToMemory(r, origin) {
         // write side (photoEntry): both directions must pass it or the tags
         // die on the first round-trip. Omit when absent.
         if (sidecar.prov) ref.prov = sidecar.prov
-        // Pseudonymous face-cluster ids (Build W4) — same independent
+        // Pseudonymous cross-device face tags (Build W4) — same independent
         // server-side whitelist as the write side. The PHOTO_FACES_MODE gate
-        // lives ONLY at write time (photoEntry): once fc_N bytes are
+        // lives ONLY at write time (photoEntry): once fc2 bytes are
         // honestly stored in D1, they round-trip like any other sidecar
         // field — there is nothing further to gate on read.
         if (sidecar.faces) ref.faces = sidecar.faces

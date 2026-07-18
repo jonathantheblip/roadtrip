@@ -1577,7 +1577,7 @@ export function applyRefSidecarReapply(refKey, sidecar) {
 // the fact — the re-source scan (resourceScan.js) recovers these from a
 // re-granted original the same way it recovers GPS/offset. A SECOND caller as
 // of Build W4 (faces): useFaceTags.js's incremental recognition pass gap-fills
-// `faces` (pseudonymous fc_N cluster ids) here the same way, once a photo's
+// `faces` (pseudonymous fc2 cross-device tags) here the same way, once a photo's
 // matched faces are known — an entirely different recovery path (on-device
 // model inference, not a re-granted original), same additive seam. Identified
 // by the ref's stable R2 `key`. Idempotent PER FIELD (not all-or-nothing): a ref that
