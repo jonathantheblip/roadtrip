@@ -213,8 +213,21 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-17. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-18. Update as these resolve.
 
+- **[OPEN 2026-07-18] A closure-SCOPE bug in a component event handler is invisible to the build, to a
+  demo-early-return e2e, AND to a code read that doesn't trace scope — only a scope-tracing review (or
+  ESLint no-undef) catches it.** The S1 Level 2 wiring referenced `trip` from `HealConfirmHost`'s
+  `onResolve`, but `trip` is declared inside the component's `useEffect` (a different closure) — a
+  `ReferenceError` that, once `PHOTO_CONFIRM_MODE` flips on, would throw BEFORE the filing loop and break
+  the ENTIRE confirm (Level 1 filing + Level 2 + the server lock) while the card still claimed success and
+  burned the day's budget. The `vite build` passed (JS doesn't error on an undefined ref until runtime);
+  the confirm e2e passed (the `?confirmDemo=1` path `return`s before the real write block, so the real
+  filing path has NEVER been runtime-exercised); a normal diff-read missed it. A fresh adversarial
+  reviewer caught it by tracing the scope chain. **Mitigations: (1) this repo has NO ESLint configured — a
+  `no-undef` rule would catch this whole class statically; worth adding (Jonathan's call). (2) When a
+  real-path handler can't be reached by the demo e2e, either exercise the real path or extract its logic
+  to a node-testable seam. (3) A review of event-handler code must trace variable SCOPE, not just logic.**
 - **[OPEN 2026-07-17] A strict `script-src` silently blocking an INLINE `<script>` is INVISIBLE to
   `read_console_messages` and to a post-load `securitypolicyviolation` listener — actively probe inline
   execution instead.** Adding the faces CSP (`script-src 'self' 'wasm-unsafe-eval'`, no `'unsafe-inline'`)

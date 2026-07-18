@@ -122,7 +122,15 @@ export function HealConfirmHost({ trips, traveler = 'helen', onOpenAlbum, demo =
       // File the moment optimistically (the local settle): a place-confirm / pick
       // moves the member photos to the stop with source:'confirmed' — updateMemoryStop
       // mirrors it and the worker LOCKS it against any later sweep. "On the record."
-      const memById = new Map(listMemoriesForTrip(trip.id, traveler).map((m) => [m.id, m]))
+      // `trip` lives in the effect's scope, NOT this closure — recompute it from
+      // the same stable inputs for the Level 2 coord-stamp. (Review flip-blocker:
+      // an out-of-scope `trip` ref threw a ReferenceError BEFORE the filing loop,
+      // which would break the WHOLE confirm — Level 1 filing + Level 2 + the
+      // server lock — while the card still claimed success + burned the budget.)
+      // Guarded: if it's somehow absent, the core filing still runs; only the
+      // coord-stamp is skipped.
+      const trip = primaryTrip(trips, today)
+      const memById = new Map((trip ? listMemoriesForTrip(trip.id, traveler) : []).map((m) => [m.id, m]))
       for (const f of confirmFilings(moment, outcome, payload, traveler)) {
         try { updateMemoryStop(f.memoryId, f.stopId, f.prov) } catch { /* sync-honesty path owns retries */ }
         // Level 2 (D13): a REAL-stop confirm's coords propagate — stamp each photo
