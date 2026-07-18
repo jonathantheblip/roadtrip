@@ -264,21 +264,23 @@ describe('the never-discard sidecar — meta/srcName/srcMod/atSrc survive postMe
   })
 })
 
-// Build W4 (faces) — pseudonymous fc_N cluster ids are the ONE sidecar field
-// with a SECOND gate beyond the shape whitelist: the PHOTO_FACES_MODE knob,
-// enforced entirely server-side (photoFacesMode in worker/src/index.js). The
-// knob ships OFF — this proves that even a perfectly-shaped, consented
+// Build W4 (faces) — the keyless fc2 cross-device tags are the ONE sidecar
+// field with a SECOND gate beyond the shape whitelist: the PHOTO_FACES_MODE
+// knob, enforced entirely server-side (photoFacesMode in worker/src/index.js).
+// The knob ships OFF — this proves that even a perfectly-shaped, consented
 // client payload writes ZERO bytes for `faces` until the family is promoted,
-// and that once promoted the pseudonymous ids (and ONLY those) round-trip
+// and that once promoted the pseudonymous tags (and ONLY those) round-trip
 // exactly like every other sidecar field.
 describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independently of shape validity', () => {
+  const J = 'fc2-d946bc4f3a5e495c' // jonathan (faceIndex.js faceTagOf)
+  const H = 'fc2-a44ef94680c3f2ad' // helen
   beforeEach(async () => {
     await applySchema(env.DB)
     await seedSession(env.DB, TOKENS.jonathan, 'jonathan')
     await env.DB.prepare('DELETE FROM memories').run()
   })
 
-  it('PHOTO_FACES_MODE unset (default OFF): a valid fc_N array is dropped entirely — zero bytes in D1', async () => {
+  it('PHOTO_FACES_MODE unset (default OFF): a valid fc2 array is dropped entirely — zero bytes in D1', async () => {
     const res = await call('/memories', {
       method: 'POST',
       token: TOKENS.jonathan,
@@ -287,7 +289,7 @@ describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independentl
         tripId: 't1',
         kind: 'photo',
         visibility: 'shared',
-        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-off/p0', mime: 'image/jpeg', faces: ['fc_1', 'fc_2'] }],
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-off/p0', mime: 'image/jpeg', faces: [J, H] }],
       },
     })
     expect(res.status).toBe(200)
@@ -307,7 +309,7 @@ describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independentl
         tripId: 't1',
         kind: 'photo',
         visibility: 'shared',
-        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-shadow/p0', mime: 'image/jpeg', faces: ['fc_1'] }],
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-shadow/p0', mime: 'image/jpeg', faces: [J] }],
       },
     })
     expect(res.status).toBe(200)
@@ -315,7 +317,7 @@ describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independentl
     expect('faces' in mem.photoRefs[0]).toBe(false)
   })
 
-  it("PHOTO_FACES_MODE='on': a valid fc_N array round-trips through postMemory → rowToMemory on a SECOND device", async () => {
+  it("PHOTO_FACES_MODE='on': a valid fc2 array round-trips through postMemory → rowToMemory on a SECOND device", async () => {
     const res = await call('/memories', {
       method: 'POST',
       token: TOKENS.jonathan,
@@ -325,19 +327,19 @@ describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independentl
         tripId: 't1',
         kind: 'photo',
         visibility: 'shared',
-        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-on/p0', mime: 'image/jpeg', faces: ['fc_2', 'fc_1'] }],
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-on/p0', mime: 'image/jpeg', faces: [H, J] }],
       },
     })
     expect(res.status).toBe(200)
     const mem = await res.json()
-    expect(mem.photoRefs[0].faces).toEqual(['fc_2', 'fc_1'])
+    expect(mem.photoRefs[0].faces).toEqual([H, J])
 
     // A second device's pull sees it too — and note the pull path applies
     // NO mode gate of its own (the gate is write-time only); the bytes are
     // already honestly in D1, so they round-trip.
     const pull = await call('/memories', { token: TOKENS.jonathan, envOverrides: { PHOTO_FACES_MODE: 'off' } })
     const pulled = (await pull.json()).find((m) => m.id === 'm-faces-on')
-    expect(pulled.photoRefs[0].faces).toEqual(['fc_2', 'fc_1'])
+    expect(pulled.photoRefs[0].faces).toEqual([H, J])
   })
 
   it("PHOTO_FACES_MODE='on' still enforces the shape whitelist — a raw embedding / person name / malformed id never reaches D1 even though the gate is open", async () => {
@@ -353,20 +355,20 @@ describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independentl
         photoRefs: [
           {
             storage: 'r2', key: 'jonathan/m-faces-on-hostile/p0', mime: 'image/jpeg',
-            faces: ['fc_1', 'jonathan', 'fc_1000', 0.5123, 'DROP TABLE memories', 'fc_2'],
+            faces: [J, 'jonathan', 'fc_1', 0.5123, 'DROP TABLE memories', H],
           },
         ],
       },
     })
     expect(res.status).toBe(200)
     const mem = await res.json()
-    expect(mem.photoRefs[0].faces).toEqual(['fc_1', 'fc_2'])
+    expect(mem.photoRefs[0].faces).toEqual([J, H])
     const row = await env.DB.prepare('SELECT photo_r2_keys_json FROM memories WHERE id = ?').bind('m-faces-on-hostile').first()
-    expect(JSON.parse(row.photo_r2_keys_json)[0].faces).toEqual(['fc_1', 'fc_2'])
+    expect(JSON.parse(row.photo_r2_keys_json)[0].faces).toEqual([J, H])
   })
 
   it("PHOTO_FACES_MODE='on' enforces the 10-cap end-to-end", async () => {
-    const many = Array.from({ length: 14 }, (_, i) => `fc_${i + 1}`)
+    const many = Array.from({ length: 14 }, (_, i) => 'fc2-' + i.toString(16).padStart(16, '0'))
     const res = await call('/memories', {
       method: 'POST',
       token: TOKENS.jonathan,
@@ -394,7 +396,7 @@ describe('Build W4 — faces: PHOTO_FACES_MODE gates the sync write independentl
         tripId: 't1',
         kind: 'photo',
         visibility: 'shared',
-        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-typo/p0', mime: 'image/jpeg', faces: ['fc_1'] }],
+        photoRefs: [{ storage: 'r2', key: 'jonathan/m-faces-typo/p0', mime: 'image/jpeg', faces: [J] }],
       },
     })
     expect(res.status).toBe(200)

@@ -72,58 +72,68 @@ describe('photoSidecar.js (worker) parity with exifRead.js (client)', () => {
   })
 
   // ── Build W4 (faces) — THE load-bearing safety property of that build:
-  // ONLY fc_N-shaped pseudonymous cluster ids may ever ride a ref. Mutation-
-  // style: a raw embedding array, a real person's name, a too-long fc_ id, a
-  // non-fc string — every hostile shape must be dropped, identically, on
-  // both independent sanitizer copies.
-  describe('sanitizeFaces / sanitizeSidecar.faces — the fc_N-only fail-closed whitelist', () => {
-    it('a valid fc_N array passes identically on both sides, in order, deduped', () => {
-      const input = ['fc_1', 'fc_2', 'fc_1', 'fc_42', 'fc_999']
-      const expected = ['fc_1', 'fc_2', 'fc_42', 'fc_999']
+  // ONLY the keyless `fc2-<16 lowercase hex>` cross-device tag may ever ride a
+  // ref. Mutation-style: a raw embedding, a real person's name, the RETIRED
+  // per-device `fc_N` shape, wrong-case/wrong-length hex, whitespace — every
+  // hostile shape must be dropped, identically, on both independent sanitizer
+  // copies.
+  describe('sanitizeFaces / sanitizeSidecar.faces — the fc2-only fail-closed whitelist', () => {
+    // Real family tags (faceIndex.js faceTagOf) + hex edges — pinned so a drift
+    // in the accepted SHAPE is caught here too, not only in the app unit test.
+    const J = 'fc2-d946bc4f3a5e495c' // jonathan
+    const H = 'fc2-a44ef94680c3f2ad' // helen
+    const R = 'fc2-6dcf0a1fd2038d9d' // rafa
+
+    it('a valid fc2 array passes identically on both sides, in order, deduped', () => {
+      const input = [J, H, J, R, 'fc2-0000000000000000', 'fc2-ffffffffffffffff']
+      const expected = [J, H, R, 'fc2-0000000000000000', 'fc2-ffffffffffffffff']
       expect(workerSanitizeFaces(input)).toEqual(expected)
       expect(clientSanitizeFaces(input)).toEqual(expected)
     })
 
     it('caps at 10 on both sides', () => {
-      const input = Array.from({ length: 15 }, (_, i) => `fc_${i + 1}`)
+      const input = Array.from({ length: 15 }, (_, i) => 'fc2-' + i.toString(16).padStart(16, '0'))
       expect(workerSanitizeFaces(input)).toHaveLength(10)
       expect(clientSanitizeFaces(input)).toHaveLength(10)
       expect(workerSanitizeFaces(input)).toEqual(clientSanitizeFaces(input))
     })
 
-    it('mutation battery: a raw embedding array, a person name, an oversized fc_ id, and a non-fc string are ALL dropped on both sides — only fc_1..fc_999 pass', () => {
+    it('mutation battery: raw embedding numbers, a real name, the RETIRED fc_N shape, wrong-case/length hex, and whitespace are ALL dropped on both sides', () => {
       const hostile = [
         0.123, -0.456, 0.789, // raw embedding-shaped numbers (not even strings)
         'jonathan', 'helen', 'aurelia', 'rafa', // a real person's id/name
-        'fc_1000', // 4 digits — one over the {1,3} bound
-        'fc_', // no digits at all
-        'FC_1', // wrong case
-        ' fc_1', 'fc_1 ', // whitespace — must not be trimmed-and-accepted
-        'fc_01x', // trailing garbage after digits
-        'hello world', // arbitrary non-fc string
+        'fc_1', 'fc_42', 'fc_999', // the RETIRED per-device shape — must NOT come back
+        'fc2-D946BC4F3A5E495C', // uppercase hex — wrong case
+        'fc2-d946bc4f3a5e495', // 15 hex — too short
+        'fc2-d946bc4f3a5e495cc', // 17 hex — too long
+        'fc2-d946bc4f3a5e495g', // non-hex char
+        'fc2-', // no hex at all
+        'fc2d946bc4f3a5e495c', // missing the hyphen
+        ' fc2-d946bc4f3a5e495c', 'fc2-d946bc4f3a5e495c ', // whitespace — never trimmed-and-accepted
+        'hello world', // arbitrary non-fc2 string
         { fc: 1 }, null, undefined, true, // non-string junk
       ]
       expect(workerSanitizeFaces(hostile)).toBeUndefined()
       expect(clientSanitizeFaces(hostile)).toBeUndefined()
 
-      // Mixed batch: only the genuinely fc_1..fc_999-shaped survive, everything
-      // else in the SAME array is dropped — never all-or-nothing.
-      const mixed = ['fc_1', 'jonathan', 'fc_42', 0.5, 'fc_1000', 'fc_7']
-      const expected = ['fc_1', 'fc_42', 'fc_7']
+      // Mixed batch: only the genuinely fc2-shaped survive, everything else in
+      // the SAME array is dropped — never all-or-nothing. Order is preserved.
+      const mixed = [J, 'jonathan', R, 0.5, 'fc_1', 'fc2-d946bc4f3a5e495g', H]
+      const expected = [J, R, H]
       expect(workerSanitizeFaces(mixed)).toEqual(expected)
       expect(clientSanitizeFaces(mixed)).toEqual(expected)
     })
 
     it('a non-array faces value is dropped entirely on both sides', () => {
-      for (const bad of [null, undefined, 'fc_1', 42, { 0: 'fc_1' }]) {
+      for (const bad of [null, undefined, J, 42, { 0: J }]) {
         expect(workerSanitizeFaces(bad)).toBeUndefined()
         expect(clientSanitizeFaces(bad)).toBeUndefined()
       }
     })
 
     it('faces rides sanitizeSidecar identically on both sides, alongside the rest of the sidecar', () => {
-      const input = { srcName: 'IMG_1.HEIC', atSrc: 'exif-original', faces: ['fc_1', 'fc_2', 'jonathan'] }
-      const expected = { srcName: 'IMG_1.HEIC', atSrc: 'exif-original', faces: ['fc_1', 'fc_2'] }
+      const input = { srcName: 'IMG_1.HEIC', atSrc: 'exif-original', faces: [J, H, 'jonathan', 'fc_1'] }
+      const expected = { srcName: 'IMG_1.HEIC', atSrc: 'exif-original', faces: [J, H] }
       expect(workerSanitizeSidecar(input)).toEqual(expected)
       expect(clientSanitizeSidecar(input)).toEqual(expected)
     })

@@ -2,17 +2,18 @@
 // place the recognizer's results live, and the one query PersonView
 // ("Show me, me") asks: photosWith(personId).
 //
-// Stored in IndexedDB, LOCAL-ONLY — nothing here ever leaves the iPad
-// (the load-bearing kids'-privacy promise — see faceModel.js for the full,
+// Stored in IndexedDB, LOCAL-ONLY — nothing here ever leaves this device
+// (the load-bearing family-privacy promise — see faceModel.js for the full,
 // precise contract). Three stores:
 //   • ENROLLMENT  — each family member's reference face embeddings, from
 //     the "teach the app your family" step.
 //   • FACES       — per photo (keyed by the flattened-entry key), the
 //     face embeddings + boxes the recognition pass found.
-//   • CLUSTERS    — personId → pseudonymous `fc_N` id (Build W4, faces).
-//     The mapping itself never leaves this store; only the fc_N SIDE of it
-//     is ever handed to a sync-facing sanitizer (exifRead.js's
-//     sanitizeFaces), from useFaceTags.js.
+//   • CORRECTIONS — "this photo is NOT person X" overrides.
+// The cross-device face TAG (`fc2-…`) is no longer a stored mapping: it is a
+// pure function of the shared family-member id (faceTagOf, below), so there
+// is nothing per-device to persist or reconcile. (The old per-device `fc_N`
+// CLUSTERS store is dropped on the DB_VERSION-4 upgrade.)
 //
 // Matching embeddings → people happens at READ time against the CURRENT
 // enrollment (selectPhotosWith below), so adding a reference face
@@ -22,13 +23,15 @@
 import { enrollPerson, matchToEnrolled } from './faceMatch.js'
 
 const DB_NAME = 'rt-faces'
-const DB_VERSION = 3
+const DB_VERSION = 4
 const STORE_ENROLL = 'enrollment'
 const STORE_FACES = 'faces'
 // corrections — "this photo is NOT person X" overrides (keyed
 // `${entryKey}::${personId}`), so a wrong match can be removed.
 const STORE_CORRECT = 'corrections'
-// personId → { personId, fcId } (Build W4) — see the header CLUSTERS entry.
+// Retired 2026-07-14 (keyless fc2 tags — BUILD_PLAN_FACES_KEYLESS.md): the old
+// per-device `fc_N` map. Kept named only so the DB_VERSION-4 upgrade can drop
+// the store on every device's next open.
 const STORE_CLUSTER = 'clusters'
 
 let dbPromise = null
@@ -45,7 +48,9 @@ function openDb() {
       if (!db.objectStoreNames.contains(STORE_ENROLL)) db.createObjectStore(STORE_ENROLL)
       if (!db.objectStoreNames.contains(STORE_FACES)) db.createObjectStore(STORE_FACES)
       if (!db.objectStoreNames.contains(STORE_CORRECT)) db.createObjectStore(STORE_CORRECT)
-      if (!db.objectStoreNames.contains(STORE_CLUSTER)) db.createObjectStore(STORE_CLUSTER)
+      // Drop the retired per-device fc_N store (keyless cutover — the tag is
+      // now a pure function of the personId; nothing to persist).
+      if (db.objectStoreNames.contains(STORE_CLUSTER)) db.deleteObjectStore(STORE_CLUSTER)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -161,65 +166,55 @@ export async function getRejections() {
   return new Set(await idbGetAllKeys(STORE_CORRECT))
 }
 
-// ─── pseudonymous cluster ids (Build W4 — faces) ───────────────────
+// ─── pseudonymous cross-device face tags (Build W4 — faces; keyless 2026-07-14) ───
 //
-// personId → `fc_N`, assigned once (first-seen order) and never reused or
-// reassigned. LOCAL-ONLY, same store discipline as everything else in this
-// file — see the header. Only the fc_N SIDE of this map is ever handed to
-// a sync-facing sanitizer (exifRead.js's sanitizeFaces); the map itself —
-// and therefore which fc_N belongs to which family member — never leaves
-// this device.
+// A photo's face tag is a PURE, DETERMINISTIC function of the shared
+// family-member id (`faceTagOf`) — the SAME on every device, with no key, no
+// setup, and nothing to reconcile. This replaces the old per-device `fc_N`
+// numbering, which assigned ids in local first-seen order and so DISAGREED
+// across devices (false-bridging different people, false-splitting one
+// person). Why no shared secret is needed: the tag's only job is cross-device
+// SAMENESS for the engine's jaccard face dimension — not secrecy from a
+// server that already holds the photos, times, and photographer. See
+// BUILD_PLAN_FACES_KEYLESS.md.
+//
+// LOCAL-ONLY still holds for everything that matters: the raw embeddings and
+// the id→person mapping never leave this device (faceModel.js's contract).
+// Only the opaque `fc2-…` tag is ever handed to a sync-facing sanitizer
+// (exifRead.js's sanitizeFaces), and only the worker's PHOTO_FACES_MODE gate
+// decides whether even that reaches D1.
 
-export const FACE_ID_RE = /^fc_[0-9]{1,3}$/
-
-// { [personId]: 'fc_N' } for every person assigned a cluster id so far.
-export async function getClusterMap() {
-  const rows = await idbGetAll(STORE_CLUSTER)
-  const map = {}
-  for (const r of rows) if (r?.personId && typeof r.fcId === 'string') map[r.personId] = r.fcId
-  return map
-}
-
-// PURE — the next unused fc_N given the ids already assigned (max + 1, so an
-// id is never reused even if a mapping were ever removed). Exported for a
-// direct unit test without touching IndexedDB.
-export function nextClusterId(existingIds) {
-  let max = 0
-  for (const id of existingIds || []) {
-    if (typeof id === 'string' && FACE_ID_RE.test(id)) max = Math.max(max, parseInt(id.slice(3), 10))
+// PURE — the stable face tag for a family-member id: `fc2-` + a 64-bit FNV-1a
+// hash (lowercase hex, zero-padded to 16). NOT a secret — a deterministic,
+// non-crypto pseudonym, chosen so every device computes byte-identical tags
+// from the id they already share. Total: any value in → a valid tag out.
+export function faceTagOf(personId) {
+  const bytes = new TextEncoder().encode(String(personId))
+  let h = 0xcbf29ce484222325n // FNV-1a 64-bit offset basis
+  const PRIME = 0x100000001b3n
+  const MASK = 0xffffffffffffffffn
+  for (const b of bytes) {
+    h ^= BigInt(b)
+    h = (h * PRIME) & MASK
   }
-  return `fc_${max + 1}`
+  return 'fc2-' + h.toString(16).padStart(16, '0')
 }
 
-// Ensure every personId in the list has an assigned cluster id, assigning
-// new ones (next free fc_N) for any that don't yet. Returns the FULL updated
-// map — existing assignments are never touched, only added to.
-export async function ensureClusterIds(personIds) {
-  const map = await getClusterMap()
-  const missing = [...new Set(personIds || [])].filter((p) => p && !map[p])
-  for (const personId of missing) {
-    const fcId = nextClusterId(Object.values(map))
-    map[personId] = fcId
-    await idbPut(STORE_CLUSTER, personId, { personId, fcId })
-  }
-  return map
-}
-
-// PURE — personId tags → the pseudonymous ids allowed to ride a ref: drop
-// anyone with no assigned cluster id yet, dedup, cap (mirrors the sync
-// sanitizer's own cap — belt + suspenders, not the enforcement point, which
-// is worker/src/index.js's photoFacesMode gate). Sorted by cluster-id number
-// for a deterministic ref — never person/enrollment order, which would leak
-// which family member enrolled first for no reason. Exported for a direct
-// unit test without touching IndexedDB.
+// PURE — the person tags found in a photo → the `fc2-…` ids allowed to ride
+// its ref: map each through faceTagOf, dedup, sort (lexicographic — stable,
+// and uncorrelated with enrollment order so it leaks nothing about who
+// enrolled first), cap at FACES_SYNC_MAX. No lookup map anymore: the tag IS a
+// pure function of the id. The cap mirrors the sync sanitizer's own bound
+// (belt + suspenders; the real enforcement point is worker/src/index.js's
+// photoFacesMode gate). Exported for a direct unit test.
 export const FACES_SYNC_MAX = 10
-export function clusterIdsFor(personIds, clusterMap) {
+export function clusterIdsFor(personIds) {
   const ids = [...new Set(
     (personIds || [])
-      .map((p) => clusterMap?.[p])
-      .filter((id) => typeof id === 'string' && FACE_ID_RE.test(id))
+      .filter((p) => typeof p === 'string' && p.length > 0)
+      .map((p) => faceTagOf(p))
   )]
-  ids.sort((a, b) => parseInt(a.slice(3), 10) - parseInt(b.slice(3), 10))
+  ids.sort()
   return ids.slice(0, FACES_SYNC_MAX)
 }
 

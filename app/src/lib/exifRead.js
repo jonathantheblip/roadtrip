@@ -287,8 +287,8 @@ export function sanitizeProv(input) {
 }
 
 // `faces` (Build W4 — faces, BUILD_PLAN_WITNESS_FLEET_2.md) — THE load-bearing
-// safety property of that whole build: ONLY pseudonymous cluster ids of this
-// EXACT shape may ever ride a ref toward D1. A raw 512-d embedding, a real
+// safety property of that whole build: ONLY pseudonymous cross-device tags of
+// this EXACT shape may ever ride a ref toward D1. A raw 512-d embedding, a real
 // person's id/name, or anything else must be dropped, never passed through —
 // fail CLOSED (whitelist, not blocklist), same discipline as every other
 // sidecar field here. Mirrored independently server-side in
@@ -296,14 +296,19 @@ export function sanitizeProv(input) {
 // house rule the whole sidecar already follows: the worker never trusts the
 // client's own bounds-check). The id→person MAPPING never reaches this
 // function at all — it lives only in app/src/lib/faceIndex.js's on-device
-// `rt-faces` store; only the pseudonymous fc_N side of it is ever handed in.
+// `rt-faces` store; only the opaque fc2-… tag side of it is ever handed in.
 //
 // No `g` flag on FACE_ID_RE, deliberately: sanitizeFaces calls `.test()` in a
 // loop over an array, and a global-flagged regex's `.test()` advances
 // `lastIndex` across calls — exactly the statefulness bug class that bit this
 // project once already (weatherBackfill.js's EXCLUDE_RE, 2026-07-12 review).
 // Anchored `^…$` on a non-global regex is stateless and safe to reuse.
-export const FACE_ID_RE = /^fc_[0-9]{1,3}$/
+// `fc2-<16 lowercase hex>` (keyless cross-device tag, 2026-07-14 — the pure
+// faceTagOf hash of the shared family-member id; see faceIndex.js). The old
+// per-device `fc_N` shape is deliberately NOT accepted: no such data exists
+// (the sync knob never went past off), and re-admitting it would only let the
+// retired, cross-device-inconsistent numbering back through.
+export const FACE_ID_RE = /^fc2-[0-9a-f]{16}$/
 export const FACES_MAX = 10 // per-ref cap (a photo realistically has ≤4 faces; belt + suspenders)
 
 export function sanitizeFaces(input) {

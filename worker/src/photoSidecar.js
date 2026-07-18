@@ -101,7 +101,11 @@ export function sanitizeProvServer(input) {
 // global-flagged regex's `.test()` is stateful across calls (the exact bug
 // class weatherBackfill.js's EXCLUDE_RE hit in review, 2026-07-12); anchored
 // `^…$` on a non-global regex has no such state.
-const FACE_ID_RE = /^fc_[0-9]{1,3}$/
+// `fc2-<16 lowercase hex>` (keyless cross-device tag, 2026-07-14) — mirrors
+// exifRead.js's FACE_ID_RE exactly. The old per-device `fc_N` shape is NOT
+// accepted: no such data exists (the knob never went past off) and re-admitting
+// it would only re-open the cross-device-inconsistent numbering it replaced.
+const FACE_ID_RE = /^fc2-[0-9a-f]{16}$/
 const FACES_MAX = 10
 
 export function sanitizeFacesServer(input) {
