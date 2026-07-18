@@ -26,7 +26,7 @@ const MONO = "'JetBrains Mono', ui-monospace, monospace"
 const prefersReducedMotion = () => {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false }
 }
-const useMotion = (reduceMotion) => !reduceMotion && !prefersReducedMotion()
+const motionOn = (reduceMotion) => !reduceMotion && !prefersReducedMotion()
 // The display register (question / settled fact): --font-display is already
 // Instrument Serif italic for Aurelia and Fraunces otherwise — we only add the
 // italic slant for her.
@@ -54,7 +54,7 @@ export function useConfirmMoment({ kind, onResolve, reduceMotion, initial } = {}
   const clearAway = (outcome) => {
     setSheetOpen(false)
     setStage('leaving') // residue-free collapse — skipped & set-aside are indistinguishable
-    const dur = useMotion(reduceMotion) ? 230 : 0
+    const dur = motionOn(reduceMotion) ? 230 : 0
     setTimeout(() => { setStage('gone'); onResolve && onResolve({ outcome }) }, dur)
   }
 
@@ -161,7 +161,7 @@ export function ConfirmMomentCard({ lens = 'helen', moment, cm, host = 'index', 
   if (!moment || cm.stage === 'gone') return null
   const m = moment
   const f = fillsOf(m)
-  const mo = useMotion(reduceMotion)
+  const mo = motionOn(reduceMotion)
   const leaving = cm.stage === 'leaving'
   const kickerEntry = host === 'settle' ? DECK.kickerSettle : DECK.kicker
   const kicker = <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--muted)' }}>{rc(lens, kickerEntry)}</div>

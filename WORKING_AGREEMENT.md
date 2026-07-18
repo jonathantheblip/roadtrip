@@ -224,10 +224,13 @@ Verified 2026-06-02; last updated 2026-07-18. Update as these resolve.
   burned the day's budget. The `vite build` passed (JS doesn't error on an undefined ref until runtime);
   the confirm e2e passed (the `?confirmDemo=1` path `return`s before the real write block, so the real
   filing path has NEVER been runtime-exercised); a normal diff-read missed it. A fresh adversarial
-  reviewer caught it by tracing the scope chain. **Mitigations: (1) this repo has NO ESLint configured — a
-  `no-undef` rule would catch this whole class statically; worth adding (Jonathan's call). (2) When a
-  real-path handler can't be reached by the demo e2e, either exercise the real path or extract its logic
-  to a node-testable seam. (3) A review of event-handler code must trace variable SCOPE, not just logic.**
+  reviewer caught it by tracing the scope chain. **Mitigations, now DONE: (1) ESLint (flat config,
+  `no-undef` ERROR + react-hooks) was added to `app/` 2026-07-18 — `npm --prefix app run lint`; PROVEN to
+  flag the exact `'trip' is not defined`. Exits 1 on any error, so it's CI-gate-ready — but gating is
+  DEFERRED until the 81 pre-existing warnings (51 no-unused-vars, 23 exhaustive-deps, 14 unused-disable —
+  all cleanup, no bugs) are triaged. `worker/` still has no lint. (2) The confirm write logic was
+  extracted to `confirmSurface.js`'s `confirmWritePlan` (pure, node-tested), so the real filing path's
+  LOGIC is covered. (3) A review of event-handler code must still trace variable SCOPE, not just logic.**
 - **[OPEN 2026-07-17] A strict `script-src` silently blocking an INLINE `<script>` is INVISIBLE to
   `read_console_messages` and to a post-load `securitypolicyviolation` listener — actively probe inline
   execution instead.** Adding the faces CSP (`script-src 'self' 'wasm-unsafe-eval'`, no `'unsafe-inline'`)
