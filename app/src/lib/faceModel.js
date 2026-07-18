@@ -83,8 +83,30 @@ const FACE_CONFIG = {
   embedSize: 112,
 }
 
+// Resolve the self-hosted asset paths to ABSOLUTE URLs against the document at
+// runtime. Critical for the wasm: ORT loads its .mjs glue via a dynamic
+// import() that otherwise resolves MODULE-relative to the ORT chunk in /assets/,
+// NOT to the site-root /ort/ where the files actually emit — an absolute URL
+// pins it to the right place. Models load via fetch() (already document-
+// relative), but absolutizing them too removes any base-path ambiguity. In the
+// node unit env (no document) the raw relative paths pass through untouched —
+// those tests never load a model, only the pure alignment math.
 function cfg() {
-  return { ...FACE_CONFIG, ...(globalThis.__RT_FACE_CONFIG || {}) }
+  const raw = { ...FACE_CONFIG, ...(globalThis.__RT_FACE_CONFIG || {}) }
+  if (typeof document === 'undefined' || !document.baseURI) return raw
+  const abs = (u) => {
+    try {
+      return new URL(u, document.baseURI).href
+    } catch {
+      return u
+    }
+  }
+  return {
+    ...raw,
+    ortWasmBase: abs(raw.ortWasmBase),
+    scrfdModel: abs(raw.scrfdModel),
+    embedderModel: abs(raw.embedderModel),
+  }
 }
 
 // The ArcFace 112×112 alignment template — canonical positions of the

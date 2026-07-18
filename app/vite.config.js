@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
-import { copyFileSync, mkdirSync, existsSync } from 'node:fs'
+import { copyFileSync, mkdirSync, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 
@@ -91,13 +91,19 @@ export default defineConfig(({ mode }) => {
 
   // ── Self-host the onnxruntime-web WASM (Build W4 slice 4b). The face engine
   // uses the "external wasm" build variant (see resolve.conditions below): the
-  // multi-MB .wasm is fetched at RUNTIME from env.wasm.wasmPaths rather than
-  // bundled. We copy it from node_modules into <outDir>/ort/ at build so it is
-  // served SAME-ORIGIN (stays in lockstep with the installed package version —
-  // never committed, never a stale CDN copy). faceModel.js points wasmPaths at
-  // BASE_URL+'ort/'. The `webgpu` entry uses the jsep variant (webgpu + wasm
-  // fallback both); it degrades to single-thread when SharedArrayBuffer is
-  // absent (GitHub Pages can't set COOP/COEP), exactly as the CDN copy did.
+  // multi-MB .wasm + its emscripten .mjs glue are fetched at RUNTIME from
+  // env.wasm.wasmPaths rather than bundled. We copy them from node_modules into
+  // <outDir>/ort/ at build so they are served SAME-ORIGIN (in lockstep with the
+  // installed package — never committed, never a stale CDN copy). faceModel.js
+  // points wasmPaths at ort/ (absolutized against document.baseURI at runtime,
+  // so the .mjs dynamic import() resolves to site-root /ort/ where these emit —
+  // NOT module-relative to the ORT chunk in /assets/).
+  //
+  // The variant is DERIVED from the emitted webgpu chunk (which .mjs it actually
+  // references) rather than hardcoded — a hardcoded 'jsep' was the wrong file
+  // (the /webgpu entry uses 'asyncify') and 404'd silently. Auto-deriving keeps
+  // it correct across ORT upgrades and FAILS the build loudly if the referenced
+  // glue is missing from node_modules.
   let resolvedOutDir = ''
   const ortWasmPlugin = {
     name: 'self-host-ort-wasm',
@@ -105,13 +111,30 @@ export default defineConfig(({ mode }) => {
     configResolved(cfg) { resolvedOutDir = cfg.build.outDir },
     closeBundle() {
       const dist = resolve(process.cwd(), 'node_modules/onnxruntime-web/dist')
+      const assetsDir = resolve(resolvedOutDir, 'assets')
       const outOrt = resolve(resolvedOutDir, 'ort')
+      // Which ORT wasm glue does the built bundle actually request?
+      const referenced = new Set()
+      // Scan ALL js chunks for the very specific ort-wasm-*.mjs literal rather
+      // than guessing the ORT chunk's (hashed) filename — robust to chunk-naming.
+      const chunks = existsSync(assetsDir)
+        ? readdirSync(assetsDir).filter((f) => f.endsWith('.js'))
+        : []
+      for (const c of chunks) {
+        const txt = readFileSync(resolve(assetsDir, c), 'utf8')
+        for (const m of txt.matchAll(/ort-wasm-[a-z0-9.-]+\.mjs/g)) referenced.add(m[0])
+      }
+      if (!referenced.size) {
+        this.error('self-host-ort-wasm: no ort wasm glue referenced in the build — the ORT entry may have changed; refusing to ship a faces engine that would 404')
+        return
+      }
       mkdirSync(outOrt, { recursive: true })
-      const files = ['ort-wasm-simd-threaded.jsep.wasm', 'ort-wasm-simd-threaded.jsep.mjs']
-      for (const f of files) {
-        const src = resolve(dist, f)
-        if (existsSync(src)) copyFileSync(src, resolve(outOrt, f))
-        else this.warn(`self-host-ort-wasm: ${f} missing in node_modules — faces engine would 404`)
+      for (const mjs of referenced) {
+        for (const f of [mjs, mjs.replace(/\.mjs$/, '.wasm')]) {
+          const src = resolve(dist, f)
+          if (existsSync(src)) copyFileSync(src, resolve(outOrt, f))
+          else this.error(`self-host-ort-wasm: ${f} (referenced by the build) missing in node_modules — faces engine would 404`)
+        }
       }
     },
   }
