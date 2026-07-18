@@ -23,8 +23,53 @@ export default defineConfig(({ mode }) => {
       .map(([k, v]) => [`import.meta.env.${k}`, JSON.stringify(v)])
   )
 
+  // ── Content-Security-Policy (Build W4 slice 4a — faces pre-promotion
+  // hygiene). Injected as a <meta> ONLY in the production build (apply:
+  // 'build') — the dev server relies on inline HMR scripts a strict CSP would
+  // block. The point: on the page that (once faces flip on) decodes family
+  // photos + runs the on-device model, NO external JavaScript may execute
+  // (script-src 'self' 'wasm-unsafe-eval' — the WASM engine needs the latter).
+  // Every OTHER directive is the tightest allow-list of the origins the app
+  // actually loads, derived from a grounded inventory — a wrong one silently
+  // breaks the map/photos/fonts, so this is verified in a real prod build
+  // across all 4 lenses before it ships. The worker/whisper origins are baked
+  // from build env so it stays correct per-environment.
+  const originOf = (u) => { try { return new URL(u).origin } catch { return '' } }
+  const worker = originOf(env.VITE_WORKER_URL)
+  const whisper = originOf(env.VITE_WHISPER_PROXY)
+  const infra = [worker, whisper].filter(Boolean).join(' ')
+  // Face-engine CDNs — allowed here so faces would work if flipped on; slice
+  // 4b self-hosts the runtime + models and DROPS these from connect-src.
+  const faceEngine = 'https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co'
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    `img-src 'self' data: blob: https://*.basemaps.cartocdn.com ${infra}`.trim(),
+    `media-src 'self' blob: data: ${infra}`.trim(),
+    `connect-src 'self' https://nominatim.openstreetmap.org ${faceEngine} ${infra}`.trim(),
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "manifest-src 'self'",
+    "form-action 'self'",
+  ].join('; ')
+  const cspPlugin = {
+    name: 'inject-csp-meta',
+    apply: 'build',
+    transformIndexHtml() {
+      return [{
+        tag: 'meta',
+        attrs: { 'http-equiv': 'Content-Security-Policy', content: csp },
+        injectTo: 'head-prepend',
+      }]
+    },
+  }
+
   return {
-    plugins: [react()],
+    plugins: [react(), cspPlugin],
     base: './',
     define: clientDefine,
     resolve: {
