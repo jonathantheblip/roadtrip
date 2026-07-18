@@ -20,6 +20,7 @@
 import React from 'react'
 import { Check, X, ChevronRight } from 'lucide-react'
 import { CONFIRM_DECK as DECK, renderConfirm as rc } from '../lib/confirmCopy'
+import { isFilablePlace } from '../lib/confirmSurface'
 
 const MONO = "'JetBrains Mono', ui-monospace, monospace"
 const prefersReducedMotion = () => {
@@ -83,7 +84,14 @@ function settledStrings(lens, kind, settled) {
     if (kind === 'C') return { fact: rc(lens, DECK.settledTime, f), promise: rc(lens, DECK.savedTight, f) }
     return { fact: rc(lens, DECK.settledGroup, f), promise: rc(lens, DECK.savedTight, f) }
   }
-  if (o === 'picked') { const f2 = { ...f, place: p.label }; return { fact: rc(lens, DECK.settledPlace, f2), promise: rc(lens, DECK.savedPicked, f2) } }
+  if (o === 'picked') {
+    // A pick that FILES (a real stop / the base's implicit id) earns the full
+    // "part of the trip now" promise; a pick that files nothing (a non-filable
+    // alternate) must not claim it did — honest "recorded" copy (flip-blocker #5).
+    const f2 = { ...f, place: p.label }
+    const promise = isFilablePlace(p?.id) ? rc(lens, DECK.savedPicked, f2) : rc(lens, DECK.savedTextPlace, f)
+    return { fact: rc(lens, DECK.settledPlace, f2), promise }
+  }
   if (o === 'named') { const f2 = { ...f, name: p }; return { fact: rc(lens, DECK.settledName, f2), promise: rc(lens, DECK.savedName, f2) } }
   if (o === 'freetextPlace') return { fact: '‘' + p + '’', quoted: true, promise: rc(lens, DECK.savedTextPlace, f) }
   if (o === 'freetextTime') return { fact: '‘' + p + '’', quoted: true, promise: rc(lens, DECK.savedTextTime, f) }

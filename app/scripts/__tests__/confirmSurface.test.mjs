@@ -143,10 +143,16 @@ test('confirmFilings: a place-confirm files every member at the confirmed stop, 
   assert.equal(fs[1].stopId, 's-angel')
 })
 
-test('confirmFilings: a picked alternate files at the alt stop; a base pick (null id) files nothing', () => {
+test('confirmFilings: a picked alternate files at the alt stop; the base pick files at the day base; a null-id pick files nothing', () => {
   const moment = { memoryIds: ['m1'], placeId: 's-angel' }
   assert.equal(confirmFilings(moment, 'picked', { id: 's-herring', label: 'Herring Cove' }, 'helen')[0].stopId, 's-herring')
-  assert.deepEqual(confirmFilings(moment, 'picked', { id: null, label: 'the beach house' }, 'helen'), []) // no stop id → re-heal handles it
+  // the base alternate now carries the day's FILABLE implicit-base id (HealConfirmHost
+  // dayAlternates) → picking "the beach house" actually files the photos there (#5).
+  assert.equal(
+    confirmFilings(moment, 'picked', { id: '__trip_base__:2026-07-04', label: 'the beach house' }, 'helen')[0].stopId,
+    '__trip_base__:2026-07-04'
+  )
+  assert.deepEqual(confirmFilings(moment, 'picked', { id: null, label: 'x' }, 'helen'), []) // defensive: a null-id pick files nothing
 })
 
 test('confirmFilings: name / free-text / grouping / aside / skip file NO stop here', () => {

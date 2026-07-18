@@ -17,6 +17,7 @@ import React from 'react'
 import { workerFetch, isWorkerConfigured } from '../lib/workerSync'
 import { listMemoriesForTrip, updateMemoryStop } from '../lib/memoryStore'
 import { flattenPhotoEntries } from '../lib/photoEntries'
+import { implicitBaseIdForDay } from '../lib/photoMatch'
 import { thumbUrl } from '../lib/thumbUrl'
 import {
   pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision, confirmFilings,
@@ -60,8 +61,12 @@ function dayAlternates(trip, isoDate, guessedPlaceId) {
     out.push({ id: s.id, label, why: 'PLAN' })
     if (out.length >= 2) break
   }
+  // The base gets the day's FILABLE implicit-base id (flip-blocker #5): picking
+  // "the beach house" then actually files the photos there (a real, album-rendered
+  // stop — implicitBaseIdForDay), so savedPicked's "part of the trip now" is true,
+  // not a promise over an id:null that moved nothing.
   const base = trip?.homeBase?.name || trip?.base?.name
-  if (base && out.length < 3) out.push({ id: null, label: base, why: 'BASE' })
+  if (base && out.length < 3) out.push({ id: implicitBaseIdForDay(isoDate), label: base, why: 'BASE' })
   return out.slice(0, 3)
 }
 
@@ -71,7 +76,7 @@ const DEMO_MOMENT = {
   alts: [
     { id: 'a1', label: "Aurelia's birthday lunch", why: 'MOMENT' },
     { id: 'a2', label: 'Herring Cove', why: 'PLAN' },
-    { id: null, label: 'the beach house', why: 'BASE' },
+    { id: implicitBaseIdForDay('2026-07-04'), label: 'the beach house', why: 'BASE' },
   ],
 }
 

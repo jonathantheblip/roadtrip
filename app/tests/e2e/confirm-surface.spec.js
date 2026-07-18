@@ -66,6 +66,17 @@ test.describe('S1 confirm surface (demo)', () => {
     await expect(page.locator(CARD)).toHaveCount(0)
   })
 
+  test('picking the base earns the full "part of the trip" promise — it FILES now (flip-blocker #5)', async ({ page }) => {
+    const card = await openDemo(page, 'jonathan')
+    await card.getByRole('button', { name: /Not quite/ }).click()
+    await page.locator('[data-testid=correct-alt]', { hasText: 'the beach house' }).click()
+    // the base alt now carries a filable id → savedPicked (the true promise), NOT
+    // the honest "noted, won't ask" fallback a non-filing pick would get.
+    await expect(card).toContainText(/the beach house/)
+    await expect(card).toContainText(/fall into place/)
+    await expect(card).not.toContainText(/won.t ask about this one/i)
+  })
+
   // Rafa's "no confirm surface" is NOT tested here: the ?confirmDemo=1 harness
   // FORCES the card for any lens (it bypasses the fetch), so it can't exercise the
   // real invariant. That invariant lives at the worker — GET /heal-decisions is
