@@ -33,6 +33,16 @@ const isNoTable = (e) => /no such table/i.test(String(e?.message || e))
 
 const cleanStr = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
+// Mirror of the client's isFilablePlace (app/src/lib/confirmSurface.js) — never
+// imported across the boundary (separate deployable), same house rule as the
+// sidecar whitelist. A REAL stop id only, never a synthetic vision/discovered
+// placeholder (`__vision__…`, `__discovered__…`): those are moment/name labels
+// that record feedback but move NO photo. The client files nothing for them, and
+// the server MUST not either — else a name-confirm (kind B, placeId '__vision__…')
+// would UPDATE stop_id to a bogus non-stop and lock the photos there forever.
+const isFilableStop = (id) =>
+  typeof id === 'string' && !!id && !id.startsWith('__vision__') && !id.startsWith('__discovered__')
+
 // PURE validator (no DB) — the route rejects a bad body with this before any
 // write. Identity + action are mandatory; a 'corrected' must actually SAY
 // something (a picked place or non-empty words), else it is indistinguishable
@@ -102,16 +112,21 @@ export async function writeHealFeedback(env, tripId, traveler, body, { now = Dat
 // sees the human filing and never auto-moves it. guessedPlaceId IS the stop id
 // (confirmSurface.js: stopId = moment.placeId = guessedPlaceId). Never clobbers
 // an existing HUMAN file (manual/confirmed) to a DIFFERENT stop — another
-// member's hand-move stands; a stale confirm can't destroy it (flip-blocker #2's
-// safe default). Returns {stamped, skipped}. Fired only for a 'confirmed' action
-// in 'on' mode (the caller gates), mirroring exactly what the client files.
+// member's hand-move stands on the SERVER side (defense-in-depth). NOTE: this is
+// NOT the full flip-blocker #2 fix — the client's own updateMemoryStop mirror can
+// still clobber a different-stop hand-file (resolveStopProvenance Rule 2 refuses
+// only incoming 'auto', not 'confirmed'), so the real fix is the deferred
+// projection-side filter (don't even OFFER a confirm for a moment already
+// human-filed elsewhere). Only files a REAL stop (isFilableStop) — a synthetic
+// vision/discovered id records feedback but moves no photo, exactly as the client.
+// Returns {stamped, skipped}. Fired only for a 'confirmed' action in 'on' mode.
 export async function stampConfirmedStops(env, tripId, body, traveler, { now = Date.now() } = {}) {
   const tid = cleanStr(tripId)
   const sid = cleanStr(body?.guessedPlaceId) // the stop the human said "yes, here" to
   const memoryIds = Array.isArray(body?.memoryIds)
     ? body.memoryIds.filter((x) => typeof x === 'string' && x)
     : []
-  if (!tid || !sid || !memoryIds.length) return { stamped: 0, skipped: 0 }
+  if (!tid || !isFilableStop(sid) || !memoryIds.length) return { stamped: 0, skipped: 0 }
   const prov = JSON.stringify({ source: 'confirmed', by: cleanStr(traveler), at: now, reason: 'confirm' })
   let stamped = 0
   let skipped = 0

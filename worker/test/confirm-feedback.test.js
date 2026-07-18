@@ -250,6 +250,17 @@ describe('stampConfirmedStops — the D13 lock, server-side + race-free', () => 
     expect((await readMem('m4')).prov.source).toBe('confirmed')
   })
 
+  it('NEVER files a SYNTHETIC vision/discovered id (a name confirm records feedback but moves no photo — mirrors the client)', async () => {
+    await seedMem('m5', 'stopA', { source: 'auto', by: 'matcher', at: AT })
+    for (const bad of ['__vision__abc', '__discovered__xyz']) {
+      expect(await stampConfirmedStops(env, TRIP, body(['m5'], bad), 'jonathan', { now: AT + 1 }))
+        .toEqual({ stamped: 0, skipped: 0 })
+    }
+    const m = await readMem('m5') // untouched — never locked to a bogus non-stop
+    expect(m.stopId).toBe('stopA')
+    expect(m.prov.source).toBe('auto')
+  })
+
   it('skips a nonexistent memory; a no-op body stamps nothing', async () => {
     expect(await stampConfirmedStops(env, TRIP, body(['ghost'], 'stopX'), 'jonathan')).toEqual({ stamped: 0, skipped: 1 })
     expect(await stampConfirmedStops(env, TRIP, body([], 'stopX'), 'jonathan')).toEqual({ stamped: 0, skipped: 0 })
