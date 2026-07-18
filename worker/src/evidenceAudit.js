@@ -41,7 +41,11 @@ const SKIP_TRIP_IDS = new Set(['volleyball-2026'])
 // Reference-tier GPS provenance — real exif/scan reads only (W8 item 4's own
 // definition; sessionHeal.js's REFERENCE_GPS_PROV is not exported, so this is
 // a read-only mirror of that closed set, not a new decision).
-const REFERENCE_GPS_PROV = new Set(['exif', 'scan'])
+// + 'confirmed' (S1 Level 2): a confirmed REAL-stop coord is human-affirmed →
+// reference-tier location (referenceAnchored), consistent with 'record'/D8 being
+// reference. A BASE confirm stamps NO coords (never produces 'confirmed'), so
+// this does not violate "evidence 'base' → NEVER reference-tier location" above.
+const REFERENCE_GPS_PROV = new Set(['exif', 'scan', 'confirmed'])
 
 function safeParseArray(raw) {
   if (Array.isArray(raw)) return raw

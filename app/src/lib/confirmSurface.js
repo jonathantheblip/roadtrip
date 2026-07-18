@@ -17,7 +17,7 @@
 // globalThis.localStorage) so it degrades to a no-op off-browser.
 
 import { evidenceKeyOf } from './confirmCopy.js'
-import { implicitBaseIdForDay, tripImplicitBase, isHomeDay } from './photoMatch.js'
+import { implicitBaseIdForDay, tripImplicitBase, isHomeDay, isImplicitBaseId } from './photoMatch.js'
 
 export const CONFIRM_BUDGET_KEY = 'heal.confirm.lastHandled'
 
@@ -184,4 +184,33 @@ export function confirmFilings(moment, outcome, payload, by) {
   if (!isFilablePlace(stopId)) return []
   const prov = { source: 'confirmed', by: by || null }
   return moment.memoryIds.map((memoryId) => ({ memoryId, stopId, prov }))
+}
+
+// Level 2 (D13): the reference-tier coords a REAL-stop confirm propagates. A
+// family CONFIRM of a real, geocoded day stop is a human-affirmed location, so
+// its coords are stamped onto the photos (prov.gps 'confirmed', reference-tier —
+// see PROV_GPS_VALUES / the 6 REFERENCE_GPS_PROV sets) and momentGpsPropagation
+// carries them to unlocated moment-mates. Returns {lat,lng}, or null when there
+// are NO reference coords to propagate: a synthetic/name id, the BASE (never a
+// reference-tier location — the evidence constitution, evidenceAudit.js), a
+// record target (not a geocoded day stop), or an un-geocoded stop. Pure.
+export function confirmedStopCoords(trip, stopId) {
+  if (!isFilablePlace(stopId) || isImplicitBaseId(stopId)) return null
+  for (const day of trip?.days || []) {
+    for (const s of day?.stops || []) {
+      if (s?.id === stopId && Number.isFinite(s?.lat) && Number.isFinite(s?.lng)) {
+        return { lat: s.lat, lng: s.lng }
+      }
+    }
+  }
+  return null // record target / un-geocoded stop → nothing to propagate
+}
+
+// The photo ref keys of a memory (single photoRef and/or a photoRefs array) —
+// the units applyRefGps stamps coords onto. Pure.
+export function refKeysOfMemory(m) {
+  const keys = []
+  if (m?.photoRef?.key) keys.push(m.photoRef.key)
+  for (const r of Array.isArray(m?.photoRefs) ? m.photoRefs : []) if (r?.key) keys.push(r.key)
+  return keys
 }

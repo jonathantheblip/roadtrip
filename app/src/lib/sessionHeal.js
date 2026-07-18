@@ -40,7 +40,9 @@ function createdAtMsOf(m) {
 // W8 item 4 (constitution rule 1's enforcement gap): a REFERENCE-tier GPS
 // provenance set — real exif/scan reads only, never a propagated/inferred
 // coordinate. (+'confirmed' once S1 lands, D13 — not yet, so not here today.)
-const REFERENCE_GPS_PROV = new Set(['exif', 'scan'])
+// + 'confirmed' (S1 Level 2): a confirmed real-stop coord is a human-affirmed,
+// reference-tier location — counts toward referenceLocatedCount like a real read.
+const REFERENCE_GPS_PROV = new Set(['exif', 'scan', 'confirmed'])
 
 // W8 item 2 (D1 qualifier): the moment's TIME ANCHOR excludes suggestion-grade
 // members (file-mtime atSrc), item 1(a)'s synthetic created-at-upper-bound

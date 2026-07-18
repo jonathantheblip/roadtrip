@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickConfirmOfDay, confirmKindOf, confirmBudgetSpentToday, spendConfirmBudget, CONFIRM_BUDGET_KEY,
-  momentFromDecision, confirmFilings, isFilablePlace, dayAlternates,
+  momentFromDecision, confirmFilings, isFilablePlace, dayAlternates, confirmedStopCoords, refKeysOfMemory,
 } from '../../src/lib/confirmSurface.js'
 import { tripImplicitBase } from '../../src/lib/photoMatch.js'
 
@@ -193,4 +193,30 @@ test('dayAlternates: offers the base only on a day the album can render it, with
   // a HOME day → base NOT offered even on a stay trip (groupByStop excludes it)
   const withHome = { ...stay, days: [...stay.days, { isoDate: '2026-07-05', lodging: 'home', stops: [{ id: 's3', name: 'Pack up' }] }] }
   assert.ok(!dayAlternates(withHome, '2026-07-05', 's-guess').some((a) => a.why === 'BASE'))
+})
+
+// Level 2 — the coords a REAL-stop confirm propagates (reference-tier), and the
+// refs they stamp. The BASE (never a reference location) + un-geocoded/synthetic
+// stops propagate NOTHING (the evidence-constitution guard).
+test('confirmedStopCoords: real geocoded stop → coords; base/synthetic/un-geocoded → null', () => {
+  const trip = {
+    days: [{ isoDate: '2026-07-04', stops: [
+      { id: 's-geo', name: 'Angel Foods', lat: 42.05, lng: -70.18 },
+      { id: 's-nogeo', name: 'Somewhere' }, // no coords
+    ] }],
+  }
+  assert.deepEqual(confirmedStopCoords(trip, 's-geo'), { lat: 42.05, lng: -70.18 })
+  assert.equal(confirmedStopCoords(trip, 's-nogeo'), null, 'un-geocoded stop → nothing to propagate')
+  assert.equal(confirmedStopCoords(trip, '__trip_base__:2026-07-04'), null, 'BASE is never a reference location')
+  assert.equal(confirmedStopCoords(trip, '__vision__:2026-07-04:0'), null, 'a name is not a stop')
+  assert.equal(confirmedStopCoords(trip, 's-missing'), null, 'a stop not in the days → null')
+  assert.equal(confirmedStopCoords(null, 's-geo'), null)
+})
+
+test('refKeysOfMemory: collects the single photoRef + a photoRefs array, deduped shape', () => {
+  assert.deepEqual(refKeysOfMemory({ photoRef: { key: 'k1' } }), ['k1'])
+  assert.deepEqual(refKeysOfMemory({ photoRefs: [{ key: 'a' }, { key: 'b' }, {}] }), ['a', 'b'])
+  assert.deepEqual(refKeysOfMemory({ photoRef: { key: 'k1' }, photoRefs: [{ key: 'k2' }] }), ['k1', 'k2'])
+  assert.deepEqual(refKeysOfMemory({}), [])
+  assert.deepEqual(refKeysOfMemory(null), [])
 })

@@ -63,6 +63,19 @@ describe('propagateMomentGps', () => {
     expect(target.prov).toEqual({ gps: 'propagated' })
   })
 
+  it("S1 Level 2: a 'confirmed'-sourced member (a family confirm of a real stop) SEEDS a propagation, like exif/scan", async () => {
+    await seedTrip()
+    await seedMemory('m1', 't1', [
+      { key: 'src', capturedAt: at(0), lat: 42.05, lng: -70.18, prov: { gps: 'confirmed' } },
+      { key: 'target', capturedAt: at(5) }, // unlocated moment-mate
+    ])
+    const s = await propagateMomentGps(env, { mode: 'on' })
+    expect(s.wrote).toBe(1)
+    const target = (await memRow('m1')).refs.find((r) => r.key === 'target')
+    expect(target.lat).toBe(42.05)
+    expect(target.prov).toEqual({ gps: 'propagated' }) // the mate stays INFERRED (no re-propagation)
+  })
+
   it('mode:"shadow" computes wouldPropagate but writes NOTHING (byte-identical, the offsetInference.js contract)', async () => {
     await seedTrip()
     await seedMemory('m1', 't1', [

@@ -79,7 +79,13 @@ const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modify', 'fi
 // anywhere in this codebase (a guess, upgradeable by a later real EXIF/scan
 // read, never itself a propagation/witness SOURCE — the same cascade-hazard
 // guard).
-const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated', 'inferred-presence'])
+// 'confirmed' (S1 Level 2, D13) — coords from a family CONFIRM of a REAL stop:
+// a human-affirmed location, so (unlike the two inferred values) it IS
+// reference-tier everywhere (GPS_REFERENCE_PROV/REFERENCE_GPS_PROV) — a
+// propagation SOURCE + protected. Only a real-stop confirm produces it; a base
+// confirm stamps no coords (base is never reference-tier location — the
+// evidence constitution, evidenceAudit.js).
+const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated', 'inferred-presence', 'confirmed'])
 const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
 
 export function sanitizeProvServer(input) {

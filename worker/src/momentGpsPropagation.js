@@ -43,7 +43,11 @@ import { buildTripDecisions } from './sessionHeal.js'
 
 const SKIP_TRIP_IDS = new Set(['volleyball-2026'])
 const INHERIT_RADIUS_M = 250 // mirrors sessions.js's SESSION_DEFAULTS/MOMENT_DEFAULTS.inheritRadiusMeters
-const REFERENCE_GPS_PROV = new Set(['exif', 'scan'])
+// + 'confirmed' (S1 Level 2): a family CONFIRM of a REAL stop is a human-affirmed
+// location — a legitimate propagation SOURCE (NOT a cascade guess like the two
+// inferred values this set deliberately excludes). Only real-stop confirms carry
+// it, so it propagates the family's own affirmation to unlocated moment-mates.
+const REFERENCE_GPS_PROV = new Set(['exif', 'scan', 'confirmed'])
 
 const MODES = new Set(['off', 'shadow', 'on'])
 

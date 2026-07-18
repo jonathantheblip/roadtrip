@@ -1389,7 +1389,11 @@ function tieredWriteAllowed(hasExistingValue, existingProv, newSource, reference
   return referenceValues.has(newSource)
 }
 
-const GPS_REFERENCE_PROV = new Set(['exif', 'scan'])
+// + 'confirmed' (S1 Level 2): a family CONFIRM of a REAL stop is a human-affirmed
+// location, reference-tier like a real read — so a confirmed coord is protected
+// from clobber + may upgrade an inferred one (tieredWriteAllowed). Only real-stop
+// confirms ever carry it (base confirms stamp no coords). OFFSET is unaffected.
+const GPS_REFERENCE_PROV = new Set(['exif', 'scan', 'confirmed'])
 const OFFSET_REFERENCE_PROV = new Set(['exif', 'scan'])
 
 // Fill in a photo/video ref's GPS (lat/lng) AFTER the fact — the archive

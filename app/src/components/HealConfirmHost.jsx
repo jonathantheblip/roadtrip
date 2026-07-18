@@ -15,12 +15,13 @@
 // the dev browser-walk, never in normal use.
 import React from 'react'
 import { workerFetch, isWorkerConfigured } from '../lib/workerSync'
-import { listMemoriesForTrip, updateMemoryStop } from '../lib/memoryStore'
+import { listMemoriesForTrip, updateMemoryStop, applyRefGps } from '../lib/memoryStore'
 import { flattenPhotoEntries } from '../lib/photoEntries'
 import { implicitBaseIdForDay } from '../lib/photoMatch'
 import { thumbUrl } from '../lib/thumbUrl'
 import {
   pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision, confirmFilings, dayAlternates,
+  confirmedStopCoords, refKeysOfMemory,
 } from '../lib/confirmSurface'
 import { ConfirmMomentCard, ConfirmPlaceSheet, useConfirmMoment } from './ConfirmMomentCard'
 
@@ -121,8 +122,21 @@ export function HealConfirmHost({ trips, traveler = 'helen', onOpenAlbum, demo =
       // File the moment optimistically (the local settle): a place-confirm / pick
       // moves the member photos to the stop with source:'confirmed' — updateMemoryStop
       // mirrors it and the worker LOCKS it against any later sweep. "On the record."
+      const memById = new Map(listMemoriesForTrip(trip.id, traveler).map((m) => [m.id, m]))
       for (const f of confirmFilings(moment, outcome, payload, traveler)) {
         try { updateMemoryStop(f.memoryId, f.stopId, f.prov) } catch { /* sync-honesty path owns retries */ }
+        // Level 2 (D13): a REAL-stop confirm's coords propagate — stamp each photo
+        // with the stop's coords (source 'confirmed', reference-tier), so
+        // momentGpsPropagation carries them to unlocated moment-mates ("helps the
+        // rest of the day"). Skipped for the base + un-geocoded stops
+        // (confirmedStopCoords → null). applyRefGps' tier guard never clobbers a
+        // real EXIF/scan read; it only fills an empty coord or upgrades a guess.
+        const coords = confirmedStopCoords(trip, f.stopId)
+        if (coords) {
+          for (const key of refKeysOfMemory(memById.get(f.memoryId))) {
+            try { applyRefGps(f.memoryId, key, coords, 'confirmed') } catch { /* sync-honesty path owns retries */ }
+          }
+        }
       }
       postHealConfirm(pending?.tripId, moment, outcome, payload)
     },
