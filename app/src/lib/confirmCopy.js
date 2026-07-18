@@ -111,15 +111,20 @@ export const CONFIRM_DECK = {
   savedPicked: { jonathan: 'Saved — that was {place}. It helps the rest of the day fall into place.',
                  helen: 'Saved — {place} it is. That’s part of the trip now, and it helps the rest of the day find its place.',
                  aurelia: 'saved — {place} it is. that’s part of the trip now.' },
-  savedName: { jonathan: 'Saved as ‘{name}.’ That’s its name across the trip now.',
-               helen: 'Saved as ‘{name}’ — that’s its name in the trip now.',
-               aurelia: 'saved as ‘{name}’ — that’s its name now.' },
-  savedTextPlace: { jonathan: 'Got it. The rest of the day’s sorting itself around that now.',
-                    helen: 'Saved — the rest of the day is settling around what you told us.',
-                    aurelia: 'got it — the rest of the day’s sorting itself around that now.' },
-  savedTextTime: { jonathan: 'Got it — the rest of the day’s finding its place around that now.',
-                   helen: 'Saved — the rest of the day is settling into place around that.',
-                   aurelia: 'got it — the rest of the day’s finding its place around that now.' },
+  // HONEST copy (flip-blocker #4): free-text name/place/time corrections are
+  // RECORDED (so we won't ask about this moment again) but not yet applied to the
+  // trip — the matcher can't consume a free-text correction until D15. So these
+  // promise only what's true: we heard you, and we'll stop asking. NO "that's its
+  // name now" / "the day's sorting around that" until D15 actually reads them.
+  savedName: { jonathan: 'Got it — ‘{name}.’ Noted for this trip; we won’t ask about this one again.',
+               helen: 'Thank you — ‘{name}.’ We’ve got that noted, and won’t ask again.',
+               aurelia: 'got it — ‘{name}.’ noted; we won’t ask again.' },
+  savedTextPlace: { jonathan: 'Got it — noted for this trip. We won’t ask about this one again.',
+                    helen: 'Thank you — we’ve noted what you told us, and won’t ask again.',
+                    aurelia: 'got it — noted for the trip; we won’t ask again.' },
+  savedTextTime: { jonathan: 'Got it — noted for this trip. We won’t ask about this one again.',
+                   helen: 'Thank you — we’ve noted that, and won’t ask again.',
+                   aurelia: 'got it — noted; we won’t ask again.' },
   savedTight: { jonathan: 'Saved. That’s part of the trip now.', helen: 'Saved — that’s part of the trip now.', aurelia: 'saved — that’s part of the trip now.' },
 
   // §6d · the afternote — GENERIC ONLY (count variant dropped, recorded call #2)
