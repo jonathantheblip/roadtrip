@@ -214,3 +214,28 @@ export function refKeysOfMemory(m) {
   for (const r of Array.isArray(m?.photoRefs) ? m.photoRefs : []) if (r?.key) keys.push(r.key)
   return keys
 }
+
+// THE full write plan for a resolved confirm/pick — the truth-critical filing
+// logic, PURE + node-testable so it isn't only reachable at runtime with the knob
+// on (the class of gap that hid the Level-2 onResolve scope bug). Returns:
+//   stopFilings: [{ memoryId, stopId, prov }]  — the confirm/pick stop moves
+//                (source:'confirmed', D13 lock) — a real stop or the base.
+//   gpsStamps:   [{ memoryId, refKey, coords, source:'confirmed' }] — Level 2:
+//                the reference-tier coords a REAL-stop confirm propagates. Only
+//                a real geocoded day stop yields these (confirmedStopCoords → the
+//                base/synthetic/un-geocoded cases return null → no stamp).
+// `memoryById` is a Map<id, memory> (or a plain {id: memory}) for ref-key lookup.
+// The host applies stopFilings via updateMemoryStop and gpsStamps via applyRefGps.
+export function confirmWritePlan(trip, moment, outcome, payload, traveler, memoryById) {
+  const lookup = (id) => (memoryById instanceof Map ? memoryById.get(id) : memoryById?.[id])
+  const stopFilings = confirmFilings(moment, outcome, payload, traveler)
+  const gpsStamps = []
+  for (const f of stopFilings) {
+    const coords = confirmedStopCoords(trip, f.stopId)
+    if (!coords) continue
+    for (const refKey of refKeysOfMemory(lookup(f.memoryId))) {
+      gpsStamps.push({ memoryId: f.memoryId, refKey, coords, source: 'confirmed' })
+    }
+  }
+  return { stopFilings, gpsStamps }
+}

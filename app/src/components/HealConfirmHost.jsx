@@ -20,8 +20,7 @@ import { flattenPhotoEntries } from '../lib/photoEntries'
 import { implicitBaseIdForDay } from '../lib/photoMatch'
 import { thumbUrl } from '../lib/thumbUrl'
 import {
-  pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision, confirmFilings, dayAlternates,
-  confirmedStopCoords, refKeysOfMemory,
+  pickConfirmOfDay, confirmBudgetSpentToday, spendConfirmBudget, momentFromDecision, dayAlternates, confirmWritePlan,
 } from '../lib/confirmSurface'
 import { ConfirmMomentCard, ConfirmPlaceSheet, useConfirmMoment } from './ConfirmMomentCard'
 
@@ -119,32 +118,25 @@ export function HealConfirmHost({ trips, traveler = 'helen', onOpenAlbum, demo =
       if (outcome === 'album') { onOpenAlbum?.(moment); return }
       if (outcome === 'skipped') return // deferral — nothing written
       if (demo) return // dev fixture (?confirmDemo=1) — never write real memories / POST
-      // File the moment optimistically (the local settle): a place-confirm / pick
-      // moves the member photos to the stop with source:'confirmed' — updateMemoryStop
-      // mirrors it and the worker LOCKS it against any later sweep. "On the record."
-      // `trip` lives in the effect's scope, NOT this closure — recompute it from
-      // the same stable inputs for the Level 2 coord-stamp. (Review flip-blocker:
-      // an out-of-scope `trip` ref threw a ReferenceError BEFORE the filing loop,
-      // which would break the WHOLE confirm — Level 1 filing + Level 2 + the
-      // server lock — while the card still claimed success + burned the budget.)
-      // Guarded: if it's somehow absent, the core filing still runs; only the
-      // coord-stamp is skipped.
+      // Apply the confirm's write plan (pure + node-tested in confirmSurface.js):
+      //  - stopFilings: a place-confirm / pick moves the member photos to the stop
+      //    with source:'confirmed' — updateMemoryStop mirrors it + the worker LOCKS
+      //    it against any later sweep ("on the record", D13).
+      //  - gpsStamps (Level 2): a REAL-stop confirm's coords are stamped onto each
+      //    photo (source 'confirmed', reference-tier) so momentGpsPropagation
+      //    carries them to unlocated moment-mates. applyRefGps' tier guard never
+      //    clobbers a real EXIF/scan read.
+      // `trip` is recomputed here — it lives in the effect's scope, not this
+      // closure (the review flip-blocker was an out-of-scope ref that broke the
+      // whole confirm); guarded so the core filing runs even if it's absent.
       const trip = primaryTrip(trips, today)
       const memById = new Map((trip ? listMemoriesForTrip(trip.id, traveler) : []).map((m) => [m.id, m]))
-      for (const f of confirmFilings(moment, outcome, payload, traveler)) {
+      const { stopFilings, gpsStamps } = confirmWritePlan(trip, moment, outcome, payload, traveler, memById)
+      for (const f of stopFilings) {
         try { updateMemoryStop(f.memoryId, f.stopId, f.prov) } catch { /* sync-honesty path owns retries */ }
-        // Level 2 (D13): a REAL-stop confirm's coords propagate — stamp each photo
-        // with the stop's coords (source 'confirmed', reference-tier), so
-        // momentGpsPropagation carries them to unlocated moment-mates ("helps the
-        // rest of the day"). Skipped for the base + un-geocoded stops
-        // (confirmedStopCoords → null). applyRefGps' tier guard never clobbers a
-        // real EXIF/scan read; it only fills an empty coord or upgrades a guess.
-        const coords = confirmedStopCoords(trip, f.stopId)
-        if (coords) {
-          for (const key of refKeysOfMemory(memById.get(f.memoryId))) {
-            try { applyRefGps(f.memoryId, key, coords, 'confirmed') } catch { /* sync-honesty path owns retries */ }
-          }
-        }
+      }
+      for (const g of gpsStamps) {
+        try { applyRefGps(g.memoryId, g.refKey, g.coords, g.source) } catch { /* sync-honesty path owns retries */ }
       }
       postHealConfirm(pending?.tripId, moment, outcome, payload)
     },

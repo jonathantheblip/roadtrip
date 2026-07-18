@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickConfirmOfDay, confirmKindOf, confirmBudgetSpentToday, spendConfirmBudget, CONFIRM_BUDGET_KEY,
-  momentFromDecision, confirmFilings, isFilablePlace, dayAlternates, confirmedStopCoords, refKeysOfMemory,
+  momentFromDecision, confirmFilings, isFilablePlace, dayAlternates, confirmedStopCoords, refKeysOfMemory, confirmWritePlan,
 } from '../../src/lib/confirmSurface.js'
 import { tripImplicitBase } from '../../src/lib/photoMatch.js'
 
@@ -219,4 +219,49 @@ test('refKeysOfMemory: collects the single photoRef + a photoRefs array, deduped
   assert.deepEqual(refKeysOfMemory({ photoRef: { key: 'k1' }, photoRefs: [{ key: 'k2' }] }), ['k1', 'k2'])
   assert.deepEqual(refKeysOfMemory({}), [])
   assert.deepEqual(refKeysOfMemory(null), [])
+})
+
+// confirmWritePlan — the full truth-critical write plan (filings + Level-2 coord
+// stamps), pure so the real filing LOGIC is tested, not just runtime-reachable.
+const TRIP = { days: [{ isoDate: '2026-07-04', stops: [
+  { id: 's-geo', name: 'Angel Foods', lat: 42.05, lng: -70.18 },
+  { id: 's-nogeo', name: 'Nowhere' }, // no coords
+] }] }
+const MOMENT = { memoryIds: ['m1', 'm2'], placeId: 's-geo' }
+const MEMS = new Map([
+  ['m1', { id: 'm1', photoRef: { key: 'k1' } }],
+  ['m2', { id: 'm2', photoRefs: [{ key: 'k2a' }, { key: 'k2b' }] }],
+])
+
+test('confirmWritePlan: a real-stop confirm files every member + stamps every ref with the stop coords', () => {
+  const { stopFilings, gpsStamps } = confirmWritePlan(TRIP, MOMENT, 'confirmed', null, 'jonathan', MEMS)
+  assert.equal(stopFilings.length, 2)
+  assert.deepEqual(stopFilings[0], { memoryId: 'm1', stopId: 's-geo', prov: { source: 'confirmed', by: 'jonathan' } })
+  assert.deepEqual(gpsStamps, [
+    { memoryId: 'm1', refKey: 'k1', coords: { lat: 42.05, lng: -70.18 }, source: 'confirmed' },
+    { memoryId: 'm2', refKey: 'k2a', coords: { lat: 42.05, lng: -70.18 }, source: 'confirmed' },
+    { memoryId: 'm2', refKey: 'k2b', coords: { lat: 42.05, lng: -70.18 }, source: 'confirmed' },
+  ])
+})
+
+test('confirmWritePlan: a BASE pick files the base but stamps NO coords (base is never reference-tier)', () => {
+  const p = confirmWritePlan(TRIP, MOMENT, 'picked', { id: '__trip_base__:2026-07-04', label: 'base' }, 'helen', MEMS)
+  assert.equal(p.stopFilings.length, 2)
+  assert.equal(p.stopFilings[0].stopId, '__trip_base__:2026-07-04')
+  assert.deepEqual(p.gpsStamps, [])
+})
+
+test('confirmWritePlan: a name confirm (synthetic) files nothing + stamps nothing', () => {
+  const p = confirmWritePlan(TRIP, { memoryIds: ['m1'], placeId: '__vision__:2026-07-04:0' }, 'confirmed', null, 'jonathan', MEMS)
+  assert.deepEqual(p.stopFilings, [])
+  assert.deepEqual(p.gpsStamps, [])
+})
+
+test('confirmWritePlan: an un-geocoded stop, and a null trip, both FILE but stamp no coords', () => {
+  const noGeo = confirmWritePlan(TRIP, { memoryIds: ['m1'], placeId: 's-nogeo' }, 'confirmed', null, 'jonathan', MEMS)
+  assert.equal(noGeo.stopFilings.length, 1)
+  assert.deepEqual(noGeo.gpsStamps, [])
+  const noTrip = confirmWritePlan(null, MOMENT, 'confirmed', null, 'jonathan', MEMS)
+  assert.equal(noTrip.stopFilings.length, 2) // filing never needs the trip
+  assert.deepEqual(noTrip.gpsStamps, [])
 })
