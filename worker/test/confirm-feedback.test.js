@@ -19,7 +19,7 @@ import worker from '../src/index.js'
 import { applySchema } from './helpers/schema.js'
 import { seedSession } from './helpers/auth.js'
 import {
-  photoConfirmMode, validateFeedback, writeHealFeedback, listHealFeedbackForTrip,
+  photoConfirmMode, validateFeedback, writeHealFeedback, listHealFeedbackForTrip, stampConfirmedStops,
 } from '../src/confirmFeedback.js'
 
 const TOK = { jonathan: 'tok-jonathan', helen: 'tok-helen', aurelia: 'tok-aurelia', rafa: 'tok-rafa' }
@@ -197,5 +197,62 @@ describe('GET /heal-decisions confirm gate', () => {
     expect(await confirmFlag(TOK.jonathan, 'off')).toBe(false)
     expect(await confirmFlag(TOK.jonathan, 'shadow')).toBe(false) // shadow serves the ledger, not the card
     expect(await confirmFlag(TOK.rafa, 'on')).toBe(false)         // a kid never gets the surface
+  })
+})
+
+// ── the server-authoritative 'confirmed' stamp (flip-blocker #1: the D13 lock) ──
+describe('stampConfirmedStops — the D13 lock, server-side + race-free', () => {
+  const TRIP = 't-stamp'
+  beforeEach(() => env.DB.prepare('DELETE FROM memories WHERE trip_id = ?').bind(TRIP).run())
+  const seedMem = (id, stopId, prov) =>
+    env.DB.prepare(
+      `INSERT INTO memories (id, trip_id, stop_id, author_traveler, visibility, photo_r2_keys_json, stop_prov_json, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`
+    ).bind(id, TRIP, stopId, 'jonathan', 'shared', '[]', prov ? JSON.stringify(prov) : null, AT, AT).run()
+  const readMem = (id) =>
+    env.DB.prepare('SELECT stop_id, stop_prov_json FROM memories WHERE id = ?').bind(id).first()
+      .then((r) => ({ stopId: r?.stop_id, prov: r?.stop_prov_json ? JSON.parse(r.stop_prov_json) : null }))
+  const body = (memoryIds, guessedPlaceId) => ({ action: 'confirmed', memoryIds, guessedPlaceId })
+
+  it("stamps 'confirmed' over an 'auto' file at the SAME stop — the lock the re-heal race would otherwise drop", async () => {
+    await seedMem('m1', 'stopA', { source: 'auto', by: 'matcher', at: AT })
+    const r = await stampConfirmedStops(env, TRIP, body(['m1'], 'stopA'), 'jonathan', { now: AT + 1 })
+    expect(r).toEqual({ stamped: 1, skipped: 0 })
+    const m = await readMem('m1')
+    expect(m.stopId).toBe('stopA')
+    expect(m.prov.source).toBe('confirmed') // 'auto' upgraded to the human lock
+    expect(m.prov.by).toBe('jonathan')
+  })
+
+  it('stamps an UNFILED memory (no prov) at the guessed stop', async () => {
+    await seedMem('m2', null, null)
+    const r = await stampConfirmedStops(env, TRIP, body(['m2'], 'stopB'), 'helen', { now: AT + 1 })
+    expect(r.stamped).toBe(1)
+    const m = await readMem('m2')
+    expect(m.stopId).toBe('stopB')
+    expect(m.prov.source).toBe('confirmed')
+  })
+
+  it("NEVER clobbers another member's MANUAL hand-file to a DIFFERENT stop (flip-blocker #2 safe default)", async () => {
+    await seedMem('m3', 'stopHand', { source: 'manual', by: 'helen', at: AT })
+    const r = await stampConfirmedStops(env, TRIP, body(['m3'], 'stopGuess'), 'jonathan', { now: AT + 1 })
+    expect(r).toEqual({ stamped: 0, skipped: 1 })
+    const m = await readMem('m3')
+    expect(m.stopId).toBe('stopHand') // the hand-move stands
+    expect(m.prov.source).toBe('manual')
+    expect(m.prov.by).toBe('helen')
+  })
+
+  it('DOES upgrade a human file at the SAME stop (not a conflict — manual→confirmed)', async () => {
+    await seedMem('m4', 'stopSame', { source: 'manual', by: 'helen', at: AT })
+    const r = await stampConfirmedStops(env, TRIP, body(['m4'], 'stopSame'), 'jonathan', { now: AT + 1 })
+    expect(r.stamped).toBe(1)
+    expect((await readMem('m4')).prov.source).toBe('confirmed')
+  })
+
+  it('skips a nonexistent memory; a no-op body stamps nothing', async () => {
+    expect(await stampConfirmedStops(env, TRIP, body(['ghost'], 'stopX'), 'jonathan')).toEqual({ stamped: 0, skipped: 1 })
+    expect(await stampConfirmedStops(env, TRIP, body([], 'stopX'), 'jonathan')).toEqual({ stamped: 0, skipped: 0 })
+    expect(await stampConfirmedStops(env, TRIP, body(['m'], ''), 'jonathan')).toEqual({ stamped: 0, skipped: 0 })
   })
 })

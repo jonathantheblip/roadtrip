@@ -91,6 +91,48 @@ export async function writeHealFeedback(env, tripId, traveler, body, { now = Dat
   }
 }
 
+// SERVER-AUTHORITATIVE 'confirmed' stamp (D13 lock — S1 flip-blocker #1). A
+// confirm is the strongest evidence, but the client's own updateMemoryStop
+// mirror RACES the re-heal: when PHOTO_HEAL_MODE is on, runHealForTrip auto-
+// files the same photo to the same stop first, and resolveStopProvenance Rule 1
+// (sameStop) then preserves the stored 'auto' — silently discarding 'confirmed',
+// so "on the record" becomes a lie. Fix: stamp source:'confirmed' onto the
+// confirmed memories at the guessed stop HERE, server-side, in D1, BEFORE the
+// re-heal fires. Then runHealForTrip's Gate 2 manual-lock arm (photoHeal.js)
+// sees the human filing and never auto-moves it. guessedPlaceId IS the stop id
+// (confirmSurface.js: stopId = moment.placeId = guessedPlaceId). Never clobbers
+// an existing HUMAN file (manual/confirmed) to a DIFFERENT stop — another
+// member's hand-move stands; a stale confirm can't destroy it (flip-blocker #2's
+// safe default). Returns {stamped, skipped}. Fired only for a 'confirmed' action
+// in 'on' mode (the caller gates), mirroring exactly what the client files.
+export async function stampConfirmedStops(env, tripId, body, traveler, { now = Date.now() } = {}) {
+  const tid = cleanStr(tripId)
+  const sid = cleanStr(body?.guessedPlaceId) // the stop the human said "yes, here" to
+  const memoryIds = Array.isArray(body?.memoryIds)
+    ? body.memoryIds.filter((x) => typeof x === 'string' && x)
+    : []
+  if (!tid || !sid || !memoryIds.length) return { stamped: 0, skipped: 0 }
+  const prov = JSON.stringify({ source: 'confirmed', by: cleanStr(traveler), at: now, reason: 'confirm' })
+  let stamped = 0
+  let skipped = 0
+  for (const mid of memoryIds) {
+    const row = await env.DB.prepare(
+      'SELECT stop_id, stop_prov_json FROM memories WHERE id = ? AND trip_id = ? AND deleted_at IS NULL'
+    ).bind(mid, tid).first()
+    if (!row) { skipped++; continue }
+    let sp = null
+    try { sp = row.stop_prov_json ? JSON.parse(row.stop_prov_json) : null } catch { sp = null }
+    const humanElsewhere =
+      sp && (sp.source === 'manual' || sp.source === 'confirmed') && row.stop_id && row.stop_id !== sid
+    if (humanElsewhere) { skipped++; continue } // don't clobber a hand-file to a different stop
+    await env.DB.prepare(
+      'UPDATE memories SET stop_id = ?, stop_prov_json = ?, updated_at = MAX(?, updated_at + 1) WHERE id = ? AND trip_id = ?'
+    ).bind(sid, prov, now, mid, tid).run()
+    stamped++
+  }
+  return { stamped, skipped }
+}
+
 // Read helper for Stage 2b (the scorer consumption) and the projection's
 // undecided-only filter: every feedback row for a trip, newest first, memory_ids
 // parsed. Missing table → [] (inert). A row whose memory_ids won't parse is

@@ -38,7 +38,7 @@ import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode, recordHealDecisions } from './photoHealRunner.js'
 import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
 import { listHealDecisionsForViewer } from './healDecisionsView.js'
-import { photoConfirmMode, writeHealFeedback } from './confirmFeedback.js'
+import { photoConfirmMode, writeHealFeedback, stampConfirmedStops } from './confirmFeedback.js'
 import { runEvidenceAudit } from './evidenceAudit.js'
 import { geocodePlace, placesTextSearch } from './placesGeocode.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
@@ -1014,10 +1014,27 @@ async function postHealConfirm(env, traveler, request, cors, ctx) {
     // a bad request (400). Never leak which by status alone beyond that.
     return json({ ok: false, error: res.error }, res.error === 'no-table' ? 200 : 400, headers)
   }
-  // Re-settle the trip for a confirm/correction (never for a pure 'aside').
-  // Gated on the engine knob exactly like the import path — if the engine is off
-  // the card never rendered, so this is belt-and-suspenders.
-  if (ctx && (res.action === 'confirmed' || res.action === 'corrected') && photoHealMode(env) !== 'off') {
+  // D13 lock (flip-blocker #1): stamp 'confirmed' SERVER-SIDE onto the confirmed
+  // memories BEFORE the re-heal, so runHealForTrip's Gate 2 finds the human
+  // filing and never auto-moves it — instead of the re-heal racing 'auto' onto
+  // the same stop and Rule 1 (sameStop) then silently keeping 'auto'. Only in
+  // 'on' mode (the family-visible move), mirroring what the client files; awaited
+  // so it's durable before the background re-heal reads it.
+  if (res.action === 'confirmed' && photoConfirmMode(env) === 'on') {
+    try {
+      const s = await stampConfirmedStops(env, tripId, body, traveler)
+      console.log('[heal-confirm-stamp]', JSON.stringify(s))
+    } catch (e) {
+      console.error('[heal-confirm-stamp] failed', tripId, e?.stack || e)
+    }
+  }
+  // Re-settle the trip — ONLY for a 'confirmed' (never 'aside'; and NOT
+  // 'corrected', flip-blocker #3: the matcher can't yet consume a correction
+  // (D15 unbuilt), so a 'corrected' re-heal would just re-file the photos to the
+  // REJECTED guess — worse than doing nothing. Corrections are recorded as
+  // feedback and applied once D15 lands). Gated on the engine knob like the
+  // import path.
+  if (ctx && res.action === 'confirmed' && photoHealMode(env) !== 'off') {
     ctx.waitUntil(
       runHealForTrip(env, tripId, {}).then(
         (r) => console.log('[heal-confirm]', JSON.stringify(r)),
