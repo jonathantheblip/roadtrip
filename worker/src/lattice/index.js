@@ -59,9 +59,11 @@ export function buildLattice(trips, memories, feedback, opts = {}) {
   // branch's DEFAULTS fill everything else; nothing global (other than `now`) blankets
   // across branches, so each stays seeded like ITSELF (§16d heterogeneity).
   const branchOpts = (name) => {
-    const sub = opts[name] && typeof opts[name] === 'object' ? opts[name] : {}
-    // the fold's single threaded clock WINS — a per-branch sub carries seed overrides only, never
-    // its own `now` (determinism contract §16d): spread sub FIRST so a stray sub.now can't shadow it.
+    const raw = opts[name] && typeof opts[name] === 'object' ? opts[name] : {}
+    // the fold's single threaded clock WINS — a per-branch sub carries seed overrides only, NEVER
+    // its own `now` (determinism contract §16d). Strip sub.now entirely so it can't shadow the
+    // global even in the null branch (Band 2 verify caught this latent leak here too).
+    const { now: _subNow, ...sub } = raw
     return now != null ? { ...sub, now } : { ...sub }
   }
 
