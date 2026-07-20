@@ -41,14 +41,31 @@ import { propagateMomentGps, photoGpsPropagationMode } from './momentGpsPropagat
 import { countDismissalEchoes } from './humanWords.js'
 import { photoPresenceMode } from './presence.js'
 import { witnessPresence } from './presenceWitness.js'
+import { challengerRead, hmForDecision, adaptTripStops } from './healChallenger.js'
 
 const MODES = new Set(['off', 'shadow', 'on'])
+// O2 (BUILD_SPECS_GLANCE_ENGINE.md F4): which decision engine produces the SERVED
+// fields. 'off' (default, fully inert — the challenger never runs), 'shadow' (the
+// whole Healing Model runs and its read rides in signals_json.hm, but the INCUMBENT
+// sessionScorer still serves), 'hm' (promotion — the challenger serves). REVISIT: this
+// adds an explicit 'off' default that F4 didn't name, so nothing new runs in prod until
+// Jonathan opts in — more conservative than F4's shadow-always. And 'hm'-serves is the
+// promotion step (post-measurement, Jonathan's gate) — NOT wired tonight: 'hm' behaves
+// as 'shadow' (annotate, incumbent still serves) so the served path stays 100% incumbent.
+const DECISION_ENGINE_MODES = new Set(['off', 'shadow', 'hm'])
 
 // Read the knob, defaulting off. Any unrecognized value is treated as off (fail
 // safe — an unset/typo'd secret must never accidentally move a family's photos).
 export function photoHealMode(env) {
   const raw = typeof env?.PHOTO_HEAL_MODE === 'string' ? env.PHOTO_HEAL_MODE.trim() : ''
   return MODES.has(raw) ? raw : 'off'
+}
+
+// O2: the challenger's engine mode. Defaults 'off' (fully inert). Any unrecognized
+// value is 'off' — an unset/typo'd knob must never start running unproven code in prod.
+export function decisionEngineMode(env) {
+  const raw = typeof env?.PHOTO_DECISION_ENGINE === 'string' ? env.PHOTO_DECISION_ENGINE.trim() : ''
+  return DECISION_ENGINE_MODES.has(raw) ? raw : 'off'
 }
 
 // Direction-flip cooldown: a memory moved within this window of `now` is not
@@ -653,6 +670,30 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
     console.error('[human-words] dismissal-echo lookup failed', tripId, e?.stack || e)
   }
 
+  // O2 (F4): the WHOLE Healing Model as a SHADOW read — its per-decision summary rides
+  // in signals_json.hm. Runs only when Jonathan has opted in (PHOTO_DECISION_ENGINE !=
+  // 'off'); WHOLE-or-abort — any failure omits the shadow entirely (never a partial hm),
+  // and the INCUMBENT still fills every served field regardless.
+  let hmRead = null
+  if (decisionEngineMode(env) !== 'off') {
+    try {
+      // Exclude self AND the fixture trap (matching this file's spend guard on
+      // 'volleyball-2026', Finding 4) — a fixture stop name must not spuriously boost
+      // name-keyed recurrence in the real shadow world model.
+      const { results: otherTripRows } = await env.DB.prepare(
+        "SELECT id, data_json FROM trips WHERE id != ? AND id != 'volleyball-2026' AND deleted_at IS NULL"
+      ).bind(tripId).all()
+      const otherTrips = []
+      for (const otr of otherTripRows || []) {
+        try { otherTrips.push(adaptTripStops({ ...JSON.parse(otr.data_json), id: otr.id })) } catch { /* skip an unparseable trip */ }
+      }
+      hmRead = challengerRead({ tripData: { ...trip, id: tripId }, rows: rows || [], otherTrips, now })
+    } catch (e) {
+      console.error('[hm-challenger] shadow read failed', tripId, e?.stack || e)
+      hmRead = null // WHOLE-or-abort: no partial hm this run
+    }
+  }
+
   const del = env.DB.prepare('DELETE FROM memory_heal_decisions WHERE trip_id = ?').bind(tripId)
   const ins = env.DB.prepare(
     `INSERT INTO memory_heal_decisions
@@ -660,10 +701,23 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
   )
   const tiers = { auto: 0, confirm: 0, leave: 0 }
+  let hmShadowed = 0
   const batch = [del]
   for (const d of days) {
     for (const dec of d.decisions) {
       tiers[dec.tier] = (tiers[dec.tier] || 0) + 1
+      // Additive-only: the challenger summary rides ALONGSIDE the incumbent's signals,
+      // never replacing a served field (place/tier/confidence stay the incumbent's).
+      let signals = dec.signals || {}
+      if (hmRead) {
+        // Scope the shadow summary to THIS moment's own photos (Finding 1) — never the
+        // memory's whole-trip photo set, which would leak other moments' reads in.
+        const hm = hmForDecision(hmRead, dec.photoIds || [])
+        if (hm) {
+          signals = { ...signals, hm }
+          hmShadowed++
+        }
+      }
       batch.push(
         ins.bind(
           tripId,
@@ -675,7 +729,7 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
           dec.tier,
           Number.isFinite(dec.confidence) ? dec.confidence : null,
           dec.signals?.evidence ?? null,
-          JSON.stringify(dec.signals || {}),
+          JSON.stringify(signals),
           dec.reason ?? null,
           activeMode,
           now
@@ -694,5 +748,7 @@ export async function recordHealDecisions(env, tripId, { now = Date.now(), mode 
     landmarkMisses: landmarkPins?.misses || 0,
     // W9 item 3 — decisions that echo a previously-dismissed suggestion.
     dismissalEchoes,
+    // O2 — decisions annotated with a challenger shadow read (0 unless opted in).
+    hmShadowed,
   }
 }

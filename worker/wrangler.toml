@@ -117,6 +117,18 @@ PHOTO_STOP_GEOCODE_MODE = "on"
 # 'on' = the re-heal actually moves photos (still obeying PHOTO_HEAL_MODE).
 # PHOTO_CONFIRM_MODE = "off"
 
+# PHOTO_DECISION_ENGINE (Build O2, BUILD_SPECS_GLANCE_ENGINE.md F4) — which engine
+# produces the heal decisions. Defaults UNSET (= "off"): the whole Healing Model
+# challenger never runs, zero new compute in prod — the load-bearing inertness
+# property for this overnight build. "shadow" = the challenger runs on every heal and
+# its compact per-decision read rides in memory_heal_decisions.signals_json.hm, but the
+# INCUMBENT sessionScorer still fills every SERVED field (place/tier/confidence) — the
+# pre-promotion "accumulate divergence evidence" tool, family-invisible. "hm" = the
+# promotion step (the challenger serves) — NOT wired yet; "hm" currently behaves as
+# "shadow" so the served path stays 100% incumbent until the promotion build + Jonathan's
+# gate. Runs WHOLE-or-abort: any challenger failure omits the shadow, never a partial read.
+# PHOTO_DECISION_ENGINE = "off"
+
 # Nightly auto-weave (WEAVE_SCOPE slice 3). 08:00 UTC ≈ 2-4am US overnight —
 # after the day's memories have settled. Fires the worker `scheduled` handler
 # → runNightlyWeave, which pre-assembles the active trip's freshest day into a
