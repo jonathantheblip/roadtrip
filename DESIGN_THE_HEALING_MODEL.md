@@ -418,6 +418,31 @@ promotion evidence. **Exemption (AUDIT-1): measurement ablations are sanctioned*
 machine is whole, the-whole-minus-one-channel runs are REQUIRED instruments (§13); their results
 go to the local harness report only, never the served or shadow ledger.
 
+## 15b. Measurements are instruments, not gates (pinned 2026-07-19, before the Opus overnight)
+
+The gestalt is not evaluable in parts (§15) — AND it is not TUNABLE in parts, and its
+readout is not its objective. Provenance: kicking off the autonomous run, Claude asked
+whether it could "apply a fitted constant if it improves the number" and "guard the
+71/20/2.6 triple" — the greedy, part-wise, hill-climb-the-metric mentality (the §12
+floor-first / §13 over-weighting-imperfection drift in measurement's costume). Jonathan
+caught it. Three corollaries, binding on any autonomous run:
+
+1. **No metric-hillclimbing.** "Tune a constant, keep it if the number improves" judges a
+   part in isolation and banks a local win. A channel's right weight exists only in
+   concert with all the others (the settling engine co-settles). Forbidden.
+2. **The honest-harness triple (recovery / ask / misfile) is a COARSE READOUT, never the
+   objective.** Optimizing or "guarding" it is Goodhart — a change can flatter three
+   summary stats while degrading behavior they cannot see.
+3. **Measurements are instruments for Jonathan's HOLISTIC judgment.** Claude measures the
+   WHOLE machine and reports the WHOLE; it never operates a per-slice accept/reject gate
+   on a metric delta. F5 was a bounded, supervised, one-time fit — not a standing license
+   to re-fit unsupervised.
+
+Consequence for the build: Claude adds STRUCTURE (enforced by lesson-asserting tests),
+and changes NO measured constant autonomously. `SETTLE_DEFAULTS` stays as F5 left it. A
+build that forces a new constant uses a DECLARED SEED (§13), reported, never
+fitted-and-applied. Nothing is evaluated — or gated — except as the whole.
+
 ## 16. Ground truth: the corpus is VISION-dominant — the machine was built for absent signals (measured 2026-07-19, real D1)
 
 Signal availability across 271 real photos: **vision** (composition / placeType / signage / labels /

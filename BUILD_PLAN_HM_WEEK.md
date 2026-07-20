@@ -99,3 +99,8 @@ O7. **The Learning Spine** (plan §16c; spec'd F5-adjacent, built pure): the
   build kinds 1–2 + calibration ONLY — kinds 3/5/6 are descoped until F7** (the next
   Fable session: structure/gift/spot-check write semantics at F2/F3 rigor).
 - Real data stays in the session scratchpad, never committed.
+- **Measurements are INSTRUMENTS, not gates (§15b).** No autonomous constant changes;
+  `SETTLE_DEFAULTS` is FROZEN at F5's values all week. O3 measures the WHOLE machine and
+  produces ONE holistic readout for Jonathan — never a per-slice scoreboard. No slice is
+  gated on a metric delta; the triple is a readout, never an objective to hill-climb. A
+  build forcing a new constant uses a DECLARED SEED, reported, never fitted-and-applied.
