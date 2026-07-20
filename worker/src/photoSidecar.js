@@ -79,7 +79,13 @@ const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modify', 'fi
 // anywhere in this codebase (a guess, upgradeable by a later real EXIF/scan
 // read, never itself a propagation/witness SOURCE — the same cascade-hazard
 // guard).
-const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated', 'inferred-presence'])
+// 'confirmed' (S1 Level 2, D13) — coords from a family CONFIRM of a REAL stop:
+// a human-affirmed location, so (unlike the two inferred values) it IS
+// reference-tier everywhere (GPS_REFERENCE_PROV/REFERENCE_GPS_PROV) — a
+// propagation SOURCE + protected. Only a real-stop confirm produces it; a base
+// confirm stamps no coords (base is never reference-tier location — the
+// evidence constitution, evidenceAudit.js).
+const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated', 'inferred-presence', 'confirmed'])
 const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
 
 export function sanitizeProvServer(input) {
@@ -101,7 +107,11 @@ export function sanitizeProvServer(input) {
 // global-flagged regex's `.test()` is stateful across calls (the exact bug
 // class weatherBackfill.js's EXCLUDE_RE hit in review, 2026-07-12); anchored
 // `^…$` on a non-global regex has no such state.
-const FACE_ID_RE = /^fc_[0-9]{1,3}$/
+// `fc2-<16 lowercase hex>` (keyless cross-device tag, 2026-07-14) — mirrors
+// exifRead.js's FACE_ID_RE exactly. The old per-device `fc_N` shape is NOT
+// accepted: no such data exists (the knob never went past off) and re-admitting
+// it would only re-open the cross-device-inconsistent numbering it replaced.
+const FACE_ID_RE = /^fc2-[0-9a-f]{16}$/
 const FACES_MAX = 10
 
 export function sanitizeFacesServer(input) {

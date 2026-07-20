@@ -6,7 +6,7 @@
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { applySchema } from './helpers/schema.js'
-import { listHealDecisionsForViewer, filterDecisionsForViewer, buildHiddenIndex, projectSignalsForViewer } from '../src/healDecisionsView.js'
+import { listHealDecisionsForViewer, filterDecisionsForViewer, buildHiddenIndex, projectSignalsForViewer, buildAnsweredMatcher, buildFiledElsewhere } from '../src/healDecisionsView.js'
 
 const NOW = 1_700_000_000_000
 
@@ -32,12 +32,17 @@ async function seedDecision(tripId, { isoDate = '2026-07-01', memoryIds = [], ph
     .bind(tripId, isoDate, JSON.stringify(memoryIds), photoCount, placeId, placeName, tier, 0.5, 'gps', JSON.stringify(signals), 'r', 'shadow', NOW)
     .run()
 }
+async function seedFeedback(tripId, { memoryIds = [], action = 'confirmed', at = NOW } = {}) {
+  await env.DB.prepare(
+    `INSERT INTO memory_heal_feedback (trip_id, memory_ids, action, at) VALUES (?,?,?,?)`
+  ).bind(tripId, JSON.stringify(memoryIds), action, at).run()
+}
 
 const envShadow = () => ({ DB: env.DB, PHOTO_HEAL_MODE: 'shadow' })
 
 beforeEach(async () => {
   await applySchema(env.DB)
-  for (const t of ['memory_heal_decisions', 'memories', 'trips']) await env.DB.prepare(`DELETE FROM ${t}`).run()
+  for (const t of ['memory_heal_decisions', 'memory_heal_feedback', 'memories', 'trips']) await env.DB.prepare(`DELETE FROM ${t}`).run()
 })
 
 describe('listHealDecisionsForViewer', () => {
@@ -257,6 +262,12 @@ describe('the signals projection (pin / visionName / reason leaks)', () => {
     expect((await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan'))[0].signals.visionName).toBe('Dinner at A-House')
   })
 
+  it('momentDescriptor (the {moment} label) echoing the hidden venue is stripped for the hidden viewer only', async () => {
+    await seedSecretScenario({ evidence: 'gps', momentDescriptor: 'A-House' }) // name-bearing → the nameHidden gate, not a plain scalar
+    expect((await listHealDecisionsForViewer(envShadow(), 't1', 'helen'))[0].signals.momentDescriptor).toBeUndefined()
+    expect((await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan'))[0].signals.momentDescriptor).toBe('A-House')
+  })
+
   it('a reason string containing the hidden name is nulled for the hidden viewer only', async () => {
     await seedSecretScenario({ evidence: 'gps' }, { reason: 'looks like A-House — confirm it' })
     expect((await listHealDecisionsForViewer(envShadow(), 't1', 'helen'))[0].reason).toBe(null)
@@ -356,5 +367,170 @@ describe('the signals projection (pin / visionName / reason leaks)', () => {
       expect(jon).toHaveLength(3)
       expect(jon.find((d) => d.signals?.visionName)?.signals.visionName).toBe('dinner at the A House')
     })
+  })
+})
+
+// ── THE W8/W9 PROVENANCE-KEY LEAK REVIEW (S1, 2026-07-13). sessionHeal folds
+// six engine-internal provenance keys into a decision's signals (for the W7
+// audit, which reads them RAW). None has a family-facing phrasebook translation,
+// and two carry an id / a person — so ALL SIX are consciously excluded from
+// SAFE_SIGNAL_KEYS and must drop for EVERY viewer, INCLUDING the author (unlike
+// pin/visionName, which are the author's own data and survive for them).
+// Whitelisting any of the six turns one of these red.
+describe('W8/W9 provenance keys never reach the per-viewer projection', () => {
+  // FIVE stay excluded; timeAnchorSuspect is now INCLUDED (it drives variant C).
+  const EXCLUDED = ['referenceLocatedCount', 'gpsProv', 'handFiledStop', 'handFiledBy', 'dismissedBefore']
+  const W89 = {
+    evidence: 'gps',                          // a SAFE key — must survive (proves it's not a blackout)
+    referenceLocatedCount: 3,
+    timeAnchorSuspect: true,                   // NOW projected (kind-C driver) — asserted kept below
+    gpsProv: ['reference', 'inferred-presence'],
+    handFiledStop: 's-secret',                // ⚠ a STOP ID
+    handFiledBy: 'helen',                     // ⚠ a TRAVELER
+    dismissedBefore: true,
+  }
+
+  it('the five excluded keys drop for the AUTHOR too; timeAnchorSuspect + the safe key survive', async () => {
+    await seedTrip('t1', { days: [{ isoDate: '2026-07-01', stops: [{ id: 's1', name: 'The museum' }] }] })
+    await seedMemory('m1', 't1')
+    await seedDecision('t1', { memoryIds: ['m1'], placeId: 's1', placeName: 'The museum', signals: W89 })
+    const jon = await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')
+    expect(jon).toHaveLength(1)
+    for (const k of EXCLUDED) expect(jon[0].signals[k]).toBeUndefined()
+    expect(jon[0].signals.evidence).toBe('gps')
+    expect(jon[0].signals.timeAnchorSuspect).toBe(true) // included for kind C
+  })
+
+  it('handFiledStop / handFiledBy never ride along even when they name a REAL hidden stop / person', async () => {
+    // s-secret is a surprise stop hidden from helen; the decision's OWN place is
+    // plain, so the row survives for both viewers — the only place the secret
+    // appears is signals.handFiledStop, which the fail-closed whitelist drops.
+    await seedTrip('t1', {
+      days: [{ isoDate: '2026-07-01', stops: [
+        { id: 's-secret', name: 'Whale watch', surprise: { author: 'jonathan', hideFrom: ['helen'] } },
+        { id: 's-plain', name: 'Breakfast' },
+      ] }],
+    })
+    await seedMemory('m1', 't1')
+    await seedDecision('t1', { memoryIds: ['m1'], placeId: 's-plain', placeName: 'Breakfast',
+      signals: { evidence: 'gps', handFiledStop: 's-secret', handFiledBy: 'jonathan' } })
+    for (const viewer of ['helen', 'jonathan']) {
+      const out = await listHealDecisionsForViewer(envShadow(), 't1', viewer)
+      expect(out).toHaveLength(1)
+      expect(out[0].signals.handFiledStop).toBeUndefined()
+      expect(out[0].signals.handFiledBy).toBeUndefined()
+      expect(out[0].signals.evidence).toBe('gps')
+    }
+  })
+})
+
+// ── THE ANSWERED-MOMENT FILTER (S1 Stage 2b-i): a moment the family already
+// answered (confirm / correct / aside — migration 021) is DECIDED and never
+// re-surfaced as a question. Match by majority memory-set overlap (drift-safe),
+// family-wide, applied AFTER the mask gates so it never widens exposure.
+describe('buildAnsweredMatcher (pure)', () => {
+  it('closes on a majority overlap, not on a minority stray', () => {
+    const answered = buildAnsweredMatcher([{ memoryIds: ['a', 'b', 'c'] }])
+    expect(answered(['a', 'b', 'c'])).toBe(true)          // exact
+    expect(answered(['a', 'b', 'x'])).toBe(true)          // 2 of 3 — drift
+    expect(answered(['a', 'x', 'y'])).toBe(false)         // 1 of 3 — different moment
+    expect(answered(['a'])).toBe(true)                    // 1 of 1 — fully covered
+  })
+  it('empty feedback / empty decision closes nothing', () => {
+    expect(buildAnsweredMatcher([])(['a'])).toBe(false)
+    expect(buildAnsweredMatcher([{ memoryIds: ['a'] }])([])).toBe(false)
+  })
+  it('reads raw memory_ids JSON too (the DB row shape)', () => {
+    const answered = buildAnsweredMatcher([{ memory_ids: '["a","b"]' }])
+    expect(answered(['a', 'b'])).toBe(true)
+  })
+})
+
+describe('the answered-moment filter, end to end', () => {
+  it('a confirmed/corrected/aside moment is dropped; an unanswered one still serves', async () => {
+    for (const action of ['confirmed', 'corrected', 'aside']) {
+      for (const t of ['memory_heal_feedback', 'memory_heal_decisions', 'memories', 'trips']) await env.DB.prepare(`DELETE FROM ${t}`).run()
+      await seedTrip('t1', { days: [{ isoDate: '2026-07-01', stops: [{ id: 's1', name: 'The museum' }] }] })
+      await seedMemory('m1', 't1'); await seedMemory('m2', 't1')
+      await seedDecision('t1', { memoryIds: ['m1'], placeId: 's1', placeName: 'The museum' })      // answered
+      await seedDecision('t1', { memoryIds: ['m2'], placeId: 's1', placeName: 'The museum' })      // untouched
+      await seedFeedback('t1', { memoryIds: ['m1'], action })
+      const out = await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')
+      expect(out.map((d) => d.memoryIds[0])).toEqual(['m2']) // only the unanswered one
+    }
+  })
+
+  it('drift-safe: feedback covering a majority of a re-clustered moment still closes it', async () => {
+    await seedTrip('t1', { days: [] })
+    for (const m of ['m1', 'm2', 'm3']) await seedMemory(m, 't1')
+    await seedDecision('t1', { memoryIds: ['m1', 'm2', 'm3'] })     // moment gained m3 since the answer
+    await seedFeedback('t1', { memoryIds: ['m1', 'm2'] })           // answered when it was m1+m2
+    expect(await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')).toEqual([])
+  })
+
+  it('a single stray shared photo does NOT close a genuinely different moment', async () => {
+    await seedTrip('t1', { days: [] })
+    for (const m of ['m1', 'm2', 'm3', 'm4', 'm5']) await seedMemory(m, 't1')
+    await seedDecision('t1', { memoryIds: ['m2', 'm3', 'm4', 'm5'] }) // shares only m2 with the answer
+    await seedFeedback('t1', { memoryIds: ['m1', 'm2'] })
+    expect(await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')).toHaveLength(1)
+  })
+
+  it('no feedback rows → every decision still serves (baseline / pre-answer)', async () => {
+    await seedTrip('t1', { days: [] })
+    await seedMemory('m1', 't1')
+    await seedDecision('t1', { memoryIds: ['m1'] })
+    expect(await listHealDecisionsForViewer(envShadow(), 't1', 'jonathan')).toHaveLength(1)
+  })
+})
+
+// ── #2 the projection-side no-clobber (S1 flip-blocker) ───────────────────────
+describe('buildFiledElsewhere — never offer a confirm for a moment hand-filed elsewhere', () => {
+  const prov = (source, by = 'helen') => JSON.stringify({ source, by, at: 1 })
+  const mem = (id, stopId, stopProvJson) => ({ id, stop_id: stopId, stop_prov_json: stopProvJson })
+
+  it('DROPS a decision when a memory is human-filed (manual/confirmed) to a DIFFERENT real stop', () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopHand', prov('manual'))])
+    expect(f(['m1'], 'stopGuess')).toBe(true)
+    const g = buildFiledElsewhere([mem('m2', 'stopHand', prov('confirmed'))])
+    expect(g(['m2'], 'stopGuess')).toBe(true)
+  })
+
+  it('ALLOWS when human-filed to the SAME stop as the guess (no conflict)', () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopSame', prov('manual'))])
+    expect(f(['m1'], 'stopSame')).toBe(false)
+  })
+
+  it("ALLOWS when the memory is only AUTO-filed elsewhere (a machine file isn't a person's decision)", () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopAuto', prov('auto'))])
+    expect(f(['m1'], 'stopGuess')).toBe(false)
+  })
+
+  it('ALLOWS an unfiled memory, and one filed to a SYNTHETIC id (not a real stop)', () => {
+    expect(buildFiledElsewhere([mem('m1', null, null)])(['m1'], 'stopGuess')).toBe(false)
+    expect(buildFiledElsewhere([mem('m1', '__vision__x', prov('manual'))])(['m1'], 'stopGuess')).toBe(false)
+  })
+
+  it('ALLOWS a name/vision GUESS (moves no photo → can never clobber, still ask)', () => {
+    const f = buildFiledElsewhere([mem('m1', 'stopHand', prov('manual'))])
+    expect(f(['m1'], '__vision__name')).toBe(false)
+  })
+
+  it('reads the dual-named (client-shaped) stopProv too', () => {
+    const f = buildFiledElsewhere([{ id: 'm1', stopId: 'stopHand', stopProv: { source: 'manual' } }])
+    expect(f(['m1'], 'stopGuess')).toBe(true)
+  })
+
+  it('filterDecisionsForViewer drops a decision whose moment is hand-filed elsewhere', () => {
+    const trip = { days: [] }
+    const memRow = { id: 'm1', visibility: 'shared', author_traveler: 'jonathan', hide_from_json: null, revealed_at: null,
+      stop_id: 'stopHand', stop_prov_json: prov('manual', 'jonathan') }
+    const decision = { memory_ids: '["m1"]', iso_date: '2026-07-01', photo_count: 1, place_id: 'stopGuess',
+      place_name: 'Guessed Place', tier: 'confirm', signals_json: null, mode: 'shadow', run_at: 1 }
+    // hand-filed to stopHand, guessed stopGuess → not offered
+    expect(filterDecisionsForViewer(trip, [decision], [memRow], 'jonathan')).toHaveLength(0)
+    // same moment, guessed at where it's actually filed → offered (no conflict)
+    const okDecision = { ...decision, place_id: 'stopHand' }
+    expect(filterDecisionsForViewer(trip, [okDecision], [memRow], 'jonathan')).toHaveLength(1)
   })
 })

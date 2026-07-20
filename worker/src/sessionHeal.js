@@ -36,7 +36,10 @@ function createdAtMsOf(m) {
 // W8 item 4 (constitution rule 1's enforcement gap): a REFERENCE-tier GPS
 // provenance set — real exif/scan reads only, never a propagated/inferred
 // coordinate. (+'confirmed' once S1 lands, D13 — not yet, so not here today.)
-const REFERENCE_GPS_PROV = new Set(['exif', 'scan'])
+// + 'confirmed' (S1 Level 2): a confirmed real-stop coord is a human-affirmed,
+// reference-tier location — counts toward referenceLocatedCount like a real read.
+// MIRRORS app/src/lib/sessionHeal.js (parity-gated).
+const REFERENCE_GPS_PROV = new Set(['exif', 'scan', 'confirmed'])
 
 // W8 item 2 (D1 qualifier): the moment's TIME ANCHOR excludes suggestion-grade
 // members (file-mtime atSrc), item 1(a)'s synthetic created-at-upper-bound
@@ -109,6 +112,35 @@ function momentVisionName(photoIds, meta) {
     }
   }
   return best
+}
+
+// Common activity lead-words that read WARMER lowercased mid-sentence ("look like
+// walking around town", not "…Walking around town"). A safelist, never a guess:
+// a capitalized word NOT in here — a proper noun like "July" — is left untouched.
+const WARM_LEAD = new Set([
+  'walking', 'wandering', 'strolling', 'exploring', 'playing', 'hanging', 'relaxing',
+  'shopping', 'browsing', 'poking', 'swimming', 'hiking', 'biking', 'riding',
+  'visiting', 'watching', 'having', 'eating', 'grabbing', 'getting', 'making',
+  'dinner', 'lunch', 'breakfast', 'brunch', 'coffee', 'drinks', 'dessert',
+])
+
+// The {moment} DESCRIPTOR for the S1 confirm surface's question ("These {n}
+// photos look like {moment} — at {place}. Right?"). The moment's dominant vision
+// NAME (visionLabel.js already asks Claude for a 2-5-word album name — "At the
+// beach", "Walking around town", "July 4th parade") warmed into a noun-phrase
+// slot: (1) a leading "At the "/"At " → "the beach" (not "look like at the
+// beach"); (2) a COMMON activity lead is lowercased for a warm mid-sentence read
+// ("Walking" → "walking"), while a proper noun ("July 4th parade") keeps its
+// caps for Jonathan/Helen. The lens render applies Aurelia's whole-string
+// lowercase. Empty in → '' (card falls back). Pure → unit-testable + mirror-parity.
+// (Deeper warmth — activity-forward phrasing, the rare embedded-place clash — is
+// tuned against the real label distribution in the shadow review.)
+export function momentDescriptorForm(visionName) {
+  if (typeof visionName !== 'string') return ''
+  let s = visionName.trim().replace(/^at\s+the\s+/i, 'the ').replace(/^at\s+/i, '')
+  const lead = s.split(/\s+/)[0] || ''
+  if (WARM_LEAD.has(lead.toLowerCase())) s = lead.toLowerCase() + s.slice(lead.length)
+  return s.trim()
 }
 
 export function buildTripDecisions(trip, memories, opts = {}) {
@@ -327,9 +359,10 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           // BUILD 3 (§16): surfaced ONLY when true, so every pre-Build-3 ledger row
           // (and every moment the vision bridge never touched) stays byte-identical.
           ...(m.visionBridged ? { visionBridged: true } : {}),
-          // W8 — reference-tier GPS provenance + time-anchor trust (W7's future
-          // evidence audit reads this; never surface-projected by this build —
-          // S1 owns SAFE_SIGNAL_KEYS's per-key leak review).
+          // W8 — reference-tier GPS provenance + time-anchor trust (W7's
+          // evidence audit reads this RAW; never surface-projected — S1's leak
+          // review (2026-07-13) CONSCIOUSLY EXCLUDED these from SAFE_SIGNAL_KEYS;
+          // see the review note in healDecisionsView.js).
           referenceLocatedCount: m.referenceLocatedCount ?? 0,
           ...(m.gpsProv && m.gpsProv.length ? { gpsProv: m.gpsProv } : {}),
           ...(m.timeAnchorSuspect ? { timeAnchorSuspect: true } : {}),
@@ -338,11 +371,20 @@ export function buildTripDecisions(trip, memories, opts = {}) {
           ...(m.handFiledStop ? { handFiledStop: m.handFiledStop, handFiledBy: m.handFiledBy || null } : {}),
         }
       }
+      // S1 — the {moment} DESCRIPTOR: the moment's dominant vision name,
+      // normalized to the confirm question's noun-phrase slot ("look like {moment}
+      // — at {place}"). Computed for EVERY moment (not just the unplaced ones the
+      // leave→name path below promotes), since a GPS/time PLACE confirm still wants
+      // a human label. Name-bearing (a vision name can echo a hidden place), so it
+      // is projected ONLY through healDecisionsView's nameHidden gate, like
+      // visionName — never a plain whitelisted scalar.
+      const vn = momentVisionName(d.photoIds, meta)
+      const descriptor = momentDescriptorForm(vn)
+      if (descriptor) d.signals = { ...d.signals, momentDescriptor: descriptor }
       // A moment with no located/agenda place would LEAVE — but if vision can NAME it,
       // surface it as a named moment to CONFIRM (content-inferred, never a silent auto).
       // This is what turns the no-GPS beach afternoons into "At the beach".
       if (d.tier === 'leave') {
-        const vn = momentVisionName(d.photoIds, meta)
         if (vn) {
           d.place = { id: `__vision__:${iso}:${visSeq++}`, name: vn }
           d.tier = 'confirm'

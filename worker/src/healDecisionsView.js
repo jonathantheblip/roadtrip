@@ -42,6 +42,7 @@ import {
   partDayOwner,
 } from './surprises.js'
 import { isRecordTargetId, parseRecordTargetId, isImplicitBaseId, IMPLICIT_BASE_PREFIX } from './dayStopIds.js'
+import { listHealFeedbackForTrip, isFilableStop } from './confirmFeedback.js'
 
 // Per-viewer hidden-place index over one raw trip. Same three id-spaces
 // photoSuggest.buildStopHiddenFromViewer covers (planned stop / record moment
@@ -153,10 +154,28 @@ export function buildHiddenIndex(trip, viewer) {
 // safe scalar keys pass; the name-bearing fields pass only after the hidden-
 // name/coords checks; any UNKNOWN future signal key is DROPPED (fail closed —
 // a new writer must consciously add its field here with its own leak review).
+//
+// S1 LEAK REVIEW (2026-07-13) — of the six provenance keys sessionHeal folds in
+// (W8/W9), FIVE stay CONSCIOUSLY EXCLUDED and one — `timeAnchorSuspect` — is now
+// INCLUDED (added to SAFE_SIGNAL_KEYS below). Each is a safe bool/int/string with
+// no name/coord content; the include/exclude call is purely "does the surface
+// need it":
+//   • timeAnchorSuspect     (bool)  — INCLUDED: it drives the variant-C question
+//     (the day is upload-time-only → "was this around {time}, {day}?"). A bare
+//     boolean, no leak surface. (Stage-1 first excluded it as "no family value";
+//     Jonathan's 2026-07-13 all-four call gave it one.)
+//   • referenceLocatedCount (int)   — excluded: GPS-anchor count; card knows GPS via `evidence`
+//   • gpsProv               (str[]) — excluded: GPS provenance-source labels, engine-internal
+//   • dismissedBefore       (bool)  — excluded: prior-dismissal echo (a negative label)
+//   • handFiledStop         (str)   — excluded ⚠ a STOP ID: could be a surprise stop → NEVER project
+//   • handFiledBy           (str)   — excluded ⚠ a TRAVELER: names who was where → NEVER project
+// The last two are outright leak vectors — do NOT whitelist them. The five
+// excluded keys drop for EVERY viewer incl. the author (heal-decisions-view.test.js
+// locks this: whitelisting any of the five turns a test red).
 const SAFE_SIGNAL_KEYS = [
   'evidence', 'inheritedGps', 'placeKind', 'naming', 'dims', 'cohesion',
   'visionBridged', 'timeFitMin', 'runnerUpMin', 'inferredTime', 'nearestMin',
-  'discoveredNameSource',
+  'discoveredNameSource', 'timeAnchorSuspect',
 ]
 export function projectSignalsForViewer(signals, { nameHidden, coordsHidden }) {
   if (!signals || typeof signals !== 'object') return null
@@ -166,6 +185,11 @@ export function projectSignalsForViewer(signals, { nameHidden, coordsHidden }) {
   }
   const vn = signals.visionName
   if (typeof vn === 'string' && vn && !nameHidden(vn)) out.visionName = vn
+  // S1 momentDescriptor — the {moment} label. Name-bearing (a vision name can
+  // echo a hidden place), so it passes the SAME nameHidden gate as visionName,
+  // never a plain SAFE_SIGNAL_KEYS scalar.
+  const md = signals.momentDescriptor
+  if (typeof md === 'string' && md && !nameHidden(md)) out.momentDescriptor = md
   const pin = signals.pin
   if (pin && typeof pin === 'object') {
     const leaks =
@@ -175,16 +199,91 @@ export function projectSignalsForViewer(signals, { nameHidden, coordsHidden }) {
   return out
 }
 
+// A moment the family already gave a TERMINAL answer to (a confirm, a
+// correction, or a leave-as-guess — migration 021) is DECIDED and must never be
+// re-surfaced as a question. Matching is by memory-set OVERLAP, not equality:
+// cluster membership can drift by a photo between sweeps, so a feedback row that
+// covers a MAJORITY of a decision's memories still closes it (a stray single
+// shared photo — one of nine — does NOT, so a genuinely different moment stays
+// open). Family-wide: any adult's answer settles it for everyone (a confirm
+// files the moment for the whole family). Returns a predicate over a decision's
+// memoryIds; [] feedback (or a pre-migration-021 empty read) closes nothing.
+export function buildAnsweredMatcher(feedbackRows) {
+  const sets = []
+  for (const f of feedbackRows || []) {
+    let ids = Array.isArray(f?.memoryIds) ? f.memoryIds : null
+    if (!ids) {
+      try {
+        ids = JSON.parse(f?.memory_ids || '[]')
+      } catch {
+        ids = null
+      }
+    }
+    if (Array.isArray(ids) && ids.length) sets.push(new Set(ids.filter((x) => typeof x === 'string' && x)))
+  }
+  return (memoryIds) => {
+    const dec = Array.isArray(memoryIds) ? memoryIds : []
+    if (!dec.length || !sets.length) return false
+    for (const s of sets) {
+      let overlap = 0
+      for (const id of dec) if (s.has(id)) overlap++
+      if (overlap > 0 && overlap * 2 >= dec.length) return true // majority of THIS decision covered
+    }
+    return false
+  }
+}
+
+// #2 (S1 flip-blocker — the projection-side no-clobber). A moment already
+// HUMAN-filed (a hand-move 'manual' OR a prior confirm 'confirmed') to a stop
+// OTHER than the guessed one must NOT be offered as a confirm: the guess is
+// contested by a person's own filing, and offering it would let the confirm's
+// 'confirmed' write clobber that hand-move (resolveStopProvenance Rule 2 refuses
+// only an incoming 'auto', not 'confirmed', so the client mirror isn't blocked —
+// which is why the server-side no-clobber alone is only defense-in-depth). Only
+// applies when the GUESS is a real stop: a name/vision guess (`__vision__…`)
+// moves no photo, so it can't clobber and the question still stands. Reads the
+// same dual-named stop_prov as manualStopEvidence. Returns (memoryIds, placeId)
+// → true when the decision should be dropped.
+export function buildFiledElsewhere(memoryRows) {
+  const byId = new Map((memoryRows || []).map((r) => [r.id, r]))
+  const humanStopOf = (mem) => {
+    if (!mem) return null
+    let prov = mem.stopProv
+    if (prov === undefined) {
+      const raw = mem.stop_prov_json
+      if (typeof raw === 'string' && raw) {
+        try { prov = JSON.parse(raw) } catch { prov = null }
+      }
+    }
+    const src = prov && prov.source
+    const stopId = mem.stopId ?? mem.stop_id ?? null
+    return (src === 'manual' || src === 'confirmed') && isFilableStop(stopId) ? stopId : null
+  }
+  return (memoryIds, placeId) => {
+    if (!isFilableStop(placeId)) return false // a name/vision guess moves no photo
+    for (const id of Array.isArray(memoryIds) ? memoryIds : []) {
+      const filedAt = humanStopOf(byId.get(id))
+      if (filedAt && filedAt !== placeId) return true
+    }
+    return false
+  }
+}
+
 // PURE per-viewer filter over raw ledger rows. `memoryRows` are raw D1 memory
-// rows (id, visibility, author_traveler, hide_from_json, revealed_at) for the
-// same trip; a memory id in a decision that is MISSING from them (deleted
-// since the ledger run — rows are only replaced on the next sweep) is treated
-// as invisible: stale rows must fail CLOSED, never leak a ghost.
-export function filterDecisionsForViewer(trip, decisionRows, memoryRows, viewer) {
+// rows (id, visibility, author_traveler, hide_from_json, revealed_at, stop_id,
+// stop_prov_json) for the same trip; a memory id in a decision that is MISSING
+// from them (deleted since the ledger run — rows are only replaced on the next
+// sweep) is treated as invisible: stale rows must fail CLOSED, never leak a
+// ghost. `feedbackRows` (migration 021, optional) close moments the family
+// already answered; the stop_id/stop_prov_json fields drive the #2 no-clobber
+// (a moment hand-filed elsewhere is never offered).
+export function filterDecisionsForViewer(trip, decisionRows, memoryRows, viewer, feedbackRows = []) {
   if (isTripMaskedFrom(trip, viewer)) return []
   const hidden = buildHiddenIndex(trip, viewer)
   const { dayHidden, stopHidden, nameHidden } = hidden
   const memById = new Map((memoryRows || []).map((r) => [r.id, r]))
+  const isAnswered = buildAnsweredMatcher(feedbackRows)
+  const isFiledElsewhere = buildFiledElsewhere(memoryRows)
 
   const out = []
   for (const row of decisionRows || []) {
@@ -209,6 +308,12 @@ export function filterDecisionsForViewer(trip, decisionRows, memoryRows, viewer)
     // case-insensitive + containment (the review's case-variant point) — a
     // discovered/vision place_name echoing a hidden stop's name drops the row.
     if (row.place_name && nameHidden(row.place_name)) continue
+    // Already answered by the family (confirm/correct/aside) → decided, not a
+    // question anymore. Checked after the mask gates so it never widens exposure.
+    if (isAnswered(memoryIds)) continue
+    // #2 no-clobber: a moment a person already hand-filed to a DIFFERENT real
+    // stop is contested — don't offer the confirm (it would clobber the move).
+    if (isFiledElsewhere(memoryIds, row.place_id)) continue
     let signals = null
     try {
       signals = row.signals_json ? JSON.parse(row.signals_json) : null
@@ -256,7 +361,10 @@ export async function listHealDecisionsForViewer(env, tripId, viewer) {
   ).bind(tripId).all()
   if (!decisionRows || !decisionRows.length) return []
   const { results: memoryRows } = await env.DB.prepare(
-    'SELECT id, visibility, author_traveler, hide_from_json, revealed_at FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
+    'SELECT id, visibility, author_traveler, hide_from_json, revealed_at, stop_id, stop_prov_json FROM memories WHERE trip_id = ? AND deleted_at IS NULL'
   ).bind(tripId).all()
-  return filterDecisionsForViewer(trip, decisionRows, memoryRows || [], viewer)
+  // Migration 021 (S1 feedback) — [] when the table is unapplied, so a
+  // pre-migration worker closes nothing (inert). Trip-wide (family-wide).
+  const feedbackRows = await listHealFeedbackForTrip(env, tripId)
+  return filterDecisionsForViewer(trip, decisionRows, memoryRows || [], viewer, feedbackRows)
 }

@@ -253,10 +253,11 @@ export function decideMemoryHeal(memory, ctx) {
   // `masked`, so trusting `masked` alone would sail an unrevealed surprise past.
   if (memoryIsHidden(memory)) return none('masked')
 
-  // Gate 2, manual arm: a stored MANUAL filing is a lock — auto NEVER moves it,
-  // and (SPEC §5 D "Fails 2 → nothing, silently") not even a suggestion. The
-  // person's decision stands until THEY change it via Move-to.
-  if (prov && prov.source === 'manual') return none('manual-lock')
+  // Gate 2, manual arm: a stored HUMAN filing — a MANUAL hand-move OR an S1
+  // 'confirmed' tap (D13) — is a lock: auto NEVER moves it, and (SPEC §5 D
+  // "Fails 2 → nothing, silently") not even a suggestion. The person's decision
+  // stands until THEY change it.
+  if (prov && (prov.source === 'manual' || prov.source === 'confirmed')) return none('manual-lock')
 
   // Compute where the matcher thinks the memory belongs now.
   const { target, matchType, unanimous } = computeMemoryTarget(memory, ctx.dayIndex)

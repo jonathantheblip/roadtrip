@@ -275,7 +275,14 @@ export const ATSRC_VALUES = new Set(['exif-original', 'exif-create', 'exif-modif
 // 'propagated': deliberately NOT in GPS_REFERENCE_PROV/REFERENCE_GPS_PROV
 // anywhere in this codebase — a guess, never itself a propagation/witness
 // SOURCE (the same cascade-hazard guard).
-export const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated', 'inferred-presence'])
+// 'confirmed' (S1 Level 2, D13) — coords adopted from a family CONFIRM of a
+// REAL stop: a human-affirmed location, so UNLIKE the two inferred values it
+// IS reference-tier (present in GPS_REFERENCE_PROV/REFERENCE_GPS_PROV) — a
+// propagation SOURCE + protected from clobber, exactly like 'exif'/'scan'.
+// Only a real-stop confirm ever produces it; a BASE confirm files the stop but
+// stamps NO coords (a base is never reference-tier location — the evidence
+// constitution, evidenceAudit.js), so 'confirmed' here always means a stop.
+export const PROV_GPS_VALUES = new Set(['exif', 'scan', 'propagated', 'inferred-presence', 'confirmed'])
 export const PROV_OFF_VALUES = new Set(['exif', 'scan', 'inferred-manual', 'inferred-place'])
 
 export function sanitizeProv(input) {
@@ -287,8 +294,8 @@ export function sanitizeProv(input) {
 }
 
 // `faces` (Build W4 — faces, BUILD_PLAN_WITNESS_FLEET_2.md) — THE load-bearing
-// safety property of that whole build: ONLY pseudonymous cluster ids of this
-// EXACT shape may ever ride a ref toward D1. A raw 512-d embedding, a real
+// safety property of that whole build: ONLY pseudonymous cross-device tags of
+// this EXACT shape may ever ride a ref toward D1. A raw 512-d embedding, a real
 // person's id/name, or anything else must be dropped, never passed through —
 // fail CLOSED (whitelist, not blocklist), same discipline as every other
 // sidecar field here. Mirrored independently server-side in
@@ -296,14 +303,19 @@ export function sanitizeProv(input) {
 // house rule the whole sidecar already follows: the worker never trusts the
 // client's own bounds-check). The id→person MAPPING never reaches this
 // function at all — it lives only in app/src/lib/faceIndex.js's on-device
-// `rt-faces` store; only the pseudonymous fc_N side of it is ever handed in.
+// `rt-faces` store; only the opaque fc2-… tag side of it is ever handed in.
 //
 // No `g` flag on FACE_ID_RE, deliberately: sanitizeFaces calls `.test()` in a
 // loop over an array, and a global-flagged regex's `.test()` advances
 // `lastIndex` across calls — exactly the statefulness bug class that bit this
 // project once already (weatherBackfill.js's EXCLUDE_RE, 2026-07-12 review).
 // Anchored `^…$` on a non-global regex is stateless and safe to reuse.
-export const FACE_ID_RE = /^fc_[0-9]{1,3}$/
+// `fc2-<16 lowercase hex>` (keyless cross-device tag, 2026-07-14 — the pure
+// faceTagOf hash of the shared family-member id; see faceIndex.js). The old
+// per-device `fc_N` shape is deliberately NOT accepted: no such data exists
+// (the sync knob never went past off), and re-admitting it would only let the
+// retired, cross-device-inconsistent numbering back through.
+export const FACE_ID_RE = /^fc2-[0-9a-f]{16}$/
 export const FACES_MAX = 10 // per-ref cap (a photo realistically has ≤4 faces; belt + suspenders)
 
 export function sanitizeFaces(input) {

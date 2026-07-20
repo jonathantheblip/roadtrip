@@ -67,7 +67,9 @@ const WIDEN_WINDOW_MS = 60 * 60 * 1000
 const BRACKET_MAX_GAP_MS = 90 * 60 * 1000
 const BRACKET_AGREE_M = 250
 const MAX_ACCURACY_M = 100
-const REFERENCE_GPS_PROV = new Set(['exif', 'scan'])
+// + 'confirmed' (S1 Level 2): a confirmed real-stop coord is a human-affirmed
+// reference-tier location, valid as a witness SOURCE like a real read.
+const REFERENCE_GPS_PROV = new Set(['exif', 'scan', 'confirmed'])
 
 export function presenceWitnessLimit(env) {
   const raw = env?.PHOTO_PRESENCE_WITNESS_LIMIT

@@ -9,7 +9,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { l2normalize, enrollPerson } from '../../src/lib/faceMatch.js'
-import { selectPhotosWith, personCounts, nextClusterId, clusterIdsFor, FACES_SYNC_MAX } from '../../src/lib/faceIndex.js'
+import { selectPhotosWith, personCounts, faceTagOf, clusterIdsFor, FACES_SYNC_MAX } from '../../src/lib/faceIndex.js'
 
 function mulberry32(seed) {
   let a = seed
@@ -118,40 +118,58 @@ test('selectPhotosWith: a stricter threshold drops weak matches', () => {
   assert.equal(selectPhotosWith(entries, facesByKey, centroids, 'rafa', 0.999).length, 0)
 })
 
-// ── pseudonymous cluster ids (Build W4 — faces) — the IndexedDB-backed
-// getClusterMap/ensureClusterIds are browser-only (exercised via e2e, same
-// as the rest of this file's persistence); these are the PURE halves: how
-// the next id is picked, and how personId tags become the fc_N list a ref
-// is allowed to carry.
+// ── keyless cross-device face tags (Build W4 — faces; keyless 2026-07-14).
+// faceTagOf is a PURE, deterministic hash of the shared family-member id, so
+// every device computes byte-identical tags with no key and nothing to
+// reconcile — the old per-device `fc_N` numbering + its IndexedDB store are
+// gone. clusterIdsFor is the ref-facing mapper (dedup, sort, cap).
 
-test('nextClusterId: picks max+1 across whatever ids already exist, ignoring gaps', () => {
-  assert.equal(nextClusterId([]), 'fc_1')
-  assert.equal(nextClusterId(['fc_1']), 'fc_2')
-  assert.equal(nextClusterId(['fc_1', 'fc_3', 'fc_2']), 'fc_4') // max, not count
-  assert.equal(nextClusterId(['fc_1', 'fc_1']), 'fc_2') // duplicates don't inflate it
+// KNOWN-ANSWER fixtures — these EXACT tags are the contract (examples ARE the
+// spec). They must never drift: a change silently re-tags every already-synced
+// photo and false-splits the family across app versions. Pinned from the real
+// traveler ids (auth.js TRAVELER_ORDER).
+const KNOWN = {
+  jonathan: 'fc2-d946bc4f3a5e495c',
+  helen: 'fc2-a44ef94680c3f2ad',
+  aurelia: 'fc2-d1595a6e1c5c4020',
+  rafa: 'fc2-6dcf0a1fd2038d9d',
+}
+
+test('faceTagOf: the four family ids hash to their exact pinned tags (cross-device + cross-version contract)', () => {
+  for (const [id, tag] of Object.entries(KNOWN)) assert.equal(faceTagOf(id), tag)
 })
 
-test('nextClusterId: ignores anything not fc_N-shaped when computing max (defense in depth)', () => {
-  assert.equal(nextClusterId(['fc_5', 'jonathan', 'fc_1000', null, undefined]), 'fc_6')
+test('faceTagOf: deterministic, shaped fc2-<16 hex>, and collision-free across the family', () => {
+  for (const id of Object.keys(KNOWN)) {
+    assert.equal(faceTagOf(id), faceTagOf(id)) // same id → same tag every call
+    assert.match(faceTagOf(id), /^fc2-[0-9a-f]{16}$/)
+  }
+  const tags = Object.keys(KNOWN).map(faceTagOf)
+  assert.equal(new Set(tags).size, tags.length, 'no two family members share a tag')
 })
 
-test('clusterIdsFor: maps personIds through the cluster map, dropping anyone unassigned', () => {
-  const map = { jonathan: 'fc_1', helen: 'fc_2' }
-  assert.deepEqual(clusterIdsFor(['jonathan', 'helen'], map), ['fc_1', 'fc_2'])
-  assert.deepEqual(clusterIdsFor(['jonathan', 'grandma'], map), ['fc_1']) // grandma has no cluster id yet
-  assert.deepEqual(clusterIdsFor([], map), [])
-  assert.deepEqual(clusterIdsFor(['nobody'], {}), [])
+test('faceTagOf: total — any value in yields a valid tag, never throws', () => {
+  for (const v of ['', 'a', 'a long id '.repeat(9), 'ünïcode-Ω', null, undefined, 42, {}]) {
+    assert.match(faceTagOf(v), /^fc2-[0-9a-f]{16}$/)
+  }
 })
 
-test('clusterIdsFor: dedups and sorts by cluster-id NUMBER, not personId/enrollment order', () => {
-  const map = { rafa: 'fc_9', aurelia: 'fc_2', jonathan: 'fc_10' }
-  assert.deepEqual(clusterIdsFor(['rafa', 'aurelia', 'jonathan', 'rafa'], map), ['fc_2', 'fc_9', 'fc_10'])
+test('clusterIdsFor: maps person tags through faceTagOf, deduped, lexicographically sorted', () => {
+  assert.deepEqual(clusterIdsFor(['jonathan', 'helen']), [KNOWN.jonathan, KNOWN.helen].sort())
+  // dedup (rafa twice) + the sort is by TAG, not enrollment/person order
+  assert.deepEqual(clusterIdsFor(['rafa', 'aurelia', 'rafa']), [KNOWN.rafa, KNOWN.aurelia].sort())
+  assert.deepEqual(clusterIdsFor([]), [])
 })
 
-test('clusterIdsFor: caps at FACES_SYNC_MAX', () => {
-  const personIds = Array.from({ length: 15 }, (_, i) => `p${i}`)
-  const map = Object.fromEntries(personIds.map((p, i) => [p, `fc_${i + 1}`]))
-  const out = clusterIdsFor(personIds, map)
+test('clusterIdsFor: drops empty/non-string person tags (defense in depth)', () => {
+  assert.deepEqual(clusterIdsFor(['jonathan', '', null, undefined, 0, 'helen']), [KNOWN.jonathan, KNOWN.helen].sort())
+  assert.deepEqual(clusterIdsFor(null), [])
+})
+
+test('clusterIdsFor: caps at FACES_SYNC_MAX, still valid + sorted', () => {
+  const many = Array.from({ length: 15 }, (_, i) => `person-${i}`)
+  const out = clusterIdsFor(many)
   assert.equal(out.length, FACES_SYNC_MAX)
-  assert.deepEqual(out, personIds.slice(0, 10).map((p) => map[p]))
+  assert.ok(out.every((t) => /^fc2-[0-9a-f]{16}$/.test(t)))
+  assert.deepEqual(out, [...out].sort())
 })

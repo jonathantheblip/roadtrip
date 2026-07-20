@@ -64,23 +64,22 @@ PHOTO_STOP_GEOCODE_MODE = "on"
 # PHOTO_OFFSET_MODE = "shadow"              # R2 — offset-inference engine (offsetInference.js)
 # PHOTO_GPS_PROPAGATION_MODE = "shadow"     # R3 — moment-scoped GPS propagation (momentGpsPropagation.js)
 
-# ⛔ PHOTO_FACES_MODE (Build W4) — DO NOT SET past "off" without resolving a
-# HARD DESIGN DECISION first. The faces sync ships correct + fail-closed (only
-# pseudonymous fc_N ids reach D1, never embeddings/names — security-reviewed
-# clean 2026-07-13) and fully OFF, so it is inert today. BUT the fc_N cluster
-# ids are numbered PER-DEVICE by local first-seen order with NO cross-device
-# reconciliation, so promoting this to shadow/on would make the engine's
-# jaccard face dimension FALSE-BRIDGE moments (different people sharing an
-# fc_N across devices) AND FALSE-SPLIT genuine same-person bursts (one person
-# with different fc_N across devices) — regressing BELOW the time-only
-# baseline. Achieving both cross-device consistency AND pseudonymity needs a
-# synced family secret (a keyed hash of the stable traveler id): a genuine
-# product/privacy decision for Jonathan, NOT a routine per-rung flip and NOT a
-# code fix within W4. There is also no faces "shadow" dry-run (shadow == off
-# here), so this design decision MUST be settled before "on" — nothing catches
-# it live. Confirmed by a 4-lens adversarial review, 2026-07-13. See the
-# carryover's W4 entry.
-# PHOTO_FACES_MODE = "off"                  # R6 — LOCKED pending the cross-device design decision
+# ⛔ PHOTO_FACES_MODE (Build W4) — still ships OFF, but the cross-device design
+# is now RESOLVED (KEYLESS, 2026-07-14 — BUILD_PLAN_FACES_KEYLESS.md). The old
+# per-device `fc_N` numbering (which false-bridged / false-split people across
+# devices) is REPLACED by a deterministic `fc2-<hash(personId)>` tag: every
+# device computes the SAME tag from the shared family-member id — no key, no
+# setup, nothing to reconcile. Sync still ships correct + fail-closed (only
+# fc2-shaped tags reach D1, never embeddings/names). The pre-promotion HYGIENE
+# slice is now DONE (slice 4, 2026-07-17): a strict CSP forbids all external
+# origins AND the ONNX runtime + models are self-hosted same-origin, so no third
+# party can serve code/weights to the page that decodes family PHOTOS. ONE gate
+# remains before a flip past "off", so DO NOT promote yet: a promotion review of
+# coverage (tags only exist where an enrolled device scanned) + a false-positive
+# retraction path. There is still no faces "shadow" dry-run (shadow == off here),
+# so that must be settled before "on" — nothing catches it live.
+# See BUILD_PLAN_FACES_KEYLESS.md + the carryover's faces entry.
+# PHOTO_FACES_MODE = "off"                  # R6 — LOCKED pending the coverage/retraction promotion review
 
 # PHOTO_PRESENCE_MODE (Build W5, BUILD_PLAN_WITNESS_FLEET_2.md) — presence
 # breadcrumbs: a family member's phone becomes a witness for where an
@@ -101,6 +100,34 @@ PHOTO_STOP_GEOCODE_MODE = "on"
 # can exist. NOT changed here (family-visible copy is a Jonathan/loop-Design
 # call, not an autonomous overnight edit); track it as a promotion-gate item.
 # PHOTO_PRESENCE_MODE = "off"
+
+# PHOTO_CONFIRM_MODE (Build S1, BUILD_PLAN_WITNESS_FLEET_2.md §W3) — the confirm
+# surface's WRITE path: the once-a-day card's confirm / correct / leave-as-guess
+# lands in migration 021 (memory_heal_feedback) and, for a confirm/correction,
+# fires runHealForTrip so the trip re-settles now. Own knob, INDEPENDENT (its own
+# tri-state resolver, confirmFeedback.js's photoConfirmMode). Leaving this UNSET
+# (= "off") is the load-bearing inertness property: off is the ONLY value where
+# the /heal-confirm route issues ZERO queries against migration 021 — so the
+# worker is safe to ship BEFORE 021 is applied to prod D1 (needs the D1-Edit
+# token + Jonathan's explicit apply-before-push step, same gate as 020/019/018).
+# DO NOT set past "off" until 021 is applied AND the S1 surface is ready to go
+# live for the family (Stage 4: 4-lens e2e + a11y + the security red-team green).
+# 'shadow' = record the human answer + re-sort the SHADOW ledger without moving
+# family photos (the pre-promotion "watch it learn from a real confirm" tool);
+# 'on' = the re-heal actually moves photos (still obeying PHOTO_HEAL_MODE).
+# PHOTO_CONFIRM_MODE = "off"
+
+# PHOTO_DECISION_ENGINE (Build O2, BUILD_SPECS_GLANCE_ENGINE.md F4) — which engine
+# produces the heal decisions. Defaults UNSET (= "off"): the whole Healing Model
+# challenger never runs, zero new compute in prod — the load-bearing inertness
+# property for this overnight build. "shadow" = the challenger runs on every heal and
+# its compact per-decision read rides in memory_heal_decisions.signals_json.hm, but the
+# INCUMBENT sessionScorer still fills every SERVED field (place/tier/confidence) — the
+# pre-promotion "accumulate divergence evidence" tool, family-invisible. "hm" = the
+# promotion step (the challenger serves) — NOT wired yet; "hm" currently behaves as
+# "shadow" so the served path stays 100% incumbent until the promotion build + Jonathan's
+# gate. Runs WHOLE-or-abort: any challenger failure omits the shadow, never a partial read.
+# PHOTO_DECISION_ENGINE = "off"
 
 # Nightly auto-weave (WEAVE_SCOPE slice 3). 08:00 UTC ≈ 2-4am US overnight —
 # after the day's memories have settled. Fires the worker `scheduled` handler

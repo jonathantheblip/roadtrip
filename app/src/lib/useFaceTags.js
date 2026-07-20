@@ -5,7 +5,6 @@ import {
   enrolledCentroids,
   getRejections,
   computeFaceTags,
-  ensureClusterIds,
   clusterIdsFor,
 } from './faceIndex'
 import { runRecognitionPass } from './faceRecognize'
@@ -29,8 +28,9 @@ import { applyRefSidecar } from './memoryStore'
 // The model runs locally and the face index (raw embeddings + the id→person
 // mapping) is local IndexedDB that never leaves the device — see
 // faceModel.js's privacy contract for the precise, current promise. Step 3
-// is the one thing that DOES reach the worker: an anonymous `fc_N` id, never
-// a person's name, and it only actually lands in D1 once PHOTO_FACES_MODE is
+// is the one thing that DOES reach the worker: a keyless `fc2-…` tag (a pure
+// hash of the shared family-member id — faceTagOf), never a person's name,
+// and it only actually lands in D1 once PHOTO_FACES_MODE is
 // promoted past its shipped-OFF default — the worker's push whitelist drops
 // `faces` entirely below 'on' (worker/src/index.js's photoFacesMode), so
 // this hook always attempts the sync and the worker is the real gate. NO
@@ -88,11 +88,12 @@ export function useFaceTags(entries) {
   return tags
 }
 
-// Best-effort sync of one recompute's matches as pseudonymous cluster ids
+// Best-effort sync of one recompute's matches as pseudonymous fc2 tags
 // onto each matched entry's ref (Build W4, faces) — never throws, never
-// blocks the tagging overlay above. Assigns any missing personId→fc_N
-// mappings (LOCAL, faceIndex.js), then gap-fills+pushes via
-// applyRefSidecar's existing additive seam. Idempotent: applyRefSidecar
+// blocks the tagging overlay above. Maps each matched personId to its keyless
+// `fc2-…` tag (a pure hash — faceTagOf, no per-device state to assign), then
+// gap-fills+pushes via applyRefSidecar's existing additive seam. Idempotent:
+// applyRefSidecar
 // only writes (and only then re-mirrors to the worker) when the ref doesn't
 // already carry `faces`, so calling this on every recompute costs nothing
 // once a photo's tags have synced once. Whether anything actually reaches
@@ -100,13 +101,12 @@ export function useFaceTags(entries) {
 // always attempts the sync; the worker silently drops it below 'on'.
 async function syncFaceClusterTags(entries, tags) {
   try {
-    const personIds = [...new Set(Object.values(tags).flat())]
-    if (!personIds.length) return
-    const clusterMap = await ensureClusterIds(personIds)
     for (const e of entries) {
       const matched = tags[e.key]
       if (!matched?.length || !e.memoryId || !e.refKey) continue
-      const faces = clusterIdsFor(matched, clusterMap)
+      // The tag is a pure function of the personId (keyless — faceTagOf), so
+      // there's nothing to assign or look up first; compute it inline.
+      const faces = clusterIdsFor(matched)
       if (faces.length) applyRefSidecar(e.memoryId, e.refKey, { faces })
     }
   } catch {

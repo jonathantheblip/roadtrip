@@ -946,22 +946,23 @@ test('applyRefSidecar: never patches a masked projection', async () => {
 // useFaceTags.js's incremental recognition pass. Same additive discipline:
 // fill only when absent, never overwrite an existing tag set.
 
-test('applyRefSidecar: gap-fills faces (pseudonymous cluster ids) the same way as every other sidecar field', async () => {
+test('applyRefSidecar: gap-fills faces (pseudonymous fc2 tags) the same way as every other sidecar field', async () => {
   const { applyRefSidecar } = await import('../../src/lib/memoryStore.js')
+  const H = 'fc2-a44ef94680c3f2ad', J = 'fc2-d946bc4f3a5e495c', R = 'fc2-6dcf0a1fd2038d9d'
   mergeFromRemote([remoteMem('mf', { photoRef: { storage: 'r2', key: 'kk', url: 'uu' } })])
-  const patched = applyRefSidecar('mf', 'kk', { faces: ['fc_2', 'fc_1'] })
-  assert.deepEqual(patched.photoRef.faces, ['fc_2', 'fc_1'])
+  const patched = applyRefSidecar('mf', 'kk', { faces: [H, J] })
+  assert.deepEqual(patched.photoRef.faces, [H, J])
 
   // Idempotent / never-overwrite: a later scan proposing DIFFERENT ids
   // (a re-scan, a threshold change) never clobbers what's already synced.
-  const again = applyRefSidecar('mf', 'kk', { faces: ['fc_9'] })
-  assert.deepEqual(again.photoRef.faces, ['fc_2', 'fc_1'], 'already-synced faces are never re-clobbered')
+  const again = applyRefSidecar('mf', 'kk', { faces: [R] })
+  assert.deepEqual(again.photoRef.faces, [H, J], 'already-synced faces are never re-clobbered')
 })
 
-test('applyRefSidecar: a hostile faces payload (non-fc_N shapes) sanitizes to nothing — no-op, no crash', async () => {
+test('applyRefSidecar: a hostile faces payload (non-fc2 shapes, incl. the retired fc_N) sanitizes to nothing — no-op, no crash', async () => {
   const { applyRefSidecar } = await import('../../src/lib/memoryStore.js')
   mergeFromRemote([remoteMem('mfh', { photoRef: { storage: 'r2', key: 'kk', url: 'uu' } })])
-  assert.equal(applyRefSidecar('mfh', 'kk', { faces: ['jonathan', 'not-fc-shaped'] }), null)
+  assert.equal(applyRefSidecar('mfh', 'kk', { faces: ['jonathan', 'not-fc-shaped', 'fc_1'] }), null)
 })
 
 // The 409 reapply — exported the same way as moveReapply / replaceVideoRefReapply

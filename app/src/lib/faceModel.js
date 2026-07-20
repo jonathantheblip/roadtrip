@@ -13,47 +13,67 @@
 // Isolated behind this one module the same way the EXIF library lives
 // behind exifRead.js: a future model swap touches only here.
 //
-// THE PRIVACY CONTRACT — revised 2026-07-12 (Jonathan's explicit, recorded
-// consent; see BUILD_PLAN_WITNESS_FLEET_2.md's W4 section). The load-bearing
-// promise, stated precisely because the code now does more than the old
-// one-line version said:
-//   • The PHOTOS and the raw 512-d FINGERPRINTS this file computes NEVER
-//     leave the device — that half of the old promise is unchanged.
-//   • The id→PERSON MAPPING (which enrolled family member a fingerprint
-//     belongs to) also NEVER leaves the device — it lives only in the local
-//     `rt-faces` IndexedDB store (faceIndex.js).
-//   • What DOES now sync, once the family is promoted past the shipped-OFF
+// THE PRIVACY CONTRACT — revised 2026-07-14 (KEYLESS faces; Jonathan's "no
+// door" call — see BUILD_PLAN_FACES_KEYLESS.md; original consent 2026-07-12).
+// Stated precisely and WITHOUT overclaiming:
+//   • The raw 512-d FINGERPRINTS this file computes NEVER leave the device.
+//     (The PHOTOS themselves DO — they sync to R2, honestly noted below; it is
+//     the fingerprints, not the photos, that are the local-only artifact.)
+//   • The ENROLLMENT (each person's reference faces) NEVER leaves the device.
+//   • The id→PERSON MAPPING (which family member a fingerprint belongs to) is
+//     NEVER stored server-side as data — it lives only in the local `rt-faces`
+//     IndexedDB store (faceIndex.js).
+//   • There is NO SECRET anywhere: nothing to provision, screenshot, steal,
+//     rotate, or recover. Cross-device agreement comes from a deterministic
+//     tag, not a key.
+//   • What DOES sync, once the family is promoted past the shipped-OFF
 //     `PHOTO_FACES_MODE` knob (worker/src/index.js enforces the gate — see
-//     photoFacesMode there): a PSEUDONYMOUS cluster id per photo (`fc_1`,
-//     `fc_2`, …), so every device can agree "the same person is in these
-//     photos" without any device ever learning WHO that person is. The
-//     mapping from `fc_N` back to an actual name stays per-device, forever.
-// That is the whole contract: anonymous cluster tags sync; fingerprints and
-// who-is-who never do.
+//     photoFacesMode there): a per-photo tag `fc2-<hash of the shared
+//     family-member id>` (faceIndex.js's faceTagOf), so every device agrees
+//     "the same person is in these photos" with no key and no coordination.
+// HONEST LIMIT (do not overclaim): with only four known family ids, this tag
+// is a four-entry dictionary — the server we run COULD compute which id maps
+// to which tag. That was ALWAYS true (it holds the photos, times, and
+// photographer); the tag adds no exposure a key was ever protecting against.
+// The tag's job is cross-device SAMENESS for the engine's jaccard face
+// dimension, NOT secrecy from our own server. What genuinely never leaves the
+// device is the list above: the fingerprints, the enrollment, the name map.
 //
 // MODEL (blessed): immich-app/buffalo_s detection + recognition (SCRFD +
 // MobileFaceNet, InsightFace lineage). Chosen as the model for this
 // private family app — its non-commercial license fits personal,
 // non-commercial use, and it's proven in production face recognition.
-// Runtime WASM + models load from CDN/HF; could be self-hosted later for
-// full offline use (no privacy change — they are generic, data-free).
+// Runtime WASM + models are now SELF-HOSTED same-origin (slice 4b, 2026-07-17):
+// the .wasm is build-copied from node_modules and the models live in
+// public/models/ — nothing loads from an external CDN, which is what lets the
+// strict CSP forbid all external origins (they are generic, data-free math, so
+// no privacy change — the win is that no third party can serve code/weights to
+// the page that decodes family photos).
 
 import { l2normalize } from './faceMatch.js'
 import { detectFacesScrfd } from './scrfd.js'
 
-// All external asset URLs in one place, overridable via
-// globalThis.__RT_FACE_CONFIG (test seam / self-host switch).
+// SELF-HOSTED same-origin (Build W4 slice 4b — faces pre-promotion hygiene).
+// The runtime WASM + both models are served from our OWN origin (the ONNX
+// runtime .wasm is copied from node_modules into <outDir>/ort/ by vite's
+// self-host-ort-wasm plugin; the models live in public/models/). NOTHING loads
+// from an external CDN anymore, so the strict CSP (connect-src 'self') holds
+// and no third party can serve code onto the page that decodes family photos.
+// BASE_URL keeps the paths correct under GitHub Pages' repo-subpath base;
+// guarded so the node unit tests (no import.meta.env) don't throw — they never
+// load a model, only exercise the pure alignment math.
+const BASE =
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || './'
+// All asset URLs in one place, overridable via globalThis.__RT_FACE_CONFIG
+// (test seam / alternate-host switch).
 const FACE_CONFIG = {
-  // onnxruntime-web WASM/glue files — runs BOTH the SCRFD detector and
-  // the embedder (one runtime).
-  ortWasmBase: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/',
-  // SCRFD face detector (InsightFace, ~2.5 MB) — finds faces across
+  // onnxruntime-web WASM — runs BOTH the SCRFD detector and the embedder.
+  ortWasmBase: `${BASE}ort/`,
+  // SCRFD face detector (InsightFace buffalo_s, ~2.5 MB) — finds faces across
   // scales incl. small/distant ones. The default detector.
-  scrfdModel:
-    'https://huggingface.co/immich-app/buffalo_s/resolve/main/detection/model.onnx',
+  scrfdModel: `${BASE}models/detection.onnx`,
   // ONNX face-embedding model (~13.6 MB, 112×112 → 512-d)
-  embedderModel:
-    'https://huggingface.co/immich-app/buffalo_s/resolve/main/recognition/model.onnx',
+  embedderModel: `${BASE}models/recognition.onnx`,
   detectorInputSize: 1024, // device-confirmed sweet spot (1280 over-detects)
   detectorScoreThresh: 0.5,
   // Skip detections whose smaller side is under this many original-image
@@ -63,8 +83,30 @@ const FACE_CONFIG = {
   embedSize: 112,
 }
 
+// Resolve the self-hosted asset paths to ABSOLUTE URLs against the document at
+// runtime. Critical for the wasm: ORT loads its .mjs glue via a dynamic
+// import() that otherwise resolves MODULE-relative to the ORT chunk in /assets/,
+// NOT to the site-root /ort/ where the files actually emit — an absolute URL
+// pins it to the right place. Models load via fetch() (already document-
+// relative), but absolutizing them too removes any base-path ambiguity. In the
+// node unit env (no document) the raw relative paths pass through untouched —
+// those tests never load a model, only the pure alignment math.
 function cfg() {
-  return { ...FACE_CONFIG, ...(globalThis.__RT_FACE_CONFIG || {}) }
+  const raw = { ...FACE_CONFIG, ...(globalThis.__RT_FACE_CONFIG || {}) }
+  if (typeof document === 'undefined' || !document.baseURI) return raw
+  const abs = (u) => {
+    try {
+      return new URL(u, document.baseURI).href
+    } catch {
+      return u
+    }
+  }
+  return {
+    ...raw,
+    ortWasmBase: abs(raw.ortWasmBase),
+    scrfdModel: abs(raw.scrfdModel),
+    embedderModel: abs(raw.embedderModel),
+  }
 }
 
 // The ArcFace 112×112 alignment template — canonical positions of the

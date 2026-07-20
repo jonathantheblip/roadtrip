@@ -115,6 +115,12 @@ describe('decideMemoryHeal — the gate truth table', () => {
     expect(d.reason).toBe('manual-lock')
   })
 
+  it('gate 2 (S1 CONFIRM lock, D13): a confirmed memory never moves — the sweep can NOT undo a confirm', () => {
+    const d = decideMemoryHeal(mem({ stopProv: { source: 'confirmed', by: 'jonathan' } }), ctx())
+    expect(d.action).toBe('none')
+    expect(d.reason).toBe('manual-lock') // same human lock — this is what makes "on the record" stick
+  })
+
   it('gate 6 (masked): a masked memory surfaces nothing (no surprise leak)', () => {
     const d = decideMemoryHeal(mem({ masked: true }), ctx())
     expect(d.action).toBe('none')

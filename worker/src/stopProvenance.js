@@ -8,7 +8,14 @@
 // whether to append a row to the memory_stop_moves ledger. postMemory calls it
 // before the bind.
 
-const SOURCES = new Set(['auto', 'manual'])
+// 'confirmed' (S1, D13) — a family member tapped "yes, here" on the confirm card.
+// A human speech act like 'manual', so it locks the same way (Rule 2 below) and
+// survives whitelistProv; kept a DISTINCT source so the ledger/audit can tell a
+// confirm-tap from a Move-to hand-file.
+const SOURCES = new Set(['auto', 'manual', 'confirmed'])
+// The human-filed sources — either LOCKS a filing against an incoming auto move
+// (authorship outranks the machine). One predicate so every lock site agrees.
+const HUMAN_FILED = new Set(['manual', 'confirmed'])
 // Stored reason CODES only — prose is rendered per-lens at display time, never
 // stored (SPEC §4). Accepts both the §4 vocabulary and the Ch3 display codes so
 // a newer client's code is never silently dropped; an unknown code stores null.
@@ -123,9 +130,11 @@ export function resolveStopProvenance({
 
   // Incoming stop DIFFERS from stored.
   if (incomingProv) {
-    // Rule 2 — the lock: a stored MANUAL filing refuses an incoming AUTO move.
-    // Keep the stored stop + prov; the client adopts the returned row (A-2).
-    if (storedProv?.source === 'manual' && incomingProv.source === 'auto') {
+    // Rule 2 — the lock: a stored HUMAN filing (manual hand-move OR an S1 confirm)
+    // refuses an incoming AUTO move. Keep the stored stop + prov; the client adopts
+    // the returned row (A-2). A later HUMAN move (manual/confirmed) still overrides
+    // — only 'auto' is refused, so latest-human-wins holds.
+    if (HUMAN_FILED.has(storedProv?.source) && incomingProv.source === 'auto') {
       return { stopId: storedStop, prov: storedProv, refused: true, move: null }
     }
     // Allowed change (manual→anything, auto→auto onto a non-manual, etc.).

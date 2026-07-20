@@ -26,6 +26,10 @@ for (const [label, HW] of [['worker', workerHW], ['client', clientHW]]) {
         expect(HW.manualStopEvidence(m)).toEqual({ stopId: 's-a', by: 'jonathan' })
       })
 
+      it('a CONFIRMED filing (S1/D13 — confirm-card "yes, here") is a human anchor too', () => {
+        expect(HW.manualStopEvidence({ stopId: 's-a', stopProv: { source: 'confirmed', by: 'helen' } })).toEqual({ stopId: 's-a', by: 'helen' })
+      })
+
       it('a manual filing with no actor (by: null, e.g. rule 3\'s inferred-manual stamp) still returns the stop', () => {
         const m = { stopId: 's-a', stopProv: { source: 'manual', by: null } }
         expect(HW.manualStopEvidence(m)).toEqual({ stopId: 's-a', by: null })

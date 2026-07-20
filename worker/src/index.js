@@ -38,6 +38,7 @@ import { resolveStopProvenance, whitelistProv } from './stopProvenance.js'
 import { healSweep, runHealForTrip, scheduleAgendaHeal, photoHealMode, recordHealDecisions } from './photoHealRunner.js'
 import { computeSuggestionsForViewer, recordDismissal } from './photoSuggest.js'
 import { listHealDecisionsForViewer } from './healDecisionsView.js'
+import { photoConfirmMode, writeHealFeedback, stampConfirmedStops } from './confirmFeedback.js'
 import { runEvidenceAudit } from './evidenceAudit.js'
 import { geocodePlace, placesTextSearch } from './placesGeocode.js'
 // Photon — Rust→WASM image library. We import the workerd entrypoint
@@ -239,6 +240,11 @@ export default {
       // (the ledger is the pre-promotion learning tool), dark only when off.
       if (path === '/heal-decisions' && request.method === 'GET') {
         return await getHealDecisions(env, traveler, url, cors)
+      }
+      // The confirm surface's terminal action (confirm / correct / leave-as-guess)
+      // — the ONE write into the live trip S1 owns. Adults only; mode-gated.
+      if (path === '/heal-confirm' && request.method === 'POST') {
+        return await postHealConfirm(env, traveler, request, cors, ctx)
       }
       const memMatch = path.match(/^\/memories\/([^/]+)$/)
       if (memMatch && request.method === 'DELETE') {
@@ -963,16 +969,86 @@ async function getSuggestions(env, traveler, url, cors) {
 // stray poll would surface as an error). Serves in shadow AND on; off → [].
 async function getHealDecisions(env, traveler, url, cors) {
   const headers = { ...cors, 'Cache-Control': 'no-store' }
-  if (!isAdult(traveler)) return json({ decisions: [] }, 200, headers)
+  // `confirm` — is the family-visible confirm SURFACE live? The ledger serves in
+  // shadow AND on (a pre-promotion learning read), but the interactive card (which
+  // writes + LOCKS a filing) must only render when PHOTO_CONFIRM_MODE is fully on.
+  // The client has no other signal; without this a tap in the shadow window would
+  // move + lock real photos (the confirm-surface's own knob gates the WRITE route,
+  // but updateMemoryStop is a separate ungated sync path — the card must self-gate).
+  const confirm = isAdult(traveler) && photoConfirmMode(env) === 'on'
+  if (!isAdult(traveler)) return json({ decisions: [], confirm: false }, 200, headers)
   const tripId = url.searchParams.get('trip') || ''
   try {
     const decisions = await listHealDecisionsForViewer(env, tripId, traveler)
-    return json({ decisions }, 200, headers)
+    return json({ decisions, confirm }, 200, headers)
   } catch (e) {
     // The ledger read is advisory — never fail a surface over it. Log + [].
     console.error('getHealDecisions failed', tripId, e?.stack || e)
-    return json({ decisions: [] }, 200, headers)
+    return json({ decisions: [], confirm: false }, 200, headers)
   }
+}
+
+// POST /heal-confirm — the S1 confirm card's terminal action: a confirm (D13,
+// the strongest evidence the system holds), a correction (picked place / retyped
+// name / free-text words → D15 + a normal-weight negative signal), or a permanent
+// leave-as-guess ('aside' — durable card suppression, no negative signal). ADULTS
+// ONLY (the ledger it answers is adults-only). The actor (by_traveler) is the
+// SESSION identity, never the body. Mode 'off' → inert (no write, no re-heal).
+// A confirm/correction fires runHealForTrip in the BACKGROUND (waitUntil) so the
+// trip re-settles now; this response never blocks on it (the card settles
+// optimistically client-side — no spinner). 'aside' fires nothing.
+async function postHealConfirm(env, traveler, request, cors, ctx) {
+  const headers = { ...cors, 'Cache-Control': 'no-store' }
+  if (!isAdult(traveler)) return json({ ok: false, error: 'forbidden' }, 403, headers)
+  if (photoConfirmMode(env) === 'off') return json({ ok: false, disabled: true }, 200, headers)
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return json({ ok: false, error: 'bad-json' }, 400, headers)
+  }
+  const tripId = body?.trip || body?.tripId || ''
+  const res = await writeHealFeedback(env, tripId, traveler, body)
+  if (!res.ok) {
+    // 'no-table' = migration 021 not applied yet → inert (200); anything else is
+    // a bad request (400). Never leak which by status alone beyond that.
+    return json({ ok: false, error: res.error }, res.error === 'no-table' ? 200 : 400, headers)
+  }
+  // D13 lock (flip-blocker #1): stamp 'confirmed' SERVER-SIDE onto the confirmed
+  // memories BEFORE the re-heal, so runHealForTrip's Gate 2 finds the human
+  // filing and never auto-moves it — instead of the re-heal racing 'auto' onto
+  // the same stop and Rule 1 (sameStop) then silently keeping 'auto'. Only in
+  // 'on' mode (the family-visible move), mirroring what the client files; awaited
+  // so it's durable before the background re-heal reads it.
+  if (res.action === 'confirmed' && photoConfirmMode(env) === 'on') {
+    try {
+      const s = await stampConfirmedStops(env, tripId, body, traveler)
+      console.log('[heal-confirm-stamp]', JSON.stringify(s))
+    } catch (e) {
+      console.error('[heal-confirm-stamp] failed', tripId, e?.stack || e)
+    }
+  }
+  // Re-settle the trip — ONLY for a 'confirmed' (never 'aside'; and NOT
+  // 'corrected', flip-blocker #3: the matcher can't yet consume a correction
+  // (D15 unbuilt), so a 'corrected' re-heal would just re-file the photos to the
+  // REJECTED guess — worse than doing nothing. Corrections are recorded as
+  // feedback and applied once D15 lands). Gated on the engine knob like the
+  // import path.
+  if (ctx && res.action === 'confirmed' && photoHealMode(env) !== 'off') {
+    ctx.waitUntil(
+      runHealForTrip(env, tripId, {}).then(
+        (r) => console.log('[heal-confirm]', JSON.stringify(r)),
+        (e) => console.error('[heal-confirm] re-heal failed', tripId, e?.stack || e)
+      )
+    )
+    ctx.waitUntil(
+      recordHealDecisions(env, tripId, {}).then(
+        (r) => console.log('[heal-confirm-ledger]', JSON.stringify(r)),
+        (e) => console.error('[heal-confirm-ledger] failed', tripId, e?.stack || e)
+      )
+    )
+  }
+  return json({ ok: true, id: res.id }, 200, headers)
 }
 
 // THE KNOB for Build W4 (faces, BUILD_PLAN_WITNESS_FLEET_2.md) — deliberately
@@ -987,7 +1063,7 @@ async function getHealDecisions(env, traveler, url, cors) {
 //   • off | shadow → photoEntry below writes ZERO bytes for `faces` — the
 //     sync gate is enforced HERE, not client-side (the worker is the
 //     secret-keeper, same posture as the Surprises masking layer).
-//   • on            → faces (already fail-closed-whitelisted to fc_N shapes,
+//   • on            → faces (already fail-closed-whitelisted to fc2 tag shapes,
 //     capped at 10, by sanitizeSidecarServer/sanitizeFaces above) persist.
 const PHOTO_FACES_MODES = new Set(['off', 'shadow', 'on'])
 function photoFacesMode(env) {
@@ -1147,8 +1223,8 @@ async function postMemory(env, traveler, request, url, cors, ctx) {
     // whitelist as the rest of the sidecar; a ref carrying none stays byte-
     // identical to before this build.
     if (sidecar.prov) e.prov = sidecar.prov
-    // Pseudonymous face-cluster ids (Build W4, faces) — sanitizeSidecarServer
-    // already fail-closed-whitelisted `sidecar.faces` down to fc_N-shaped
+    // Pseudonymous cross-device face tags (Build W4, faces) — sanitizeSidecarServer
+    // already fail-closed-whitelisted `sidecar.faces` down to fc2-shaped
     // strings capped at 10; this is the SECOND, independent gate: even a
     // perfectly-shaped array is dropped entirely below the family's own
     // PHOTO_FACES_MODE promotion (shipped OFF, photoFacesMode above). Faces
@@ -1664,9 +1740,9 @@ function rowToMemory(r, origin) {
         // write side (photoEntry): both directions must pass it or the tags
         // die on the first round-trip. Omit when absent.
         if (sidecar.prov) ref.prov = sidecar.prov
-        // Pseudonymous face-cluster ids (Build W4) — same independent
+        // Pseudonymous cross-device face tags (Build W4) — same independent
         // server-side whitelist as the write side. The PHOTO_FACES_MODE gate
-        // lives ONLY at write time (photoEntry): once fc_N bytes are
+        // lives ONLY at write time (photoEntry): once fc2 bytes are
         // honestly stored in D1, they round-trip like any other sidecar
         // field — there is nothing further to gate on read.
         if (sidecar.faces) ref.faces = sidecar.faces

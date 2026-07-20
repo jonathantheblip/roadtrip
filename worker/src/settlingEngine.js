@@ -1,0 +1,309 @@
+// settlingEngine.js — HM-2 of the Healing Model (DESIGN_THE_HEALING_MODEL.md §12.2).
+//
+// The Gestalt accumulator over the evidence bench (HM-1). It does NOT sum votes: the
+// graded reads lean on and reinforce each other and RELAX into a coherent whole —
+// moments and places co-settle. It is where §14's "best path wins by what's
+// available" becomes actual math (whatever spoke, at whatever grade), and where both
+// guards live in one loop:
+//
+//   • False confidence (§9) — CORRELATION DISCOUNT. Witnesses in the same correlation
+//     group don't stack (their weighted MAX counts, not their sum), so agreement
+//     between two views of the same thing never masquerades as two independent
+//     confirmations. Combination is noisy-OR ACROSS independent groups only.
+//   • False diffidence (§13) — NEIGHBOUR BORROWING. A photo weak in its own evidence
+//     is LIFTED by moment-mates it is strongly affine to (a burst inherits the one
+//     shot that had GPS). No channel is silenced; a weak witness still reinforces.
+//
+// The lessons stay structural: memberships are POSSIBILITIES in [0,1], never
+// normalised (stacked places both stay ~1 — conflict, not a forced split); ABSENCE
+// contributes 0 (ignorance never lowers a membership); BORROWED support is derived
+// and can only "heal softly", never "file silently" (derived never poses as
+// observed); and every number is a SEED fit later (§13) — the criterion MOVES, it is
+// not a hard cut.
+//
+// Output per photo: settled graded membership + the conflict-vs-ignorance split
+// (§9.3) → one of the four destinations (§4): file (silently) / heal (softly) /
+// ask (the rare glance) / leave (loose). Pure + node-tested. App-canonical.
+
+const clamp01 = (x) => (Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0)
+// noisy-OR: any strong contribution lifts membership, several independent ones
+// reinforce, it saturates at 1 and an absent (0) contribution changes nothing.
+const noisyOR = (vals) => 1 - (vals || []).reduce((acc, v) => acc * (1 - clamp01(v)), 1)
+const pairKey = (a, b) => (String(a) < String(b) ? `${a} ${b}` : `${b} ${a}`)
+
+const R = 6371000
+const toRad = (d) => (d * Math.PI) / 180
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return null
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1)
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
+// SEED values (§13) — provisional until FIT from real data (HM-5 ablation/calibration).
+// Weights are UNIFORM on purpose: differentiation must come from measurement, never
+// from my intuition about which channel "feels" more trustworthy. No channel is
+// demoted here; that would be the pinned drift.
+export const SETTLE_DEFAULTS = {
+  // FITTED (F5, 2026-07-19 — §13: measured, never felt): grid × declared criterion
+  // (recovery − 0.75·ask − 1.0·misfile, Jonathan's asymmetry) on the honest harness
+  // (whole trips held out, filing masked). placeType/worldModel measured HARMFUL at 1.0
+  // (−3/−2 pts); fitted to the LEAST demotion achieving the measured benefit on the
+  // score plateau (placeType 0.6; worldModel 0.2 = the §13 floor — lowered, never
+  // silenced). Result: recovery 68→71%, ask 22→20%, misfile flat 2.6%; both §13 guards
+  // held. Missing key → 1. Refit via app/scripts/healFit.mjs when the corpus grows.
+  weights: { placeType: 0.6, worldModel: 0.2 },
+  // Correlation groups: witnesses INSIDE a group co-vary → counted once (weighted max);
+  // groups are independent → noisy-OR. Seed groups; fittable. Any witness not named
+  // here becomes its own singleton group (so new channels join without re-architecture).
+  placementGroups: [['gps'], ['time'], ['currentFiling'], ['humanConfirm'], ['worldModel'], ['signage'], ['placeType', 'lookalike']],
+  affinityGroups: [['timeGap', 'sequence'], ['scene'], ['faces']],
+  borrowDamping: 0.6, // β — inherited (derived) evidence is weaker than a photo's own
+  iterations: 12,
+  // HM-6: a human answer RESOLVES conflict for its moment. In possibility-land a confirm
+  // cannot suppress the rival place (no negative votes), so without this the family's own
+  // answer would leave "two places genuinely fit" standing forever. The ask exists because
+  // a glance would settle it — once the glance HAS happened, the conflict is settled, and
+  // that resolution travels the affinity graph (a confirm speaks for its moment, the S1
+  // semantics). Direct answer → may file; inherited resolution → heals softly, never files.
+  confirmResolveFloor: 0.3, // inherited resolution weaker than this doesn't resolve (seed)
+  confirmPropagationDecay: 0.95, // per-hop damping as resolution travels the moment (seed)
+  crit: {
+    floor: 0.25, // below this, even the best place is too weak → ignorance → leave
+    conflict: 0.55, // a runner-up this strong means two places genuinely fit
+    strong: 0.7, // a lone leader this strong (+ clear + observed) may file silently
+    clear: 0.2, // margin over the runner-up required to file silently
+    coincidentMeters: 60, // conflicting places closer than this can't be separated by a glance → leave, don't ask
+  },
+}
+
+// Every witness present ends up in exactly one group; unlisted ones are singletons.
+function effectiveGroups(witnessesPresent, configuredGroups) {
+  const covered = new Set(configuredGroups.flat())
+  const groups = configuredGroups.map((g) => g.filter((w) => witnessesPresent.has(w))).filter((g) => g.length)
+  for (const w of witnessesPresent) if (!covered.has(w)) groups.push([w])
+  return groups
+}
+
+// Combine ONE photo's placement witnesses → { place: {membership, tier} }.
+// Within a correlation group: weighted MAX (redundant views count once). Across
+// groups: noisy-OR (independent reinforcement, unnormalised → conflict survives).
+function combineOne(evList, weights, groups) {
+  const places = new Set()
+  for (const e of evList) for (const p of Object.keys(e.support || {})) places.add(p)
+  const out = {}
+  for (const place of places) {
+    const groupContribs = []
+    let anyObserved = false
+    for (const group of groups) {
+      let best = 0, bestObserved = false
+      for (const w of group) {
+        const ev = evList.find((e) => e.witness === w)
+        const s = ev && ev.support ? ev.support[place] : 0
+        if (!(s > 0)) continue
+        const c = (weights[w] ?? 1) * s
+        if (c > best) { best = c; bestObserved = ev.tier === 'observed' }
+      }
+      if (best > 0) { groupContribs.push(best); if (bestObserved) anyObserved = true }
+    }
+    if (groupContribs.length) out[place] = { membership: clamp01(noisyOR(groupContribs)), tier: anyObserved ? 'observed' : 'derived' }
+  }
+  return out
+}
+
+function combineOwnPlacement(placementEvidence, o) {
+  const byPhoto = new Map()
+  const witnesses = new Set()
+  for (const e of placementEvidence || []) {
+    witnesses.add(e.witness)
+    if (!byPhoto.has(e.photoId)) byPhoto.set(e.photoId, [])
+    byPhoto.get(e.photoId).push(e)
+  }
+  const groups = effectiveGroups(witnesses, o.placementGroups)
+  const own = new Map()
+  for (const [pid, evs] of byPhoto) own.set(pid, combineOne(evs, o.weights, groups))
+  return own
+}
+
+// Combine affinity witnesses per pair → one same-moment weight, same discipline.
+function combineAffinity(affinityEvidence, o) {
+  const byPair = new Map()
+  const witnesses = new Set()
+  for (const e of affinityEvidence || []) {
+    witnesses.add(e.witness)
+    const k = pairKey(e.aId, e.bId)
+    if (!byPair.has(k)) byPair.set(k, { aId: e.aId, bId: e.bId, byWitness: {} })
+    byPair.get(k).byWitness[e.witness] = { affinity: e.affinity, tier: e.tier }
+  }
+  const groups = effectiveGroups(witnesses, o.affinityGroups)
+  const out = new Map()
+  for (const [k, rec] of byPair) {
+    const groupContribs = []
+    for (const group of groups) {
+      let best = 0
+      for (const w of group) {
+        const r = rec.byWitness[w]
+        if (!r || !(r.affinity > 0)) continue
+        best = Math.max(best, (o.weights[w] ?? 1) * r.affinity)
+      }
+      if (best > 0) groupContribs.push(best)
+    }
+    out.set(k, { aId: rec.aId, bId: rec.bId, affinity: clamp01(noisyOR(groupContribs)) })
+  }
+  return out
+}
+
+// Relaxation: each photo's place-membership is its OWN evidence, noisy-OR'd with what
+// it BORROWS from affine neighbours (damped, so own > inherited). Synchronous updates
+// → deterministic. Borrowing is what lifts a weak photo to its moment's place (§13).
+function relax(own, neighbours, o) {
+  let m = new Map()
+  for (const [pid, places] of own) {
+    const v = {}
+    for (const [p, cell] of Object.entries(places)) v[p] = cell.membership
+    m.set(pid, v)
+  }
+  // photos with no own evidence still need a slot so neighbours can lift them
+  for (const pid of neighbours.keys()) if (!m.has(pid)) m.set(pid, {})
+  for (let it = 0; it < o.iterations; it++) {
+    const next = new Map()
+    for (const [pid, cur] of m) {
+      const ownPlaces = own.get(pid) || {}
+      const borrow = {}
+      for (const { j, affinity } of neighbours.get(pid) || []) {
+        const mj = m.get(j) || {}
+        for (const [p, val] of Object.entries(mj)) {
+          if (!borrow[p]) borrow[p] = []
+          borrow[p].push(affinity * val)
+        }
+      }
+      const places = new Set([...Object.keys(ownPlaces), ...Object.keys(borrow)])
+      const v = {}
+      for (const p of places) {
+        const ownM = ownPlaces[p]?.membership ?? 0
+        const borrowed = o.borrowDamping * noisyOR(borrow[p] || [])
+        v[p] = clamp01(noisyOR([ownM, borrowed]))
+      }
+      next.set(pid, v)
+    }
+    m = next
+  }
+  return m
+}
+
+// Read a settled membership vector → the conflict/ignorance split → one destination.
+// The criterion MOVES (its numbers are seeds, §13) and is asymmetric (§2): a low bar
+// to ACT reversibly, a high bar to ASK.
+function readout(settledPlaces, ownPlaces, placeById, crit, confirmed) {
+  const entries = Object.entries(settledPlaces)
+    .map(([place, membership]) => ({ place, m: membership }))
+    .sort((a, b) => b.m - a.m || String(a.place).localeCompare(String(b.place)))
+  if (!entries.length || entries[0].m <= 0) {
+    return { top: null, topM: 0, runnerUp: null, conflict: 0, ignorance: 1, margin: 0, tier: null, borrowedHeavy: false, destination: 'leave', reason: 'no evidence fits (ignorance)', membership: {} }
+  }
+  const top = entries[0], second = entries[1] || { place: null, m: 0 }
+  const conflict = Math.min(top.m, second.m) // both genuinely fit → high (possibility, not a split)
+  const ignorance = 1 - top.m // even the best is weak → high
+  const margin = top.m - second.m
+  const ownTop = ownPlaces[top.place]?.membership ?? 0
+  const tier = ownPlaces[top.place]?.tier ?? 'derived' // no own support for the winner → purely borrowed → derived
+  const borrowedHeavy = ownTop < top.m * 0.5
+
+  let destination, reason
+  // HM-6: the family's answer settles this moment (the glance happened) — and a human
+  // answer OUTRANKS the machine's lean, agree or not (the settled person-beats-machine
+  // semantics). A DIRECT answer files at the answered place even when the machine leaned
+  // elsewhere; an INHERITED resolution follows the answer softly, unless this member's
+  // own OBSERVED evidence strongly points elsewhere (then the divergence surfaces).
+  if (confirmed && confirmed.direct) {
+    const m = settledPlaces[confirmed.place] ?? 0
+    return { top: confirmed.place, topM: m, runnerUp: top.place !== confirmed.place ? top.place : second.place, conflict, ignorance: 1 - m, margin, tier: 'observed', borrowedHeavy: false, destination: 'file', reason: 'confirmed by the family', membership: settledPlaces }
+  }
+  // A mate follows the moment's answer UNLESS its own observed evidence both is strong
+  // AND clearly beats the answered place's settled support — then the divergence
+  // surfaces instead of being steamrolled (§7: not even a family tap is definitive).
+  const ownObservedElsewhere = confirmed
+    ? Math.max(0, ...Object.entries(ownPlaces).filter(([p, c]) => p !== confirmed.place && c.tier === 'observed').map(([, c]) => c.membership))
+    : 0
+  const contradicts = confirmed
+    && ownObservedElsewhere >= crit.strong
+    && ownObservedElsewhere > (settledPlaces[confirmed.place] ?? 0) + crit.clear
+  if (confirmed && !contradicts) {
+    const m = settledPlaces[confirmed.place] ?? 0
+    return { top: confirmed.place, topM: m, runnerUp: top.place !== confirmed.place ? top.place : second.place, conflict, ignorance: 1 - m, margin, tier: 'derived', borrowedHeavy: true, destination: 'heal', reason: "settled by the family's answer on this moment — placed softly", membership: settledPlaces }
+  }
+  if (top.m < crit.floor) {
+    destination = 'leave'; reason = 'nothing fits well enough yet — ignorance, not a wrong guess'
+  } else if (conflict >= crit.conflict) {
+    // Two places genuinely fit. If they sit on the same spot, no glance can separate
+    // them (the Provincetown stacked case) → leave loose; asking would spend a question
+    // to buy nothing. Otherwise it is a glance-resolvable fork → the rare ask.
+    const a = placeById.get(top.place), b = placeById.get(second.place)
+    const d = a && b ? haversineMeters(a.lat, a.lng, b.lat, b.lng) : null
+    if (d != null && d <= crit.coincidentMeters) {
+      destination = 'leave'; reason = 'two places genuinely fit and sit on the same spot — no glance resolves it'
+    } else {
+      destination = 'ask'; reason = 'two places genuinely fit — a glance would settle it'
+    }
+  } else if (top.m >= crit.strong && margin >= crit.clear && tier === 'observed' && !borrowedHeavy) {
+    destination = 'file'; reason = 'one place clearly fits, on its own observed evidence'
+  } else {
+    destination = 'heal'
+    reason = borrowedHeavy ? 'placed softly — inherited from its moment, fully reversible' : 'one place leads, but softly — placed reversibly'
+  }
+  return { top: top.place, topM: top.m, runnerUp: second.place, conflict, ignorance, margin, tier, borrowedHeavy, destination, reason, membership: settledPlaces }
+}
+
+// settle — run the whole accumulator over a bench. `places` supplies candidate coords
+// (for the coincident-place / aleatoric guard). Returns per-photo settled results and
+// a provisional moment grouping (soft; its link level is a seed, fit later).
+export function settle(bench, places = [], opts = {}) {
+  const o = { ...SETTLE_DEFAULTS, ...opts, crit: { ...SETTLE_DEFAULTS.crit, ...(opts.crit || {}) } }
+  const placeById = new Map((places || []).map((p) => [p.id, p]))
+
+  const own = combineOwnPlacement(bench.placement, o)
+  const pairs = combineAffinity(bench.affinity, o)
+
+  const neighbours = new Map()
+  const link = (id) => { if (!neighbours.has(id)) neighbours.set(id, []) }
+  for (const { aId, bId, affinity } of pairs.values()) {
+    link(aId); link(bId)
+    neighbours.get(aId).push({ j: bId, affinity })
+    neighbours.get(bId).push({ j: aId, affinity })
+  }
+
+  const settled = relax(own, neighbours, o)
+
+  // HM-6: propagate answer-RESOLUTION over the affinity graph. Seeds are photos with a
+  // direct humanConfirm witness; neighbours inherit the resolution damped by affinity.
+  const conf = new Map()
+  for (const e of bench.placement || []) {
+    if (e.witness !== 'humanConfirm' || !e.support) continue
+    const best = Object.entries(e.support).sort((a, b) => b[1] - a[1])[0]
+    if (best) conf.set(e.photoId, { place: best[0], strength: 1, direct: true })
+  }
+  if (conf.size) {
+    for (let it = 0; it < 5; it++) {
+      for (const [pid, links] of neighbours) {
+        const c = conf.get(pid)
+        if (!c) continue
+        for (const { j, affinity } of links) {
+          const s = c.strength * affinity * o.confirmPropagationDecay
+          const prev = conf.get(j)
+          if (s >= o.confirmResolveFloor && (!prev || (!prev.direct && s > prev.strength))) {
+            conf.set(j, { place: c.place, strength: s, direct: false })
+          }
+        }
+      }
+    }
+  }
+
+  const photos = new Map()
+  const allIds = new Set([...own.keys(), ...neighbours.keys()])
+  for (const pid of allIds) {
+    photos.set(pid, readout(settled.get(pid) || {}, own.get(pid) || {}, placeById, o.crit, conf.get(pid)))
+  }
+  return { photos, affinity: pairs, own }
+}
+
+export { combineOwnPlacement, combineAffinity, noisyOR }

@@ -12,6 +12,8 @@ describe('whitelistProv — reserialize to exactly the stored shape', () => {
     expect(whitelistProv(null)).toBeNull()
     expect(whitelistProv({})).toBeNull()
     expect(whitelistProv({ source: 'guess' })).toBeNull()
+    // S1: 'confirmed' (D13) is a valid human source — kept, not dropped (SOURCES).
+    expect(whitelistProv({ source: 'confirmed', by: 'jonathan' })).toMatchObject({ source: 'confirmed', by: 'jonathan' })
   })
 
   it('keeps the whitelisted manual fields; never fabricates a person', () => {
@@ -116,6 +118,28 @@ describe('resolveStopProvenance — the rule matrix', () => {
     expect(r.stopId).toBe('s2')
     expect(r.prov.by).toBe('jonathan')
     expect(r.move).toMatchObject({ from: 's1', to: 's2', toLabel: 'Pier', source: 'manual', by: 'jonathan' })
+  })
+
+  it('Rule 2 (S1 CONFIRM lock, D13): a stored confirmed filing REFUSES an incoming auto move', () => {
+    const stored = { source: 'confirmed', by: 'jonathan', targetLabel: 'Angel Foods' }
+    const r = resolveStopProvenance({
+      storedStopId: 's1', storedProv: stored, isInsert: false,
+      incomingStopId: 's2', incomingProv: whitelistProv({ source: 'auto', by: 'matcher' }), now: NOW,
+    })
+    expect(r.refused).toBe(true) // the family's confirm stands; the sweep can't move it
+    expect(r.stopId).toBe('s1')
+    expect(r.prov).toBe(stored)
+    expect(r.move).toBeNull()
+  })
+
+  it('a later HUMAN move still overrides a confirm (latest-human-wins): confirmed→manual is allowed', () => {
+    const stored = { source: 'confirmed', by: 'jonathan' }
+    const r = resolveStopProvenance({
+      storedStopId: 's1', storedProv: stored, isInsert: false,
+      incomingStopId: 's2', incomingProv: whitelistProv({ source: 'manual', by: 'helen', targetLabel: 'Pier' }), now: NOW,
+    })
+    expect(r.refused).toBe(false)
+    expect(r.stopId).toBe('s2')
   })
 
   it('allowed auto move onto a non-manual photo: takes incoming, logs from→to with snapshotted labels', () => {

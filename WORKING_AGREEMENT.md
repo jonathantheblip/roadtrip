@@ -213,8 +213,58 @@ If you find a carryover without this block, add it. The block is the load-bearin
 
 ## 8. KNOWN DRIFT RISKS IN THIS REPO RIGHT NOW (living watch-list)
 
-Verified 2026-06-02; last updated 2026-07-13. Update as these resolve.
+Verified 2026-06-02; last updated 2026-07-18. Update as these resolve.
 
+- **[OPEN 2026-07-18] A closure-SCOPE bug in a component event handler is invisible to the build, to a
+  demo-early-return e2e, AND to a code read that doesn't trace scope — only a scope-tracing review (or
+  ESLint no-undef) catches it.** The S1 Level 2 wiring referenced `trip` from `HealConfirmHost`'s
+  `onResolve`, but `trip` is declared inside the component's `useEffect` (a different closure) — a
+  `ReferenceError` that, once `PHOTO_CONFIRM_MODE` flips on, would throw BEFORE the filing loop and break
+  the ENTIRE confirm (Level 1 filing + Level 2 + the server lock) while the card still claimed success and
+  burned the day's budget. The `vite build` passed (JS doesn't error on an undefined ref until runtime);
+  the confirm e2e passed (the `?confirmDemo=1` path `return`s before the real write block, so the real
+  filing path has NEVER been runtime-exercised); a normal diff-read missed it. A fresh adversarial
+  reviewer caught it by tracing the scope chain. **Mitigations, now DONE: (1) ESLint (flat config,
+  `no-undef` ERROR + react-hooks) was added to `app/` 2026-07-18 — `npm --prefix app run lint`; PROVEN to
+  flag the exact `'trip' is not defined`. Exits 1 on any error, so it's CI-gate-ready — but gating is
+  DEFERRED until the 81 pre-existing warnings (51 no-unused-vars, 23 exhaustive-deps, 14 unused-disable —
+  all cleanup, no bugs) are triaged. `worker/` still has no lint. (2) The confirm write logic was
+  extracted to `confirmSurface.js`'s `confirmWritePlan` (pure, node-tested), so the real filing path's
+  LOGIC is covered. (3) A review of event-handler code must still trace variable SCOPE, not just logic.**
+- **[OPEN 2026-07-17] A strict `script-src` silently blocking an INLINE `<script>` is INVISIBLE to
+  `read_console_messages` and to a post-load `securitypolicyviolation` listener — actively probe inline
+  execution instead.** Adding the faces CSP (`script-src 'self' 'wasm-unsafe-eval'`, no `'unsafe-inline'`)
+  I verified the app "rendered with zero console errors" and called it clean — but that check MISSED that
+  the CSP was blocking the app's own pre-React person/theme bootstrap (a first-paint-flash regression that
+  would have shipped). The browser's CSP-violation report for a blocked inline script does NOT arrive as a
+  `console.*` event the read tool captures, and a `securitypolicyviolation` listener added via
+  `javascript_tool` AFTER load misses the load-time violation. A fresh adversarial reviewer caught it by
+  actively testing execution. **Mitigation: when a strict `script-src` (no `'unsafe-inline'`) ships, VERIFY
+  each inline script still runs — inject a `<script>` with the same content (must execute) and one with
+  different content (must be refused), and/or assert each inline block's `sha256` is present in the served
+  `script-src`. "App renders + no console errors" is NOT sufficient for CSP.** (Fixed by auto-hashing every
+  inline script in the build plugin.)
+- **[OPEN 2026-07-13] A build/compile break can hide behind a green-looking e2e summary — assert build
+  EXIT=0 after any component/JSX edit, don't trust the test count alone.** During the S1 overnight run I
+  put a `{/* comment */}` inside a `{cond && ( … )}` (two siblings, no fragment) — a JSX syntax error. I
+  read the e2e output as "N failed" and chased a stale-server theory; the real cause was the broken module
+  failing to compile, so the whole card never rendered and ALL 18 e2e failed with no inline compile error
+  in the list-reporter summary. The `vite build` in the same command had printed `EXIT=1` but its output
+  was truncated and I didn't check it. **Mitigation: after editing a component, run the build and read its
+  EXIT code (not just `| tail` of a piped run); a mass-failure e2e with no per-test error is a compile
+  break until proven otherwise.**
+- **[OPEN 2026-07-13] The in-app browser PREVIEW starts at a 0×0 viewport — a correct component looks
+  BROKEN until you resize.** Building S1's card, I chased a phantom "card renders but is 32px wide / a thin
+  vertical strip" bug through several diagnostic steps; the whole app (up to `<body>`) had width 0 — the
+  preview tab simply had no size (read_page even reported "Viewport: 0x0"). **Mitigation: `resize_window`
+  to a real size (mobile 375×812) BEFORE any read_page/screenshot of a preview, and treat "Viewport: 0x0"
+  or an inexplicably-collapsed layout as that tell, not a CSS bug in your code.**
+- **[OPEN 2026-07-13] A filename an external spec tells you to create may already be TAKEN by unrelated,
+  in-use code.** The S1 design bundle said build `app/src/components/ConfirmCard.jsx` — but that was already
+  a 1740-line tracked component (the Claude-in-App add/move/cancel/multi card). Only the Write tool's
+  "read the file first" guard prevented clobbering it; the S1 component became `ConfirmMomentCard.jsx`.
+  **Mitigation: `ls`/grep a suggested path before creating a file from any handoff/bundle — its assumed
+  names are guesses about your tree, not facts.**
 - **[OPEN 2026-07-13] Rendered a11y (color-contrast, focus, tap-targets) is INVISIBLE to a unit-only local
   gate AND to a code-reading adversarial review — only the e2e axe gate catches it.** W6 (picker polish)
   shipped a real WCAG-AA contrast violation (a `--muted` hint composited to 4.36:1 on a `--bg2` card, below
@@ -224,14 +274,19 @@ Verified 2026-06-02; last updated 2026-07-13. Update as these resolve.
   build, the full both-engine e2e is NON-skippable — "it's just copy/CSS" is exactly when a contrast/focus
   regression slips a unit gate. (The chrome-devtools-mcp a11y-debugging skill is now available if a targeted
   a11y pass is ever wanted mid-build, before the e2e.)
-- **[OPEN 2026-07-13] The grep-invisible-binary bug (a raw control byte — NUL, U+0001 — used as a string
-  separator) has now recurred FIVE times** (photoSuggest.js's NUL, seqName.js's U+0001 in W2, humanWords.js's
-  NUL in W9, once in this project's own carryover doc, and the W2 review hardened ImportFlow against the
-  class). Each makes a file binary to git + invisible to grep, silently defeating audits. The standing
-  mitigation is a manual `file <path>` ("data" not "text") + control-char grep before every commit — it has
-  caught each one, but it depends on remembering. **Worth a real guard: a pre-commit hook rejecting any
-  tracked text file containing a NUL/control byte (Jonathan's call — a rule/config change, not mine to add;
-  the newly-available `hookify` plugin is a natural fit).** Until then, the manual check stays mandatory.
+- **[OPEN 2026-07-13, recurred 2026-07-19] The grep-invisible-binary bug (a raw control byte — NUL, U+0001 —
+  used as a string separator) has now recurred SEVEN times** (photoSuggest.js's NUL, seqName.js's U+0001 in
+  W2, humanWords.js's NUL in W9, once in this project's own carryover doc, the W2 review hardened ImportFlow
+  against the class, and **2026-07-19 TWO MORE: `settlingEngine.js`'s `pairKey` + `SuggestionBanner.jsx`'s
+  `sugKey`, both NUL separators** — the settlingEngine one had been COMMITTED (F6) reading as binary `data`,
+  invisible to grep and every grep-based review agent). Each makes a file binary to git + invisible to grep,
+  silently defeating audits. **⚠ New sub-lesson: the `Read` tool renders a NUL as an invisible space, so a
+  NUL survives authoring AND a human/agent code review that reads the file — only `file <path>` ("data" not
+  "text") or a byte-level scan sees it.** The 2026-07-19 pair was caught by a repo-wide byte-level NUL scan
+  (now `0/746` tracked text files) — that scan is trivially scriptable and should run before every commit
+  until a hook exists. **Worth a real guard: a pre-commit hook rejecting any tracked text file containing a
+  NUL/control byte (Jonathan's call — a rule/config change, not mine to add; the `hookify` plugin is a
+  natural fit).** Until then, the manual byte-scan stays mandatory.
 - **[OPEN 2026-07-11] Adversarial review checks CODE, not the PLAN a build gets written from — and a real
   design flaw slipped through until a second, differently-modeled opinion caught it.** Build 3's
   (vision place-sameness) first-draft spec gated a new feature on a condition ("GPS AND scene both
