@@ -274,14 +274,19 @@ Verified 2026-06-02; last updated 2026-07-18. Update as these resolve.
   build, the full both-engine e2e is NON-skippable — "it's just copy/CSS" is exactly when a contrast/focus
   regression slips a unit gate. (The chrome-devtools-mcp a11y-debugging skill is now available if a targeted
   a11y pass is ever wanted mid-build, before the e2e.)
-- **[OPEN 2026-07-13] The grep-invisible-binary bug (a raw control byte — NUL, U+0001 — used as a string
-  separator) has now recurred FIVE times** (photoSuggest.js's NUL, seqName.js's U+0001 in W2, humanWords.js's
-  NUL in W9, once in this project's own carryover doc, and the W2 review hardened ImportFlow against the
-  class). Each makes a file binary to git + invisible to grep, silently defeating audits. The standing
-  mitigation is a manual `file <path>` ("data" not "text") + control-char grep before every commit — it has
-  caught each one, but it depends on remembering. **Worth a real guard: a pre-commit hook rejecting any
-  tracked text file containing a NUL/control byte (Jonathan's call — a rule/config change, not mine to add;
-  the newly-available `hookify` plugin is a natural fit).** Until then, the manual check stays mandatory.
+- **[OPEN 2026-07-13, recurred 2026-07-19] The grep-invisible-binary bug (a raw control byte — NUL, U+0001 —
+  used as a string separator) has now recurred SEVEN times** (photoSuggest.js's NUL, seqName.js's U+0001 in
+  W2, humanWords.js's NUL in W9, once in this project's own carryover doc, the W2 review hardened ImportFlow
+  against the class, and **2026-07-19 TWO MORE: `settlingEngine.js`'s `pairKey` + `SuggestionBanner.jsx`'s
+  `sugKey`, both NUL separators** — the settlingEngine one had been COMMITTED (F6) reading as binary `data`,
+  invisible to grep and every grep-based review agent). Each makes a file binary to git + invisible to grep,
+  silently defeating audits. **⚠ New sub-lesson: the `Read` tool renders a NUL as an invisible space, so a
+  NUL survives authoring AND a human/agent code review that reads the file — only `file <path>` ("data" not
+  "text") or a byte-level scan sees it.** The 2026-07-19 pair was caught by a repo-wide byte-level NUL scan
+  (now `0/746` tracked text files) — that scan is trivially scriptable and should run before every commit
+  until a hook exists. **Worth a real guard: a pre-commit hook rejecting any tracked text file containing a
+  NUL/control byte (Jonathan's call — a rule/config change, not mine to add; the `hookify` plugin is a
+  natural fit).** Until then, the manual byte-scan stays mandatory.
 - **[OPEN 2026-07-11] Adversarial review checks CODE, not the PLAN a build gets written from — and a real
   design flaw slipped through until a second, differently-modeled opinion caught it.** Build 3's
   (vision place-sameness) first-draft spec gated a new feature on a condition ("GPS AND scene both
