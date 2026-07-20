@@ -27,9 +27,15 @@ export function photoConfirmMode(env) {
 export const HEAL_FEEDBACK_ACTIONS = new Set(['confirmed', 'corrected', 'aside'])
 const QUESTION_KINDS = new Set(['A', 'B', 'C', 'D'])
 
-// D1 surfaces a missing table as "no such table: X" — the inertness signal when
-// migration 021 has not been applied yet. Treated as a benign no-op everywhere.
-const isNoTable = (e) => /no such table/i.test(String(e?.message || e))
+// D1 surfaces a not-yet-migrated schema as "no such table: X" OR "no such column: Y"
+// — the inertness signal when 021 (or its lean_json column, A1) has not been applied.
+// Both are the SAME class: schema-not-ready → degrade to a benign inert no-op, never a
+// 500. This matters for the "never blocks the human's answer" invariant: a D1 carrying
+// an EARLIER 021 (a dev DB from before lean_json) keeps a 12-column table, and the
+// 13-value INSERT would otherwise throw "no such column: lean_json" and break the tap
+// (A1 review). Treating it as inert makes the write path hold the invariant structurally,
+// not just by the precondition that 021 was never applied.
+const isNoTable = (e) => /no such table|no such column|has no column/i.test(String(e?.message || e))
 
 const cleanStr = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
@@ -65,6 +71,47 @@ export function validateFeedback(body) {
   return { ok: true, memoryIds }
 }
 
+// A1 (BUILD_SPECS_GLANCE_ENGINE.md): the ask-time LEAN, read SERVER-AUTHORITATIVELY from
+// the current decisions ledger — never client-supplied (no spoof surface). Finds the
+// decision whose memory_ids OVERLAP the answered moment (the same intersection identity
+// 021 uses) and snapshots its challenger read (signals_json.hm) + the served proposal +
+// the question class. Returns null on any miss/error (the write proceeds with lean_json
+// NULL — capture is best-effort, never blocks the human's answer). hm is null unless the
+// shadow engine was on, so `engine` is 'hm' only when a real challenger read exists.
+async function readMomentLean(env, tripId, memoryIds, body) {
+  try {
+    const { results } = await env.DB.prepare(
+      'SELECT memory_ids, place_id, place_name, signals_json FROM memory_heal_decisions WHERE trip_id = ?'
+    ).bind(tripId).all()
+    const want = new Set(memoryIds)
+    let best = null
+    let bestOverlap = 0
+    for (const row of results || []) {
+      let mids = []
+      try { mids = JSON.parse(row.memory_ids || '[]') } catch { mids = [] }
+      const overlap = mids.reduce((n, m) => n + (want.has(m) ? 1 : 0), 0)
+      if (overlap > bestOverlap) { bestOverlap = overlap; best = row }
+    }
+    let hm = null
+    if (best) { try { hm = JSON.parse(best.signals_json || '{}').hm || null } catch { hm = null } }
+    const lean = {
+      engine: hm ? 'hm' : 'v1',
+      classId: QUESTION_KINDS.has(body.kind) ? body.kind : null,
+      action: body.action,
+      // Strictly server-authoritative: a lean is stored ONLY when a decision matched
+      // (hm exists ⇒ best exists), so the guess is the matched row's own place — never
+      // the client body (no spoof surface, even for the label).
+      guessed: { id: best?.place_id ?? null, name: best?.place_name ?? null },
+      hm,
+    }
+    // Only worth storing when it carries a real challenger read (else it is just an
+    // echo of columns already on the row — keep lean_json NULL to avoid dead weight).
+    return hm ? JSON.stringify(lean) : null
+  } catch {
+    return null
+  }
+}
+
 // Write one terminal feedback row. `traveler` is the SESSION identity (the route
 // has already checked isAdult) — never the body. Returns {ok,id} on write,
 // {ok:false,error:'no-table'} when 021 is unapplied (inert), {ok:false,error}
@@ -74,12 +121,13 @@ export async function writeHealFeedback(env, tripId, traveler, body, { now = Dat
   if (!tid) return { ok: false, error: 'no-trip' }
   const v = validateFeedback(body)
   if (!v.ok) return v
+  const leanJson = await readMomentLean(env, tid, v.memoryIds, body)
   try {
     const res = await env.DB.prepare(
       `INSERT INTO memory_heal_feedback
          (trip_id, iso_date, memory_ids, action, kind, guessed_place_id, guessed_place_name,
-          corrected_place_id, corrected_place_name, words, by_traveler, at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+          corrected_place_id, corrected_place_name, words, by_traveler, at, lean_json)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       tid,
       cleanStr(body.isoDate),
@@ -92,7 +140,8 @@ export async function writeHealFeedback(env, tripId, traveler, body, { now = Dat
       cleanStr(body.correctedPlaceName),
       cleanStr(body.words),
       cleanStr(traveler),
-      now
+      now,
+      leanJson
     ).run()
     return { ok: true, id: res?.meta?.last_row_id ?? null, action: body.action }
   } catch (e) {
@@ -159,7 +208,7 @@ export async function listHealFeedbackForTrip(env, tripId) {
   try {
     const r = await env.DB.prepare(
       `SELECT id, trip_id, iso_date, memory_ids, action, kind, guessed_place_id, guessed_place_name,
-              corrected_place_id, corrected_place_name, words, by_traveler, at
+              corrected_place_id, corrected_place_name, words, by_traveler, at, lean_json
          FROM memory_heal_feedback WHERE trip_id = ? ORDER BY at DESC, id DESC`
     ).bind(tid).all()
     rows = r?.results
@@ -176,7 +225,9 @@ export async function listHealFeedbackForTrip(env, tripId) {
       continue
     }
     if (!Array.isArray(memoryIds) || !memoryIds.length) continue
-    out.push({ ...row, memoryIds })
+    let lean = null
+    try { lean = row.lean_json ? JSON.parse(row.lean_json) : null } catch { lean = null }
+    out.push({ ...row, memoryIds, lean })
   }
   return out
 }

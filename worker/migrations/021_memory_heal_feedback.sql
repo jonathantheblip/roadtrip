@@ -45,6 +45,14 @@
 --
 -- Idempotency. CREATE TABLE/INDEX are IF NOT EXISTS; no ALTER → fully re-runnable
 -- against prod, and the test harness applies it in the IF-NOT-EXISTS group.
+-- ⚠ CAVEAT (A1, 2026-07-19): `lean_json` was added to this CREATE TABLE IN PLACE, which
+-- is safe ONLY because 021 was never applied anywhere in prod (verified) — a fresh
+-- apply creates the 13-column table. IF-NOT-EXISTS does NOT retro-add the column to a
+-- D1 that already applied an EARLIER 021 (e.g. a dev DB): that table stays 12 columns
+-- and must be DROPPED + re-created, not re-migrated. The write path no longer 500s on
+-- that skew — confirmFeedback.js's isNoTable() now treats "no such column" as inert
+-- (schema-not-ready), same as a missing table — but the DATA won't record until the
+-- column exists. So: apply-fresh in prod; drop+recreate on any dev DB carrying old 021.
 CREATE TABLE IF NOT EXISTS memory_heal_feedback (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,  -- monotonic; append/audit order
   trip_id              TEXT NOT NULL,                      -- the trip (no FK — outlives a delete)
@@ -58,6 +66,13 @@ CREATE TABLE IF NOT EXISTS memory_heal_feedback (
   corrected_place_name TEXT,                               -- snapshot label of the corrected place
   words                TEXT,                               -- free-text D15 words, or the retyped name (kind B); NULL otherwise
   by_traveler          TEXT,                               -- who acted (adults only, enforced at the route; from the session)
-  at                   INTEGER NOT NULL                    -- when (epoch ms, server clock)
+  at                   INTEGER NOT NULL,                   -- when (epoch ms, server clock)
+  -- O2/A1 (BUILD_SPECS_GLANCE_ENGINE.md A1): the ask-time LEAN snapshot — what the
+  -- machine believed when it asked, captured HERE at answer time because 019's
+  -- decisions ledger is DELETE+re-INSERT per sweep and would overwrite it. JSON:
+  -- { engine, classId, action, guessed:{id,name}, hm:<challenger's compact read|null> }.
+  -- The durable input the Learning Spine (O7) credits witnesses from. NULL until both
+  -- PHOTO_CONFIRM_MODE and PHOTO_DECISION_ENGINE are on (no shadow → no hm → engine 'v1').
+  lean_json            TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_heal_feedback_trip ON memory_heal_feedback(trip_id, at DESC);
