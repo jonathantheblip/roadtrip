@@ -11,13 +11,66 @@
 // witness and the trip's filed photos seed the lookalike exemplars. (The honest,
 // filing-held-out measurement is app/scripts/healShadow.mjs / O3, a separate instrument
 // per §15b — never this production path.)
-import { buildEvidenceBench } from './evidenceBench.js'
+import { buildEvidenceBench, WITNESSES } from './evidenceBench.js'
 import { settle, combineAffinity, SETTLE_DEFAULTS } from './settlingEngine.js'
 import { buildWorldModel } from './worldModel.js'
 import { imputeSignals } from './imputation.js'
 import { buildVisionExemplars } from './visionPlacement.js'
 
 const localISO = (at) => (Number.isFinite(at) ? new Date(at).toISOString().slice(0, 10) : null)
+
+// Compact tier codes for the per-witness map (an evidence GRADE, never a cutoff — §3/§5):
+// o = observed (a real read), d = derived (imputed / propagated — softer), p = prior
+// (the clamped cross-trip world model). Ranked so an aggregate keeps the STRONGEST tier a
+// witness reached over a decision's photos (observed outranks derived outranks prior).
+const TIER_CHAR = { observed: 'o', derived: 'd', prior: 'p' }
+const TIER_RANK = { o: 3, d: 2, p: 1 }
+const RANK_TIER = { 3: 'o', 2: 'd', 1: 'p' }
+const maxSupport = (s) => Math.max(0, ...Object.values(s || {}).filter(Number.isFinite))
+
+// Per-photo, per-witness contribution read straight off the FINAL bench (the same bench
+// `settle` consumed), keyed by each photo's settled LEAN (its readout `top`). AUDIT-1 A1:
+// top-k alone throws the fleet away — settle collapses every witness into a few scalars, so
+// a later Learning Spine (O7) can't tell WHICH witnesses backed the lean vs the family's
+// answer. This recovers that, additively, without re-deciding anything:
+//   • PRESENCE ("which witnesses spoke") = the witness emitted a bench entry about this
+//     photo. Abstainers emit nothing (the bench's grammar), so they are simply absent — a
+//     dissenter that spoke about a NON-lean place is still present (recorded at g:0), which
+//     is different from silence.
+//   • GRADE ("at what grade") — for a PLACEMENT witness, its support for the photo's lean
+//     place: the decomposition of the lean into per-witness credit. If the witness didn't
+//     back the lean it registers 0 (spoke, but not for the winner); with no lean (a `leave`
+//     read) it falls back to its strongest support so the voice still records. For an
+//     AFFINITY witness there is no place — its grade is the same-moment pull it exerted on a
+//     pair touching this photo (grouping, which flows to the lean via borrowing).
+// Compact + deterministic; the grade is graded evidence, never a verdict.
+export function witnessContributions(bench, photos) {
+  const out = new Map()
+  const add = (pid, witness, g, tier) => {
+    const grade = Number.isFinite(g) ? g : 0
+    const t = TIER_CHAR[tier] || 'o'
+    if (!out.has(pid)) out.set(pid, {})
+    const m = out.get(pid)
+    const prev = m[witness]
+    if (!prev) { m[witness] = { g: grade, t } }
+    else {
+      if (grade > prev.g) prev.g = grade
+      if (TIER_RANK[t] > TIER_RANK[prev.t]) prev.t = t
+    }
+  }
+  for (const e of bench?.placement || []) {
+    const s = e.support || {}
+    if (!Object.keys(s).length) continue // never emitted → didn't speak
+    const top = photos?.get?.(e.photoId)?.top
+    const g = top != null ? (Number.isFinite(s[top]) ? s[top] : 0) : maxSupport(s)
+    add(e.photoId, e.witness, g, e.tier)
+  }
+  for (const e of bench?.affinity || []) {
+    add(e.aId, e.witness, e.affinity, e.tier)
+    add(e.bId, e.witness, e.affinity, e.tier)
+  }
+  return out
+}
 
 // Trip stop times are wall-clock strings ("10:30 AM"); the engine wants minutes-of-day.
 export function parseTimeMin(s) {
@@ -95,6 +148,34 @@ export function summarizeReads(reads) {
   const onTop = rs.filter((r) => r.top === top)
   const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
   const round2 = (x) => Math.round(x * 100) / 100
+
+  // ADDITIVE (O2 lean-enrichment): the per-witness contribution map for THIS decision's
+  // photos — which witnesses spoke (n = how many of the reads carried them) and at what
+  // aggregate grade (g = mean lean-credit; t = the strongest tier they reached). Each read
+  // may carry a per-photo `wit` (attached by challengerRead off the bench); reads without
+  // one (hand-built callers) simply contribute nothing → an empty, still-shaped map. Built
+  // in WITNESSES order so the map is deterministic. None of the existing fields move.
+  const witAgg = {}
+  for (const r of rs) {
+    const w = r.wit
+    if (!w) continue
+    for (const k of Object.keys(w)) {
+      const c = w[k]
+      if (!c) continue
+      const a = witAgg[k] || (witAgg[k] = { n: 0, gSum: 0, tRank: 0 })
+      a.n += 1
+      a.gSum += Number.isFinite(c.g) ? c.g : 0
+      const tr = TIER_RANK[c.t] || 0
+      if (tr > a.tRank) a.tRank = tr
+    }
+  }
+  const wit = {}
+  for (const k of WITNESSES) {
+    const a = witAgg[k]
+    if (!a) continue
+    wit[k] = { n: a.n, g: round2(a.gSum / a.n), t: RANK_TIER[a.tRank] || 'o' }
+  }
+
   return {
     top,
     dest: modal(dest),
@@ -102,6 +183,7 @@ export function summarizeReads(reads) {
     conflict: round2(mean(rs.map((r) => (Number.isFinite(r.conflict) ? r.conflict : 0)))),
     ignorance: round2(mean(rs.map((r) => (Number.isFinite(r.ignorance) ? r.ignorance : 0)))),
     n: rs.length,
+    wit,
   }
 }
 
@@ -134,9 +216,15 @@ export function challengerRead({ tripData, rows, otherTrips = [], now = Date.now
     const imputed = imputeSignals(gpts, pairs)
     const bench = buildEvidenceBench(imputed, places, { worldModel, now, exemplars })
     const res = settle(bench, places)
+    // ADDITIVE: attach each photo's per-witness contribution (keyed off its settled lean)
+    // so the per-decision summary can decompose the lean per witness (AUDIT-1 A1 / O7).
+    const contribs = witnessContributions(bench, res.photos)
     for (const pt of gpts) {
       const r = res.photos.get(pt.id)
-      if (r) byPhoto.set(pt.id, r)
+      if (r) {
+        r.wit = contribs.get(pt.id) || {}
+        byPhoto.set(pt.id, r)
+      }
     }
   }
 

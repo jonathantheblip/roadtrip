@@ -10,7 +10,9 @@ import {
   summarizeReads,
   challengerRead,
   hmForDecision,
+  witnessContributions,
 } from '../src/healChallenger.js'
+import { WITNESSES } from '../src/evidenceBench.js'
 
 const NOW = Date.UTC(2026, 6, 10)
 
@@ -87,6 +89,81 @@ describe('healChallenger — summarizeReads', () => {
     expect(s.n).toBe(3)
     expect(s.m).toBeCloseTo(0.9, 5) // mean topM on the modal-top reads (1, 0.8)
   })
+
+  it('ADDITIVE: old compact fields are byte-identical + a shaped (empty) wit map when reads carry none', () => {
+    // The exact reads the pre-enrichment summary was proven on — the four compact fields
+    // must be unchanged, and the new per-witness map present but empty (no `wit` on inputs).
+    const s = summarizeReads([
+      { top: 'X', topM: 1, destination: 'ask', conflict: 0.9, ignorance: 0 },
+      { top: 'X', topM: 0.8, destination: 'ask', conflict: 0.8, ignorance: 0.1 },
+      { top: 'Y', topM: 0.6, destination: 'heal', conflict: 0.4, ignorance: 0 },
+    ])
+    expect(s.top).toBe('X')
+    expect(s.dest).toBe('ask')
+    expect(s.m).toBeCloseTo(0.9, 5)
+    expect(s.conflict).toBeCloseTo(0.7, 5) // mean(0.9,0.8,0.4)
+    expect(s.ignorance).toBeCloseTo(0.03, 2) // mean(0,0.1,0)
+    expect(s.n).toBe(3)
+    expect(s.wit).toEqual({}) // present + shaped, additive
+  })
+
+  it('ADDITIVE: the per-witness map aggregates presence (n) + mean lean-credit (g) + strongest tier (t)', () => {
+    const s = summarizeReads([
+      { top: 'X', topM: 0.9, destination: 'file', conflict: 0.4, ignorance: 0.1, wit: { gps: { g: 0.9, t: 'o' }, worldModel: { g: 0.3, t: 'p' } } },
+      { top: 'X', topM: 0.7, destination: 'heal', conflict: 0.3, ignorance: 0.3, wit: { gps: { g: 0.5, t: 'o' } } },
+    ])
+    // gps spoke on both reads → n:2, mean(0.9,0.5)=0.7, tier observed
+    expect(s.wit.gps).toEqual({ n: 2, g: 0.7, t: 'o' })
+    // worldModel spoke on one → n:1, g:0.3, prior tier preserved (never promoted)
+    expect(s.wit.worldModel).toEqual({ n: 1, g: 0.3, t: 'p' })
+    // deterministic key order follows the canonical WITNESSES order (gps before worldModel)
+    expect(Object.keys(s.wit)).toEqual(['gps', 'worldModel'])
+    // and the compact fields are still all there, unchanged in kind
+    expect(s.top).toBe('X')
+    expect(s.n).toBe(2)
+  })
+
+  it('ADDITIVE: a witness reaching a stronger tier on any read keeps the strongest (o > d > p)', () => {
+    const s = summarizeReads([
+      { top: 'X', topM: 0.6, destination: 'heal', conflict: 0.2, ignorance: 0.4, wit: { gps: { g: 0.4, t: 'd' } } },
+      { top: 'X', topM: 0.8, destination: 'file', conflict: 0.2, ignorance: 0.2, wit: { gps: { g: 0.6, t: 'o' } } },
+    ])
+    expect(s.wit.gps).toEqual({ n: 2, g: 0.5, t: 'o' }) // mean(0.4,0.6)=0.5, tier upgraded to observed
+  })
+})
+
+describe('healChallenger — witnessContributions', () => {
+  it('grades placement witnesses on the settled LEAN, keeps dissenters present, spreads affinity to both endpoints', () => {
+    const bench = {
+      placement: [
+        { kind: 'placement', witness: 'gps', tier: 'observed', photoId: 'p1', support: { X: 0.9, Y: 0.4 } },
+        // backs Y, NOT the lean (X) → spoke, but 0 credit toward the lean (present at g:0)
+        { kind: 'placement', witness: 'currentFiling', tier: 'observed', photoId: 'p1', support: { Y: 0.7 } },
+        { kind: 'placement', witness: 'worldModel', tier: 'prior', photoId: 'p1', support: { X: 0.3 } },
+        { kind: 'placement', witness: 'gps', tier: 'observed', photoId: 'p2', support: {} }, // empty support → didn't speak
+      ],
+      affinity: [
+        { kind: 'affinity', witness: 'timeGap', tier: 'observed', aId: 'p1', bId: 'p2', affinity: 0.8 },
+      ],
+    }
+    const photos = new Map([['p1', { top: 'X' }], ['p2', { top: 'X' }]])
+    const c = witnessContributions(bench, photos)
+    expect(c.get('p1').gps).toEqual({ g: 0.9, t: 'o' }) // support on the lean X
+    expect(c.get('p1').currentFiling).toEqual({ g: 0, t: 'o' }) // present (spoke) but not for the lean
+    expect(c.get('p1').worldModel).toEqual({ g: 0.3, t: 'p' }) // prior tier code
+    expect(c.get('p1').timeGap).toEqual({ g: 0.8, t: 'o' }) // affinity pull on the pair
+    expect(c.get('p2').timeGap).toEqual({ g: 0.8, t: 'o' }) // spread to the other endpoint
+    expect(c.get('p2').gps).toBeUndefined() // empty support never registers as a voice
+  })
+
+  it('no lean (a leave read) → a placement witness falls back to its strongest support', () => {
+    const bench = {
+      placement: [{ kind: 'placement', witness: 'time', tier: 'observed', photoId: 'p1', support: { X: 0.2, Y: 0.5 } }],
+      affinity: [],
+    }
+    const c = witnessContributions(bench, new Map([['p1', { top: null }]]))
+    expect(c.get('p1').time).toEqual({ g: 0.5, t: 'o' }) // max support, since there is no lean to credit
+  })
 })
 
 describe('healChallenger — challengerRead (whole ladder)', () => {
@@ -107,6 +184,32 @@ describe('healChallenger — challengerRead (whole ladder)', () => {
     expect(hm.n).toBe(2)
     expect(['X', 'Y']).toContain(hm.top)
     expect(hm.dest).toBeTruthy()
+  })
+  it('ADDITIVE: every read carries a per-photo `wit`, and the summary a per-witness map', () => {
+    const read = challengerRead({ tripData: tripData(), rows: rows(), now: NOW })
+    // the per-photo contribution rides on each read (attached off the bench)
+    const a = read.byPhoto.get('a')
+    expect(a.wit && typeof a.wit).toBe('object')
+    // a + b both carry real EXIF coords near X/Y → gps is a live witness
+    expect(a.wit.gps).toBeTruthy()
+    expect(a.wit.gps.g).toBeGreaterThan(0)
+    expect(['o', 'd', 'p']).toContain(a.wit.gps.t)
+    // and it aggregates into the per-decision summary, ADDITIVELY — old fields intact
+    const hm = hmForDecision(read, ['a', 'b'])
+    expect(hm.top).toBeTruthy() // old compact fields unchanged in kind
+    expect(hm.n).toBe(2)
+    expect(hm.wit && typeof hm.wit).toBe('object')
+    expect(Object.keys(hm.wit).length).toBeGreaterThan(0)
+    // every key is a real witness; every value is shaped { n, g, t } and coherent
+    for (const [w, v] of Object.entries(hm.wit)) {
+      expect(WITNESSES).toContain(w)
+      expect(v.n).toBeGreaterThanOrEqual(1)
+      expect(v.n).toBeLessThanOrEqual(hm.n) // can't have spoken on more photos than the decision has
+      expect(v.g).toBeGreaterThanOrEqual(0)
+      expect(v.g).toBeLessThanOrEqual(1)
+      expect(['o', 'd', 'p']).toContain(v.t)
+    }
+    expect(hm.wit.gps).toBeTruthy() // gps spoke for this coord-bearing moment
   })
   it('a decision with no matching photos → null summary', () => {
     const read = challengerRead({ tripData: tripData(), rows: rows(), now: NOW })
